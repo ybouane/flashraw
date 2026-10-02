@@ -20,6 +20,7 @@ pub mod canon;
 pub mod fuji;
 pub mod hasselblad;
 pub mod kodak;
+pub mod medium;
 pub mod minolta;
 pub mod misc;
 pub mod nikon;
@@ -77,6 +78,10 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if dng::is_dng(&tiff) {
         return dng::open(data, tiff, opts);
     }
+    // Leaf MOS files often carry no Make tag; the PKTS metadata tag identifies them.
+    if tiff.find_entry(phaseone::TAG_LEAF_PKTS).is_some() {
+        return phaseone::open_tiff(data, tiff, opts);
+    }
     match brand {
         "Canon" => canon::open_tiff(data, tiff, opts),
         "Nikon" => nikon::open_tiff(data, tiff, opts),
@@ -91,6 +96,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         "Panasonic" | "Leica" => panasonic::open_tiff(data, tiff, opts),
         "Fujifilm" => fuji::open_tiff(data, tiff, opts),
         "Sigma" => sigma::open_tiff(data, tiff, opts),
+        "Epson" => medium::epson::open_tiff(data, tiff, opts),
+        "Sinar" => medium::sinar::open_tiff(data, tiff, opts),
         _ => misc::open_tiff(data, tiff, opts),
     }
 }
@@ -130,6 +137,9 @@ pub fn detect(data: &[u8]) -> Option<RawFormat> {
     let tiff = Tiff::parse(data).ok()?;
     if dng::is_dng(&tiff) {
         return Some(RawFormat::Dng);
+    }
+    if tiff.find_entry(phaseone::TAG_LEAF_PKTS).is_some() {
+        return Some(RawFormat::Mos);
     }
     let make = tiff.all_ifds().into_iter().find_map(|i| i.string(tags::MAKE))?;
     Some(match flashraw_camera_db::canonical_make(&make) {

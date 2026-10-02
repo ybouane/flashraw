@@ -10,7 +10,9 @@ pub mod deflate;
 pub mod jpeg;
 #[cfg(feature = "jpegxl")]
 pub mod jxl;
+pub mod leaf;
 pub mod ljpeg;
 pub mod packed;
+pub mod phaseone;
 
 pub use packed::{PackedLayout, unpack, unpack_row, unpack_row_scalar};
