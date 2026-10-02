@@ -51,6 +51,10 @@ criterion = { version = "0.8", default-features = false }
 toml = "1"
 jpeg-encoder = "0.7"
 
+[workspace.lints.clippy]
+# Indexed loops are the clearest form for the numeric kernels (IDCT, matrices, CFA tables).
+needless_range_loop = "allow"
+
 [profile.release]
 opt-level = 3
 lto = "thin"

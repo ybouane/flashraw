@@ -183,7 +183,7 @@ impl<'a> Entry<'a> {
     /// Number of values that are actually available.
     pub fn len(&self) -> usize {
         let sz = type_size(self.typ);
-        if sz == 0 { self.data.len() } else { (self.data.len() / sz).min(self.count as usize) }
+        self.data.len().checked_div(sz).map_or(self.data.len(), |n| n.min(self.count as usize))
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0

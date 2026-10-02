@@ -141,14 +141,14 @@ impl Camera {
 /// default mode (`""`) when no mode-specific entry exists.
 pub fn find(make: &str, model: &str, mode: &str) -> Option<&'static Camera> {
     let (mk, md) = (norm(make), norm(model));
-    let key = |mode: &str| format!("{mk}\0{md}\0{}", norm(mode));
+    let key = |mode: &str| format!("{mk}\t{md}\t{}", norm(mode));
     let lookup = |k: &str| INDEX.binary_search_by(|(e, _)| (*e).cmp(k)).ok().map(|i| &CAMERAS[INDEX[i].1 as usize]);
     lookup(&key(mode)).or_else(|| if mode.is_empty() { None } else { lookup(&key("")) })
 }
 
 /// Look up a camera ignoring mode: returns the first entry for make/model.
 pub fn find_any(make: &str, model: &str) -> Option<&'static Camera> {
-    let prefix = format!("{}\0{}\0", norm(make), norm(model));
+    let prefix = format!("{}\t{}\t", norm(make), norm(model));
     let i = INDEX.partition_point(|(e, _)| *e < prefix.as_str());
     INDEX.get(i).filter(|(e, _)| e.starts_with(&prefix)).map(|(_, idx)| &CAMERAS[*idx as usize])
 }
@@ -229,7 +229,7 @@ mod tests {
     fn index_is_sorted_and_resolvable() {
         assert!(INDEX.windows(2).all(|w| w[0].0 < w[1].0));
         for (k, i) in INDEX {
-            let parts: Vec<&str> = k.split('\0').collect();
+            let parts: Vec<&str> = k.split('\t').collect();
             let c = &CAMERAS[*i as usize];
             assert_eq!(norm(c.make), parts[0]);
             assert!(find(parts[0], parts[1], parts[2]).is_some());

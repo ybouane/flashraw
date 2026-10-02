@@ -72,9 +72,9 @@ fn main() {
     // Sorted index: (normalised "MAKE\0MODEL\0MODE", camera index), including aliases.
     let mut index: Vec<(String, usize)> = Vec::new();
     for (i, c) in cams.iter().enumerate() {
-        index.push((format!("{}\0{}\0{}", norm(&c.make), norm(&c.model), norm(&c.mode)), i));
+        index.push((format!("{}\t{}\t{}", norm(&c.make), norm(&c.model), norm(&c.mode)), i));
         for a in &c.aliases {
-            index.push((format!("{}\0{}\0{}", norm(&c.make), norm(&a.model), norm(&c.mode)), i));
+            index.push((format!("{}\t{}\t{}", norm(&c.make), norm(&a.model), norm(&c.mode)), i));
         }
     }
     index.sort();

@@ -1,0 +1,36 @@
+# Performance regression CI: compares the PR against main on the representative
+# benchmark set (same runner, interleaved runs) and fails on slowdowns beyond the
+# tolerance. Hosted runners are noisy, so the tolerance is generous; dedicated
+# hardware runs use tighter settings (see docs/benchmarks.md).
+name: Performance
+
+on:
+  pull_request:
+    paths: ["crates/**", "Cargo.toml", "Cargo.lock"]
+  workflow_dispatch:
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: corpus
+          key: bench-corpus-${{ hashFiles('benches/benchmark-set.tsv') }}
+      - uses: actions/cache@v4
+        with:
+          path: reference
+          key: reference-${{ runner.os }}-${{ hashFiles('tools/reference/*') }}
+      - run: python3 tools/corpus/fetch.py --filter "$(cut -f1 benches/benchmark-set.tsv | grep -v '^#' | head -40 | paste -sd'|')"
+      - run: tools/reference/setup.sh
+      - name: Baseline (main)
+        run: |
+          git worktree add ../base origin/main
+      - name: PR
+        run: |
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: benchmarks, path: "benches/results/" }

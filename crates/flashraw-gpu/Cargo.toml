@@ -14,3 +14,6 @@ bytemuck.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pollster.workspace = true
+
+[lints]
+workspace = true

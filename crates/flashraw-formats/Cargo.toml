@@ -18,3 +18,6 @@ flashraw-core.workspace = true
 flashraw-codecs.workspace = true
 flashraw-camera-db.workspace = true
 rayon = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -20,3 +20,6 @@ toml = { workspace = true, optional = true }
 [build-dependencies]
 toml.workspace = true
 serde.workspace = true
+
+[lints]
+workspace = true

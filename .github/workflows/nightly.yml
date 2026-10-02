@@ -1,0 +1,52 @@
+# artifact, and a longer fuzzing campaign.
+name: Nightly compatibility
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache corpus
+        uses: actions/cache@v4
+        with:
+          path: corpus
+          key: rpu-corpus-${{ hashFiles('tools/corpus/manifest.tsv') }}
+      - name: Cache decoder
+        uses: actions/cache@v4
+        with:
+          path: reference
+          key: reference-${{ runner.os }}-${{ hashFiles('tools/reference/*') }}
+      - run: python3 tools/corpus/fetch.py --jobs 16
+      - run: tools/reference/setup.sh
+      - run: cargo test --release -p flashraw --test regression --test malformed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          path: |
+
+  fuzz-extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - run: |
+          cd fuzz
+          for t in $(cargo fuzz list); do cargo fuzz run -O $t -- -max_total_time=900 -rss_limit_mb=2048; done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: fuzz-artifacts, path: fuzz/artifacts }

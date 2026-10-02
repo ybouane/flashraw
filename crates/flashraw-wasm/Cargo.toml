@@ -13,3 +13,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 flashraw = { workspace = true, default-features = false, features = ["simd"] }
+
+[lints]
+workspace = true

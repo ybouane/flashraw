@@ -38,3 +38,10 @@ serde = { workspace = true, optional = true }
 [dev-dependencies]
 criterion.workspace = true
 proptest.workspace = true
+
+[[bench]]
+name = "kernels"
+harness = false
+
+[lints]
+workspace = true

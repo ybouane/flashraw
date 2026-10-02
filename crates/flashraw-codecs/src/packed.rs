@@ -49,7 +49,7 @@ pub fn unpack(
     }
     let row_bytes = layout.row_bytes();
     let avail_rows =
-        if row_stride == 0 { height } else { (src.len().saturating_sub(row_bytes) / row_stride + 1).min(height) };
+        src.len().saturating_sub(row_bytes).checked_div(row_stride).map_or(height, |n| (n + 1).min(height));
     let avail_rows = if src.len() < row_bytes { 0 } else { avail_rows };
     if avail_rows < height && !lenient {
         return Err(Error::corrupt(format!("packed data truncated: {avail_rows}/{height} rows present")));

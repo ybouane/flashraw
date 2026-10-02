@@ -156,7 +156,7 @@ impl LjpegHeader {
                     // Table per MCU position: luma table repeated for sRAW extra samples.
                     let mut tables = Vec::with_capacity(clrs as usize);
                     for c in 0..clrs as usize {
-                        let comp = if c <= sraw as usize { 0 } else { c - sraw as usize };
+                        let comp = c.saturating_sub(sraw as usize);
                         let id = comp_tables[comp];
                         let t = dht[id]
                             .clone()
@@ -399,7 +399,7 @@ pub mod encoder {
         // Huffman table: lengths 0..=16 with simple code lengths.
         let counts: [u8; 16] = [0, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0];
         let values: Vec<u8> = (0..=16).collect();
-        let mut codes = vec![(0u32, 0u32); 17];
+        let mut codes = [(0u32, 0u32); 17];
         let mut code = 0u32;
         let mut k = 0;
         for len in 1..=16u32 {

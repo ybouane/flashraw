@@ -1,0 +1,97 @@
+# Fast PR CI: formatting, lints, unit/integration tests on all major platforms,
+# WASM build, fuzz smoke tests, camera-db validation, bench compilation.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt-clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy -p flashraw --all-features -- -D warnings
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-13, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --release
+      - name: No-default-features build (no rayon/simd/mmap)
+        run: cargo test -p flashraw --no-default-features --release --lib
+      - name: Small regression corpus sample
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python3 tools/corpus/fetch.py --max-size-mb 12 --filter "Leica/|Pentax/K-70|Blackmagic" --jobs 8
+          cargo test --release -p flashraw --test regression
+          cargo test --release -p flashraw --test malformed
+
+  camera-db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p flashraw-cli -- camera-db validate camera-db/cameras
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p flashraw-wasm --target wasm32-unknown-unknown --release
+      - run: RUSTFLAGS="-C target-feature=+simd128" cargo build -p flashraw-wasm --target wasm32-unknown-unknown --release
+      - run: cargo check -p flashraw-gpu --target wasm32-unknown-unknown
+
+  gpu-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p flashraw-cli --features gpu --release
+      - run: cargo test -p flashraw-gpu --release   # skips gracefully without an adapter
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: fuzz }
+      - run: cargo install cargo-fuzz --locked
+      - name: Replay crash regressions and fuzz each target briefly
+        run: |
+          cd fuzz
+          cargo fuzz build -O
+          for t in $(cargo fuzz list); do
+            if [ -d regressions/$t ]; then ./target/x86_64-unknown-linux-gnu/release/$t regressions/$t/*; fi
+            cargo fuzz run -O $t -- -max_total_time=30 -rss_limit_mb=2048
+          done
+
+  bench-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo bench --workspace --no-run

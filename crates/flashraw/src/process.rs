@@ -81,7 +81,7 @@ pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel>
             }
         }
     }
-    if cnt.iter().any(|&c| c == 0) {
+    if cnt.contains(&0) {
         let total: u64 = cnt.iter().sum();
         if total == 0 {
             return None;
@@ -211,6 +211,9 @@ pub struct Developed {
 /// Rows per destination strip processed by one task.
 const STRIP: u32 = 16;
 
+/// Same-colour neighbour offsets `(dx, dy)` and the reciprocal of their count.
+type NeighbourList = (Vec<(isize, isize)>, f32);
+
 /// Per-image state of the fused develop kernel.
 struct Kernel<'a> {
     img: &'a RawImage,
@@ -218,7 +221,7 @@ struct Kernel<'a> {
     origin: (usize, usize),
     cfa: Option<CfaPattern>,
     /// Same-colour 3x3 neighbour offsets per CFA position and channel, with 1/count.
-    neigh: Vec<[(Vec<(isize, isize)>, f32); 3]>,
+    neigh: Vec<[NeighbourList; 3]>,
     pw: usize,
     ph: usize,
     wb: [f32; 4],
@@ -448,7 +451,7 @@ fn kernel<'a>(
     let mut neigh = Vec::with_capacity(pw * ph);
     for py in 0..ph {
         for px in 0..pw {
-            let mut lists: [(Vec<(isize, isize)>, f32); 3] = Default::default();
+            let mut lists: [NeighbourList; 3] = Default::default();
             for dy in -1isize..=1 {
                 for dx in -1isize..=1 {
                     let c = info

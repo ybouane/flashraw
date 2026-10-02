@@ -22,3 +22,6 @@ jxl-oxide = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true
+
+[lints]
+workspace = true
