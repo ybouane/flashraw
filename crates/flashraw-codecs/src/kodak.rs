@@ -176,8 +176,8 @@ pub fn c330_row(pixel: &[u8], width: usize, curve: &[u16], out: &mut [u16]) {
     for col in 0..width {
         let at = |i: usize| pixel.get(i).copied().unwrap_or(0) as i32;
         let y = at(col * 2);
-        let cb = at((col * 2 & !3) | 1) - 128;
-        let cr = at((col * 2 & !3) | 3) - 128;
+        let cb = at(((col * 2) & !3) | 1) - 128;
+        let cr = at(((col * 2) & !3) | 3) - 128;
         ycc_rgb(y, cb, cr, curve, &mut out[col * 3..col * 3 + 3]);
     }
 }
@@ -483,7 +483,7 @@ mod tests {
         let src: Vec<u8> = (0..848u32).map(|i| (i % 251) as u8).collect();
         let mut out = vec![0u16; 848];
         dc120_row(&src, 1, &mut out);
-        assert_eq!(out[0], src[(192 + 636) % 848] as u16);
+        assert_eq!(out[0], src[192 + 636] as u16);
     }
 
     #[test]

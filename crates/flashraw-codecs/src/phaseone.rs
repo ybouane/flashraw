@@ -315,18 +315,18 @@ mod tests {
             let mut level = [0u32; 2];
             let mut prev = [0i32; 2];
             for blk in 0..width / 8 {
-                for p in 0..2 {
+                for lv in level.iter_mut() {
                     // Either reset through the index table or apply a delta (when valid).
-                    if blk == 0 || !(6..=7).contains(&level[p]) || rnd(2) == 0 {
+                    if blk == 0 || !(6..=7).contains(&*lv) || rnd(2) == 0 {
                         let target = [9u32, 8, 7, 6, 5][rnd(5) as usize];
                         let idx = S_BIT_INDICATOR.iter().position(|&b| b == target).unwrap() as u32;
                         let skip = S_SKIP_BITS[idx as usize];
                         w.put(idx >> (5 - skip), 2 + skip);
-                        level[p] = target;
+                        *lv = target;
                     } else {
                         let top = 1 + rnd(3); // 1..=3 -> delta -1..=+1
                         w.put(top, 2);
-                        level[p] = level[p] + top - 2;
+                        *lv = *lv + top - 2;
                     }
                 }
                 let bidx = rnd(8);

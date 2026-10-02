@@ -8,7 +8,7 @@
 //! in a 4-sample buffer with an always-zero fourth channel.
 
 use crate::common::*;
-use crate::medium::{cfa_at_origin, even_margins};
+use crate::medium::{cfa_at_origin, even_margins, fallback_table, matrix_from};
 use flashraw_codecs::kodak as kc;
 use flashraw_core::tiff::{Entry, Ifd, Tiff, tags};
 use flashraw_core::*;
@@ -22,26 +22,6 @@ pub fn probe(data: &[u8]) -> bool {
 /// Header-less dumps are identified by size (see [`open_headerless`]).
 pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
     open_headerless(data, opts).unwrap_or_else(|| Err(Error::UnsupportedFormat("unknown Kodak dump size".into())))
-}
-
-/// matches case-insensitively. Returns (black hint, white hint, matrix).
-fn fallback_table(make: &str, model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
-    let m = model.to_ascii_lowercase();
-    flashraw_camera_db::MATRICES
-        .iter()
-        .find(|e| e.canonical_make.eq_ignore_ascii_case(make) && m.starts_with(&e.model_prefix.to_ascii_lowercase()))
-}
-
-fn matrix_from(e: &flashraw_camera_db::FallbackMatrix) -> ColorMatrices {
-    let mut out = ColorMatrices::default();
-    let v: Vec<f32> = e.color_matrix.iter().map(|&x| x as f32 / 10000.0).collect();
-    if v.iter().any(|&x| x != 0.0) {
-        if let Some(cm) = ColorMatrix::new(Illuminant::D65, v.len() / 3, v) {
-            out.color.push(cm);
-            out.source = ColorSource::CameraDb;
-        }
-    }
-    out
 }
 
 fn kodak_model(raw: &str) -> String {
@@ -138,12 +118,10 @@ fn parse_kodak_ifd(data: &[u8], tiff: &Tiff) -> KodakIfd {
             }
             0xfa13 => k.width = e.u32(0),
             0xfa14 => k.height = e.u32(0).map(|h| (h + 1) & !1),
-            0xfa25 | 0xfa27 | 0xfa28 | 0xfa29 | 0xfa2a if !software_wb => {
-                if wbi == Some(e.tag) {
-                    let v = e.u32s();
-                    if v.len() >= 3 {
-                        k.wb = Some([v[0] as f32, v[1] as f32, v[2] as f32, v[1] as f32]);
-                    }
+            0xfa25 | 0xfa27 | 0xfa28 | 0xfa29 | 0xfa2a if !software_wb && wbi == Some(e.tag) => {
+                let v = e.u32s();
+                if v.len() >= 3 {
+                    k.wb = Some([v[0] as f32, v[1] as f32, v[2] as f32, v[1] as f32]);
                 }
             }
             _ => {}
@@ -635,8 +613,9 @@ fn first_strip(r: &Ifd) -> Result<usize> {
 /// Header-less Kodak dumps identified by file size (C330, C603, "12MP", KAI-0340).
 pub fn open_headerless<'a>(data: &'a [u8], opts: &OpenOptions) -> Option<Result<Box<dyn RawDecoder + 'a>>> {
     // (size, raw w, raw h, left, top, right, bottom, load flags, CFA code, model, offset)
+    type Dump = (usize, u32, u32, u32, u32, u32, u32, u32, u8, &'static str, usize);
     #[rustfmt::skip]
-    const TABLE: &[(usize, u32, u32, u32, u32, u32, u32, u32, u8, &str, usize)] = &[
+    const TABLE: &[Dump] = &[
         (4159302, 2338, 1779, 1, 33, 1, 2, 0, 0x94, "C330", 0),
         (4162462, 2338, 1779, 1, 33, 1, 2, 0, 0x94, "C330", 3160),
         (2247168, 1232, 912, 0, 0, 16, 0, 0, 0x00, "C330", 0),

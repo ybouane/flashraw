@@ -1,0 +1,10 @@
+FORMAT	MODE	COMPRESSION	STATUS	NOTES
+DCR	65000 RGB / YCbCr	kodak-rgb, kodak-ycbcr	experimental	decoded to 3-sample RGB; no corpus sample
+DCR	compression 262	-	unsupported	no sample
+DCS	lossless JPEG + curve	lossless-jpeg	verified	DCS520C, DCS560C
+DCS	8-bit + curve	uncompressed	verified	DCS460D, EOS DCS 1, EOS DCS 3
+KDC	12-bit packed	uncompressed	verified	EasyShare Z981/Z990/Z1015, P712, P880
+KDC	DC120	kodak-dc120	verified	2 samples
+RAW	C330/C603 CFA dumps	uncompressed	verified	8-bit through stored or gamma curve
+RAW	12MP / KAI-0340 dumps	uncompressed	experimental	size-identified; no sample
+RAW	DC20/DC25/DCS200 dumps	-	unsupported	no sample

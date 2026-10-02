@@ -142,13 +142,13 @@ pub fn decode(
                 return Err(Error::corrupt("Hasselblad: difference length > 16"));
             }
             let d = [diff(&mut bits, l0), diff(&mut bits, l1)];
-            for k in 0..2 {
+            for (k, &dk) in d.iter().enumerate() {
                 let s = col + k;
                 let mut pred = if col > 0 { cur[s - 2] } else { start };
                 if grad && col > 0 && row > 1 {
                     pred += up2[s] / 2 - up2[s - 2] / 2;
                 }
-                pred = pred.wrapping_add(d[k]);
+                pred = pred.wrapping_add(dk);
                 dst[s] = pred as u16;
                 cur[s] = pred;
             }
@@ -205,10 +205,10 @@ mod tests {
         for row in 0..height {
             for col in (0..width).step_by(2) {
                 let mut ds = [0i32; 2];
-                for k in 0..2 {
+                for (k, dk) in ds.iter_mut().enumerate() {
                     let s = col + k;
                     let pred = if col > 0 { samples[row * width + s - 2] as i32 } else { 0x8000 };
-                    ds[k] = samples[row * width + s] as i32 - pred;
+                    *dk = samples[row * width + s] as i32 - pred;
                 }
                 let lens: Vec<u32> =
                     ds.iter().map(|&d| if d == 0 { 0 } else { 32 - (d.unsigned_abs()).leading_zeros() }).collect();

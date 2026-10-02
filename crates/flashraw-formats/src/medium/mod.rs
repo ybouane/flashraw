@@ -31,6 +31,26 @@ pub fn cfa_at_origin(p: CfaPattern, vx: u32, vy: u32) -> CfaPattern {
     p.shifted((w - vx as usize % w) % w, (h - vy as usize % h) % h)
 }
 
+/// matches case-insensitively. Returns (black hint, white hint, matrix).
+pub fn fallback_table(make: &str, model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
+    let m = model.to_ascii_lowercase();
+    flashraw_camera_db::MATRICES
+        .iter()
+        .find(|e| e.canonical_make.eq_ignore_ascii_case(make) && m.starts_with(&e.model_prefix.to_ascii_lowercase()))
+}
+
+pub fn matrix_from(e: &flashraw_camera_db::FallbackMatrix) -> ColorMatrices {
+    let mut out = ColorMatrices::default();
+    let v: Vec<f32> = e.color_matrix.iter().map(|&x| x as f32 / 10000.0).collect();
+    if v.iter().any(|&x| x != 0.0) {
+        if let Some(cm) = ColorMatrix::new(Illuminant::D65, v.len() / 3, v) {
+            out.color.push(cm);
+            out.source = ColorSource::CameraDb;
+        }
+    }
+    out
+}
+
 /// Read `out.len()` 16-bit samples from `src` in byte order `order`; returns the number
 /// of samples actually available.
 pub fn read_u16s(src: &[u8], order: ByteOrder, out: &mut [u16]) -> usize {
@@ -103,6 +123,90 @@ impl ErrorSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Representative corpus samples of every medium-format/Kodak payload kind.
+    const SAMPLES: &[&str] = &[
+        "Phase One/P25+/CF028662.IIQ",
+        "Phase One/IQ180/230214_9564.IIQ",
+        "Phase One/H 25/H25_IT8.7-2_Card.TIF",
+        "Leaf/Aptus 22/L_003172.mos",
+        "Leaf/Aptus 22/L_003173.mos",
+        "Hasselblad/CFV/RAW_HASSELBLAD_CFV.3FR",
+        "Hasselblad/X1D/B9999910.3FR",
+        "Kodak/DCS760C/86L57188.DCR",
+        "Kodak/DCS520C/23HK3627.TIF",
+        "Kodak/EOS DCS 3/DCS00240.TIF",
+        "Kodak/P880/100_3710.KDC",
+        "Kodak/DC120/RAW_KODAK_DC120.KDC",
+        "Kodak/DC50/RAW_KODAK_DC50.KDC",
+        "Kodak/Kodak C330/RAW_KODAK_C330_FORMAT_NONE_YRGB.RAW",
+        "Epson/R-D1/_EPS0672.ERF",
+        "Mamiya/ZD/RAW_MAMIYA_ZD.MEF",
+    ];
+
+    fn try_decode(data: &[u8]) -> Result<RawImage> {
+        let d = crate::open(data, &crate::OpenOptions::default())?;
+        let p = Profiler::default();
+        d.decode(&DecodeContext::new(&p))
+    }
+
+    /// Truncated and corrupted corpus files must produce errors (or decode), never panic.
+    #[test]
+    fn corpus_malformed_inputs_do_not_panic() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+        let mut seen = 0;
+        for rel in SAMPLES {
+            let Ok(data) = std::fs::read(root.join(rel)) else { continue };
+            seen += 1;
+            assert!(try_decode(&data).is_ok(), "{rel}: intact file must decode");
+            for frac in [0.0005, 0.01, 0.2, 0.5, 0.9, 0.999] {
+                let n = (data.len() as f64 * frac) as usize;
+                let _ = try_decode(&data[..n]);
+            }
+            let mut seed = 0x9E37_79B9u32;
+            let mut bad = data.clone();
+            for _ in 0..64 {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let i = (seed as usize) % bad.len();
+                bad[i] ^= (seed >> 24) as u8 | 1;
+            }
+            let _ = try_decode(&bad);
+            // Header-only corruption (directory/IFD area).
+            let mut hdr = data.clone();
+            for b in hdr.iter_mut().take(4096).skip(8).step_by(7) {
+                *b = b.wrapping_add(0x5B);
+            }
+            let _ = try_decode(&hdr);
+        }
+        if seen == 0 {
+            eprintln!("corpus not present; malformed-input corpus test skipped");
+        }
+    }
+
+    /// Heavier randomised corruption run (`cargo test --release -- --ignored`).
+    #[test]
+    #[ignore]
+    fn corpus_fuzz_heavy() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+        for rel in SAMPLES {
+            let Ok(data) = std::fs::read(root.join(rel)) else { continue };
+            let mut seed: u32 = std::env::var("FLASHRAW_FUZZ_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or(12345);
+            for round in 0..150 {
+                let mut bad = data.clone();
+                // Mostly small edits; every 10th round a burst in the first 64 KiB.
+                let n = if round % 10 == 0 { 400 } else { 8 };
+                for _ in 0..n {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let span = if round % 10 == 0 { bad.len().min(65536) } else { bad.len() };
+                    let i = (seed as usize >> 3) % span;
+                    bad[i] = (seed >> 24) as u8;
+                }
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let cut = if round % 3 == 0 { bad.len() - (seed as usize % bad.len().max(1)) } else { bad.len() };
+                let _ = try_decode(&bad[..cut]);
+            }
+        }
+    }
 
     #[test]
     fn margins_round_up_to_even() {

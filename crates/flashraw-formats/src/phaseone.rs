@@ -21,7 +21,7 @@
 //! horizontal uncompressed bands.
 
 use crate::common::*;
-use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, read_u16s};
+use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from, read_u16s};
 use flashraw_codecs::phaseone::{IiqLParams, decode_l_row, decode_s_row, unscramble_pairs};
 use flashraw_core::bits::{BitPumpMsb, BitPumpMsb32};
 use flashraw_core::tiff::{Tiff, tags};
@@ -282,6 +282,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
             meta.model = m.trim().to_string();
         }
     }
+    // Achromatic backs (IQ3 Achromatic, P45+ Achromatic...) have no colour filter array.
+    let achromatic = firmware.as_deref().is_some_and(|f| f.contains("Achromatic"));
     if let Some(f) = firmware {
         meta.firmware = Some(f);
     }
@@ -354,8 +356,13 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     let mut info = FrameInfo::new(w, h, 16);
     info.active_area = even_margins(visible);
     info.crop = info.active_area;
-    info.cfa = Some(cfa_at_origin(CfaPattern::RGGB, visible.x, visible.y));
-    info.layout = SensorLayout::Bayer;
+    if achromatic {
+        info.cfa = None;
+        info.layout = SensorLayout::Monochrome;
+    } else {
+        info.cfa = Some(cfa_at_origin(CfaPattern::RGGB, visible.x, visible.y));
+        info.layout = SensorLayout::Bayer;
+    }
     info.orientation = match dir.val(0x0100).map(|v| v & 3) {
         Some(1) => Orientation::from_exif(6),
         Some(2) => Orientation::from_exif(8),
@@ -410,6 +417,9 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         meta.set_extra("calibration_bytes", m);
     }
     meta.set_extra("iiq_format", format);
+    if let Some(t) = fallback_table(&meta.canonical_make, &meta.canonical_model) {
+        info.color_matrices = matrix_from(t);
+    }
     apply_db(
         &mut info,
         &meta,
@@ -839,7 +849,7 @@ mod tests {
 
     /// Build a minimal bare IIQ with an uncompressed (format 0) or IIQ L payload.
     fn build_iiq(w: u32, h: u32, format: u32, payload: &[u8], row_offsets: Option<&[u32]>) -> Vec<u8> {
-        let mut f = b"IIII\x00Raw".to_vec();
+        let mut f = b"IIIICwaR".to_vec();
         f.extend(0u32.to_le_bytes()); // dir offset placeholder
         let data_off = f.len() as u32;
         f.extend_from_slice(payload);
@@ -957,7 +967,7 @@ mod tests {
     #[test]
     fn pkts_parsing() {
         let mut d = Vec::new();
-        let mut pkt = |name: &str, payload: &[u8], d: &mut Vec<u8>| {
+        let pkt = |name: &str, payload: &[u8], d: &mut Vec<u8>| {
             d.extend(b"PKTS");
             d.extend(0u32.to_be_bytes());
             let mut n = name.as_bytes().to_vec();
