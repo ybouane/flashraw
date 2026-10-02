@@ -39,7 +39,7 @@ pub(crate) fn file_orientation(tiff: &Tiff) -> Orientation {
 
 /// As-shot multipliers (R, G, B, G2) → normalised white balance, rejecting the values
 pub(crate) fn wb_from_cam_mul(m: [f32; 4]) -> Option<WhiteBalance> {
-    if m[..3].iter().any(|&v| !(v > 0.001)) {
+    if m[..3].iter().any(|&v| v.is_nan() || v <= 0.001) {
         return None;
     }
     let min = m[..3].iter().copied().fold(f32::MAX, f32::min);
@@ -153,5 +153,63 @@ mod tests {
         assert_eq!(cfa_at_buffer_origin(CfaPattern::GRBG, 48, 29), CfaPattern::BGGR);
         let b = black_for_cfa(&CfaPattern::GRBG, 10, [1, 2, 3, 4]);
         assert_eq!(b.values, vec![12.0, 11.0, 14.0, 13.0]);
+    }
+}
+
+/// Test support: corpus access and malformed-input exercising for the vendor modules.
+#[cfg(test)]
+pub(crate) mod robustness {
+    use crate::common::OpenOptions;
+    use flashraw_core::{DecodeContext, Profiler, RawImage, Result};
+    use std::path::PathBuf;
+
+    /// A corpus sample (relative to the corpus root), if the corpus is available.
+    /// The root is `$FLASHRAW_CORPUS` or `<workspace>/corpus`.
+    pub fn corpus_file(rel: &str) -> Option<Vec<u8>> {
+        let root = std::env::var_os("FLASHRAW_CORPUS")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
+        std::fs::read(root.join(rel)).ok()
+    }
+
+    /// Open and fully decode `data`.
+    pub fn open_decode(data: &[u8]) -> Result<RawImage> {
+        let dec = crate::open(data, &OpenOptions::default())?;
+        let p = Profiler::new();
+        let ctx = DecodeContext::new(&p);
+        dec.decode(&ctx)
+    }
+
+    /// Truncate and corrupt `data` in many ways; every variant must return (any
+    /// result) without panicking. Returns how many variants were rejected with an error.
+    pub fn mutate(data: &[u8], seed: u64) -> usize {
+        let mut errors = 0;
+        let n = data.len();
+        // Truncations: inside the header, the metadata, and the payload.
+        for cut in [0, 8, 64, 512, 4096, n / 8, n / 3, n / 2, n - n / 10, n.saturating_sub(64)] {
+            if cut < n && open_decode(&data[..cut]).is_err() {
+                errors += 1;
+            }
+        }
+        // Byte corruption: sparse flips in the first 64 KiB (structures) and in the payload.
+        let mut x = seed | 1;
+        let mut rnd = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        for round in 0..8 {
+            let mut d = data.to_vec();
+            let region = if round % 2 == 0 { n.min(65536) } else { n };
+            for _ in 0..(4 + round * 4) {
+                let i = (rnd() as usize) % region.max(1);
+                d[i] = rnd() as u8;
+            }
+            if open_decode(&d).is_err() {
+                errors += 1;
+            }
+        }
+        errors
     }
 }

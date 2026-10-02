@@ -160,18 +160,22 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let mut cfa_visible: Option<CfaPattern> = None;
     if w == 4704 {
         // NX5, NX10, NX11, NX100
-        area = Rect::new(8, 8, w - 16, h - 8);
+        area = Rect::new(8, 8, w.saturating_sub(16), h.saturating_sub(8));
     } else if model_uc == "NX3000" {
         area = Rect::new(92, 38, 5456, 3634);
         cfa_visible = Some(CfaPattern::GRBG);
     } else if h == 3714 {
         // NX2000, NX300(M), NX30, NX U / Galaxy NX family
-        area = if w == 5600 { Rect::new(w - 5536, 18, 5536, h - 18) } else { Rect::new(0, 0, 5536, h - 18) };
+        area = if w == 5600 {
+            Rect::new(w.saturating_sub(5536), 18, 5536, h.saturating_sub(18))
+        } else {
+            Rect::new(0, 0, 5536, h.saturating_sub(18))
+        };
         cfa_visible = Some(CfaPattern::GRBG);
     } else if w == 5632 {
         // NX20, NX200, NX210, NX1000, NX1100: LSB-first 12-bit packing.
-        let left = 32 + bps;
-        area = Rect::new(left, 2, 5574 - left, 3694);
+        let left = 32 + bps.min(32);
+        area = Rect::new(left, 2, 5574u32.saturating_sub(left), 3694);
         if bps == 12 {
             if let Payload::Packed(s) = &mut payload {
                 s.flags = 80;
@@ -179,28 +183,28 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }
     } else if w == 5664 {
         // NX mini
-        area = Rect::new(96, 17, 5544, h - 17);
+        area = Rect::new(96, 17, 5544, h.saturating_sub(17));
         cfa_visible = Some(CfaPattern::GBRG);
     } else if w == 6496 {
         // NX1, NX500
         cfa_visible = Some(CfaPattern::GRBG);
     } else if model_uc == "EX1" {
-        let mut aw = w - 6;
-        let mut ah = h - 20;
+        let mut aw = w.saturating_sub(6);
+        let mut ah = h.saturating_sub(20);
         let mut top = 2;
         if aw > 3682 {
-            ah -= 10;
+            ah = ah.saturating_sub(10);
             aw -= 46;
             top = 8;
         }
         area = Rect::new(0, top, aw, ah);
         payload = Payload::Words(ByteOrder::Little, 0);
     } else if model_uc == "WB2000" {
-        let mut aw = w - 10;
-        let mut ah = h - 3;
+        let mut aw = w.saturating_sub(10);
+        let mut ah = h.saturating_sub(3);
         let mut top = 2;
         if aw > 3718 {
-            ah -= 28;
+            ah = ah.saturating_sub(28);
             aw -= 56;
             top = 8;
         }
@@ -359,5 +363,42 @@ impl SrwRaw<'_> {
             }
         }
         Ok(img)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nikon::conventions::robustness::{corpus_file, mutate, open_decode};
+
+    #[test]
+    fn masked_black_needs_data() {
+        let areas = [Rect::new(0, 0, 2, 2)];
+        assert!(masked_black_msb12(&[], 16, &areas).is_none());
+        // 4 samples of 0x101 per row (12-bit MSB packing: 10 11 01 10 11 01 ...).
+        let row: Vec<u8> = [0x10, 0x11, 0x01].repeat(8);
+        let data = [row.clone(), row].concat();
+        let b = masked_black_msb12(&data, 16, &areas).unwrap();
+        assert_eq!(b.values, vec![257.0; 4]);
+    }
+
+    /// One corpus sample per payload variant: originals decode, truncated/corrupted
+    /// copies never panic.
+    #[test]
+    fn malformed_inputs_do_not_panic() {
+        let samples = [
+            "Samsung/NX10/SAM_3630.SRW",
+            "Samsung/NX1000/_5169011.SRW",
+            "Samsung/NX300/nx300.SRW",
+            "Samsung/NX mini/SAM_0295.SRW",
+            "Samsung/NX500/SAM_2927.SRW",
+            "Samsung/EX1/SAM_5548.SRW",
+            "Samsung/EX2F/RAW_SAMSUNG_EX2F.SRW",
+        ];
+        for (i, s) in samples.iter().enumerate() {
+            let Some(data) = corpus_file(s) else { continue };
+            open_decode(&data).unwrap_or_else(|e| panic!("{s}: {e}"));
+            mutate(&data, i as u64 * 15485863 + 5);
+        }
     }
 }

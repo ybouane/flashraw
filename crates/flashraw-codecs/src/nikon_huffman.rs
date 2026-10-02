@@ -483,8 +483,8 @@ impl NikonMeta {
                 }
             }
         } else if ver0 != 0x46 && csize <= 0x4001 {
-            for i in 0..csize {
-                curve[i] = rd(pos + 2 * i)?;
+            for (i, c) in curve.iter_mut().enumerate().take(csize) {
+                *c = rd(pos + 2 * i)?;
             }
         }
         let split_row = if ver0 == 0x44 && (ver1 == 0x20 || ver1 == 0x40) { rd(562)? as usize } else { 0 };

@@ -193,7 +193,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         area = Rect::new(26, 34, 6224, 4160);
     }
     if w == 6112 && is_m("KP") {
-        area = Rect::new(54, 28, 6028, h - 28);
+        area = Rect::new(54, 28, 6028, h.saturating_sub(28));
     }
     if w == 7424 && is_m("645D") {
         area = Rect::new(48, 29, 7328, 5502);
@@ -201,7 +201,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     if is_m("K-1") || is_m("K-1 MARK II") {
         area.y = 18;
-        area.height = h - 18;
+        area.height = h.saturating_sub(18);
         if w == 7392 {
             area.x = 6;
             area.width = 7376;
@@ -301,5 +301,37 @@ impl PefRaw<'_> {
             }
         }
         Ok(img)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nikon::conventions::robustness::{corpus_file, mutate, open_decode};
+
+    #[test]
+    fn iso_codes() {
+        assert_eq!(pentax_iso(6), 100);
+        assert_eq!(pentax_iso(18), 1600);
+        assert_eq!(pentax_iso(400), 400);
+        assert_eq!(pentax_iso(1), 0);
+    }
+
+    /// One corpus sample per payload variant: originals decode, truncated/corrupted
+    /// copies never panic.
+    #[test]
+    fn malformed_inputs_do_not_panic() {
+        let samples = [
+            "Pentax/K10D/_IGP7284.PEF",
+            "Pentax/K100D/IMGP1754.PEF",
+            "Pentax/ist D/pentax.PEF",
+            "Pentax/K-3 Mark III Monochrome/K3III.PEF",
+            "SAMSUNG TECHWIN/GX-1L/SG1L5458.PEF",
+        ];
+        for (i, s) in samples.iter().enumerate() {
+            let Some(data) = corpus_file(s) else { continue };
+            open_decode(&data).unwrap_or_else(|e| panic!("{s}: {e}"));
+            mutate(&data, i as u64 * 104729 + 3);
+        }
     }
 }

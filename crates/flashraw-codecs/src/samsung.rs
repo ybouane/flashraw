@@ -84,8 +84,8 @@ pub fn decode_v0(src: &[u8], row_offsets: &[u32], width: usize, height: usize, o
     }
     let max_index = width * (height + 7);
     let raw_len = width * height;
-    for row in 0..height {
-        let mut bits = Ph1Bits::new(src, row_offsets[row] as usize);
+    for (row, &row_offset) in row_offsets.iter().enumerate().take(height) {
+        let mut bits = Ph1Bits::new(src, row_offset as usize);
         let mut len = [if row < 2 { 7i32 } else { 4 }; 4];
         let mut col = 0usize;
         while col < width {

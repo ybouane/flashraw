@@ -1,0 +1,2 @@
+# FORMAT	MODE	COMPRESSION	STATUS	NOTES
+NEF	high-efficiency	TicoRAW (JPEG XS based)	unsupported	detected; decode returns UnsupportedCompression (proprietary codec)

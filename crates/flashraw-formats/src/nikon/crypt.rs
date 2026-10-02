@@ -1,7 +1,7 @@
 //! Nikon makernote "encryption" (a byte-wise XOR keystream).
 //!
-//! Several makernote blocks (ColorBalance 0x97 version 2xx, LensData 0x98 version
-//! > 200, ShotInfo 0x91) are obfuscated with a keystream derived from the camera
+//! Several makernote blocks (ColorBalance 0x97 version 2xx, LensData 0x98 versions
+//! above 200, ShotInfo 0x91) are obfuscated with a keystream derived from the camera
 //! serial number (tag 0x1D) and the shutter count (tag 0xA7). The two substitution
 //! tables are fixed constants of the format.
 

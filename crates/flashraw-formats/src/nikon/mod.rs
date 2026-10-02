@@ -28,7 +28,6 @@ use flashraw_codecs::nikon_packed::{self, PackedSpec};
 use flashraw_codecs::packed::{self, PackedLayout};
 use flashraw_core::tiff::{Tiff, tags};
 use flashraw_core::*;
-use makernote::MakerNote;
 use conventions::{file_orientation, select_raw_ifd, wb_from_cam_mul};
 use std::sync::Arc;
 
@@ -124,7 +123,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     } else {
         match compression {
             34713 => {
-                if (w64 + 9) / 10 * 16 * h64 == b64 {
+                if w64.div_ceil(10) * 16 * h64 == b64 {
                     packed_flags = Some(1);
                     Payload::Packed(PackedSpec { width, height, bits: 12, flags: 1, field2_offset: None })
                 } else if w64 * h64 * 3 == b64 * 2 {
@@ -136,7 +135,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
                 } else if w64 * h64 * 2 == b64 {
                     Payload::Words { order: ByteOrder::Big, shift: 4 }
                 } else if (w64 * 3 / 2).div_ceil(16) * 16 * h64 == b64 {
-                    Payload::PaddedLsb { bits: 12, row_stride: ((width * 3 / 2) + 15) / 16 * 16 }
+                    Payload::PaddedLsb { bits: 12, row_stride: (width * 3 / 2).div_ceil(16) * 16 }
                 } else if src.get(..4) == Some(&[0xff, 0x10, 0xff, 0x50]) {
                     // JPEG XS SOC + CAP markers: Nikon "high efficiency" (TicoRAW).
                     Payload::HighEfficiency
@@ -184,44 +183,44 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     if model_matches("D1") {
         wb_is_analog = true;
     } else if model_matches("D1X") {
-        geo.width -= 4;
+        geo.width = geo.width.saturating_sub(4);
     } else if ["D40X", "D60", "D80", "D3000"].iter().any(|m| model_matches(m)) {
-        geo.height -= 3;
-        geo.width -= 4;
+        geo.height = geo.height.saturating_sub(3);
+        geo.width = geo.width.saturating_sub(4);
     } else if ["D3", "D3S", "D700"].iter().any(|m| model_matches(m)) {
-        geo.width -= 4;
+        geo.width = geo.width.saturating_sub(4);
         geo.left = 2;
     } else if model_matches("D3100") {
-        geo.width -= 28;
+        geo.width = geo.width.saturating_sub(28);
         geo.left = 6;
     } else if model_matches("D5000") || model_matches("D90") {
-        geo.width -= 42;
+        geo.width = geo.width.saturating_sub(42);
     } else if ["D5100", "D7000", "COOLPIX A"].iter().any(|m| model_matches(m)) {
-        geo.width -= 44;
+        geo.width = geo.width.saturating_sub(44);
     } else if ["D3200", "D600", "D610"].iter().any(|m| model_matches(m)) || model_uc.starts_with("D800") {
-        geo.width -= 46;
+        geo.width = geo.width.saturating_sub(46);
     } else if model_matches("D4") || model_matches("DF") {
-        geo.width -= 52;
+        geo.width = geo.width.saturating_sub(52);
         geo.left = 2;
     } else if model_matches("D500") {
     } else if model_uc.starts_with("D40") || model_uc.starts_with("D50") || model_uc.starts_with("D70") {
-        geo.width -= 1;
+        geo.width = geo.width.saturating_sub(1);
     } else if model_matches("D100") {
         if packed_flags.is_some_and(|f| f != 0) {
-            geo.width += 3;
+            geo.width = geo.width.saturating_add(3);
             geo.raw_width = geo.width + 3;
         }
     } else if model_matches("D200") {
         geo.left = 1;
-        geo.width -= 4;
+        geo.width = geo.width.saturating_sub(4);
         cfa_override = Some(CfaPattern::GRBG);
     } else if model_uc.starts_with("D2H") {
         geo.left = 6;
-        geo.width -= 14;
+        geo.width = geo.width.saturating_sub(14);
     } else if model_uc.starts_with("D2X") {
-        geo.width -= if geo.width == 3264 { 32 } else { 8 };
+        geo.width = geo.width.saturating_sub(if geo.width == 3264 { 32 } else { 8 });
     } else if model_uc.starts_with("D300") {
-        geo.width -= 32;
+        geo.width = geo.width.saturating_sub(32);
     } else if raw_width_4032 {
         // P7700, P7800, P330, P340
         if model_uc == "COOLPIX P7700" || model_uc == "COOLPIX P7800" {
@@ -248,7 +247,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             }
         }
     } else if model_uc.starts_with("1 ") {
-        geo.height -= 2;
+        geo.height = geo.height.saturating_sub(2);
     } else if model_uc.starts_with('E') {
         // Coolpix E-series NEF: rows stored as two interlaced fields.
         if let Payload::Packed(s) = &mut payload {
@@ -256,12 +255,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }
     }
     if geo.left % 2 == 1 {
-        geo.left += 1;
-        geo.width -= 1;
+        geo.left = geo.left.saturating_add(1);
+        geo.width = geo.width.saturating_sub(1);
     }
     if geo.top % 2 == 1 {
-        geo.top += 1;
-        geo.height -= 1;
+        geo.top = geo.top.saturating_add(1);
+        geo.height = geo.height.saturating_sub(1);
     }
 
     // Final payload description with the (possibly widened) buffer.
@@ -285,7 +284,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     };
     meta.canonical_make = "Nikon".into();
     meta.canonical_model = table_model_name(&model);
-    let mode = mode_name(&payload, bps, &mn);
+    let mode = mode_name(&payload, bps);
     let cam = db_lookup(&mut meta, &mode);
     let fallback = flashraw_camera_db::find_matrix("Nikon", &table_model_name(&model));
 
@@ -424,12 +423,10 @@ fn table_model_name(model: &str) -> String {
 }
 
 /// Camera-db mode string for the payload.
-fn mode_name(p: &Payload, bps: u32, mn: &MakerNote) -> String {
+fn mode_name(p: &Payload, bps: u32) -> String {
     match p {
         Payload::Huffman { .. } => format!("{bps}bit-compressed"),
-        Payload::Ycbcr => match mn.nef_compression {
-            _ => "sNEF".into(),
-        },
+        Payload::Ycbcr => "sNEF".into(),
         Payload::Coolscan { .. } => "coolscan".into(),
         _ => format!("{bps}bit-uncompressed"),
     }
@@ -628,5 +625,65 @@ mod tests {
     fn ycc_neutral_grey() {
         let [r, g, b] = ycc_to_rgb([1000, 2048, 2048]);
         assert!(r > 0.0 && (r - g).abs() < 0.2 && (b - g).abs() < 0.2);
+    }
+
+    /// One corpus sample per payload variant: the original must decode, and truncated
+    /// or corrupted copies must fail cleanly (or decode), never panic.
+    #[test]
+    fn malformed_inputs_do_not_panic() {
+        use conventions::robustness::{corpus_file, mutate, open_decode};
+        let samples = [
+            "Nikon/D1/RAW_NIKON_D1.NEF",
+            "Nikon/D100/DSC_2376.NEF",
+            "Nikon/E5400/RAW_NIKON_E5400.NEF",
+            "Nikon/D40/DSC_1842.NEF",
+            "Nikon/D50/DSC_5155.NEF",
+            "Nikon/D3/JD1_8205.NEF",
+            "Nikon/D3/JD1_8207.NEF",
+            "Nikon/D4S/FU9_3802.NEF",
+            "Nikon/D4S/FU9_3807.NEF",
+            "Nikon/Coolpix P7000/RAW_NIKON_P7000.NRW",
+            "Nikon/Coolpix P330/DSCN0138.NRW",
+            "Nikon/Z 6/DSC_0753.NEF",
+            "Nikon/Nikon COOLSCAN V ED/Image21-600pixels.nef",
+        ];
+        let mut tested = 0;
+        for (i, s) in samples.iter().enumerate() {
+            let Some(data) = corpus_file(s) else { continue };
+            open_decode(&data).unwrap_or_else(|e| panic!("{s}: {e}"));
+            mutate(&data, i as u64 * 7919 + 1);
+            tested += 1;
+        }
+        // High-efficiency files are recognised but rejected with a clear error.
+        if let Some(d) = corpus_file("NIKON CORPORATION/NIKON Z50_2/DSC_0062_DX_HE.NEF") {
+            let e = open_decode(&d).unwrap_err();
+            assert_eq!(e.kind(), "UnsupportedCompression");
+        }
+        eprintln!("nikon robustness: {tested} samples");
+    }
+
+    #[test]
+    fn synthetic_nef_without_payload_is_rejected() {
+        // A NIKON TIFF whose raw IFD points past the end of the file.
+        let mut d = b"MM\0*\0\0\0\x08".to_vec();
+        let entries: [(u16, u16, u32, u32); 7] = [
+            (0x100, 4, 1, 4000),
+            (0x101, 4, 1, 3000),
+            (0x102, 3, 1, 12 << 16),
+            (0x103, 3, 1, 34713 << 16),
+            (0x10f, 2, 4, u32::from_be_bytes(*b"NIK\0")),
+            (0x111, 4, 1, 1_000_000),
+            (0x117, 4, 1, 100),
+        ];
+        d.extend((entries.len() as u16).to_be_bytes());
+        for (tag, typ, cnt, val) in entries {
+            d.extend(tag.to_be_bytes());
+            d.extend(typ.to_be_bytes());
+            d.extend(cnt.to_be_bytes());
+            d.extend(val.to_be_bytes());
+        }
+        d.extend([0u8; 4]);
+        let tiff = Tiff::parse(&d).unwrap();
+        assert!(open_tiff(&d, tiff, &OpenOptions::default()).is_err());
     }
 }
