@@ -84,15 +84,18 @@ high-resolution shots (seams verified continuous).
 - Malformed input: truncated/corrupted RW2 files (synthetic and corpus) return errors,
   never panic (`panasonic::tests`, codec tests, mutation runs over the corpus).
 
-## Performance (corpus medians during the 4-job compat run, 16 cores)
 
-| Format | FlashRaw | reference |
-|---|---:|---:|
-| 4 | 9 ms | 139 ms |
-| 5 | 3 ms | 26 ms |
-| 6 | 10 ms | 89 ms |
-| 7 | 8 ms | 38 ms |
-| 8 | 129 ms | 405 ms |
 
-Format 8 is limited by its strip count (2–3 strips per image on most bodies; each
-strip is a single sequential bit stream). A 100 MP G9 II file takes ~0.77 s CPU
+| File | FlashRaw | reference | Speed-up |
+|---|---:|---:|---:|
+| D-LUX (Typ 109) 4:3, format 4, 12.9 MP | 4.3 ms | 153 ms | 36x |
+| DC-S1R, format 6, 47.6 MP | 12.8 ms | 319 ms | 25x |
+| DC-GH6 4:3, format 8, 25.2 MP | 74 ms | 256 ms | 3.5x |
+| DC-G9M2 high-res, format 8, 100 MP | 194 ms | 1226 ms | 6.3x |
+
+6 10 vs 89 ms, 7 8 vs 38 ms, 8 129 vs 405 ms.
+
+Formats 4–7 are row-parallel and memory bound. Format 8 is limited by its strip count
+(2–3 strips per image on most bodies; each strip is one sequential bit stream with a
+row-to-row prediction chain); per thread it decodes ~6 ns/pixel (L1-sized Huffman
+table, one bit-buffer refill per sample).

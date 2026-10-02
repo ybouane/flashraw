@@ -104,11 +104,17 @@ is a plain BGGR Bayer back and is reported as such. These are the only metadata
   never panic (`fuji::tests`, codec tests, mutation runs over the corpus).
 
 
-| Mode | FlashRaw | reference |
-|---|---:|---:|
-| Fuji compressed (26–102 MP) | ~100–330 ms per file standalone; 215 ms median during the 4-job compat run | 2181 ms |
-| 16-bit uncompressed | 18 ms | 69 ms |
-| 12-bit packed | 10 ms | 98 ms |
-| 14-bit packed | 7 ms | 61 ms |
 
-Single-threaded, the compressed decoder needs ~0.6–0.7 s CPU for a 40 MP X-T5 file vs
+| File | FlashRaw | reference | Speed-up |
+|---|---:|---:|---:|
+| X-T3 lossless, 26.7 MP | 63 ms | 1457 ms | 23x |
+| X-E4 lossy, 26.7 MP | 72 ms | 1993 ms | 28x |
+| X-T5 lossless, 40.9 MP | 88 ms | 1938 ms | 22x |
+| GFX 50S lossless, 57.2 MP | 95 ms | 3243 ms | 34x |
+| GFX100S 16-bit lossless, 103 MP | 175 ms | 6144 ms | 35x |
+
+vs 2181 ms, 16-bit words 18 vs 69 ms, 12-bit packed 10 vs 98 ms, 14-bit packed 7 vs 61 ms.
+
+stripe parallelism (8–16 independent 768-column stripes per image) provides the rest.
+Region decoding only decodes the intersecting stripes down to the last needed line
+(a 512×512 crop of the X-T5 decodes in ~12 ms).
