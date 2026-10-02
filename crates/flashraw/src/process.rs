@@ -282,6 +282,28 @@ impl Kernel<'_> {
         let (w, cpp) = (img.width as usize, img.cpp as usize);
         let (ox, oy) = self.origin;
         let has_deltas = self.calibs.iter().any(|c| !c.row_deltas.is_empty() || !c.col_deltas.is_empty());
+        if !has_deltas && cpp > 1 && self.calibs.iter().all(|c| c.pw == 1 && c.ph == 1) {
+            // Interleaved channels with constant per-channel calibration.
+            let blk: Vec<f32> = self.calibs.iter().map(|c| c.black[0]).collect();
+            let scl: Vec<f32> = self.calibs.iter().map(|c| c.scale[0]).collect();
+            match &img.data {
+                PixelData::U16(d) => {
+                    for (o, px) in out.chunks_exact_mut(cpp).zip(d[y * w * cpp..(y + 1) * w * cpp].chunks_exact(cpp)) {
+                        for c in 0..cpp {
+                            o[c] = (px[c] as f32 - blk[c]) * scl[c];
+                        }
+                    }
+                }
+                PixelData::F32(d) => {
+                    for (o, px) in out.chunks_exact_mut(cpp).zip(d[y * w * cpp..(y + 1) * w * cpp].chunks_exact(cpp)) {
+                        for c in 0..cpp {
+                            o[c] = (px[c] - blk[c]) * scl[c];
+                        }
+                    }
+                }
+            }
+            return;
+        }
         if has_deltas || cpp != 1 {
             for (i, o) in out.iter_mut().enumerate().take(w * cpp) {
                 let v = match &img.data {
@@ -858,6 +880,34 @@ mod tests {
         info.masked_areas = vec![Rect::new(1, 0, 3, 6), Rect::new(0, 4, 10, 2)];
         let b = black_from_masked(&img, &info).unwrap();
         assert_eq!(b.values, vec![100.0, 110.0, 120.0, 130.0]);
+    }
+
+    #[test]
+    fn multichannel_fast_normalisation_matches_reference() {
+        let (w, h) = (7u32, 3u32);
+        let mut img = RawImage::new_u16(w, h, 3, &Limits::default()).unwrap();
+        for (i, v) in img.u16_mut().iter_mut().enumerate() {
+            *v = (i * 997 % 4000) as u16;
+        }
+        let mut info = FrameInfo::new(w, h, 12);
+        info.cfa = None;
+        info.cpp = 3;
+        info.layout = SensorLayout::Linear;
+        info.black_level =
+            BlackLevel { rows: 1, cols: 1, samples: 3, values: vec![10.0, 20.0, 30.0], ..Default::default() };
+        info.white_level = WhiteLevel { values: vec![4000, 3900, 3800] };
+        let p = DevelopParams::new(&info, Demosaic::Bilinear, Rect::full(w, h));
+        let k = kernel(&img, &info, (0, 0), &p, Rect::full(w, h));
+        let mut row = vec![0f32; (w * 3) as usize];
+        for y in 0..h as usize {
+            k.normalize_row(y, &mut row);
+            for x in 0..w as usize {
+                for c in 0..3 {
+                    let want = k.calibs[c].norm(img.sample(x as u32, y as u32, c as u32), x, y);
+                    assert!((row[x * 3 + c] - want).abs() < 1e-6);
+                }
+            }
+        }
     }
 
     #[test]

@@ -75,10 +75,15 @@ impl<'a> Ph1Bits<'a> {
     }
 }
 
-/// Decode Samsung V0 (compression 32770 with a row offset table).
-///
-/// `row_offsets[row]` is the byte offset of each row's data within `src`.
-pub fn decode_v0(src: &[u8], row_offsets: &[u32], width: usize, height: usize, out: &mut [u16]) -> Result<()> {
+/// Sequential reference implementation of Samsung V0 (see [`decode_v0`]); kept as the
+/// specification the two-phase decoder is tested against.
+pub fn decode_v0_reference(
+    src: &[u8],
+    row_offsets: &[u32],
+    width: usize,
+    height: usize,
+    out: &mut [u16],
+) -> Result<()> {
     if out.len() < width * height || row_offsets.len() < height {
         return Err(Error::InvalidArgument("samsung v0: buffer/offsets too small".into()));
     }
@@ -144,6 +149,156 @@ pub fn decode_v0(src: &[u8], row_offsets: &[u32], width: usize, height: usize, o
             }
             col += 16;
         }
+    }
+    // Undo the 2x2 transposition of each even/odd row pair.
+    let mut row = 0;
+    while row + 1 < height {
+        let mut col = 0;
+        while col + 1 < width {
+            out.swap(row * width + col + 1, (row + 1) * width + col);
+            col += 2;
+        }
+        row += 2;
+    }
+    Ok(())
+}
+
+/// Per-sample reconstruction rule produced by the V0 parser.
+#[derive(Clone, Copy, Default)]
+struct V0Op {
+    /// Residual to add to the prediction.
+    diff: i32,
+    /// 0 = left neighbour of the block, 1 = rows above, 2 = constant 128, 3 = skipped.
+    kind: u8,
+}
+
+/// Parse one V0 row (bitstream only; no pixel values needed) into per-column ops.
+fn parse_v0_row(src: &[u8], offset: usize, row: usize, width: usize, max_index: usize, ops: &mut [V0Op]) {
+    let mut bits = Ph1Bits::new(src, offset);
+    let mut len = [if row < 2 { 7i32 } else { 4 }; 4];
+    let mut col = 0usize;
+    while col < width {
+        let dir = bits.get(1);
+        let mut op = [0u32; 4];
+        for o in op.iter_mut() {
+            *o = bits.get(2);
+        }
+        for c in 0..4 {
+            match op[c] {
+                3 => len[c] = bits.get(4) as i32,
+                2 => len[c] -= 1,
+                1 => len[c] += 1,
+                _ => {}
+            }
+        }
+        for c in (0..16).step_by(2).chain((1..16).step_by(2)) {
+            let i = len[((c & 1) << 1) | (c >> 3)];
+            // a skipped sample consumes no residual bits.
+            let dest = row * width + col + c;
+            let src_idx: Option<usize> = if dir != 0 {
+                let up = if c & 1 == 0 { 1 } else { 2 };
+                row.checked_sub(up).map(|r| r * width + col + c)
+            } else if col > 0 {
+                Some(row * width + col - if c & 1 == 0 { 2 } else { 1 })
+            } else {
+                None
+            };
+            let kind = match src_idx {
+                Some(s) if s < max_index && dest < max_index => {
+                    if dir != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Some(_) => 3,
+                None if dir != 0 => 3,
+                None => 2,
+            };
+            if kind == 3 {
+                if col + c < ops.len() {
+                    ops[col + c] = V0Op { diff: 0, kind };
+                }
+                continue;
+            }
+            let d = if i > 0 {
+                let i = i.min(32) as u32;
+                let v = bits.get(i);
+                ((v << (32 - i)) as i32) >> (32 - i)
+            } else {
+                0
+            };
+            if col + c < ops.len() {
+                ops[col + c] = V0Op { diff: d, kind };
+            }
+        }
+        col += 16;
+    }
+}
+
+/// Decode Samsung V0 (compression 32770 with a row offset table).
+///
+/// `row_offsets[row]` is the byte offset of each row's data within `src`. Rows'
+/// bitstreams are independent, but prediction reads reconstructed pixels of the rows
+/// above, so decoding runs in two phases per band of rows: parallel bitstream parsing
+/// into residuals, then a cheap sequential reconstruction. Output is identical to
+/// [`decode_v0_reference`].
+pub fn decode_v0(src: &[u8], row_offsets: &[u32], width: usize, height: usize, out: &mut [u16]) -> Result<()> {
+    decode_v0_with(src, row_offsets, width, height, out, true)
+}
+
+/// [`decode_v0`] with explicit control over parallel parsing.
+pub fn decode_v0_with(
+    src: &[u8],
+    row_offsets: &[u32],
+    width: usize,
+    height: usize,
+    out: &mut [u16],
+    parallel: bool,
+) -> Result<()> {
+    if out.len() < width * height || row_offsets.len() < height {
+        return Err(Error::InvalidArgument("samsung v0: buffer/offsets too small".into()));
+    }
+    let max_index = width * (height + 7);
+    let raw_len = width * height;
+    let cols = width.div_ceil(16) * 16;
+    const BAND: usize = 64;
+    let mut row0 = 0usize;
+    while row0 < height {
+        let rows: Vec<usize> = (row0..(row0 + BAND).min(height)).collect();
+        let parsed: Vec<Vec<V0Op>> = flashraw_core::par::map(rows, parallel, |row| {
+            let mut ops = vec![V0Op::default(); cols];
+            parse_v0_row(src, row_offsets[row] as usize, row, width, max_index, &mut ops);
+            ops
+        });
+        for (k, ops) in parsed.iter().enumerate() {
+            let row = row0 + k;
+            let mut col = 0usize;
+            while col < width {
+                for c in 0..16 {
+                    let dest = row * width + col + c;
+                    let op = ops[col + c];
+                    let pred = match op.kind {
+                        1 => {
+                            let up = if c & 1 == 0 { 1 } else { 2 };
+                            let s = (row - up) * width + col + c;
+                            if s < raw_len { out[s] as i32 } else { 0 }
+                        }
+                        0 => {
+                            let s = row * width + col - if c & 1 == 0 { 2 } else { 1 };
+                            if s < raw_len { out[s] as i32 } else { 0 }
+                        }
+                        2 => 128,
+                        _ => continue,
+                    };
+                    if dest < raw_len {
+                        out[dest] = (op.diff.wrapping_add(pred)) as u16;
+                    }
+                }
+                col += 16;
+            }
+        }
+        row0 += BAND;
     }
     // Undo the 2x2 transposition of each even/odd row pair.
     let mut row = 0;
@@ -341,6 +496,35 @@ mod tests {
         let mut out = vec![0u16; width * height];
         decode_v0(&src, &offsets, width, height, &mut out).unwrap();
         assert!(out.iter().all(|&v| v == 128));
+    }
+
+    #[test]
+    fn v0_two_phase_matches_reference() {
+        let mut x: u64 = 0x1234_5678_9abc_def1;
+        for (width, height) in [(32usize, 6usize), (48, 9), (100, 13), (16, 2)] {
+            let src: Vec<u8> = (0..width * height * 8 + 64)
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    x as u8
+                })
+                .collect();
+            let row_bytes = width * 4;
+            let offsets: Vec<u32> = (0..height as u32).map(|r| r * row_bytes as u32).collect();
+            let mut a = vec![0u16; width * height];
+            let mut b = vec![7u16; width * height];
+            let mut c = vec![7u16; width * height];
+            decode_v0_reference(&src, &offsets, width, height, &mut a).unwrap();
+            // Untouched samples keep their initial value in both; normalise via a zeroed buffer.
+            let mut b0 = vec![0u16; width * height];
+            decode_v0_with(&src, &offsets, width, height, &mut b0, true).unwrap();
+            let mut c0 = vec![0u16; width * height];
+            decode_v0_with(&src, &offsets, width, height, &mut c0, false).unwrap();
+            assert_eq!(a, b0, "{width}x{height} parallel");
+            assert_eq!(a, c0, "{width}x{height} sequential");
+            let _ = (&mut b, &mut c);
+        }
     }
 
     #[test]

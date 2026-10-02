@@ -354,9 +354,9 @@ impl SrwRaw<'_> {
         let mut img = RawImage::new_u16(w as u32, h as u32, 1, &ctx.limits)?;
         let out = img.u16_mut();
         match &self.payload {
-            Payload::V0 { row_offsets } => {
-                ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v0(self.src, row_offsets, w, h, out))?
-            }
+            Payload::V0 { row_offsets } => ctx
+                .profiler
+                .time(Stage::EntropyDecode, || codec::decode_v0_with(self.src, row_offsets, w, h, out, ctx.parallel))?,
             Payload::V1 => {
                 ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v1(self.src, w, h, out))?;
             }
