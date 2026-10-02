@@ -234,7 +234,7 @@ pub(crate) mod robustness {
         let ctx = DecodeContext::new(&p);
         let full = dec.decode(&ctx).expect("decode");
         let (w, h) = (full.width, full.height);
-        for r in [Rect::new(w / 3 | 1, h / 4 | 1, w / 3, h / 5), Rect::new(0, 0, w, 3), Rect::new(w - 7, h - 5, 7, 5)] {
+        for r in [Rect::new((w / 3) | 1, (h / 4) | 1, w / 3, h / 5), Rect::new(0, 0, w, 3), Rect::new(w - 7, h - 5, 7, 5)] {
             let got = dec.decode_region(&ctx, r).expect("region");
             assert_eq!(got, full.crop(r).unwrap(), "region {r}");
         }
