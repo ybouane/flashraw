@@ -377,11 +377,22 @@ fn decode_region(
             unpack_rows(src, w, height as usize, 12, w * 3 / 2, order, region, 1, ctx)
         }
         Payload::Arq => {
-            let mut img = unpack_rows(src, w * 4, height as usize, 16, w * 8, PackOrder::LsbBytes, region, 4, ctx)?;
-            par::for_each_row_chunk(img.u16_mut(), 4 * 4096, 1, ctx.parallel, |_, c| {
-                for px in c.chunks_exact_mut(4) {
-                    px.swap(2, 3);
-                }
+            check_rows(src, w * 8, height as usize, "ARQ")?;
+            let mut img = RawImage::new_u16(region.width, region.height, 4, &ctx.limits)?;
+            let rl = region.width as usize * 4;
+            ctx.profiler.time(Stage::Unpack, || {
+                par::for_each_row_chunk(img.u16_mut(), rl, 16, ctx.parallel, |first, chunk| {
+                    for (i, row) in chunk.chunks_mut(rl).enumerate() {
+                        let y = region.y as usize + first + i;
+                        let s = &src[y * w * 8 + region.x as usize * 8..];
+                        for (o, b) in row.chunks_exact_mut(4).zip(s.chunks_exact(8)) {
+                            o[0] = u16::from_le_bytes([b[0], b[1]]);
+                            o[1] = u16::from_le_bytes([b[2], b[3]]);
+                            o[2] = u16::from_le_bytes([b[6], b[7]]);
+                            o[3] = u16::from_le_bytes([b[4], b[5]]);
+                        }
+                    }
+                });
             });
             Ok(img)
         }

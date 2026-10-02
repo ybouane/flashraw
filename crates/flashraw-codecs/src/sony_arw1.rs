@@ -6,7 +6,6 @@
 //! the rightmost column to the leftmost; within a column the even rows come first,
 //! then the odd rows. The stream is inherently sequential.
 
-use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::{Error, Result};
 
 /// Prefix code as `(code_length << 8) | diff_length`, in code-assignment order: the
@@ -37,7 +36,30 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
         return Err(Error::InvalidArgument("ARW1 output buffer too small".into()));
     }
     let lut = lut();
-    let mut bits = BitPumpMsb::new(src);
+    // 8-bit prefix table: entry for codes of length <= 8, 0 when the code is longer.
+    let short: Vec<u16> = (0..256usize)
+        .map(|b| {
+            let e = lut[b << 7];
+            if (e >> 8) <= 8 { e } else { 0 }
+        })
+        .collect();
+    // Bit position into `src`; each sample peeks a 64-bit big-endian window (at
+    // least 57 valid bits: 15 code bits + up to 17 difference bits fit).
+    let mut pos = 0usize;
+    let peek = |pos: usize| -> u64 {
+        let byte = pos >> 3;
+        let w = match src.get(byte..byte + 8) {
+            Some(b) => u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
+            None => {
+                let mut b = [0u8; 8];
+                if let Some(t) = src.get(byte..) {
+                    b[..t.len().min(8)].copy_from_slice(&t[..t.len().min(8)]);
+                }
+                u64::from_be_bytes(b)
+            }
+        };
+        w << (pos & 7)
+    };
     let mut sum: i32 = 0;
     let mut bad = 0usize;
     // Row visiting order within a column: even rows, then odd rows (only when the
@@ -49,31 +71,54 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
         }
         v
     };
-    for col in (0..width).rev() {
-        for &row in &order {
-            bits.fill();
-            let e = lut[bits.peek_no_fill(15) as usize];
-            bits.skip_no_fill((e >> 8) as u32);
-            let len = (e & 0xff) as u32;
-            let diff = match len {
-                0 => 0,
-                16 => -32768,
-                _ => {
-                    let v = bits.get(len) as i32;
-                    if v & (1 << (len - 1)) == 0 { v - ((1 << len) - 1) } else { v }
+    let limit = (src.len() + 8) * 8;
+    // Columns are decoded into a small column-major block and transposed into the
+    // row-major output a block at a time: writing one column of a large image
+    // directly touches a different page for every row.
+    const BLOCK: usize = 32;
+    let rows_out = stored_rows.min(coded_rows);
+    let mut block = vec![0u16; BLOCK * rows_out];
+    let mut col_end = width;
+    while col_end > 0 {
+        let col_start = col_end.saturating_sub(BLOCK);
+        for col in (col_start..col_end).rev() {
+            let column = &mut block[(col - col_start) * rows_out..(col - col_start + 1) * rows_out];
+            for &row in &order {
+                let w = peek(pos);
+                // Codes of up to 8 bits resolve from the top byte (L1-resident table);
+                // longer codes are the rare "all leading zeros" region.
+                let e = match short[(w >> 56) as usize] {
+                    0 => lut[(w >> 49) as usize],
+                    e => e,
+                };
+                let clen = (e >> 8) as u32;
+                let len = (e & 0xff) as u32;
+                // Branch-free JPEG-style difference: `len` bits, negative when the top
+                // bit is clear; length 16 means -32768 with no difference bits.
+                let v = (((w << clen) >> 1) >> (63 - len)) as i32;
+                let half = (1i32 << len) >> 1;
+                let d = if v < half { v - ((1 << len) - 1) } else { v };
+                let is16 = len == 16;
+                let diff = if is16 { -32768 } else { d };
+                pos += (clen + if is16 { 0 } else { len }) as usize;
+                sum = sum.wrapping_add(diff);
+                bad += (sum >> 12 != 0) as usize;
+                if row < rows_out {
+                    column[row] = sum as u16;
                 }
-            };
-            sum = sum.wrapping_add(diff);
-            if sum >> 12 != 0 {
-                bad += 1;
             }
-            if row < stored_rows {
-                out[row * width + col] = sum as u16;
+            if pos > limit {
+                return Err(Error::corrupt(format!("ARW1 stream truncated at column {col}")));
             }
         }
-        if bits.exhausted() {
-            return Err(Error::corrupt(format!("ARW1 stream truncated at column {col}")));
+        let n = col_end - col_start;
+        for row in 0..rows_out {
+            let dst = &mut out[row * width + col_start..row * width + col_end];
+            for (k, d) in dst.iter_mut().enumerate().take(n) {
+                *d = block[k * rows_out + row];
+            }
         }
+        col_end = col_start;
     }
     // Real files never leave the 12-bit range; garbage input does so constantly.
     if bad > width * coded_rows / 64 {

@@ -50,6 +50,29 @@ impl SonyCipher {
     }
 }
 
+/// The first `n` key-stream words for `key`, generated in bulk.
+///
+/// The pad update is the recurrence `x[i] = x[i - 127] ^ x[i - 63]` over the
+/// sequence that starts with the 127 seeded words; the stream is `x[127..]`. Blocks
+/// of 63 words only depend on earlier blocks, so the loop vectorises.
+pub fn keystream(key: u32, n: usize) -> Vec<u32> {
+    let seed = SonyCipher::new(key);
+    let mut x = Vec::with_capacity(127 + n);
+    x.extend_from_slice(&seed.pad[..127]);
+    x.resize(127 + n, 0);
+    let mut i = 127;
+    while i < x.len() {
+        let end = (i + 63).min(x.len());
+        let (done, todo) = x.split_at_mut(i);
+        for (k, v) in todo[..end - i].iter_mut().enumerate() {
+            *v = done[i + k - 127] ^ done[i + k - 63];
+        }
+        i = end;
+    }
+    x.drain(..127);
+    x
+}
+
 /// Decrypt `data` in place with a fresh key stream.
 pub fn decrypt(data: &mut [u8], key: u32) {
     SonyCipher::new(key).apply(data);
@@ -74,6 +97,17 @@ mod tests {
         assert_eq!(a, b);
         decrypt(&mut a, 0x1234_5678);
         assert_eq!(a, orig);
+    }
+
+    #[test]
+    fn bulk_keystream_matches_cipher() {
+        for key in [0u32, 1, 0xdead_beef, 0x1234_5678] {
+            let ks = keystream(key, 5000);
+            let mut c = SonyCipher::new(key);
+            for (i, &k) in ks.iter().enumerate() {
+                assert_eq!(k, c.next_word(), "key {key:#x} word {i}");
+            }
+        }
     }
 
     #[test]

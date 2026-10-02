@@ -7,7 +7,7 @@
 //! key. Samples are big-endian 16-bit (14 significant bits). The F828 has an RGBE
 //! (emerald) four-colour filter array.
 
-use super::crypt::SonyCipher;
+use super::crypt::{SonyCipher, keystream};
 use crate::common::*;
 use flashraw_core::tiff::{Tiff, tags};
 use flashraw_core::*;
@@ -93,26 +93,34 @@ pub fn open<'a>(
     Ok(Box::new(dec))
 }
 
-/// Decrypt and unpack the SRF sample stream (sequential: one key stream for the frame).
+/// Decrypt and unpack the SRF samples. The key stream is generated in bulk
+/// (it is sequential but cheap); XOR and byte swapping then run per row in parallel.
 pub fn decode(src: &[u8], key: u32, width: u32, height: u32, ctx: &DecodeContext) -> Result<RawImage> {
     let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
     let w = width as usize;
-    let mut cipher = SonyCipher::new(key);
-    let mut row = vec![0u8; w * 2];
-    let mut bad = 0usize;
+    if w % 2 != 0 || src.len() < w * 2 * height as usize {
+        return Err(Error::corrupt("SRF: data truncated"));
+    }
+    let ks = ctx.profiler.time(Stage::Unpack, || keystream(key, w / 2 * height as usize));
+    let bad = std::sync::atomic::AtomicUsize::new(0);
     ctx.profiler.time(Stage::Unpack, || {
-        for (y, out) in img.u16_mut().chunks_exact_mut(w).enumerate() {
-            let s = src.get(y * w * 2..(y + 1) * w * 2).ok_or_else(|| Error::corrupt("SRF: data truncated"))?;
-            row.copy_from_slice(s);
-            cipher.apply(&mut row);
-            for (o, b) in out.iter_mut().zip(row.chunks_exact(2)) {
-                *o = u16::from_be_bytes([b[0], b[1]]);
-                bad += (*o >> 14 != 0) as usize;
+        par::for_each_row_chunk(img.u16_mut(), w, 64, ctx.parallel, |first, chunk| {
+            let mut nbad = 0;
+            for (i, out) in chunk.chunks_exact_mut(w).enumerate() {
+                let y = first + i;
+                let s = &src[y * w * 2..(y + 1) * w * 2];
+                let k = &ks[y * w / 2..(y + 1) * w / 2];
+                for ((o, b), &k) in out.chunks_exact_mut(2).zip(s.chunks_exact(4)).zip(k) {
+                    let v = u32::from_be_bytes([b[0], b[1], b[2], b[3]]) ^ k;
+                    o[0] = (v >> 16) as u16;
+                    o[1] = v as u16;
+                    nbad += (o[0] >> 14 != 0) as usize + (o[1] >> 14 != 0) as usize;
+                }
             }
-        }
-        Ok::<(), Error>(())
-    })?;
-    if bad > w * height as usize / 16 {
+            bad.fetch_add(nbad, std::sync::atomic::Ordering::Relaxed);
+        });
+    });
+    if bad.into_inner() > w * height as usize / 16 {
         return Err(Error::corrupt("SRF: decrypted samples out of range (wrong key or corrupt data)"));
     }
     Ok(img)
