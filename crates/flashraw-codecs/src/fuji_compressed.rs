@@ -580,7 +580,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     /// One coding pass over two colour lines `a` and `b`: even positions of both lines
     /// (decoded or interpolated per `rule_a`/`rule_b`), with odd positions lagging five
     /// even steps behind (they need the even neighbours on both sides).
-    #[inline(always)]
+    #[inline(never)]
     fn pass(&mut self, a: usize, b: usize, g: usize, rule_a: impl Fn(usize) -> Even, rule_b: impl Fn(usize) -> Even) {
         let lw = self.c.line_width;
         let (mut ep, mut op) = (0usize, 1usize);
@@ -637,6 +637,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         &mut self.lines[start..start + 2 * s + 2]
     }
 
+    #[inline(always)]
     fn interp_even(&mut self, line: usize, pos: usize) {
         let s = self.stride;
         let w = self.window(line, pos);
