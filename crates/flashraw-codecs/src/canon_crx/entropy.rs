@@ -446,14 +446,7 @@ fn line_rounded(
 }
 
 /// First line of a detail (wavelet high-pass) band.
-fn top_line_detail(
-    b: &mut CrxBits,
-    k: &mut u32,
-    s: &mut u32,
-    c: &mut [i32],
-    ks: &mut [i32],
-    w: usize,
-) -> Result<()> {
+fn top_line_detail(b: &mut CrxBits, k: &mut u32, s: &mut u32, c: &mut [i32], ks: &mut [i32], w: usize) -> Result<()> {
     c[0] = 0;
     let (mut o1, mut o2) = (0usize, 0usize);
     let mut len = w;

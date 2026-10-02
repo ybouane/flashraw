@@ -105,3 +105,15 @@ fn parallel_matches_sequential() {
     let b = dec.decode(&c).unwrap();
     assert_eq!(a.u16(), b.u16());
 }
+
+#[test]
+#[ignore]
+fn debug_makernote() {
+    let p = std::env::var("CR3").unwrap();
+    let data = std::fs::read(p).unwrap();
+    let c = Cr3::parse(&data).unwrap();
+    let t = Tiff::parse(c.cmt[2].unwrap()).unwrap();
+    let mn = CanonMakernote::parse(&t.ifds[0]);
+    eprintln!("{:x?}", t.ifds[0].entries.iter().map(|e| (e.tag, e.count)).collect::<Vec<_>>());
+    eprintln!("{mn:?}");
+}
