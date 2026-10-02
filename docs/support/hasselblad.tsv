@@ -1,0 +1,4 @@
+FORMAT	MODE	COMPRESSION	STATUS	NOTES
+FFF	multi-shot (4/6-shot)	-	unsupported	several samples per pixel; no sample
+FFF	Imacon/Flexcolor (Imacon tags 0xB4C3)	-	unsupported	Ixpress Imacon-tag container; no sample
+ARW	Hasselblad Lunar/Stellar/HV	sony	partial	delegated to the Sony decoder

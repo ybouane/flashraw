@@ -20,6 +20,7 @@ pub mod canon;
 pub mod fuji;
 pub mod hasselblad;
 pub mod kodak;
+pub mod medium;
 pub mod minolta;
 pub mod misc;
 pub mod nikon;
@@ -65,17 +66,27 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if phaseone::probe(data) {
         return phaseone::open(data, opts);
     }
+    if kodak::probe(data) {
+        return kodak::open(data, opts);
+    }
     if misc::probe(data) {
         return misc::open(data, opts);
     }
     let tiff = match Tiff::parse(data) {
         Ok(t) => t,
-        Err(_) => return misc::open_headerless(data, opts),
+        Err(_) => {
+            // Size-identified Kodak dumps first, then the generic header-less table.
+            return kodak::open_headerless(data, opts).unwrap_or_else(|| misc::open_headerless(data, opts));
+        }
     };
     let make = tiff.all_ifds().into_iter().find_map(|i| i.string(tags::MAKE)).unwrap_or_default();
     let brand = flashraw_camera_db::canonical_make(&make);
     if dng::is_dng(&tiff) {
         return dng::open(data, tiff, opts);
+    }
+    // Leaf MOS files often carry no Make tag; the PKTS metadata tag identifies them.
+    if tiff.find_entry(phaseone::TAG_LEAF_PKTS).is_some() {
+        return phaseone::open_tiff(data, tiff, opts);
     }
     match brand {
         "Canon" => canon::open_tiff(data, tiff, opts),
@@ -91,6 +102,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         "Panasonic" | "Leica" => panasonic::open_tiff(data, tiff, opts),
         "Fujifilm" => fuji::open_tiff(data, tiff, opts),
         "Sigma" => sigma::open_tiff(data, tiff, opts),
+        "Epson" => medium::epson::open_tiff(data, tiff, opts),
+        "Sinar" => medium::sinar::open_tiff(data, tiff, opts),
         _ => misc::open_tiff(data, tiff, opts),
     }
 }
@@ -124,12 +137,18 @@ pub fn detect(data: &[u8]) -> Option<RawFormat> {
     if phaseone::probe(data) {
         return Some(RawFormat::Iiq);
     }
+    if kodak::probe(data) {
+        return Some(RawFormat::Other);
+    }
     if misc::probe(data) {
         return Some(RawFormat::Other);
     }
     let tiff = Tiff::parse(data).ok()?;
     if dng::is_dng(&tiff) {
         return Some(RawFormat::Dng);
+    }
+    if tiff.find_entry(phaseone::TAG_LEAF_PKTS).is_some() {
+        return Some(RawFormat::Mos);
     }
     let make = tiff.all_ifds().into_iter().find_map(|i| i.string(tags::MAKE))?;
     Some(match flashraw_camera_db::canonical_make(&make) {

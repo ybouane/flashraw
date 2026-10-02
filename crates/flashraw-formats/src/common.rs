@@ -223,10 +223,12 @@ pub fn tiff_previews(data: &[u8], base: usize, tiff: &Tiff, orientation: Orienta
         {
             let (o, l) = s[0];
             let (w, h) = (ifd.width(), ifd.height());
-            if w > 0 && h > 0 && l >= (w * h * 3) as usize && base + o + l <= data.len() {
+            let need = (w as u64) * (h as u64) * 3;
+            let end = base.checked_add(o).and_then(|v| v.checked_add(l));
+            if w > 0 && h > 0 && (l as u64) >= need && end.is_some_and(|e| e <= data.len()) {
                 out.push(PreviewInfo {
-                    offset: (base + o) as u64,
-                    length: (w * h * 3) as u64,
+                    offset: (base + o) as u64, // checked above
+                    length: need,
                     width: w,
                     height: h,
                     encoding: PreviewEncoding::Rgb8,

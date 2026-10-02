@@ -1,0 +1,7 @@
+FORMAT	MODE	COMPRESSION	STATUS	NOTES
+IIQ	uncompressed scrambled (formats 1, 2)	uncompressed	experimental	key unscrambling implemented; no corpus sample
+IIQ	achromatic backs	phaseone	experimental	monochrome layout from firmware string; no corpus sample
+MOS	Leaf lossless JPEG	leaf	verified	Aptus 22/75, AFi-II 12 (incl. interleaved rows); restart intervals decoded in parallel
+MOS	Leaf uncompressed 16-bit	uncompressed	verified	Aptus 22
+MOS	Leaf banded uncompressed (leaf_hdr)	uncompressed	experimental	no corpus sample
+MOS	multi-shot (Sinar/Leaf 4-shot)	-	unsupported	several samples per pixel; no sample to validate
