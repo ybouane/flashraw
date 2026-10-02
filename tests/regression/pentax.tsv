@@ -1,0 +1,43 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+PENTAX/PENTAX K-r/IMGP4424.PEF	8638b64ca21ea94d	PEF	pentax-huffman
+Pentax/645D/645D2840.PEF	fa959f2c39584e51	PEF	pentax-huffman
+Pentax/645Z/IMGP2837.PEF	ae8bfa5c457848ef	PEF	pentax-huffman
+Pentax/K-1 Mark II/_IMG2388.PEF	0a4f1c01933623c1	PEF	pentax-huffman
+Pentax/K-1 Mark II/_IMG2393.PEF	1a7a50407e533ecb	PEF	pentax-huffman
+Pentax/K-1 Mark II/_K1I9780.PEF	6e2694ec5b4ba3bf	PEF	pentax-huffman
+Pentax/K-1 Mark II/_K1I9781.PEF	a751168dc41151b1	PEF	pentax-huffman
+Pentax/K-1 Mark II/_K1I9782.PEF	17a576544c459e7a	PEF	pentax-huffman
+Pentax/K-1 Mark II/_K1I9785.PEF	1f224e423073b33b	PEF	pentax-huffman
+Pentax/K-1/IMGP8550.PEF	df3ad5b4a0a4a1e1	PEF	pentax-huffman
+Pentax/K-1/IMGP8552.PEF	628d727e5a26cf70	PEF	pentax-huffman
+Pentax/K-3 II/IMGP0679.PEF	e402a845cc740472	PEF	pentax-huffman
+Pentax/K-3 Mark III Monochrome/K3III.PEF	6454265f579165c0	PEF	pentax-huffman
+Pentax/K-3 Mark III/IMGP9854.PEF	fa4f8811ee60b4d9	PEF	pentax-huffman
+Pentax/K-3 Mark III/IMGP9855.PEF	4878fcecd7c2eae9	PEF	pentax-huffman
+Pentax/K-3 Mark III/IMGP9856.PEF	c91393c6bd49a69c	PEF	pentax-huffman
+Pentax/K-3 Mark III/IMGP9863.PEF	e5eb22f6d4622974	PEF	pentax-huffman
+Pentax/K-3 Mark III/_IMG0115.PEF	4ea0a41ffd71a0b7	PEF	pentax-huffman
+Pentax/K-3/IMGP6917.PEF	0d370833edcf7224	PEF	pentax-huffman
+Pentax/K-5 II s/_JAK3781.PEF	686106d6786a920f	PEF	pentax-huffman
+Pentax/K-5 II/IMGP2033.PEF	b5591da56023f7ef	PEF	pentax-huffman
+Pentax/K-5/_MAR0544.PEF	2e9c5c0cb9717494	PEF	pentax-huffman
+Pentax/K-7/IMGP6298.PEF	2801977b298a9e11	PEF	pentax-huffman
+Pentax/K-70/IMGP6854.PEF	ad070022dbfb4cc6	PEF	pentax-huffman
+Pentax/K-S1/20210215_0110.PEF	0d52de7f8c6cec4e	PEF	pentax-huffman
+Pentax/K-S2/IMGP3369.PEF	5118a5d831b8169f	PEF	pentax-huffman
+Pentax/K-m/RAW_PENTAX_K-m.PEF	451708b5bc93fe93	PEF	pentax-huffman
+Pentax/K-x/IMGP6432.PEF	158de28c192d7b33	PEF	pentax-huffman
+Pentax/K100D Super/IMGP8038.PEF	c1779a26301a52a4	PEF	uncompressed
+Pentax/K100D/IMGP1754.PEF	2cf804e5757d1d1c	PEF	uncompressed
+Pentax/K10D/_IGP7284.PEF	c63a43e137784c28	PEF	pentax-huffman
+Pentax/K110D/2009.08.15-imgp3224.pef	c273870fda44d3f8	PEF	uncompressed
+Pentax/K2000/IMGP0251.PEF	adeb62ebf69735ef	PEF	pentax-huffman
+Pentax/K200D/IMGP2293.PEF	24771a085584d3c4	PEF	pentax-huffman
+Pentax/K20D/IMGP3335.PEF	4ef1b32e27238133	PEF	pentax-huffman
+Pentax/KF/IMGP0063.PEF	0006b0a3ad1345fe	PEF	pentax-huffman
+Pentax/KP/IMGP0237.PEF	3d9436fea9820c0f	PEF	pentax-huffman
+Pentax/ist D/pentax.PEF	95282820e0c36088	PEF	uncompressed
+Pentax/ist DL/IMGP0370.PEF	b1b87fecf1098f66	PEF	uncompressed
+Pentax/ist DL2/RAW_PENTAX_STAR_DL2.PEF	e6bb9e196d231b4d	PEF	uncompressed
+Pentax/ist DS/IMGP2333.pef	05ed70b9cb1da5f8	PEF	uncompressed
+SAMSUNG TECHWIN/GX-1L/SG1L5458.PEF	1d30f1f2c7b7d1d7	PEF	uncompressed
