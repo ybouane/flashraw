@@ -27,7 +27,7 @@
 
 use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::par::{self, GridWriter};
-use flashraw_core::{Error, Result};
+use flashraw_core::{Error, Rect, Result};
 
 /// Size of the stream header in bytes.
 pub const HEADER_SIZE: usize = 16;
@@ -159,40 +159,68 @@ impl<'a> FujiCompressed<'a> {
         self.blocks.iter().map(|b| (b.as_ptr() as usize - base.as_ptr() as usize, b.len())).collect()
     }
 
-    /// Decode into `out`, a row-major `width × height` buffer (`width >= header.width`,
-    /// `height >= header.height`). Stripes decode in parallel when `parallel`.
+    /// Decode into `out`, a row-major `width × height` buffer that must match the
+    /// stream's image size. Stripes decode in parallel when `parallel`.
     pub fn decode(&self, out: &mut [u16], width: u32, height: u32, colors: &ColorTile, parallel: bool) -> Result<()> {
         let h = &self.header;
-        if width < h.width || height < h.height || out.len() < width as usize * height as usize {
-            return Err(Error::InvalidArgument("Fuji compressed output buffer too small".into()));
+        if width != h.width || height != h.height {
+            return Err(Error::InvalidArgument("Fuji compressed output size does not match the stream".into()));
+        }
+        self.decode_region(out, Rect::new(0, 0, width, height), colors, parallel)
+    }
+
+    /// Decode only `region` (image coordinates) into `out` (`region.width × region.height`).
+    /// Only the stripes intersecting the region are decoded, and each stops after the
+    /// last 6-row line the region needs.
+    pub fn decode_region(&self, out: &mut [u16], region: Rect, colors: &ColorTile, parallel: bool) -> Result<()> {
+        let h = &self.header;
+        let (w, ht) = (region.width as usize, region.height as usize);
+        if out.len() < w * ht || region.right() > h.width || region.bottom() > h.height {
+            return Err(Error::InvalidArgument("Fuji compressed region outside the image or buffer too small".into()));
+        }
+        if region.is_empty() {
+            return Ok(());
         }
         let common = Common::new(h, &self.q_bases)?;
         let map = OutputMap::new(h, colors);
-        let grid = GridWriter::new(out, width, height, 1, (0, 0), h.block_size, height, width, height)
-            .ok_or_else(|| Error::InvalidArgument("invalid Fuji output grid".into()))?;
+        let grid = GridWriter::new(
+            out,
+            region.width,
+            region.height,
+            1,
+            (region.x, region.y),
+            h.block_size,
+            h.height,
+            h.width,
+            h.height,
+        )
+        .ok_or_else(|| Error::InvalidArgument("invalid Fuji output grid".into()))?;
+        let needed_lines = (region.bottom() as usize).div_ceil(6).min(h.lines as usize);
         let errors = std::sync::Mutex::new(None);
         par::for_each_index(self.blocks.len(), parallel, |b| {
+            // Stripes outside the region are not claimed (claim returns None).
+            let Some(mut tile) = grid.claim(b as u32, 0) else { return };
             let res = (|| {
-                let mut tile = grid.claim(b as u32, 0).ok_or_else(|| Error::corrupt("Fuji block outside image"))?;
-                let bw = (h.block_width(b as u32) as usize).min(tile.size().0);
+                let (tw, th) = tile.size();
+                let (sx, sy) = (tile.skip_x as usize, tile.skip_y as usize);
                 let q = self.q_bases.get(b).copied().unwrap_or(&[]);
-                let rows = tile.size().1;
                 let emit = |line: usize, lines: &[u16]| {
                     for r in 0..6 {
                         let y = line * 6 + r;
-                        if y >= rows {
-                            break;
+                        if y < sy || y - sy >= th {
+                            continue;
                         }
-                        let row = tile.row(y);
-                        for (dst, &src) in row[..bw].iter_mut().zip(map.idx[r].iter()) {
+                        let row = tile.row(y - sy);
+                        let idx = map.idx[r].get(sx..sx + tw).unwrap_or(&[]);
+                        for (dst, &src) in row.iter_mut().zip(idx.iter()) {
                             *dst = lines.get(src as usize).copied().unwrap_or(0);
                         }
                     }
                 };
                 if h.lossless {
-                    decode_block::<false>(&common, self.blocks[b], q, h.lines as usize, emit)
+                    decode_block::<false>(&common, self.blocks[b], q, needed_lines, emit)
                 } else {
-                    decode_block::<true>(&common, self.blocks[b], q, h.lines as usize, emit)
+                    decode_block::<true>(&common, self.blocks[b], q, needed_lines, emit)
                 }
             })();
             if let Err(e) = res {
@@ -879,6 +907,31 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn region_decode_matches_full_decode() {
+        // Two stripes (1536 wide), 12 rows.
+        let mut v = header(1, 16, 14, 12, 1536, 1536, 2);
+        let payload = vec![0xFFu8; 300_000];
+        v.extend((payload.len() as u32).to_be_bytes());
+        v.extend((payload.len() as u32).to_be_bytes());
+        v.extend([0u8; 8]);
+        v.extend_from_slice(&payload);
+        v.extend_from_slice(&payload);
+        let c = FujiCompressed::new(&v).unwrap();
+        let mut full = vec![0u16; 1536 * 12];
+        c.decode(&mut full, 1536, 12, &XT, true).unwrap();
+        for r in [Rect::new(700, 3, 100, 5), Rect::new(0, 0, 10, 1), Rect::new(800, 6, 736, 6)] {
+            let mut part = vec![0u16; (r.width * r.height) as usize];
+            c.decode_region(&mut part, r, &XT, true).unwrap();
+            for y in 0..r.height as usize {
+                let src = &full[(r.y as usize + y) * 1536 + r.x as usize..][..r.width as usize];
+                assert_eq!(&part[y * r.width as usize..][..r.width as usize], src, "{r:?} row {y}");
+            }
+        }
+        let mut small = vec![0u16; 4];
+        assert!(c.decode_region(&mut small, Rect::new(1530, 0, 10, 1), &XT, true).is_err());
     }
 
     #[test]

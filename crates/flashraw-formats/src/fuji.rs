@@ -708,6 +708,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         None => Vec::new(),
     };
     let fc = fc.map(Arc::new);
+    let fc2 = fc.clone();
     let r1 = raf.clone();
     let mut dec = SimpleDecoder::new(
         RawFormat::Raf,
@@ -724,6 +725,31 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
             Ok(img)
         }),
     );
+    // Region decoding touches only the stripes (compressed) or rows (uncompressed) needed.
+    let (r2, fc2) = (raf.clone(), fc2);
+    dec.region = Some(Box::new(move |ctx, rect| {
+        let full = Rect::full(r2.width, r2.height);
+        let rect =
+            rect.intersect(&full).ok_or_else(|| Error::InvalidArgument(format!("region {rect} outside image")))?;
+        match (&r2.layout, &fc2) {
+            (Layout::Compressed, Some(f)) => {
+                let mut img = RawImage::new_u16(rect.width, rect.height, 1, &ctx.limits)?;
+                ctx.profiler
+                    .time(Stage::EntropyDecode, || f.decode_region(img.u16_mut(), rect, &r2.colors, ctx.parallel))?;
+                Ok(img)
+            }
+            (Layout::Words { .. } | Layout::Packed { .. }, _) => {
+                let mut img = RawImage::new_u16(rect.width, rect.height, 1, &ctx.limits)?;
+                ctx.profiler.time(Stage::Unpack, || r2.unpack_region(img.u16_mut(), rect, ctx))?;
+                Ok(img)
+            }
+            _ => {
+                let mut img = RawImage::new_u16(r2.width, r2.height, 1, &ctx.limits)?;
+                r2.unpack(img.u16_mut(), ctx)?;
+                img.crop(rect)
+            }
+        }
+    }));
     dec.random_access = match raf.layout {
         Layout::Compressed => RandomAccess::Blocks,
         Layout::TiledWords { .. } => RandomAccess::Sequential,
@@ -788,6 +814,42 @@ fn fallback_table(make: &str, model: &str) -> Option<&'static flashraw_camera_db
 }
 
 impl Raf<'_> {
+    /// Bytes per stored row and the per-row unpacker of row-addressable layouts.
+    fn row_layout(&self) -> Option<(usize, u32, PackOrder)> {
+        match self.layout {
+            Layout::Words { order, stride } => Some((
+                stride * 2,
+                16,
+                if order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes },
+            )),
+            Layout::Packed { bits, order } => Some(((self.width as usize * bits as usize).div_ceil(8), bits, order)),
+            _ => None,
+        }
+    }
+
+    /// Unpack only the rows/columns of `rect` (row-addressable layouts).
+    fn unpack_region(&self, out: &mut [u16], rect: Rect, ctx: &DecodeContext) -> Result<()> {
+        let (row_bytes, bits, order) =
+            self.row_layout().ok_or_else(|| Error::InvalidArgument("layout is not row addressable".into()))?;
+        let (w, rw) = (self.width as usize, rect.width as usize);
+        let needed = (rect.bottom() as usize).saturating_sub(1) * row_bytes + (w * bits as usize).div_ceil(8);
+        if self.payload.len() < needed {
+            return Err(Error::corrupt("RAF payload truncated"));
+        }
+        let simd = ctx.simd;
+        par::for_each_row_chunk(&mut out[..rw * rect.height as usize], rw, 64, ctx.parallel, |first, chunk| {
+            let mut tmp = vec![0u16; w];
+            for (i, row) in chunk.chunks_mut(rw).enumerate() {
+                let y = rect.y as usize + first + i;
+                let src = &self.payload[y * row_bytes..];
+                let src = &src[..(w * bits as usize).div_ceil(8).min(src.len())];
+                packed::unpack_row(src, &mut tmp, bits, order, simd);
+                row.copy_from_slice(&tmp[rect.x as usize..rect.x as usize + rw]);
+            }
+        });
+        Ok(())
+    }
+
     fn unpack(&self, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
         let (w, h) = (self.width as usize, self.height as usize);
         match self.layout {

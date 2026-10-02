@@ -412,9 +412,16 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             Ok(img)
         }),
     );
+    let r2 = rw2.clone();
+    dec.region = Some(Box::new(move |ctx, rect| {
+        let full = Rect::full(r2.width, r2.height);
+        let rect =
+            rect.intersect(&full).ok_or_else(|| Error::InvalidArgument(format!("region {rect} outside image")))?;
+        ctx.profiler.time(Stage::EntropyDecode, || r2.decode_region(rect, ctx))
+    }));
     dec.random_access = match &rw2.payload {
         Payload::V8(..) => RandomAccess::Blocks,
-        Payload::Unpacked(_) | Payload::V7(..) => RandomAccess::Rows,
+        Payload::V4(_) if raw_w as usize % codec::V4_PIXELS != 0 => RandomAccess::Sequential,
         _ => RandomAccess::Rows,
     };
     if let Payload::V8(_, strips) = &rw2.payload {
@@ -443,6 +450,37 @@ fn guess_mode(w: u32, h: u32) -> &'static str {
 }
 
 impl Rw2<'_> {
+    /// Decode only the rows of `rect` (row-independent formats), then keep its columns.
+    fn decode_region(&self, rect: Rect, ctx: &DecodeContext) -> Result<RawImage> {
+        let (w, h) = (self.width as usize, self.height as usize);
+        let (y0, rows) = (rect.y as usize, rect.height as usize);
+        let par = ctx.parallel;
+        let mut band = RawImage::new_u16(self.width, rect.height, 1, &ctx.limits)?;
+        let out = band.u16_mut();
+        match &self.payload {
+            Payload::V4(s) if w % codec::V4_PIXELS == 0 => codec::decode_v4_rows(s, w, h, y0, out, par)?,
+            Payload::V5(s, bits) => codec::decode_v5_rows(s, *bits, w, h, y0, out, par)?,
+            Payload::V6(d, bits) => codec::decode_v6_rows(d, *bits, w, h, y0, out, par)?,
+            Payload::V7(d, bits) => codec::decode_v7_rows(d, *bits, w, h, y0, out, par)?,
+            Payload::Unpacked(d) => {
+                if d.len() < w * h * 2 {
+                    return Err(Error::corrupt("RW2 unpacked payload truncated"));
+                }
+                let src = &d[y0 * w * 2..(y0 + rows) * w * 2];
+                for (o, s) in out.iter_mut().zip(src.chunks_exact(2)) {
+                    *o = u16::from_le_bytes([s[0], s[1]]) >> 4;
+                }
+            }
+            _ => {
+                // Sequential streams and format-8 strips (full image height): decode all.
+                let mut img = RawImage::new_u16(self.width, self.height, 1, &ctx.limits)?;
+                self.decode(img.u16_mut(), ctx)?;
+                return img.crop(rect);
+            }
+        }
+        band.crop(Rect::new(rect.x, 0, rect.width, rect.height))
+    }
+
     fn decode(&self, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
         let (w, h) = (self.width as usize, self.height as usize);
         let par = ctx.parallel;

@@ -137,17 +137,38 @@ pub fn v4_packet(packet: &[u8; 16], out: &mut [u16]) {
 /// independent when `width` is a multiple of 14 (always the case in practice);
 pub fn decode_v4(s: &BlockedStream, width: usize, height: usize, out: &mut [u16], parallel: bool) -> Result<()> {
     check_out(out, width, height)?;
+    if width % V4_PIXELS != 0 {
+        let needed = (width * height).div_ceil(V4_PIXELS);
+        if s.packets_available() < needed {
+            return Err(Error::corrupt("Panasonic data truncated"));
+        }
+        return decode_v4_sequential(s, width, height, out);
+    }
+    decode_v4_rows(s, width, height, 0, &mut out[..width * height], parallel)
+}
+
+/// Decode rows `first_row..first_row + out.len() / width` of a format-4 image whose
+/// width is a multiple of 14 (rows are independent).
+pub fn decode_v4_rows(
+    s: &BlockedStream,
+    width: usize,
+    height: usize,
+    first_row: usize,
+    out: &mut [u16],
+    parallel: bool,
+) -> Result<()> {
+    let rows = out.len() / width.max(1);
+    if width == 0 || width % V4_PIXELS != 0 || first_row + rows > height {
+        return Err(Error::InvalidArgument("Panasonic v4 row range".into()));
+    }
     let needed = (width * height).div_ceil(V4_PIXELS);
     if s.packets_available() < needed {
         return Err(Error::corrupt(format!("Panasonic data truncated: {} of {needed} packets", s.packets_available())));
     }
-    if width % V4_PIXELS != 0 {
-        return decode_v4_sequential(s, width, height, out);
-    }
     let per_row = width / V4_PIXELS;
-    par::for_each_row_chunk(&mut out[..width * height], width, 16, parallel, |first, chunk| {
+    par::for_each_row_chunk(&mut out[..width * rows], width, 16, parallel, |first, chunk| {
         for (r, row) in chunk.chunks_exact_mut(width).enumerate() {
-            let base = (first + r) * per_row;
+            let base = (first_row + first + r) * per_row;
             for (k, px) in row.chunks_exact_mut(V4_PIXELS).enumerate() {
                 v4_packet(&s.packet(base + k), px);
             }
@@ -246,15 +267,32 @@ pub fn decode_v5(
     parallel: bool,
 ) -> Result<()> {
     check_out(out, width, height)?;
+    decode_v5_rows(s, bits, width, height, 0, &mut out[..width * height], parallel)
+}
+
+/// Decode rows `first_row..first_row + out.len() / width` of a format-5 image.
+pub fn decode_v5_rows(
+    s: &BlockedStream,
+    bits: u32,
+    width: usize,
+    height: usize,
+    first_row: usize,
+    out: &mut [u16],
+    parallel: bool,
+) -> Result<()> {
+    let rows = out.len() / width.max(1);
+    if width == 0 || first_row + rows > height {
+        return Err(Error::InvalidArgument("Panasonic v5 row range".into()));
+    }
     let ppp = packed_pixels(bits).ok_or_else(|| Error::corrupt(format!("Panasonic v5 with {bits} bits")))?;
     let per_row = width.div_ceil(ppp);
     if s.packets_available() < per_row * height {
         return Err(Error::corrupt("Panasonic v5 data truncated"));
     }
-    par::for_each_row_chunk(&mut out[..width * height], width, 16, parallel, |first, chunk| {
+    par::for_each_row_chunk(&mut out[..width * rows], width, 16, parallel, |first, chunk| {
         let mut tmp = [0u16; 10];
         for (r, row) in chunk.chunks_exact_mut(width).enumerate() {
-            let base = (first + r) * per_row;
+            let base = (first_row + first + r) * per_row;
             for (k, px) in row.chunks_mut(ppp).enumerate() {
                 unpack_lsb(&s.packet(base + k), bits, &mut tmp[..ppp]);
                 px.copy_from_slice(&tmp[..px.len()]);
@@ -268,17 +306,35 @@ pub fn decode_v5(
 /// not fill a packet stay zero.
 pub fn decode_v7(data: &[u8], bits: u32, width: usize, height: usize, out: &mut [u16], parallel: bool) -> Result<()> {
     check_out(out, width, height)?;
+    decode_v7_rows(data, bits, width, height, 0, &mut out[..width * height], parallel)
+}
+
+/// Decode rows `first_row..first_row + out.len() / width` of a format-7 image.
+pub fn decode_v7_rows(
+    data: &[u8],
+    bits: u32,
+    width: usize,
+    height: usize,
+    first_row: usize,
+    out: &mut [u16],
+    parallel: bool,
+) -> Result<()> {
+    let nrows = out.len() / width.max(1);
+    if width == 0 || first_row + nrows > height {
+        return Err(Error::InvalidArgument("Panasonic v7 row range".into()));
+    }
     let ppp = packed_pixels(bits).ok_or_else(|| Error::corrupt(format!("Panasonic v7 with {bits} bits")))?;
     let row_bytes = width / ppp * 16;
     let rows = height / 16 * 16;
     if row_bytes == 0 || data.len() < rows * row_bytes {
         return Err(Error::corrupt("Panasonic v7 data truncated"));
     }
-    par::for_each_row_chunk(&mut out[..width * height], width, 16, parallel, |first, chunk| {
+    par::for_each_row_chunk(&mut out[..width * nrows], width, 16, parallel, |first, chunk| {
         for (r, row) in chunk.chunks_exact_mut(width).enumerate() {
-            let y = first + r;
+            let y = first_row + first + r;
             if y >= rows {
-                break;
+                row.fill(0);
+                continue;
             }
             let src = &data[y * row_bytes..(y + 1) * row_bytes];
             for (p, px) in src.chunks_exact(16).zip(row.chunks_exact_mut(ppp)) {
@@ -296,6 +352,23 @@ pub fn decode_v7(data: &[u8], bits: u32, width: usize, height: usize, out: &mut 
 /// 11 (14-bit) or 14 (12-bit) delta-coded pixels. Only whole 16-row bands are decoded
 pub fn decode_v6(data: &[u8], bits: u32, width: usize, height: usize, out: &mut [u16], parallel: bool) -> Result<()> {
     check_out(out, width, height)?;
+    decode_v6_rows(data, bits, width, height, 0, &mut out[..width * height], parallel)
+}
+
+/// Decode rows `first_row..first_row + out.len() / width` of a format-6 image.
+pub fn decode_v6_rows(
+    data: &[u8],
+    bits: u32,
+    width: usize,
+    height: usize,
+    first_row: usize,
+    out: &mut [u16],
+    parallel: bool,
+) -> Result<()> {
+    let nrows = out.len() / width.max(1);
+    if width == 0 || first_row + nrows > height {
+        return Err(Error::InvalidArgument("Panasonic v6 row range".into()));
+    }
     let twelve = match bits {
         12 => true,
         14 => false,
@@ -308,11 +381,12 @@ pub fn decode_v6(data: &[u8], bits: u32, width: usize, height: usize, out: &mut 
     if row_bytes == 0 || data.len() < rows * row_bytes {
         return Err(Error::corrupt("Panasonic v6 data truncated"));
     }
-    par::for_each_row_chunk(&mut out[..width * height], width, 16, parallel, |first, chunk| {
+    par::for_each_row_chunk(&mut out[..width * nrows], width, 16, parallel, |first, chunk| {
         for (r, row) in chunk.chunks_exact_mut(width).enumerate() {
-            let y = first + r;
+            let y = first_row + first + r;
             if y >= rows {
-                break;
+                row.fill(0);
+                continue;
             }
             let src = &data[y * row_bytes..(y + 1) * row_bytes];
             for (p, px) in src.chunks_exact(16).zip(row.chunks_exact_mut(ppb)) {
