@@ -127,3 +127,21 @@ fn minolta_samples_survive_malformed_input() {
         }
     }
 }
+
+/// The Hasselblad Lunar is a rebadged NEX-7 writing ordinary ARW2 files: the Sony
+#[test]
+fn hasselblad_lunar_is_an_arw() {
+    let Some(d) = corpus("HASSELBLAD/Lunar/DSC00343.ARW") else { return };
+    let dec = super::open(&d, &OpenOptions::default()).expect("open");
+    let prof = Profiler::new();
+    let img = dec.decode(&DecodeContext::new(&prof)).expect("decode");
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &v in img.u16() {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    assert_eq!((img.width, img.height), (6048, 4024));
+    assert_eq!(format!("{h:016x}"), "82eb880e868b36ea");
+}

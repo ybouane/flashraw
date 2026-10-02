@@ -64,8 +64,10 @@ pub fn keystream(key: u32, n: usize) -> Vec<u32> {
     while i < x.len() {
         let end = (i + 63).min(x.len());
         let (done, todo) = x.split_at_mut(i);
-        for (k, v) in todo[..end - i].iter_mut().enumerate() {
-            *v = done[i + k - 127] ^ done[i + k - 63];
+        let len = end - i;
+        let (a, b) = (&done[i - 127..i - 127 + len], &done[i - 63..i - 63 + len]);
+        for ((v, &p), &q) in todo[..len].iter_mut().zip(a).zip(b) {
+            *v = p ^ q;
         }
         i = end;
     }

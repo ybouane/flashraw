@@ -144,7 +144,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 
     let mode = match payload {
         Payload::Compressed(_) => "compressed",
-        Payload::Packed12Words | Payload::Packed12Msb | Payload::Packed12Interlaced => "12bit-packed",
+        Payload::Packed12Words | Payload::Packed12Msb => "12bit-packed",
+        Payload::Packed12Interlaced => "12bit-packed-interlaced",
         Payload::Packed12Padded => "12bit-packed-padded",
         Payload::Unpacked { .. } => "uncompressed",
     };
