@@ -1,0 +1,16 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+KONICA MINOLTA/ALPHA SWEET DIGITAL/PICT1038.MRW	b313539271d9df17	MRW	minolta-packed
+KONICA MINOLTA/ALPHA-7 DIGITAL/PICT0108.MRW	d2fe74c278e6f2f6	MRW	minolta-packed
+MINOLTA/DYNAX 5D/Minolta_Dynax_5D.MRW	5dd6290863fbfb94	MRW	minolta-packed
+Minolta Co., Ltd./DiMAGE 5/20250104_0010.MRW	0c21e9c2c3583041	MRW	uncompressed
+Minolta/ALPHA-7 DIGITAL/PICT6107.MRW	6466fc22032e7655	MRW	minolta-packed
+Minolta/DiMAGE 7/RAW_MINOLTA_DIMAGE7.MRW	787f3eb5561c51ac	MRW	uncompressed
+Minolta/DiMAGE 7Hi/RAW_MINOLTA_DIMAGE_7HI.MRW	f59e7aafeaa69941	MRW	uncompressed
+Minolta/DiMAGE 7i/RAW_MINOLTA_DIMAGE_7I.MRW	fd03d88e326dade1	MRW	uncompressed
+Minolta/DiMAGE A1/RAW_MINOLTA_A1.MRW	175c0cb09616f6b9	MRW	minolta-packed
+Minolta/DiMAGE A2/PICT0881.MRW	e4c816057bd9c078	MRW	minolta-packed
+Minolta/DiMAGE A200/RAW_MINOLTA_DIMAGE_A200.MRW	aff3a51f63eeec61	MRW	minolta-packed
+Minolta/Dimage Z2/RAW_MINOLTA_DIMAGE_Z2.MRW	f7a7a991aebf2695	MRW	minolta-packed
+Minolta/Dynax 7D/PICT3410.MRW	585f780d28224625	MRW	minolta-packed
+Minolta/Maxxum 7D/PICT0041.MRW	6064966a82f1dfe8	MRW	minolta-packed
+Minolta/RD 175/M001.MDC	a8c9c25837fc2419	other	uncompressed
