@@ -82,10 +82,8 @@ pub fn find_matrix(canonical_make: &str, canonical_model: &str) -> Option<&'stat
         .filter(|m| norm(m.canonical_make) == make)
         .filter(|m| {
             let p = norm(m.model_prefix);
-            model.starts_with(&p)
-                && (model.len() == p.len()
-                    || !model.as_bytes()[p.len()].is_ascii_alphanumeric()
-                    || p.ends_with(|c: char| !c.is_ascii_digit()))
+            // Whole-word prefix only: "EOS R" must not match "EOS REBEL SL3".
+            model.starts_with(&p) && (model.len() == p.len() || !model.as_bytes()[p.len()].is_ascii_alphanumeric())
         })
         .max_by_key(|m| m.model_prefix.len())
 }
@@ -234,6 +232,14 @@ mod tests {
             assert_eq!(norm(c.make), parts[0]);
             assert!(find(parts[0], parts[1], parts[2]).is_some());
         }
+    }
+
+    #[test]
+    fn matrix_prefix_is_word_bounded() {
+        if let Some(m) = find_matrix("Canon", "EOS Rebel SL3") {
+            assert_ne!(m.model_prefix, "EOS R");
+        }
+        assert!(find_matrix("Canon", "EOS 5D Mark IV").is_some_and(|m| m.model_prefix == "EOS 5D Mark IV"));
     }
 
     #[test]

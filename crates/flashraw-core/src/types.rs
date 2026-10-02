@@ -250,7 +250,7 @@ impl CfaColor {
 impl fmt::Display for CfaPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for y in 0..self.height() {
-            if y > 0 && self.width() > 2 {
+            if y > 0 && (self.width() > 2 || self.height() > 2) {
                 f.write_str("/")?;
             }
             for x in 0..self.width() {
