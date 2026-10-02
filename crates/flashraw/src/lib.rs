@@ -201,7 +201,7 @@ impl<'a> FlashRaw<'a> {
         let profiler = Profiler::new();
         profiler.record(Stage::ContainerParse, self.parse_ms);
         let info = self.decoder.frame_info();
-        let simd_level = flashraw_core::simd::detect();
+        let simd_level = flashraw_core::simd::kernel_level();
         let use_simd = !matches!(opts.backend, Backend::Cpu) && cfg!(feature = "simd");
         let threads = flashraw_core::par::threads();
         if opts.backend == Backend::Gpu && !gpu_available() {

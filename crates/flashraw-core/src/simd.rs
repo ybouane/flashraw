@@ -59,3 +59,12 @@ pub fn detect() -> SimdLevel {
         SimdLevel::Scalar
     }
 }
+
+/// The instruction set FlashRaw's SIMD kernels actually use on this CPU (kernels
+/// target SSE4.1 on x86-64, NEON on aarch64, SIMD128 on WASM), for honest reporting.
+pub fn kernel_level() -> SimdLevel {
+    match detect() {
+        SimdLevel::Avx2 | SimdLevel::Avx512 | SimdLevel::Sse41 => SimdLevel::Sse41,
+        other => other,
+    }
+}
