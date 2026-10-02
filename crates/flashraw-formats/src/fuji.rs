@@ -839,3 +839,171 @@ impl Raf<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn b16(v: u16) -> [u8; 2] {
+        v.to_be_bytes()
+    }
+
+    /// Build a minimal modern RAF: meta directory + CFA TIFF + 16-bit LE payload.
+    fn synthetic_raf(w: u16, h: u16, samples: &[u16], xtrans: bool) -> Vec<u8> {
+        let mut meta = Vec::new();
+        let mut recs: Vec<(u16, Vec<u8>)> = vec![
+            (0x100, [b16(h), b16(w)].concat()),
+            (0x130, vec![0x0a, 0x0b, 0x09, 0x08]),
+            (0x2ff0, [b16(302), b16(500), b16(302), b16(400)].concat()),
+        ];
+        if xtrans {
+            // Stored reversed: byte c is pattern element 35 - c.
+            let pat = [
+                1u8, 1, 0, 1, 1, 2, 1, 1, 2, 1, 1, 0, 2, 0, 1, 0, 2, 1, 1, 1, 2, 1, 1, 0, 1, 1, 0, 1, 1, 2, 0, 2, 1, 2,
+                0, 1,
+            ];
+            recs.push((0x131, pat.iter().rev().copied().collect()));
+        }
+        meta.extend((recs.len() as u32).to_be_bytes());
+        for (t, v) in &recs {
+            meta.extend(b16(*t));
+            meta.extend(b16(v.len() as u16));
+            meta.extend(v);
+        }
+        // CFA TIFF: IFD0 with one 0xF000 entry -> sub IFD at 26.
+        let mut tiff = b"II*\0".to_vec();
+        tiff.extend(8u32.to_le_bytes());
+        tiff.extend(1u16.to_le_bytes());
+        tiff.extend(0xF000u16.to_le_bytes());
+        tiff.extend(13u16.to_le_bytes());
+        tiff.extend(1u32.to_le_bytes());
+        tiff.extend(26u32.to_le_bytes());
+        tiff.extend(0u32.to_le_bytes());
+        let data_off = 256u32;
+        let entries: Vec<(u16, u16, u32)> = vec![
+            (0xF001, 4, w as u32),
+            (0xF002, 4, h as u32),
+            (0xF003, 4, 14),
+            (0xF007, 4, data_off),
+            (0xF008, 4, samples.len() as u32 * 2),
+            (0xF00A, 4, 1024),
+        ];
+        tiff.extend((entries.len() as u16).to_le_bytes());
+        for (t, ty, v) in entries {
+            tiff.extend(t.to_le_bytes());
+            tiff.extend(ty.to_le_bytes());
+            tiff.extend(1u32.to_le_bytes());
+            tiff.extend(v.to_le_bytes());
+        }
+        tiff.extend(0u32.to_le_bytes());
+        tiff.resize(data_off as usize, 0);
+        for s in samples {
+            tiff.extend(s.to_le_bytes());
+        }
+        let mut f = vec![0u8; 0x94];
+        f[..16].copy_from_slice(b"FUJIFILMCCD-RAW ");
+        f[0x1c..0x1c + 6].copy_from_slice(b"X-TEST");
+        f[0x3c..0x40].copy_from_slice(b"0100");
+        let meta_off = f.len();
+        let cfa_off = meta_off + meta.len();
+        f[92..96].copy_from_slice(&(meta_off as u32).to_be_bytes());
+        f[96..100].copy_from_slice(&(meta.len() as u32).to_be_bytes());
+        f[100..104].copy_from_slice(&(cfa_off as u32).to_be_bytes());
+        f[104..108].copy_from_slice(&(tiff.len() as u32).to_be_bytes());
+        f.extend(meta);
+        f.extend(tiff);
+        f
+    }
+
+    fn decode(data: &[u8]) -> Result<(FrameInfo, Vec<u16>)> {
+        let d = open(data, &OpenOptions::default())?;
+        let p = Profiler::new();
+        let img = d.decode(&DecodeContext::new(&p))?;
+        Ok((d.frame_info().clone(), img.u16().to_vec()))
+    }
+
+    #[test]
+    fn synthetic_uncompressed_raf() {
+        let (w, h) = (48u16, 36u16);
+        let samples: Vec<u16> = (0..w as u32 * h as u32).map(|i| (i * 37 % 16384) as u16).collect();
+        let f = synthetic_raf(w, h, &samples, true);
+        assert!(probe(&f));
+        let (info, px) = decode(&f).unwrap();
+        assert_eq!((info.width, info.height), (48, 36));
+        assert_eq!(px, samples);
+        assert_eq!(info.layout, SensorLayout::XTrans);
+        assert_eq!(info.black_level.values, vec![1024.0]);
+        let wb = info.white_balance.unwrap();
+        assert!((wb.coeffs[0] - 500.0 / 302.0).abs() < 1e-4 && (wb.coeffs[2] - 400.0 / 302.0).abs() < 1e-4);
+        // X-Trans pattern parsed from the reversed 0x131 record.
+        let p = info.cfa.unwrap();
+        assert_eq!(p.color_at(2, 0), CfaColor::Red);
+        assert_eq!(p.color_at(5, 0), CfaColor::Blue);
+    }
+
+    #[test]
+    fn synthetic_raf_truncation_and_corruption_never_panic() {
+        let (w, h) = (48u16, 36u16);
+        let samples: Vec<u16> = (0..w as u32 * h as u32).map(|i| i as u16).collect();
+        let f = synthetic_raf(w, h, &samples, false);
+        for cut in [0, 10, 0x60, 0x94, 0xa0, 0x100, f.len() / 2, f.len() - 100, f.len() - 1] {
+            let r = decode(&f[..cut]);
+            assert!(r.is_err(), "truncated at {cut} must fail");
+        }
+        let mut x = 0x9e37_79b9u32;
+        for i in 0..400 {
+            let mut g = f.clone();
+            for _ in 0..4 {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                let pos = (x as usize) % g.len().min(0x200 + i);
+                g[pos] = (x >> 8) as u8;
+            }
+            let _ = decode(&g);
+        }
+    }
+
+    #[test]
+    fn superccd_cfa_layouts() {
+        // Layout 1: green rows alternate with red/blue rows (2 wide, 4 tall).
+        let p = superccd_cfa(true, 1600, 0, 0).unwrap();
+        assert_eq!((p.width(), p.height()), (2, 4));
+        let greens =
+            (0..4).filter(|&y| p.color_at(0, y) == CfaColor::Green && p.color_at(1, y) == CfaColor::Green).count();
+        assert_eq!(greens, 2);
+        // Layout 0: the same arrangement transposed.
+        let q = superccd_cfa(false, 1600, 0, 0).unwrap();
+        assert_eq!((q.width(), q.height()), (4, 2));
+    }
+
+    /// Corpus files (when present): truncated or corrupted copies must fail cleanly.
+    #[test]
+    fn corpus_malformed_inputs() {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+        let files = [
+            "Fujifilm/X-E4/fuji_xe4_32_lossy.RAF",
+            "Fujifilm/XQ1/DSCF2004.RAF",
+            "Fujifilm/FinePix HS10 HS11/RAW_FUJI_FINEPIX_HS10.RAF",
+            "Fujifilm/X-A5/DSCF0617.RAF",
+            "Fujifilm/FinePix S5600/RAW_FUJI_S5600S5200.RAF",
+            "Fujifilm/X100F/DSCF5760_x100f_lossless_compressed_raw_Temple.RAF",
+        ];
+        for f in files {
+            let Ok(data) = std::fs::read(corpus.join(f)) else { continue };
+            assert!(decode(&data).is_ok(), "{f} should decode");
+            for frac in [0.0005, 0.02, 0.5, 0.9] {
+                let cut = (data.len() as f64 * frac) as usize;
+                assert!(decode(&data[..cut]).is_err(), "{f} truncated to {cut} bytes must fail");
+            }
+            // Corrupt the payload region: decoding may fail or produce garbage, never panic.
+            let mut g = data.clone();
+            let n = g.len();
+            for k in 0..64 {
+                let pos = n / 2 + k * 977 % (n / 3);
+                g[pos] ^= 0x5a;
+            }
+            let _ = decode(&g);
+        }
+    }
+}

@@ -179,8 +179,9 @@ fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Resu
     let codes = counted(e(0x40)?, 4);
     p.codes = codes.iter().map(|&v| ((v & 0xffff).min(16) as u8, ((v >> 16) & 0xfff) as u16)).collect();
     p.shift_down = counted(e(0x41)?, 2).iter().map(|&v| v.min(64) as u8).collect();
-    let count = u16_tag(ifd, 0x42).unwrap_or(0) as usize;
-    if count == 0 || count > 5 {
+    // Strips form a grid: 0x42 columns by 0x43 rows (one row except on high-resolution shots).
+    let count = u16_tag(ifd, 0x42).unwrap_or(0) as usize * u16_tag(ifd, 0x43).unwrap_or(1).max(1) as usize;
+    if count == 0 || count > 64 {
         return Err(Error::corrupt(format!("RW2 v8 with {count} strips")));
     }
     let offsets = counted(e(0x44)?, 4);
@@ -189,21 +190,23 @@ fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Resu
     let widths = counted(e(0x47)?, 2);
     let heights = counted(e(0x48)?, 2);
     let mut strips = Vec::with_capacity(count);
-    let mut total = 0u32;
+    let mut area = 0u64;
     for i in 0..count {
         let get = |v: &Vec<u32>| v.get(i).copied().ok_or_else(|| Error::corrupt("RW2 v8 strip table too short"));
         let (off, bits) = (get(&offsets)? as usize, get(&sizes)? as u64);
         let len = bits.div_ceil(8) as usize;
         let sdata = flashraw_core::bytes::slice_at(data, off, len)?;
-        let (left, width, height) = (get(&lefts)?, get(&widths)?, get(&heights)?);
-        if height != raw_h || (left & 0xffff) + width > raw_w {
-            return Err(Error::corrupt("RW2 v8 strip geometry does not match the image"));
+        // Line offset: x in the low 16 bits, y in the high 16 bits.
+        let (pos, width, height) = (get(&lefts)?, get(&widths)?, get(&heights)?);
+        let (left, top) = (pos & 0xffff, pos >> 16);
+        if left + width > raw_w || top + height > raw_h {
+            return Err(Error::corrupt("RW2 v8 strip outside the image"));
         }
-        total += width;
-        strips.push(V8Strip { data: sdata, bits, left: left & 0xffff, width, height });
+        area += width as u64 * height as u64;
+        strips.push(V8Strip { data: sdata, bits, left, top, width, height });
     }
-    if total != raw_w {
-        return Err(Error::corrupt("RW2 v8 strips do not cover the image width"));
+    if area != raw_w as u64 * raw_h as u64 {
+        return Err(Error::corrupt("RW2 v8 strips do not cover the image"));
     }
     Ok(Payload::V8(Arc::new(V8Decoder::new(&p)?), strips))
 }
@@ -418,7 +421,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         dec.units = strips
             .iter()
             .map(|s| DecodeUnit {
-                rect: Rect::new(s.left, 0, s.width, s.height),
+                rect: Rect::new(s.left, s.top, s.width, s.height),
                 offset: (s.data.as_ptr() as usize - data.as_ptr() as usize) as u64,
                 length: s.data.len() as u64,
             })
@@ -448,7 +451,7 @@ impl Rw2<'_> {
             Payload::V5(s, bits) => codec::decode_v5(s, *bits, w, h, out, par),
             Payload::V6(d, bits) => codec::decode_v6(d, *bits, w, h, out, par),
             Payload::V7(d, bits) => codec::decode_v7(d, *bits, w, h, out, par),
-            Payload::V8(dec, strips) => dec.decode(strips, out, w, par),
+            Payload::V8(dec, strips) => dec.decode(strips, out, w, h, par),
             Payload::Unpacked(d) => {
                 if d.len() < w * h * 2 {
                     return Err(Error::corrupt("RW2 unpacked payload truncated"));
@@ -458,6 +461,149 @@ impl Rw2<'_> {
                 }
                 Ok(())
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal RW2: IFD0 with Panasonic tags and a format-7 (14-bit, 9 px / 16 bytes) payload.
+    fn synthetic_rw2(w: u16, h: u16, vals: &[u16]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        for row in vals.chunks(w as usize) {
+            for px in row.chunks(9) {
+                let mut v: u128 = 0;
+                for (k, &p) in px.iter().enumerate() {
+                    v |= (p as u128) << (14 * k);
+                }
+                payload.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        let entries: Vec<(u16, u16, u32)> = vec![
+            (0x02, 3, w as u32),
+            (0x03, 3, h as u32),
+            (0x04, 3, 2),
+            (0x05, 3, 4),
+            (0x06, 3, h as u32 - 2),
+            (0x07, 3, w as u32 - 4),
+            (0x09, 3, 2),
+            (0x0a, 3, 14),
+            (0x0e, 3, 16383),
+            (0x0f, 3, 16383),
+            (0x10, 3, 16383),
+            (0x1c, 3, 510),
+            (0x1d, 3, 512),
+            (0x1e, 3, 514),
+            (0x24, 3, 500),
+            (0x25, 3, 256),
+            (0x26, 3, 400),
+            (0x2d, 3, 7),
+            (0x112, 3, 6),
+        ];
+        let n = entries.len() + 1;
+        let ifd_end = 8 + 2 + 12 * n + 4;
+        let mut f = b"IIU\0".to_vec();
+        f.extend(8u32.to_le_bytes());
+        f.extend((n as u16).to_le_bytes());
+        for (t, ty, v) in entries {
+            f.extend(t.to_le_bytes());
+            f.extend(ty.to_le_bytes());
+            f.extend(1u32.to_le_bytes());
+            f.extend(v.to_le_bytes());
+        }
+        f.extend(0x118u16.to_le_bytes());
+        f.extend(4u16.to_le_bytes());
+        f.extend(1u32.to_le_bytes());
+        f.extend((ifd_end as u32).to_le_bytes());
+        f.extend(0u32.to_le_bytes());
+        f.extend(payload);
+        f
+    }
+
+    fn decode(data: &[u8]) -> Result<(FrameInfo, Vec<u16>)> {
+        let d = crate::open(data, &OpenOptions::default())?;
+        let p = Profiler::new();
+        let img = d.decode(&DecodeContext::new(&p))?;
+        Ok((d.frame_info().clone(), img.u16().to_vec()))
+    }
+
+    #[test]
+    fn synthetic_v7_rw2() {
+        let (w, h) = (72u16, 32u16);
+        let vals: Vec<u16> = (0..w as usize * h as usize).map(|i| (i * 131 % 16384) as u16).collect();
+        let f = synthetic_rw2(w, h, &vals);
+        assert!(probe(&f));
+        let (info, px) = decode(&f).unwrap();
+        assert_eq!(px, vals);
+        assert_eq!(info.cfa, Some(CfaPattern::GRBG));
+        assert_eq!(info.white_level.max(), 16383 - 64);
+        assert_eq!(info.orientation, Orientation::Rotate90);
+        assert_eq!(info.crop, Rect::new(4, 2, 64, 28));
+        assert_eq!(info.active_area, Rect::new(0, 0, 72, 32));
+        // Black per colour on a GRBG pattern.
+        assert_eq!(info.black_level.values, vec![512.0, 510.0, 514.0, 512.0]);
+        let wb = info.white_balance.unwrap();
+        assert!((wb.coeffs[0] - 500.0 / 256.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn synthetic_rw2_truncation_and_corruption_never_panic() {
+        let (w, h) = (72u16, 32u16);
+        let vals: Vec<u16> = (0..w as usize * h as usize).map(|i| i as u16 & 0x3fff).collect();
+        let f = synthetic_rw2(w, h, &vals);
+        for cut in [0, 7, 30, 200, f.len() / 2, f.len() - 1] {
+            assert!(decode(&f[..cut]).is_err(), "truncated at {cut} must fail");
+        }
+        let mut x = 0x1234_5678u32;
+        for i in 0..400 {
+            let mut g = f.clone();
+            for _ in 0..3 {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                let pos = (x as usize) % g.len().min(64 + i);
+                g[pos] = (x >> 8) as u8;
+            }
+            let _ = decode(&g);
+        }
+    }
+
+    #[test]
+    fn aspect_mode_guess() {
+        assert_eq!(guess_mode(4000, 3000), "4:3");
+        assert_eq!(guess_mode(6000, 4000), "3:2");
+        assert_eq!(guess_mode(1920, 1080), "16:9");
+        assert_eq!(guess_mode(3000, 3000), "1:1");
+        assert_eq!(base_model("D-LUX 4"), "DMC-LX3");
+        assert_eq!(base_model("DC-GH5"), "DC-GH5");
+    }
+
+    /// Corpus files (when present): truncated or corrupted copies must fail cleanly.
+    #[test]
+    fn corpus_malformed_inputs() {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+        let files = [
+            "Leica/D-LUX 5/L1010451.RWL",
+            "Panasonic/DC-GH5M2/Panasonic_-_DC-GH5M2_-_1:1.RW2",
+            "Panasonic/DC-S5/P1047510.RW2",
+            "Panasonic/DC-GH6/4-3.RW2",
+        ];
+        for f in files {
+            let Ok(data) = std::fs::read(corpus.join(f)) else { continue };
+            assert!(decode(&data).is_ok(), "{f} should decode");
+            for frac in [0.0001, 0.01, 0.5, 0.9] {
+                let cut = (data.len() as f64 * frac) as usize;
+                assert!(decode(&data[..cut]).is_err(), "{f} truncated to {cut} bytes must fail");
+            }
+            let mut g = data.clone();
+            let n = g.len();
+            for k in 0..64 {
+                let pos = n / 2 + k * 977 % (n / 3);
+                g[pos] ^= 0xa5;
+            }
+            let _ = decode(&g);
         }
     }
 }

@@ -444,6 +444,8 @@ pub struct V8Strip<'a> {
     /// Exact length of the strip's bit stream.
     pub bits: u64,
     pub left: u32,
+    /// Vertical position; tiles below the first row of strips exist on high-resolution
+    pub top: u32,
     pub width: u32,
     pub height: u32,
 }
@@ -508,10 +510,6 @@ impl<'a> RevBits<'a> {
         self.pos += 4;
     }
     #[inline(always)]
-    fn peek(&self, n: u32) -> u64 {
-        if n == 0 { 0 } else { self.cache >> (64 - n) }
-    }
-    #[inline(always)]
     fn skip(&mut self, n: u32) {
         self.cache = if n >= 64 { 0 } else { self.cache << n };
         self.bits -= n;
@@ -544,37 +542,56 @@ impl V8Decoder {
 
     /// Decode strips into `out` (`raw_width` samples per row). Strips decode in
     /// parallel, each straight into its own column band of the output.
-    pub fn decode(&self, strips: &[V8Strip], out: &mut [u16], raw_width: usize, parallel: bool) -> Result<()> {
-        let height = strips.first().map(|s| s.height as usize).unwrap_or(0);
-        if out.len() < raw_width * height || raw_width == 0 {
+    pub fn decode(
+        &self,
+        strips: &[V8Strip],
+        out: &mut [u16],
+        raw_width: usize,
+        raw_height: usize,
+        parallel: bool,
+    ) -> Result<()> {
+        if out.len() < raw_width * raw_height || raw_width == 0 || strips.is_empty() {
             return Err(Error::InvalidArgument("Panasonic v8 output too small".into()));
         }
-        let mut order: Vec<usize> = (0..strips.len()).collect();
-        order.sort_by_key(|&i| strips[i].left);
-        let mut prev_end = 0usize;
-        for &i in &order {
-            let s = &strips[i];
-            let (l, w) = (s.left as usize, s.width as usize);
-            if s.height as usize != height || l + w > raw_width || w < 2 || s.height < 2 || l < prev_end {
+        // Tiles must lie inside the image, not overlap, and cover it completely.
+        let rect = |s: &V8Strip| (s.left as usize, s.top as usize, s.width as usize, s.height as usize);
+        let mut area = 0usize;
+        for (i, s) in strips.iter().enumerate() {
+            let (l, t, w, h) = rect(s);
+            if w < 2 || h < 2 || w % 2 != 0 || h % 2 != 0 || l + w > raw_width || t + h > raw_height {
                 return Err(Error::corrupt("invalid Panasonic v8 strip geometry"));
             }
-            prev_end = l + w;
+            for o in &strips[..i] {
+                let (ol, ot, ow, oh) = rect(o);
+                if l < ol + ow && ol < l + w && t < ot + oh && ot < t + h {
+                    return Err(Error::corrupt("overlapping Panasonic v8 strips"));
+                }
+            }
+            area += w * h;
         }
-        // Hand every strip the matching segment of each output row (disjoint borrows).
-        let mut segments: Vec<Vec<&mut [u16]>> = order.iter().map(|_| Vec::with_capacity(height)).collect();
-        for row in out[..raw_width * height].chunks_exact_mut(raw_width) {
+        if area != raw_width * raw_height {
+            return Err(Error::corrupt("Panasonic v8 strips do not cover the image"));
+        }
+        // Hand every tile the matching segment of each of its output rows (disjoint borrows).
+        let mut order: Vec<usize> = (0..strips.len()).collect();
+        order.sort_by_key(|&i| (strips[i].top, strips[i].left));
+        let mut segments: Vec<Vec<&mut [u16]>> = strips.iter().map(|s| Vec::with_capacity(s.height as usize)).collect();
+        for (y, row) in out[..raw_width * raw_height].chunks_exact_mut(raw_width).enumerate() {
             let mut rest = row;
             let mut consumed = 0usize;
-            for (k, &i) in order.iter().enumerate() {
-                let (l, w) = (strips[i].left as usize, strips[i].width as usize);
+            for &i in &order {
+                let (l, t, w, h) = rect(&strips[i]);
+                if y < t || y >= t + h {
+                    continue;
+                }
                 let (_, tail) = std::mem::take(&mut rest).split_at_mut(l - consumed);
                 let (seg, tail) = tail.split_at_mut(w);
-                segments[k].push(seg);
+                segments[i].push(seg);
                 rest = tail;
                 consumed = l + w;
             }
         }
-        let jobs: Vec<(usize, Vec<&mut [u16]>)> = order.iter().copied().zip(segments).collect();
+        let jobs: Vec<(usize, Vec<&mut [u16]>)> = segments.into_iter().enumerate().collect();
         let results = par::map(jobs, parallel, |(i, rows)| self.decode_strip(&strips[i], rows));
         results.into_iter().collect::<Result<Vec<()>>>().map(|_| ())
     }
@@ -886,12 +903,13 @@ mod tests {
         };
         let dec = V8Decoder::new(&p).unwrap();
         assert!(dec.gamma.is_none());
-        let strip = V8Strip { data: &data, bits: (data.len() * 8) as u64, left: 0, width: w as u32, height: h as u32 };
+        let strip =
+            V8Strip { data: &data, bits: (data.len() * 8) as u64, left: 0, top: 0, width: w as u32, height: h as u32 };
         let mut out = vec![0u16; w * h];
-        dec.decode(&[strip], &mut out, w, true).unwrap();
+        dec.decode(&[strip], &mut out, w, h, true).unwrap();
         assert_eq!(out, vals);
         // Truncated strip.
         let short = V8Strip { data: &data[..data.len() / 3], bits: (data.len() / 3 * 8) as u64, ..strip };
-        assert!(dec.decode(&[short], &mut out, w, true).is_err());
+        assert!(dec.decode(&[short], &mut out, w, h, true).is_err());
     }
 }
