@@ -126,11 +126,13 @@ The JS API is ready for the WebGPU backend (`flashraw-gpu`, built elsewhere):
 
 | Binary | Raw | gzip -9 | brotli -11 |
 |---|---|---|---|
-| `flashraw_simd.wasm` | 783 KiB | 285 KiB | 216 KiB |
-| `flashraw.wasm` (fallback) | 765 KiB | 279 KiB | 212 KiB |
+| `flashraw_simd.wasm` | 1978 KiB | 678 KiB | 507 KiB |
+| `flashraw.wasm` (fallback) | 1946 KiB | 666 KiB | 497 KiB |
 | JS (glue + wrappers + worker, unminified) | 67 KiB | — | — |
 
-Only one binary is downloaded per page. Of the SIMD binary, 416 KiB is code and 364 KiB data
+Sizes include every format decoder (measured after all vendor decoders were merged; the
+DNG-only build was 216 KiB brotli). See [benchmarks.md](benchmarks.md#wasm) for the size
+breakdown. Only one binary is downloaded per page. Of the SIMD binary, 416 KiB is code and 364 KiB data
 (mostly the camera database tables, which compress well). `wasm-opt -Oz` instead of `-O3`
 saves < 2 %. `npm pack`: 608 kB tarball, 16 files.
 

@@ -17,6 +17,19 @@ embedded previews without decoding the sensor at all.
 - **Everywhere**: native library, `flashraw` CLI, WASM + npm (`flashraw`) for
   browsers, Web Workers and Node.js.
 
+## Results at a glance
+
+On 2,016 CC0 sample files (every make and model on raw.pixls.us), 1,951 decode
+(AMD Ryzen 7 9700X):
+
+| | Median | P90 file | Best |
+|---|---:|---:|---:|
+| Full decode | **4.5×** faster | 1.7× | 80× |
+| RAW → display RGB (bilinear) | **9.3×** faster | 4.2× | 14.9× |
+
+median decode is 1.6× faster. Details and the cases where FlashRaw is *not* faster:
+[docs/benchmarks.md](docs/benchmarks.md).
+
 ## Rust
 
 ```toml

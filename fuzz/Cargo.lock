@@ -101,6 +101,7 @@ dependencies = [
 name = "flashraw-core"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "rayon",
  "thiserror",
 ]
