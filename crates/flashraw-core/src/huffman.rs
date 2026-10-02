@@ -11,6 +11,28 @@
 //! - flags a long code that falls back to the canonical slow path.
 
 use crate::bits::{BitRead, extend_diff};
+
+/// Sign-extend a JPEG difference without branches (`len` in 0..=15).
+#[inline(always)]
+fn extend_diff_branchless(v: u32, len: u32) -> i32 {
+    if len == 0 {
+        return 0;
+    }
+    let v = v as i32;
+    // All ones when the top bit is clear (negative difference), else zero.
+    let neg = ((v >> (len - 1)) & 1) - 1;
+    v + (neg & (1 - (1 << len)))
+}
+
+#[cfg(test)]
+#[test]
+fn branchless_extension_matches_reference() {
+    for len in 0..16u32 {
+        for v in 0..(1u32 << len) {
+            assert_eq!(extend_diff_branchless(v, len), extend_diff(v, len), "{v} {len}");
+        }
+    }
+}
 use crate::{Error, Result};
 
 const LUT_BITS: u32 = 12;
@@ -183,7 +205,20 @@ impl HuffTable {
             bits.skip_no_fill(e & 0x1F);
             return Ok((e >> 16) as u16 as i16 as i32);
         }
-        let (sym, len) = if e & FLAG_VALID != 0 { ((e >> 8) & 0xFF, e & 0x1F) } else { self.slow_symbol(bits)? };
+        if e & FLAG_VALID != 0 {
+            let len = e & 0x1F;
+            let sym = (e >> 8) & 0xFF;
+            bits.skip_no_fill(len);
+            if sym < 16 {
+                // After fill() at least 32 bits are buffered: code (<= LUT_BITS) plus
+                // diff (<= 15) always fits, so no second refill is needed.
+                let v = bits.peek_no_fill(sym);
+                bits.skip_no_fill(sym);
+                return Ok(extend_diff_branchless(v, sym));
+            }
+            return Ok(self.read_diff(bits, sym));
+        }
+        let (sym, len) = self.slow_symbol(bits)?;
         bits.skip_no_fill(len);
         Ok(self.read_diff(bits, sym))
     }
