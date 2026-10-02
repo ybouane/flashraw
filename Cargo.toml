@@ -28,7 +28,7 @@ repository = "https://github.com/ybouane/flashraw"
 authors = ["Yassine Bouanane"]
 
 [workspace.dependencies]
-flashraw = { path = "crates/flashraw", version = "0.1.0" }
+flashraw = { path = "crates/flashraw", version = "0.1.0", default-features = false }
 flashraw-core = { path = "crates/flashraw-core", version = "0.1.0" }
 flashraw-codecs = { path = "crates/flashraw-codecs", version = "0.1.0" }
 flashraw-formats = { path = "crates/flashraw-formats", version = "0.1.0" }

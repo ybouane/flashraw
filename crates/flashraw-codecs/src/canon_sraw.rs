@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn rejects_non_sraw_frames() {
-        let hdr_data = crate::ljpeg::tests::encode(4, 2, 2, 12, 1, &[0; 16]);
+        let hdr_data = crate::ljpeg::encoder::encode(4, 2, 2, 12, 1, &[0; 16]);
         let hdr = LjpegHeader::parse(&hdr_data, Default::default()).unwrap();
         let mut out = vec![0u16; 4 * 2 * 3];
         assert!(decode(&hdr_data, &hdr, &params(4, 2, [0; 3]), &mut out).is_err());

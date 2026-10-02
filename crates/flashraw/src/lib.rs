@@ -30,6 +30,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod frame;
+// GPU backend (see crate::gpu and docs/gpu.md).
+#[cfg(feature = "gpu")]
+pub mod gpu;
 mod options;
 pub mod process;
 mod source;
@@ -209,6 +212,18 @@ impl<'a> FlashRaw<'a> {
                 "FlashRaw was built without the `gpu` feature or no adapter was found".into(),
             ));
         }
+        // ---- GPU backend hook (crate::gpu): GPU/Auto selection and GPU-resident outputs ----
+        #[cfg(feature = "gpu")]
+        if let Some(frame) = gpu::decode(self, opts, t0, &profiler)? {
+            return Ok(frame);
+        }
+        if opts.output.is_gpu_resident() {
+            return Err(Error::GpuUnavailable(format!(
+                "{:?} requires the `gpu` feature and a GPU backend",
+                opts.output
+            )));
+        }
+        // ---- end GPU hook ----
         let ctx = DecodeContext { limits: opts.limits, parallel: threads > 1, simd: use_simd, profiler: &profiler };
         let full = Rect::full(info.width, info.height);
         let region = match opts.region {
@@ -268,6 +283,11 @@ impl<'a> FlashRaw<'a> {
                     .time(Stage::Postprocess, || process::normalize(&img, &frame_info_for_post, origin, ctx.parallel));
                 (img.width, img.height, img.cpp, RawPixelData::F32(v))
             }
+            // GPU-resident outputs are handled (or rejected) by the GPU hook above.
+            OutputFormat::GpuRawU16
+            | OutputFormat::GpuNormalizedF32
+            | OutputFormat::GpuLinearRgbF32
+            | OutputFormat::GpuRgba8 => return Err(Error::GpuUnavailable("GPU-resident output".into())),
             OutputFormat::LinearRgbF32 | OutputFormat::Rgba8 => {
                 postprocess = Some(format!("CPU x{threads}"));
                 let crop = if opts.crop { translate(info.crop) } else { Rect::full(img.width, img.height) };

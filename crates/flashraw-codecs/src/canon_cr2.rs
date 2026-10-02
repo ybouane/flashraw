@@ -140,7 +140,7 @@ pub fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ljpeg::tests::encode;
+    use crate::ljpeg::encoder::encode;
 
     fn reference(stream: &[u16], w: usize, h: usize, s: Slices) -> Vec<u16> {
         let mut out = vec![0u16; w * h];

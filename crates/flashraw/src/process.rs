@@ -336,6 +336,10 @@ impl Kernel<'_> {
                             let c = color(x, y0 + dy);
                             acc[c] += row[x];
                             n[c] += 1.0;
+                        } else if cpp == 1 {
+                            // Monochrome: average into the green slot, replicated below.
+                            acc[1] += row[x];
+                            n[1] += 1.0;
                         } else {
                             for c in 0..cpp.min(3) {
                                 acc[c] += row[x * cpp + c];
@@ -805,6 +809,19 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn half_size_monochrome_is_grey() {
+        let mut img = RawImage::new_u16(8, 8, 1, &Limits::default()).unwrap();
+        img.u16_mut().iter_mut().for_each(|v| *v = 1000);
+        let mut info = FrameInfo::new(8, 8, 12);
+        info.cfa = None;
+        info.layout = SensorLayout::Monochrome;
+        info.white_level = WhiteLevel::uniform(4000);
+        let p = DevelopParams::new(&info, Demosaic::HalfSize, Rect::full(8, 8));
+        let d = develop(&img, &info, (0, 0), &p, false).unwrap();
+        assert!(d.rgb.iter().all(|&v| (v - 0.25).abs() < 1e-5), "{:?}", &d.rgb[..3]);
     }
 
     #[test]

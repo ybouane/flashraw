@@ -9,7 +9,7 @@ pub enum RawPixelData {
     U8(Vec<u8>),
     U16(Vec<u16>),
     F32(Vec<f32>),
-    /// Data resident on the GPU (see `flashraw-gpu`); download with `FlashRaw::download`.
+    /// Data resident on the GPU (`OutputFormat::Gpu*`, see `flashraw::gpu`); download with `RawFrame::download`.
     #[cfg(feature = "gpu")]
     Gpu(std::sync::Arc<flashraw_gpu::GpuImage>),
 }
