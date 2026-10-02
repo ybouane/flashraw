@@ -565,6 +565,7 @@ fn af_dp(img: &mut [u16], w: usize, h: usize, a: Rect, black: u32, xstep: usize,
 
 /// sd Quattro (H): AF sites in a window; bottom/middle replaced by the mean of the
 /// eight surrounding same-phase samples, top-layer neighbours of the site averaged.
+#[allow(clippy::too_many_arguments)]
 fn af_sd(
     img: &mut [u16],
     w: usize,

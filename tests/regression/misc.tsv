@@ -1,0 +1,65 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Canon/A570 IS/CRW_2554.CRW	3868da1f11d156c4	RAW	uncompressed
+Canon/Canon IXUS900Ti/RAW_CANON_IXUS900TI_CHDK.CRW	f01b7808e7c429fc	RAW	uncompressed
+Canon/Canon PowerShot A540/CANON_A540_CHDK_CRW_0015.CRW	12acb4bdb6a029b8	RAW	uncompressed
+Canon/Canon PowerShot A620/Canon_PowerShot_A620_CHDK_1.0.0.1892.CRW	2102a792c4846637	RAW	uncompressed
+Canon/Canon PowerShot A630/RAW_CANON_POWERSHOT_A630_CHDK.CRW	33c79750c2644af5	RAW	uncompressed
+Canon/Canon PowerShot A710 IS/RAW_CANON_A710.CRW	5a9de7a6881f5218	RAW	uncompressed
+Canon/Canon PowerShot ELPH 130 IS/CANON_IXUS140_ELPH130_CHDK_CRW_5646.CRW	61f605f233ff9f3b	RAW	uncompressed
+Canon/Canon PowerShot ELPH 180/CANON_IXUS175_ELPH180_CHDK_CRW_0195.CRW	58811be2e5500911	RAW	uncompressed
+Canon/Canon PowerShot S2 IS/RAW_CANON_S2IS.CRW	f86733bf42dd8290	RAW	uncompressed
+Canon/Canon PowerShot S3IS/CRW_8760.CRW	edc1a5d8cd728730	RAW	uncompressed
+Canon/Canon PowerShot S5 IS/RAW_CANON_S5IS.CRW	b2bf81302dc79c67	RAW	uncompressed
+Canon/Canon PowerShot SD750/RAW_CANON_SD750.CRW	cf845035ac20ec4e	RAW	uncompressed
+Canon/Canon Powershot A650/RAW_CANON_POWERSHOT_A650_CHDK.CRW	f4b6d8a9b4453db6	RAW	uncompressed
+Canon/PowerShot A550/CRW_0007.CRW	85e9ef4ca60650dd	RAW	uncompressed
+Canon/PowerShot D10/CANON_D10_CHDK_CRW_0627.CRW	eb8adf6c5f3602dd	RAW	uncompressed
+Canon/PowerShot S100/CRW_1376.CRW	74c76252e512d1ad	RAW	uncompressed
+Canon/PowerShot SX110 IS/CRW_5178.CRW	000955bf4d2e616d	RAW	uncompressed
+Canon/PowerShot SX160 IS/CANON_SX160IS_CHDK_CRW_5151.CRW	fc586212ac48e1c4	RAW	uncompressed
+Canon/PowerShot SX20 IS/CRW_6488.CRW	3c9a7505c68e0692	RAW	uncompressed
+Canon/PowerShot SX220 HS/CRW_7732.CRW	5483873690dee17e	RAW	uncompressed
+Canon/PowerShot SX260 HS/CRW_3026.CRW	898e954d1813ce6b	RAW	uncompressed
+Canon/PowerShot SX710 HS/CANON_SX710HS_CHDK_CRW_0717.CRW	244956dff624d73b	RAW	uncompressed
+Canon/Powershot A640/CRW_0441.CRW	6d9fb9962523d0c2	RAW	uncompressed
+Canon/Powershot A720IS/IMG_2115.CRW	4db6ee815aaf02e4	RAW	uncompressed
+Canon/Poweshot S3IS/RAW_CANON_S3IS.CRW	5f13a774ac426ec9	RAW	uncompressed
+Canon/ixus 75/2008-06-10_Moscow_0012.CRW	c7d949119a24b3ca	RAW	uncompressed
+GITUP/GIT2/GITUP-GIT2-16:9.RAW	1bc5d9de97f49f08	RAW	uncompressed
+GITUP/GIT2/GITUP-GIT2-4:3.RAW	35e9487baed9fd6d	RAW	uncompressed
+GITUP/GIT2P/git2p_169.raw	b1709bad9f850161	RAW	uncompressed
+GITUP/GIT2P/git2p_43.raw	e1f9fad72de048fd	RAW	uncompressed
+Gitup/G3 Duo 170/Gitup_G3_duo_170°.RAW	ffd8d78c8fb308a0	RAW	uncompressed
+Kodak/Kodak C330/RAW_KODAK_C330_FORMAT420_YRGB.RAW	db0d679a77dcf933	RAW	kodak-ycbcr
+Kodak/Kodak C330/RAW_KODAK_C330_FORMAT422_YRGB.RAW	363cf7146f2f9bfd	RAW	kodak-ycbcr
+Kodak/Kodak C330/RAW_KODAK_C330_FORMAT_NONE_YRGB.RAW	633e5d6101dfcf7c	RAW	kodak-ycbcr
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_FORMAT_422_CCDI0001.RAW	3bba93c80bdae5ea	RAW	uncompressed
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_FORMAT_422_CFAI0001.RAW	16f002df20c49b2d	RAW	uncompressed
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_FORMAT_NONE_CCDI0001.RAW	62caf6eb84870f8f	RAW	uncompressed
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_FORMAT_NONE_CFAI0001.RAW	e9c3aa5fa6384b92	RAW	uncompressed
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_FORMAT_NONE_YRGB0001.RAW	679e4eb756a73577	RAW	kodak-ycbcr
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_Format_420_CCDI0001.RAW	c58b5a6f2255cbad	RAW	uncompressed
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_Format_420_CFAI0001.RAW	d607e3ccc3311f12	RAW	uncompressed
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_Format_420_YRGB0001.RAW	30b11bd041a04729	RAW	kodak-ycbcr
+Minolta/RD 175/M001.MDC	a8c9c25837fc2419	RAW	uncompressed
+Pentax/Pentax Optio S4/RAW_PENTAX_OPTIOS4.RAW	adaa8908832997f9	RAW	uncompressed
+RaspberryPi/RP_imx219/Pi_V2.1.raw	8f4e92906f1bbf30	other	uncompressed
+RaspberryPi/RP_imx219/Pi_V2.1_picamera.raw	57a696077758becd	other	uncompressed
+SJCAM/M20/2016_0101_013059_001.RAW	4c8a4534466f5ce0	RAW	uncompressed
+SJCAM/SJ6 LEGEND/2018_0107_140544_001.RAW	8782794e543bc782	RAW	uncompressed
+SJCam/5000X Elite/2015_0101_035947_003.RAW	91ed6f6a604455d1	RAW	kodak-ycbcr
+SJCam/5000X Elite/2016_0104_005847_665To_send.RAW	db4413c95042411e	RAW	kodak-ycbcr
+Xiaomi/Yi/YDXJ0309.RAW	c71cc96507286922	RAW	uncompressed
+Arri/Alexa Mini/A004C002_190722_R20I.478.ari	e9d7cf7726831181	ARI	uncompressed
+Canon/IXY 220F/canon_ixy_220f.CRW	37ec21cf58ea80c7	RAW	uncompressed
+ImBack/ImB35mm/ttx.raw	bab9bd8bacd0f992	RAW	uncompressed
+Paralenz/+/IMG_0005.RAW	e6917da22659072d	RAW	uncompressed
+Paralenz/Dive Camera/IMG_0005.RAW	36f83b6be05db209	RAW	uncompressed
+RaspberryPi/RP_imx477/pi.raw	a512e3e34d467cb8	other	uncompressed
+RaspberryPi/RP_imx477/pi_hq_picamera.raw	4e3f83cac45ee5f3	other	uncompressed
+RaspberryPi/RP_imx477/pi_hq_raspistill.raw	44de427a6230d093	other	uncompressed
+RaspberryPi/RP_ov5647/Pi_V1.3.raw	7d990a5dd5cc477a	other	uncompressed
+RaspberryPi/RP_ov5647/Pi_V1.3_picamera.raw	722af8d1c758fc4a	other	uncompressed
+SJCAM/SJ6 LEGEND/2018_0107_140610_003.RAW	e88912eec875ce82	RAW	uncompressed
+SJCAM/SJ6 LEGEND/2018_0107_140646_005.RAW	11909964da351510	RAW	uncompressed
+Xiro/Xplorer V/2017_0908_092308_001.RAW	72a0d963f4148024	RAW	uncompressed

@@ -240,6 +240,7 @@ impl TrueHeader {
 
 /// Decode one TRUE plane of `cols x rows` samples into `out` (`out_cols` samples per row,
 /// `out_cols <= cols`; extra columns on the right are decoded and discarded).
+#[allow(clippy::needless_range_loop)]
 pub fn decode_true_plane(
     code: &PrefixCode,
     data: &[u8],
@@ -375,6 +376,7 @@ pub fn decode_huffman(
 
 /// Decode the uncompressed variant: one little-endian 32-bit word per pixel holding
 /// three `bits`-bit indices into `mapping` (differences), running sums per colour.
+#[allow(clippy::too_many_arguments)]
 pub fn decode_simple(
     data: &[u8],
     row_stride: usize,
