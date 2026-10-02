@@ -738,9 +738,9 @@ mod tests {
         assert_eq!(s.packet(0x2008 / 16 + 1)[0], data[8]);
         // Packet straddling the split.
         let p = s.packet(0x2000 / 16);
-        for k in 0..16 {
+        for (k, &v) in p.iter().enumerate() {
             let i = 0x2000 + k;
-            assert_eq!(p[k], data[(i + BLOCK - 0x2008) % BLOCK]);
+            assert_eq!(v, data[(i + BLOCK - 0x2008) % BLOCK]);
         }
     }
 

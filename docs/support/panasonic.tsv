@@ -1,0 +1,5 @@
+FORMAT	MODE	COMPRESSION	STATUS	NOTES
+RW2	RawFormat 5 (12/14-bit)	panasonic-v5	verified	GH5S, G9 high-res; 10 files bit-exact
+RW2	RawFormat 6 (12/14-bit)	panasonic-v6	verified	S1/S1R/S1H/S5, GH5 II; 8 files bit-exact
+RW2	RawFormat 7 (14-bit)	panasonic-v7	verified	S1R/S5 high-res; 3 files bit-exact; 12-bit variant implemented, no sample
+RW2	RawFormat 8 (12/14/16-bit)	panasonic-v8	verified	GH6/GH7/G9 II/S5 II/S9/S1 II/S1R II...; 35 files bit-exact; strips decoded in parallel

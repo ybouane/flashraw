@@ -1,0 +1,10 @@
+FORMAT	MODE	COMPRESSION	STATUS	NOTES
+RAF	X-Trans lossy compressed	fuji-compressed	verified	Per-line quantiser + flat-area tables; 13 files bit-exact
+RAF	Bayer lossless compressed (GFX)	fuji-compressed	verified	14/16-bit GFX 50/100 series; 13 files bit-exact
+RAF	Bayer lossy compressed (GFX)	fuji-compressed	verified	14/16-bit; 9 files bit-exact
+RAF	12-bit compressed	fuji-compressed	experimental	Same code path as 14/16-bit; no corpus sample
+RAF	uncompressed 16-bit words	uncompressed	verified	X-Trans/GFX uncompressed and older Bayer bodies; 44 files bit-exact
+RAF	SuperCCD SR dual frame (F700/S20Pro)	uncompressed	partial	Main frame bit-exact (1 file); second (dark) frame not exposed
+RAF	12-bit packed LSB	uncompressed	verified	EXR bodies, X10/X-S1/XF1, X100, X-Pro1/X-E1/X-M1/X-A1/X-A2, X20/X30/XQ1/XQ2; bit-exact
+RAF	12-bit packed MSB32	uncompressed	verified	HS10, S1, SL1000; bit-exact
+RAF	14-bit packed MSB32	uncompressed	verified	X-A3/A5/A7/A10, X-T100/T200, XF10; 6 files bit-exact
