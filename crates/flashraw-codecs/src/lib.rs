@@ -8,6 +8,7 @@
 
 pub mod canon_cr2;
 pub mod canon_crw;
+pub mod canon_crx;
 pub mod canon_sraw;
 pub mod deflate;
 pub mod jpeg;
