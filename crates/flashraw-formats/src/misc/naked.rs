@@ -225,6 +225,14 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
     if let Some(m) = fallback.filter(|m| m.white > 0) {
         white = m.white as u32;
     }
+    if let Some(sensor) = cam.sensor(meta.exposure.iso.unwrap_or(0)) {
+        if sensor.black >= 0 {
+            info.black_level = BlackLevel::uniform(sensor.black as f32);
+        }
+        if sensor.white > 0 {
+            white = sensor.white as u32;
+        }
+    }
     info.white_level = WhiteLevel::uniform(white);
     let sides = match &loader {
         Loader::Packed(p) => p.flags & 32 != 0,

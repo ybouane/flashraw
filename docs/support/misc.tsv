@@ -1,0 +1,4 @@
+# format	mode	compression	status	notes
+JPEG+BRCM	Raspberry Pi RAW8/RAW14/RAW16 modes	raw8/14/16	experimental	no corpus sample
+TIFF	TIFF/EP CFA from unknown makes	uncompressed / lossless JPEG	experimental	standards-based fallback; no corpus sample reaches it with a CFA pattern
+CRW	Canon A620 Portulaca_1216.CRW	-	unsupported	file is a bzip2 archive, not a raw
