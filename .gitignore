@@ -1,0 +1,10 @@
+target/
+corpus/
+node_modules/
+*.part
+/reference/
+/npm/dist/
+/npm/pkg*/
+/fuzz/artifacts/
+/fuzz/corpus/
+/fuzz/coverage/

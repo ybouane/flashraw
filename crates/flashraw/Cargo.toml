@@ -1,0 +1,40 @@
+[package]
+name = "flashraw"
+description = "Extremely fast, safe RAW image decoding: DNG, CR2, CR3, NEF, ARW, RAF, RW2, ORF, PEF and more"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords = ["raw", "camera", "dng", "image", "decoder"]
+categories = ["multimedia::images"]
+
+[features]
+default = ["rayon", "simd", "mmap"]
+# Multithreaded decoding via rayon.
+rayon = ["dep:rayon", "flashraw-core/rayon", "flashraw-codecs/rayon", "flashraw-formats/rayon"]
+# Explicit SIMD kernels (runtime-dispatched on x86/ARM, compile-time on WASM).
+simd = ["flashraw-core/simd", "flashraw-codecs/simd", "flashraw-formats/simd"]
+# Memory-mapped file input.
+mmap = ["dep:memmap2"]
+# GPU acceleration via wgpu (Vulkan/Metal/DX12/WebGPU).
+gpu = ["dep:flashraw-gpu"]
+# JPEG XL compressed DNG (DNG 1.7).
+jpegxl = ["flashraw-formats/jpegxl"]
+# serde support for metadata types.
+serde = ["dep:serde", "flashraw-core/serde"]
+
+[dependencies]
+flashraw-core.workspace = true
+flashraw-codecs.workspace = true
+flashraw-formats.workspace = true
+flashraw-camera-db.workspace = true
+flashraw-gpu = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+memmap2 = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true

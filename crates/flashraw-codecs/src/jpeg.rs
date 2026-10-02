@@ -1,0 +1,68 @@
+//! Baseline (lossy) JPEG decoding for lossy DNG tiles and preview conversion.
+
+use flashraw_core::{Error, Result};
+
+/// A decoded 8-bit image.
+pub struct Decoded8 {
+    pub width: usize,
+    pub height: usize,
+    pub components: usize,
+    pub data: Vec<u8>,
+}
+
+/// Decode a baseline/progressive JPEG to 8-bit samples, keeping the native colour
+/// components (1 for grey, 3 for RGB).
+pub fn decode(data: &[u8]) -> Result<Decoded8> {
+    use zune_jpeg::zune_core::colorspace::ColorSpace;
+    use zune_jpeg::zune_core::options::DecoderOptions;
+    let opts =
+        DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGB).set_max_width(65535).set_max_height(65535);
+    let mut d = zune_jpeg::JpegDecoder::new_with_options(data, opts);
+    d.decode_headers().map_err(|e| Error::corrupt(format!("jpeg: {e:?}")))?;
+    let info = d.info().ok_or_else(|| Error::corrupt("jpeg: no header info"))?;
+    let gray = info.components == 1;
+    if gray {
+        let opts = DecoderOptions::default()
+            .jpeg_set_out_colorspace(ColorSpace::Luma)
+            .set_max_width(65535)
+            .set_max_height(65535);
+        d = zune_jpeg::JpegDecoder::new_with_options(data, opts);
+    }
+    let pixels = d.decode().map_err(|e| Error::corrupt(format!("jpeg: {e:?}")))?;
+    let (w, h) = d.dimensions().ok_or_else(|| Error::corrupt("jpeg: no dimensions"))?;
+    Ok(Decoded8 { width: w, height: h, components: if gray { 1 } else { 3 }, data: pixels })
+}
+
+/// Read only the dimensions of a JPEG (SOFn scan), without decoding.
+pub fn dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    let mut p = 2usize;
+    if data.get(0..2)? != [0xFF, 0xD8] {
+        return None;
+    }
+    while p + 9 < data.len() {
+        if data[p] != 0xFF {
+            p += 1;
+            continue;
+        }
+        let m = data[p + 1];
+        if m == 0xFF {
+            p += 1;
+            continue;
+        }
+        if matches!(m, 0xD8 | 0x01 | 0xD0..=0xD7) {
+            p += 2;
+            continue;
+        }
+        let len = u16::from_be_bytes([data[p + 2], data[p + 3]]) as usize;
+        if matches!(m, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
+            let h = u16::from_be_bytes([data[p + 5], data[p + 6]]) as u32;
+            let w = u16::from_be_bytes([data[p + 7], data[p + 8]]) as u32;
+            return Some((w, h));
+        }
+        if m == 0xDA || len < 2 {
+            return None;
+        }
+        p += 2 + len;
+    }
+    None
+}

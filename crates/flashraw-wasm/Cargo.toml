@@ -1,0 +1,15 @@
+[package]
+name = "flashraw-wasm"
+description = "WebAssembly bindings for FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flashraw = { workspace = true, default-features = false, features = ["simd"] }

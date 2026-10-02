@@ -1,0 +1,16 @@
+[package]
+name = "flashraw-gpu"
+description = "Optional wgpu/WebGPU compute backend for FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+flashraw-core.workspace = true
+wgpu.workspace = true
+bytemuck.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster.workspace = true

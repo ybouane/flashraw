@@ -1,0 +1,20 @@
+[package]
+name = "flashraw-formats"
+description = "RAW container parsers and per-vendor format decoders for FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["rayon", "simd"]
+rayon = ["flashraw-core/rayon", "flashraw-codecs/rayon", "dep:rayon"]
+simd = ["flashraw-codecs/simd"]
+jpegxl = ["flashraw-codecs/jpegxl"]
+
+[dependencies]
+flashraw-core.workspace = true
+flashraw-codecs.workspace = true
+flashraw-camera-db.workspace = true
+rayon = { workspace = true, optional = true }

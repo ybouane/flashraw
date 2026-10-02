@@ -1,0 +1,24 @@
+[package]
+name = "flashraw-core"
+description = "Core types, bounds-safe readers, bit pumps and container parsers for FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["rayon", "simd"]
+# Parallel decoding helpers backed by rayon (native targets).
+rayon = ["dep:rayon"]
+# Explicit SIMD kernels with runtime dispatch (scalar fallbacks are always compiled).
+simd = []
+serde = ["dep:serde"]
+
+[dependencies]
+rayon = { workspace = true, optional = true }
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true

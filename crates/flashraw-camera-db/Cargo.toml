@@ -1,0 +1,22 @@
+[package]
+name = "flashraw-camera-db"
+description = "Camera database (aliases, crops, levels, CFA, colour matrices, quirks) for FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT OR Apache-2.0"
+repository.workspace = true
+build = "build.rs"
+include = ["src/**", "build.rs", "data/**", "Cargo.toml"]
+
+[features]
+# Validate/compare tooling used by `flashraw camera-db ...` (not needed at runtime).
+tooling = ["dep:serde", "dep:toml"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+
+[build-dependencies]
+toml.workspace = true
+serde.workspace = true

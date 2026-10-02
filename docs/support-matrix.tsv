@@ -1,0 +1,7 @@
+# format	mode	compression	status	notes
+# Regenerated from compatibility results by tools/compat (see docs/testing.md).
+DNG	CFA/LinearRaw	uncompressed 8-16 bit	experimental	
+DNG	CFA/LinearRaw	lossless JPEG	experimental	
+DNG	any	deflate (int + float)	experimental	
+DNG	LinearRaw	lossy JPEG	experimental	
+DNG	any	JPEG XL	experimental	requires `jpegxl` feature
