@@ -301,15 +301,18 @@ fn build_decoder<'a>(
     let (p1, p2) = (p.clone(), p.clone());
     let row_based =
         matches!(*p, Payload::Arw2 { .. } | Payload::Unpacked16 { .. } | Payload::Packed12 { .. } | Payload::Arq);
+    let tiled = matches!(*p, Payload::LjpegTiles { .. } | Payload::Ycbcr { .. });
     let mut dec = SimpleDecoder::new(
         RawFormat::Arw,
         meta,
         info,
         Box::new(move |ctx| decode_region(data, src, &p1, width, height, ctx, None)),
     );
-    if row_based {
+    if row_based || tiled {
         dec.region = Some(Box::new(move |ctx, r| decode_region(data, src, &p2, width, height, ctx, Some(r))));
-        dec.random_access = RandomAccess::Rows;
+        if row_based {
+            dec.random_access = RandomAccess::Rows;
+        }
     }
     match &*p {
         Payload::LjpegTiles { tiles, tile_w, tile_h } | Payload::Ycbcr { tiles, tile_w, tile_h } => {
@@ -425,11 +428,11 @@ fn decode_region(
             if region == full { Ok(img) } else { img.crop(region) }
         }
         Payload::LjpegTiles { tiles, tile_w, tile_h } => {
-            let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
+            let mut img = RawImage::new_u16(region.width, region.height, 1, &ctx.limits)?;
             ctx.profiler.time(Stage::EntropyDecode, || {
-                decode_ljpeg_tiles(data, tiles, *tile_w, *tile_h, width, height, img.u16_mut(), ctx)
+                decode_ljpeg_tiles(data, tiles, *tile_w, *tile_h, width, height, region, img.u16_mut(), ctx)
             })?;
-            if region == full { Ok(img) } else { img.crop(region) }
+            Ok(img)
         }
         Payload::Arw6 => {
             let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
@@ -439,11 +442,11 @@ fn decode_region(
             if region == full { Ok(img) } else { img.crop(region) }
         }
         Payload::Ycbcr { tiles, tile_w, tile_h } => {
-            let mut img = RawImage::new_u16(width, height, 4, &ctx.limits)?;
+            let mut img = RawImage::new_u16(region.width, region.height, 4, &ctx.limits)?;
             ctx.profiler.time(Stage::EntropyDecode, || {
-                decode_ycc_tiles(data, tiles, *tile_w, *tile_h, width, height, img.u16_mut(), ctx)
+                decode_ycc_tiles(data, tiles, *tile_w, *tile_h, width, height, region, img.u16_mut(), ctx)
             })?;
-            if region == full { Ok(img) } else { img.crop(region) }
+            Ok(img)
         }
     }
 }
@@ -493,6 +496,7 @@ fn unpack_rows(
 }
 
 /// Lossless JPEG tiles: each MCU of a 4-component JPEG row is a 2x2 Bayer quad.
+/// Only tiles intersecting `region` are decoded; `out` covers `region`.
 #[allow(clippy::too_many_arguments)]
 fn decode_ljpeg_tiles(
     data: &[u8],
@@ -501,10 +505,11 @@ fn decode_ljpeg_tiles(
     tile_h: u32,
     width: u32,
     height: u32,
+    region: Rect,
     out: &mut [u16],
     ctx: &DecodeContext,
 ) -> Result<()> {
-    let g = GridWriter::new(out, width, height, 1, (0, 0), tile_w, tile_h, width, height)
+    let g = GridWriter::new(out, region.width, region.height, 1, (region.x, region.y), tile_w, tile_h, width, height)
         .ok_or_else(|| Error::corrupt("Sony: invalid tile grid"))?;
     let tx = g.tiles_x();
     let n = (tx * g.tiles_y()) as usize;
@@ -525,28 +530,27 @@ fn decode_ljpeg_tiles(
                 ));
             }
             let (tw, th) = t.size();
+            let (sx, sy) = (t.skip_x as usize, t.skip_y as usize);
+            // for odd sizes): limits in tile-local coordinates.
             let ty0 = (i as u32 / tx * tile_h) as usize;
             let tx0 = (i as u32 % tx * tile_w) as usize;
-            let max_rows = th.min((height as usize - 1).saturating_sub(ty0).div_ceil(2) * 2);
-            let max_cols = tw.min((width as usize - 1).saturating_sub(tx0).div_ceil(2) * 2);
+            let max_rows = (height as usize - 1).saturating_sub(ty0).div_ceil(2) * 2;
+            let max_cols = (width as usize - 1).saturating_sub(tx0).div_ceil(2) * 2;
+            let (c0, c1) = (sx, (sx + tw).min(max_cols));
             ljpeg::decode_rows(src, &hdr, |jrow, s| {
                 let r = jrow * 2;
                 if r >= max_rows {
                     return Ok(());
                 }
-                let quads = (s.len() / 4).min(max_cols / 2);
-                {
-                    let row0 = t.row(r);
-                    for (q, px) in s.chunks_exact(4).take(quads).enumerate() {
-                        row0[2 * q] = px[0];
-                        row0[2 * q + 1] = px[1];
+                let c1 = c1.min(s.len() / 4 * 2);
+                for k in 0..2 {
+                    let rr = r + k;
+                    if rr < sy || rr >= sy + th || c0 >= c1 {
+                        continue;
                     }
-                }
-                if r + 1 < th {
-                    let row1 = t.row(r + 1);
-                    for (q, px) in s.chunks_exact(4).take(quads).enumerate() {
-                        row1[2 * q] = px[2];
-                        row1[2 * q + 1] = px[3];
+                    let row = t.row(rr - sy);
+                    for c in c0..c1 {
+                        row[c - sx] = s[(c >> 1) * 4 + 2 * k + (c & 1)];
                     }
                 }
                 Ok(())
@@ -562,7 +566,8 @@ fn decode_ljpeg_tiles(
     }
 }
 
-/// YCbCr lossless tiles, converted to RGB (4 samples per pixel, 4th = 0).
+/// YCbCr lossless tiles, converted to RGB (4 samples per pixel, 4th = 0). Only
+/// tiles intersecting `region` are decoded; `out` covers `region`.
 #[allow(clippy::too_many_arguments)]
 fn decode_ycc_tiles(
     data: &[u8],
@@ -571,10 +576,11 @@ fn decode_ycc_tiles(
     tile_h: u32,
     width: u32,
     height: u32,
+    region: Rect,
     out: &mut [u16],
     ctx: &DecodeContext,
 ) -> Result<()> {
-    let g = GridWriter::new(out, width, height, 4, (0, 0), tile_w, tile_h, width, height)
+    let g = GridWriter::new(out, region.width, region.height, 4, (region.x, region.y), tile_w, tile_h, width, height)
         .ok_or_else(|| Error::corrupt("Sony: invalid tile grid"))?;
     let tx = g.tiles_x();
     let n = (tx * g.tiles_y()) as usize;
@@ -589,13 +595,14 @@ fn decode_ycc_tiles(
             let src = flashraw_core::bytes::slice_at_lenient(data, o, l)?;
             let ycc = sony_ycc::decode_tile(src, tile_w as usize, tile_h as usize)?;
             let (tw, th) = t.size();
+            let (sx, sy) = (t.skip_x as usize, t.skip_y as usize);
             for y in 0..th {
                 let row = t.row(y);
-                let s = &ycc[y * tile_w as usize * 3..];
-                for x in 0..tw {
+                let s = &ycc[((sy + y) * tile_w as usize + sx) * 3..];
+                for (x, px) in row.chunks_exact_mut(4).take(tw).enumerate() {
                     let rgb = sony_ycc::to_rgb(s[3 * x], s[3 * x + 1], s[3 * x + 2]);
-                    row[4 * x..4 * x + 3].copy_from_slice(&rgb);
-                    row[4 * x + 3] = 0;
+                    px[..3].copy_from_slice(&rgb);
+                    px[3] = 0;
                 }
             }
             Ok(())
@@ -610,7 +617,6 @@ fn decode_ycc_tiles(
     }
 }
 
-/// Tile offsets/sizes and the tile dimensions of a tiled raw IFD.
 /// Tile byte ranges plus the tile width and height.
 type TileGrid = (Vec<(usize, usize)>, u32, u32);
 

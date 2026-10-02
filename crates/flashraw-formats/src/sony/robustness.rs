@@ -128,6 +128,37 @@ fn minolta_samples_survive_malformed_input() {
     }
 }
 
+/// Region decoding (rows / intersecting tiles only) equals cropping a full decode.
+#[test]
+fn region_decode_matches_full_decode() {
+    for rel in [
+        "Sony/ILCE-9M3/DSC00117.ARW", // lossless tiles
+        "Sony/ILCE-9M3/DSC00114.ARW", // YCbCr tiles
+        "Sony/ILCE-7S/DSC04126.ARW",  // ARW2 rows
+        "Sony/ILCE-9M3/DSC00115.ARW", // uncompressed rows
+        "Sony/ILCE-7RM3/Indoor_Multi-20190712-094102.ARQ",
+        "Olympus/E-300/P1252148.ORF",            // padded packed rows
+        "MINOLTA/DYNAX 5D/Minolta_Dynax_5D.MRW", // packed rows
+    ] {
+        let Some(d) = corpus(rel) else { continue };
+        let dec = crate::open(&d, &OpenOptions::default()).unwrap();
+        let prof = Profiler::new();
+        let ctx = DecodeContext::new(&prof);
+        let full = dec.decode(&ctx).unwrap();
+        let (w, h) = (full.width, full.height);
+        for r in [
+            Rect::new(0, 0, w.min(17), h.min(9)),
+            Rect::new(w / 3, h / 4, w / 5 + 3, h / 7 + 5),
+            Rect::new(w.saturating_sub(700), h.saturating_sub(513), 700.min(w), 513.min(h)),
+            Rect::new(511, 509, 3, 1030.min(h - 509)),
+        ] {
+            let got = dec.decode_region(&ctx, r).unwrap();
+            let want = full.crop(r).unwrap();
+            assert_eq!(got.u16(), want.u16(), "{rel} region {r}");
+        }
+    }
+}
+
 /// The Hasselblad Lunar is a rebadged NEX-7 writing ordinary ARW2 files: the Sony
 #[test]
 fn hasselblad_lunar_is_an_arw() {
