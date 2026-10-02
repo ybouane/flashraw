@@ -200,29 +200,27 @@ impl<'a> FujiCompressed<'a> {
         par::for_each_index(self.blocks.len(), parallel, |b| {
             // Stripes outside the region are not claimed (claim returns None).
             let Some(mut tile) = grid.claim(b as u32, 0) else { return };
-            let res = (|| {
-                let (tw, th) = tile.size();
-                let (sx, sy) = (tile.skip_x as usize, tile.skip_y as usize);
-                let q = self.q_bases.get(b).copied().unwrap_or(&[]);
-                let emit = |line: usize, lines: &[u16]| {
-                    for r in 0..6 {
-                        let y = line * 6 + r;
-                        if y < sy || y - sy >= th {
-                            continue;
-                        }
-                        let row = tile.row(y - sy);
-                        let idx = map.idx[r].get(sx..sx + tw).unwrap_or(&[]);
-                        for (dst, &src) in row.iter_mut().zip(idx.iter()) {
-                            *dst = lines.get(src as usize).copied().unwrap_or(0);
-                        }
+            let (tw, th) = tile.size();
+            let (sx, sy) = (tile.skip_x as usize, tile.skip_y as usize);
+            let q = self.q_bases.get(b).copied().unwrap_or(&[]);
+            let emit = |line: usize, lines: &[u16]| {
+                for r in 0..6 {
+                    let y = line * 6 + r;
+                    if y < sy || y - sy >= th {
+                        continue;
                     }
-                };
-                if h.lossless {
-                    decode_block::<false>(&common, self.blocks[b], q, needed_lines, emit)
-                } else {
-                    decode_block::<true>(&common, self.blocks[b], q, needed_lines, emit)
+                    let row = tile.row(y - sy);
+                    let idx = map.idx[r].get(sx..sx + tw).unwrap_or(&[]);
+                    for (dst, &src) in row.iter_mut().zip(idx.iter()) {
+                        *dst = lines.get(src as usize).copied().unwrap_or(0);
+                    }
                 }
-            })();
+            };
+            let res = if h.lossless {
+                decode_block::<false>(&common, self.blocks[b], q, needed_lines, emit)
+            } else {
+                decode_block::<true>(&common, self.blocks[b], q, needed_lines, emit)
+            };
             if let Err(e) = res {
                 errors.lock().unwrap().get_or_insert(e);
             }
