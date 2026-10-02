@@ -7,6 +7,7 @@
 //! and tested in isolation (see `fuzz/` and `benches/`).
 
 pub mod deflate;
+pub mod fuji_compressed;
 pub mod jpeg;
 #[cfg(feature = "jpegxl")]
 pub mod jxl;
