@@ -15,6 +15,8 @@ pub mod olympus;
 pub mod packed;
 pub mod sony_arw1;
 pub mod sony_arw2;
+pub mod sony_arw6;
+pub mod sony_arw6_curve;
 pub mod sony_ycc;
 
 pub use packed::{PackedLayout, unpack, unpack_row, unpack_row_scalar};

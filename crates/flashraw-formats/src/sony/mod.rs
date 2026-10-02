@@ -79,6 +79,8 @@ enum Payload {
         tile_w: u32,
         tile_h: u32,
     },
+    /// ARW format 6 wavelet strip (ILCE-7M5 "compressed").
+    Arw6,
     /// YCbCr lossless JPEG tiles converted to RGB.
     Ycbcr {
         tiles: Vec<(usize, usize)>,
@@ -161,6 +163,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         1 if bps == 14 || bps == 16 => {
             (Payload::Unpacked16 { big_endian }, bps, Compression::Uncompressed, "uncompressed")
         }
+        32766 if photometric == 32803 && samples == 1 && (bps == 12 || bps == 14) => {
+            (Payload::Arw6, 14, Compression::Other, "arw6")
+        }
         6 | 7 if photometric == 6 && samples == 3 => {
             let (tiles, tile_w, tile_h) = tile_grid(raw)?;
             (Payload::Ycbcr { tiles, tile_w, tile_h }, 14, Compression::SonyLossless, "lossless-ycbcr")
@@ -222,6 +227,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }
     }
 
+    if matches!(payload, Payload::Arw6) {
+        // The coder works on its own code scale: fixed levels of its output curve.
+        black = 1024;
+        lv.cblack = [0; 4];
+        white = 39002;
+    }
     let vis = visible_area(&model, raw_w, buf_h, &payload);
     let mut payload = payload;
     if let Payload::Arw1 { stored_rows, .. } = &mut payload {
@@ -406,6 +417,13 @@ fn decode_region(
             let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
             ctx.profiler.time(Stage::EntropyDecode, || {
                 decode_ljpeg_tiles(data, tiles, *tile_w, *tile_h, width, height, img.u16_mut(), ctx)
+            })?;
+            if region == full { Ok(img) } else { img.crop(region) }
+        }
+        Payload::Arw6 => {
+            let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
+            ctx.profiler.time(Stage::EntropyDecode, || {
+                flashraw_codecs::sony_arw6::decode(src, img.u16_mut(), w, height as usize, ctx.parallel)
             })?;
             if region == full { Ok(img) } else { img.crop(region) }
         }
