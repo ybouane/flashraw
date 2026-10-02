@@ -289,10 +289,20 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }),
         _ => None,
     };
-    let random_access = match &payload {
-        Payload::Packed(_) | Payload::Words(..) => RandomAccess::Rows,
-        _ => RandomAccess::Sequential,
+    let row_layout = match &payload {
+        Payload::Packed(s) => s.fast_layout().map(|layout| conventions::RowLayout { layout, shift: 0 }),
+        Payload::Words(o, shift) => Some(conventions::RowLayout {
+            layout: PackedLayout::tight(
+                w as usize,
+                h as usize,
+                16,
+                if *o == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes },
+            ),
+            shift: *shift,
+        }),
+        _ => None,
     };
+    let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
     // V0 rows are addressed relative to the strip offset; keep the whole file.
     let srw = Arc::new(SrwRaw { src, width: w as usize, height: h as usize, payload });
     let s2 = srw.clone();
@@ -300,6 +310,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     dec.random_access = random_access;
     dec.units = vec![DecodeUnit { rect: Rect::full(w, h), offset: offset as u64, length: bytes as u64 }];
     dec.packed = packed;
+    if let Some(rl) = row_layout {
+        dec.region = Some(Box::new(move |ctx, r| conventions::decode_rows_region(src, rl, r, ctx)));
+    }
     Ok(Box::new(dec))
 }
 
@@ -399,6 +412,21 @@ mod tests {
             let Some(data) = corpus_file(s) else { continue };
             open_decode(&data).unwrap_or_else(|e| panic!("{s}: {e}"));
             mutate(&data, i as u64 * 15485863 + 5);
+        }
+    }
+
+    /// Region decodes of row-addressable payloads equal crops of full decodes.
+    #[test]
+    fn region_decode_matches_full_decode() {
+        use crate::nikon::conventions::robustness::{corpus_file, region_matches_full};
+        for s in [
+            "Samsung/NX10/SAM_3630.SRW",
+            "Samsung/NX1000/_5169011.SRW",
+            "Samsung/EX2F/RAW_SAMSUNG_EX2F.SRW",
+            "Samsung/EX1/SAM_5548.SRW",
+        ] {
+            let Some(data) = corpus_file(s) else { continue };
+            assert!(region_matches_full(&data), "{s} should be row addressable");
         }
     }
 }

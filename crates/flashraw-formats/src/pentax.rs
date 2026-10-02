@@ -271,12 +271,25 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }),
         _ => None,
     };
-    let random_access =
-        if matches!(pef.payload, Payload::Huffman(_)) { RandomAccess::Sequential } else { RandomAccess::Rows };
+    let row_layout = match &pef.payload {
+        Payload::Packed(s) => s.fast_layout(),
+        Payload::Words(o) => Some(PackedLayout::tight(
+            w as usize,
+            h as usize,
+            16,
+            if *o == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes },
+        )),
+        Payload::Huffman(_) => None,
+    }
+    .map(|layout| conventions::RowLayout { layout, shift: 0 });
+    let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
     let mut dec = SimpleDecoder::new(RawFormat::Pef, meta, info, Box::new(move |ctx| p2.decode(ctx)));
     dec.random_access = random_access;
     dec.units = vec![DecodeUnit { rect: Rect::full(w, h), offset: offset as u64, length: bytes as u64 }];
     dec.packed = packed;
+    if let Some(rl) = row_layout {
+        dec.region = Some(Box::new(move |ctx, r| conventions::decode_rows_region(src, rl, r, ctx)));
+    }
     Ok(Box::new(dec))
 }
 
@@ -332,6 +345,16 @@ mod tests {
             let Some(data) = corpus_file(s) else { continue };
             open_decode(&data).unwrap_or_else(|e| panic!("{s}: {e}"));
             mutate(&data, i as u64 * 104729 + 3);
+        }
+    }
+
+    /// Region decodes of row-addressable payloads equal crops of full decodes.
+    #[test]
+    fn region_decode_matches_full_decode() {
+        use crate::nikon::conventions::robustness::{corpus_file, region_matches_full};
+        for s in ["Pentax/K100D/IMGP1754.PEF", "Pentax/ist D/pentax.PEF"] {
+            let Some(data) = corpus_file(s) else { continue };
+            assert!(region_matches_full(&data), "{s} should be row addressable");
         }
     }
 }

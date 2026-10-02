@@ -389,10 +389,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 
     let nef = Arc::new(NefRaw { src, width: geo.raw_width as usize, height: raw_h as usize, payload });
     let packed_payload = nef.packed_payload();
-    let random_access = match &nef.payload {
-        Payload::Huffman { .. } | Payload::Ycbcr => RandomAccess::Sequential,
-        _ => RandomAccess::Rows,
-    };
+    let row_layout = nef.row_layout();
+    let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
     let units =
         vec![DecodeUnit { rect: Rect::full(geo.raw_width, raw_h), offset: offset as u64, length: bytes as u64 }];
     let n2 = nef.clone();
@@ -405,6 +403,10 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     dec.random_access = random_access;
     dec.units = units;
     dec.packed = packed_payload;
+    if let Some(rl) = row_layout {
+        let n3 = nef.clone();
+        dec.region = Some(Box::new(move |ctx, r| conventions::decode_rows_region(n3.src, rl, r, ctx)));
+    }
     Ok(Box::new(dec))
 }
 
@@ -433,6 +435,26 @@ fn mode_name(p: &Payload, bps: u32) -> String {
 }
 
 impl<'a> NefRaw<'a> {
+    /// The payload as independently addressable rows, when it is stored that way.
+    fn row_layout(&self) -> Option<conventions::RowLayout> {
+        let (w, h) = (self.width, self.height);
+        let layout = match &self.payload {
+            Payload::Packed(s) => s.fast_layout()?,
+            Payload::Words { order, .. } => PackedLayout::tight(
+                w,
+                h,
+                16,
+                if *order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes },
+            ),
+            Payload::PaddedLsb { bits, row_stride } => {
+                PackedLayout { width: w, height: h, bits: *bits, order: PackOrder::LsbBytes, row_stride: *row_stride }
+            }
+            _ => return None,
+        };
+        let shift = if let Payload::Words { shift, .. } = &self.payload { *shift } else { 0 };
+        Some(conventions::RowLayout { layout, shift })
+    }
+
     fn packed_payload(&self) -> Option<PackedPayload<'a>> {
         match &self.payload {
             Payload::Packed(s) => s.fast_layout().filter(|l| l.order == PackOrder::MsbBytes).map(|l| PackedPayload {
@@ -685,5 +707,23 @@ mod tests {
         d.extend([0u8; 4]);
         let tiff = Tiff::parse(&d).unwrap();
         assert!(open_tiff(&d, tiff, &OpenOptions::default()).is_err());
+    }
+
+    /// Region decodes of row-addressable payloads equal crops of full decodes.
+    #[test]
+    fn region_decode_matches_full_decode() {
+        use conventions::robustness::{corpus_file, region_matches_full};
+        for s in [
+            "Nikon/D1/RAW_NIKON_D1.NEF",
+            "Nikon/D3/JD1_8207.NEF",
+            "Nikon/D4S/FU9_3807.NEF",
+            "Nikon/Z 6/DSC_0753.NEF",
+            "Nikon/Z 6/DSC_0750.NEF",
+            "Nikon/Coolpix P7000/RAW_NIKON_P7000.NRW",
+            "Nikon/Coolpix P330/DSCN0138.NRW",
+        ] {
+            let Some(data) = corpus_file(s) else { continue };
+            assert!(region_matches_full(&data), "{s} should be row addressable");
+        }
     }
 }

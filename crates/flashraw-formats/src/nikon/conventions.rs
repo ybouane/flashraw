@@ -3,8 +3,50 @@
 
 use crate::common::*;
 use flashraw_camera_db::FallbackMatrix;
+use flashraw_codecs::packed::{self, PackedLayout};
 use flashraw_core::tiff::{Ifd, Tiff, tags};
 use flashraw_core::*;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// A row-addressable payload: a standard packed layout plus a right shift applied to
+/// every sample.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RowLayout {
+    pub layout: PackedLayout,
+    pub shift: u32,
+}
+
+/// Decode only `region` of a row-addressable payload (rows are unpacked in parallel
+/// straight from the source; unrelated rows are never touched).
+pub(crate) fn decode_rows_region(src: &[u8], rl: RowLayout, region: Rect, ctx: &DecodeContext) -> Result<RawImage> {
+    let l = rl.layout;
+    let full = Rect::full(l.width as u32, l.height as u32);
+    let r = region.intersect(&full).ok_or_else(|| Error::InvalidArgument(format!("region {region} outside image")))?;
+    let mut img = RawImage::new_u16(r.width, r.height, 1, &ctx.limits)?;
+    let (row_bytes, out_w, x0) = (l.row_bytes(), r.width as usize, r.x as usize);
+    let truncated = AtomicBool::new(false);
+    let (simd, shift) = (ctx.simd, rl.shift);
+    ctx.profiler.time(Stage::Unpack, || {
+        par::for_each_row_chunk(img.u16_mut(), out_w, 64, ctx.parallel, |first, chunk| {
+            let mut tmp = vec![0u16; l.width];
+            for (i, row) in chunk.chunks_mut(out_w).enumerate() {
+                let y = r.y as usize + first + i;
+                let Some(s) = src.get(y * l.row_stride..y * l.row_stride + row_bytes) else {
+                    truncated.store(true, Ordering::Relaxed);
+                    break;
+                };
+                packed::unpack_row(s, &mut tmp, l.bits, l.order, simd);
+                for (o, &v) in row.iter_mut().zip(&tmp[x0..x0 + out_w]) {
+                    *o = v >> shift;
+                }
+            }
+        })
+    });
+    if truncated.into_inner() {
+        return Err(Error::corrupt("packed data truncated inside the requested region"));
+    }
+    Ok(img)
+}
 
 /// The raw IFD: the largest image (by samples x bits) that is not a JPEG preview.
 /// Ties keep the first IFD in file order (the first frame of multi-shot files).
@@ -178,6 +220,25 @@ pub(crate) mod robustness {
         let p = Profiler::new();
         let ctx = DecodeContext::new(&p);
         dec.decode(&ctx)
+    }
+
+    /// For row-addressable payloads: a region decode equals the crop of a full decode.
+    /// Returns whether the file advertises row random access.
+    pub fn region_matches_full(data: &[u8]) -> bool {
+        use flashraw_core::{RandomAccess, Rect};
+        let dec = crate::open(data, &OpenOptions::default()).expect("open");
+        if dec.random_access() != RandomAccess::Rows {
+            return false;
+        }
+        let p = Profiler::new();
+        let ctx = DecodeContext::new(&p);
+        let full = dec.decode(&ctx).expect("decode");
+        let (w, h) = (full.width, full.height);
+        for r in [Rect::new(w / 3 | 1, h / 4 | 1, w / 3, h / 5), Rect::new(0, 0, w, 3), Rect::new(w - 7, h - 5, 7, 5)] {
+            let got = dec.decode_region(&ctx, r).expect("region");
+            assert_eq!(got, full.crop(r).unwrap(), "region {r}");
+        }
+        true
     }
 
     /// Truncate and corrupt `data` in many ways; every variant must return (any
