@@ -889,13 +889,16 @@ impl Raf<'_> {
                 if self.payload.len() < need || tw == 0 {
                     return Err(Error::corrupt("RAF tiled payload truncated"));
                 }
-                for t in 0..tiles {
-                    let base = t * tw * h * 2;
-                    for y in 0..h {
-                        let s = &self.payload[base + y * tw * 2..base + (y + 1) * tw * 2];
-                        packed::unpack_row(s, &mut out[y * w + t * tw..y * w + (t + 1) * tw], 16, po, false);
+                let (src, simd) = (self.payload, ctx.simd);
+                par::for_each_row_chunk(&mut out[..w * h], w, 64, ctx.parallel, |first, chunk| {
+                    for (i, row) in chunk.chunks_mut(w).enumerate() {
+                        let y = first + i;
+                        for (t, seg) in row.chunks_exact_mut(tw).enumerate().take(tiles) {
+                            let base = (t * h + y) * tw * 2;
+                            packed::unpack_row(&src[base..base + tw * 2], seg, 16, po, simd);
+                        }
                     }
-                }
+                });
                 Ok(())
             }
             Layout::Packed { bits, order } => {
