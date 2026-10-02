@@ -526,7 +526,10 @@ pub struct V8Strip<'a> {
 
 /// Decoded symbol for each 16-bit prefix: (code length, symbol); `len == 0` = invalid.
 struct V8Lut {
+    /// Indexed by the next `bits` stream bits (the longest code length), so the table
+    /// stays small enough for L1 (4096 entries for the usual 12-bit maximum).
     entries: Vec<(u8, u8)>,
+    bits: u32,
 }
 
 impl V8Lut {
@@ -534,21 +537,22 @@ impl V8Lut {
         if codes.is_empty() || codes.len() > 17 {
             return Err(Error::corrupt("Panasonic v8 Huffman table size"));
         }
+        let bits = codes.iter().map(|&(l, _)| l as u32).filter(|&l| l <= 16).max().unwrap_or(1).max(1);
         // Codes are matched in table order (first match wins; not necessarily a prefix code).
-        let mut entries = vec![(0u8, 0u8); 1 << 16];
+        let mut entries = vec![(0u8, 0u8); 1 << bits];
         for (v, e) in entries.iter_mut().enumerate() {
             for (sym, &(len, code)) in codes.iter().enumerate() {
-                if len == 0 || len > 16 {
+                if len == 0 || len as u32 > bits {
                     continue;
                 }
-                let shift = 16 - len as u32;
+                let shift = bits - len as u32;
                 if (v as u32 >> shift) == (code as u32 & ((1 << len) - 1)) {
                     *e = (len, sym as u8);
                     break;
                 }
             }
         }
-        Ok(V8Lut { entries })
+        Ok(V8Lut { entries, bits })
     }
 }
 
@@ -718,7 +722,7 @@ impl V8Decoder {
         // One refill covers the code (<= 16 bits) and its magnitude bits (<= 16).
         bits.fill();
         let window = bits.cache;
-        let (len, sym) = self.lut.entries[(window >> 48) as usize];
+        let (len, sym) = self.lut.entries.get((window >> (64 - self.lut.bits)) as usize).copied().unwrap_or((0, 0));
         if len == 0 {
             return Err(Error::corrupt("invalid Panasonic v8 Huffman code"));
         }
