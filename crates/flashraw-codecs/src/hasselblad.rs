@@ -126,6 +126,9 @@ pub fn decode(
     let mut bits = BitPumpMsb32::new(scan);
     let t = &hdr.table;
     let grad = hdr.predictor == 11;
+    if !grad {
+        return decode_left(&mut bits, t, out, width, height, 0x8000 + base);
+    }
     // Predictor history: current row and the row two above (same CFA colours).
     let mut rows: [Vec<i32>; 3] = [vec![0; width], vec![0; width], vec![0; width]];
     let start = 0x8000 + base;
@@ -152,6 +155,36 @@ pub fn decode(
                 dst[s] = pred as u16;
                 cur[s] = pred;
             }
+        }
+        if bits.exhausted() {
+            return Err(Error::corrupt(format!("Hasselblad: data ends at row {row}/{height}")));
+        }
+    }
+    Ok(())
+}
+
+/// Fast path for the plain left predictor: the two running predictions live in
+/// registers and no row history is kept.
+fn decode_left(
+    bits: &mut BitPumpMsb32,
+    t: &HuffTable,
+    out: &mut [u16],
+    width: usize,
+    height: usize,
+    start: i32,
+) -> Result<()> {
+    for (row, dst) in out.chunks_exact_mut(width).take(height).enumerate() {
+        let (mut p0, mut p1) = (start, start);
+        for px in dst.chunks_exact_mut(2) {
+            let l0 = t.decode_symbol(bits)?;
+            let l1 = t.decode_symbol(bits)?;
+            if l0 > 16 || l1 > 16 {
+                return Err(Error::corrupt("Hasselblad: difference length > 16"));
+            }
+            p0 = p0.wrapping_add(diff(bits, l0));
+            p1 = p1.wrapping_add(diff(bits, l1));
+            px[0] = p0 as u16;
+            px[1] = p1 as u16;
         }
         if bits.exhausted() {
             return Err(Error::corrupt(format!("Hasselblad: data ends at row {row}/{height}")));
