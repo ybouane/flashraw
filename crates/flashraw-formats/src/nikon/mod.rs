@@ -20,14 +20,16 @@
 
 mod crypt;
 mod makernote;
+pub(crate) mod conventions;
 
 use crate::common::*;
 use flashraw_codecs::nikon_huffman::{self, NikonMeta};
 use flashraw_codecs::nikon_packed::{self, PackedSpec};
 use flashraw_codecs::packed::{self, PackedLayout};
-use flashraw_core::tiff::{Ifd, Tiff, tags};
+use flashraw_core::tiff::{Tiff, tags};
 use flashraw_core::*;
 use makernote::MakerNote;
+use conventions::{file_orientation, select_raw_ifd, wb_from_cam_mul};
 use std::sync::Arc;
 
 /// Magic-signature probe (NEF/NRW are TIFF-based and dispatched by make).
@@ -304,19 +306,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         base_black = bo;
     }
     let mut maximum: u32 = max_override.unwrap_or(0);
-    if let Some(f) = fallback {
-        let rblack = base_black + black.iter().sum::<u32>() / 4;
-        if f.black > 0 {
-            base_black = f.black as u32;
-            black = [0; 4];
-        } else if f.black < 0 && rblack == 0 {
-            base_black = (-f.black) as u32;
-            black = [0; 4];
-        }
-        if f.white > 0 {
-            maximum = f.white as u32;
-        }
-    }
+    conventions::apply_table_levels(fallback, &mut base_black, &mut black, &mut maximum);
     if maximum == 0 {
         maximum = (1u32 << bps.clamp(1, 16)) - 1;
     }
@@ -375,45 +365,14 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             .unwrap_or(CfaPattern::RGGB);
         info.cfa = Some(cfa);
         info.layout = layout_for(&cfa);
-        // Black per CFA site: RGGB-ordered values mapped onto the pattern.
-        let mut pat = [0f32; 4];
-        for y in 0..2 {
-            for x in 0..2 {
-                let c = cfa.color_at(x, y);
-                let v = match c {
-                    CfaColor::Red => black[0],
-                    CfaColor::Blue => black[3],
-                    _ => {
-                        // Green sharing a row with red is G1.
-                        if cfa.color_at(x ^ 1, y) == CfaColor::Red { black[1] } else { black[2] }
-                    }
-                };
-                pat[y * 2 + x] = (base_black + v) as f32;
-            }
-        }
-        info.black_level =
-            if pat.iter().all(|&v| v == pat[0]) { BlackLevel::uniform(pat[0]) } else { BlackLevel::pattern2x2(pat) };
+        info.black_level = conventions::black_for_cfa(&cfa, base_black, black);
     }
     let mut mul = mn.cam_mul;
     if wb_is_analog {
         mul = [1.0; 4];
     }
     info.white_balance = wb_from_cam_mul(mul);
-    info.color_matrices = match fallback {
-        Some(f) if !f.color_matrix.is_empty() => {
-            let mut cm = ColorMatrices::default();
-            if let Some(m) = ColorMatrix::new(
-                Illuminant::D65,
-                3,
-                f.color_matrix.iter().take(9).map(|&v| v as f32 / 10000.0).collect(),
-            ) {
-                cm.color.push(m);
-                cm.source = ColorSource::CameraDb;
-            }
-            cm
-        }
-        _ => db_color(&meta, cam),
-    };
+    info.color_matrices = conventions::color_from_table(fallback, &meta, cam);
 
     // Previews: TIFF thumbnails/JpgFromRaw plus the makernote preview IFD.
     let mut previews = tiff_previews(data, 0, &tiff, info.orientation);
@@ -458,40 +417,6 @@ struct Geometry {
     raw_width: u32,
 }
 
-/// The raw IFD: the largest image (by samples x bits) that is not a JPEG preview.
-fn select_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>) -> Option<&'t Ifd<'a>> {
-    let mut best: Option<(&Ifd, u64)> = None;
-    for ifd in tiff.all_ifds() {
-        let (w, h) = (ifd.width() as u64, ifd.height() as u64);
-        let bps = ifd.bps() as u64;
-        let spp = ifd.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
-        if w == 0 || h == 0 || bps == 0 || bps > 32 || !ifd.has(tags::STRIP_OFFSETS) {
-            continue;
-        }
-        if ifd.compression() == 6 && spp == 3 {
-            continue;
-        }
-        if ifd.compression() == 6 || ifd.compression() == 7 {
-            continue;
-        }
-        let score = w * h * bps;
-        if best.is_none_or(|(_, s)| score > s) {
-            best = Some((ifd, score));
-        }
-    }
-    best.map(|(i, _)| i)
-}
-
-/// Orientation from the first IFD with a non-default orientation tag.
-fn file_orientation(tiff: &Tiff) -> Orientation {
-    tiff.all_ifds()
-        .into_iter()
-        .filter_map(|i| i.u32(tags::ORIENTATION))
-        .find(|&o| (2..=8).contains(&o))
-        .map(Orientation::from_exif)
-        .unwrap_or(Orientation::Normal)
-}
-
 /// reference-normalised model name ("NIKON D850" → "D850", "COOLPIX P7700" → "Coolpix P7700").
 fn table_model_name(model: &str) -> String {
     let m = model.trim();
@@ -508,21 +433,6 @@ fn mode_name(p: &Payload, bps: u32, mn: &MakerNote) -> String {
         Payload::Coolscan { .. } => "coolscan".into(),
         _ => format!("{bps}bit-uncompressed"),
     }
-}
-
-/// As-shot multipliers (R, G, B, G2) → normalised white balance, rejecting values the
-/// reference considers implausible.
-fn wb_from_cam_mul(m: [f32; 4]) -> Option<WhiteBalance> {
-    if m[..3].iter().any(|&v| !(v > 0.001)) {
-        return None;
-    }
-    let min = m[..3].iter().copied().fold(f32::MAX, f32::min);
-    let norm: Vec<f32> = m[..3].iter().map(|v| v / min).collect();
-    let max = norm.iter().copied().fold(0.0, f32::max);
-    if max > 100.0 {
-        return None;
-    }
-    WhiteBalance::from_multipliers(m[0], m[1], m[2], if m[3] > 0.0 { m[3] } else { m[1] })
 }
 
 impl<'a> NefRaw<'a> {
@@ -718,13 +628,5 @@ mod tests {
     fn ycc_neutral_grey() {
         let [r, g, b] = ycc_to_rgb([1000, 2048, 2048]);
         assert!(r > 0.0 && (r - g).abs() < 0.2 && (b - g).abs() < 0.2);
-    }
-
-    #[test]
-    fn wb_plausibility() {
-        assert!(wb_from_cam_mul([0.0, 1.0, 1.0, 1.0]).is_none());
-        assert!(wb_from_cam_mul([1000.0, 1.0, 1.0, 1.0]).is_none());
-        let wb = wb_from_cam_mul([2.0, 1.0, 1.5, 1.0]).unwrap();
-        assert_eq!(wb.coeffs[0], 2.0);
     }
 }
