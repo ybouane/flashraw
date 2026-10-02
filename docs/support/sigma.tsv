@@ -1,0 +1,6 @@
+# format	mode	compression	status	notes
+X3F	1/25 TRUE III sd Quattro	sigma-x3f	verified	as above
+X3F	1/27 TRUE III sd Quattro H	sigma-x3f	verified	as above
+X3F	1/29 TRUE III sd Quattro H (APS-C crop)	sigma-x3f	experimental	same code path as 1/27; no corpus sample
+X3F	3/6 10-bit Huffman (SD9, SD10, SD14)	sigma-x3f	verified	rows decode in parallel; negative running sums offset like X3F tools
+X3F	Huffman thumbnail (2/b), Quattro thumbnail (2/19)	-	unsupported	JPEG and RGB thumbnails are exposed as previews

@@ -27,6 +27,8 @@ enum Payload {
     Deflate,
     LossyJpeg,
     JpegXl,
+    /// GoPro VC-5: one wavelet bitstream for the whole image.
+    Vc5,
 }
 
 /// Parsed DNG raw image description shared by full/region decode.
@@ -46,6 +48,8 @@ struct DngRaw<'a> {
     units: Vec<(usize, usize)>,
     linearization: Option<Vec<u16>>,
     dng_bug16: bool,
+    vc5_white: u32,
+    vc5_phase: Option<flashraw_codecs::vc5::CfaPhase>,
 }
 
 /// Open a DNG.
@@ -170,6 +174,7 @@ fn parse_raw<'a>(
         8 | 32946 => (Payload::Deflate, Compression::Deflate),
         34892 => (Payload::LossyJpeg, Compression::LossyJpeg),
         52546 => (Payload::JpegXl, Compression::JpegXl),
+        9 => (Payload::Vc5, Compression::Vc5),
         c => return Err(Error::unsupported_compression("DNG", format!("TIFF compression {c}"))),
     };
     if payload == Payload::Uncompressed && !float && !(1..=16).contains(&bps) && bps != 32 {
@@ -419,6 +424,8 @@ fn parse_raw<'a>(
         units,
         linearization,
         dng_bug16,
+        vc5_white: info.white_level.max(),
+        vc5_phase: info.cfa.as_ref().and_then(flashraw_codecs::vc5::CfaPhase::from_pattern),
     };
     Ok((info, raw_desc))
 }
@@ -455,6 +462,25 @@ impl DngRaw<'_> {
         } else {
             RawImage::new_u16(region.width, region.height, self.cpp, &ctx.limits)?
         };
+        if self.payload == Payload::Vc5 {
+            // One bitstream covers the whole image: decode fully, then crop.
+            let mut full_img = RawImage::new_u16(self.width, self.height, 1, &ctx.limits)?;
+            let phase =
+                self.vc5_phase.ok_or_else(|| Error::unsupported_compression("DNG", "VC-5 without a Bayer CFA"))?;
+            let src = self.unit_bytes(0)?;
+            ctx.profiler.time(Stage::EntropyDecode, || {
+                flashraw_codecs::vc5::decode(
+                    src,
+                    self.width as usize,
+                    self.height as usize,
+                    self.vc5_white,
+                    phase,
+                    full_img.u16_mut(),
+                    ctx.parallel,
+                )
+            })?;
+            return if region == full { Ok(full_img) } else { full_img.crop(region) };
+        }
         if self.payload == Payload::Uncompressed && self.units.len() == 1 && !self.float && self.bps < 32 {
             ctx.profiler.time(Stage::Unpack, || self.unpack_single_strip(ctx, region, img.u16_mut()))?;
             return Ok(img);
@@ -707,6 +733,7 @@ impl DngRaw<'_> {
                 Ok(())
             }
             Payload::JpegXl => decode_jxl_u16(src, &mut t, sx, sy, cpp, finish),
+            Payload::Vc5 => Err(Error::corrupt("VC-5 is decoded as a whole image")),
         }
     }
 

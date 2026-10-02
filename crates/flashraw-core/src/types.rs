@@ -676,6 +676,8 @@ pub enum Compression {
     KodakSegmented,
     SigmaX3f,
     MinoltaPacked,
+    /// GoPro VC-5 (SMPTE ST 2073) wavelet codec in GPR (DNG compression 9).
+    Vc5,
     Other,
 }
 
@@ -717,6 +719,7 @@ impl Compression {
             Compression::KodakSegmented => "kodak-segmented",
             Compression::SigmaX3f => "sigma-x3f",
             Compression::MinoltaPacked => "minolta-packed",
+            Compression::Vc5 => "gopro-vc5",
             Compression::Other => "other",
         }
     }

@@ -20,11 +20,14 @@ pub mod jxl;
 pub mod kodak;
 pub mod leaf;
 pub mod ljpeg;
+pub mod misc_packed;
 pub mod nikon_huffman;
 pub mod nikon_packed;
 pub mod packed;
 pub mod pentax_huffman;
 pub mod phaseone;
 pub mod samsung;
+pub mod vc5;
+pub mod x3f;
 
 pub use packed::{PackedLayout, unpack, unpack_row, unpack_row_scalar};
