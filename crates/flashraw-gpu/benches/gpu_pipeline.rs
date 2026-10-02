@@ -80,6 +80,38 @@ fn bench(raw: &FlashRaw<'_>, opts: &DecodeOptions, iters: usize) -> Option<Sampl
 }
 
 fn main() {
+    // One-time costs a fresh process pays (device creation, calibration incl. pipeline compiles).
+    let t = std::time::Instant::now();
+    let ctx = flashraw_gpu::context();
+    let init_ms = t.elapsed().as_secs_f64() * 1e3;
+    if let Ok(ctx) = &ctx {
+        let t = std::time::Instant::now();
+        let g = ctx.calibration_blocking();
+        let cal_ms = t.elapsed().as_secs_f64() * 1e3;
+        let t = std::time::Instant::now();
+        let c = flashraw::gpu::cpu_costs();
+        let cpu_ms = t.elapsed().as_secs_f64() * 1e3;
+        println!(
+            "one-time: device init {init_ms:.1} ms, GPU calibration {cal_ms:.1} ms, CPU calibration {cpu_ms:.1} ms"
+        );
+        println!(
+            "GPU calibration: upload {:.1} GB/s, download {:.1} GB/s, develop {:.0} MP/s, half {:.0} MP/s, unpack {:.0} MP/s, overhead {:.2} ms (unified memory: {})",
+            g.upload_bytes_per_ms / 1e6,
+            g.download_bytes_per_ms / 1e6,
+            g.develop_px_per_ms / 1e3,
+            g.develop_half_px_per_ms / 1e3,
+            g.unpack_px_per_ms / 1e3,
+            g.overhead_ms,
+            ctx.unified_memory()
+        );
+        println!(
+            "CPU calibration: develop {:.0} MP/s, half {:.0} MP/s, unpack {:.0} MP/s, normalize {:.0} MP/s",
+            c.develop_px_per_ms / 1e3,
+            c.develop_half_px_per_ms / 1e3,
+            c.unpack_px_per_ms / 1e3,
+            c.normalize_px_per_ms / 1e3
+        );
+    }
     if !flashraw::gpu_available() {
         eprintln!("no GPU adapter: nothing to benchmark");
         return;
@@ -89,9 +121,9 @@ fn main() {
     println!("GPU: {info}  |  CPU threads: {}  |  median of {iters}", flashraw::low_level::core::par::threads());
     println!();
     println!(
-        "| File | MP | Payload | Case | CPU ms | GPU ms (download) | GPU ms (resident) | GPU stages up/compute/kernel/down |"
+        "| File | MP | Payload | Case | CPU ms | GPU ms (download) | GPU ms (resident) | Auto ms (choice) | GPU stages up/compute/kernel/down |"
     );
-    println!("|---|---|---|---|---|---|---|---|");
+    println!("|---|---|---|---|---|---|---|---|---|");
     for path in files() {
         let Ok(raw) = FlashRaw::open_path(&path) else { continue };
         let fi = raw.frame_info();
@@ -113,6 +145,11 @@ fn main() {
             let cpu = bench(&raw, &o(Backend::CpuSimd, host), iters);
             let gpu = bench(&raw, &o(Backend::Gpu, host), iters);
             let res = bench(&raw, &o(Backend::Gpu, resident), iters);
+            let auto = bench(&raw, &o(Backend::Auto, host), iters);
+            let choice = raw
+                .decode(o(Backend::Auto, host))
+                .map(|f| if f.stats.backend.gpu_adapter.is_some() { "GPU" } else { "CPU" })
+                .unwrap_or("-");
             let f = |s: &Option<Sample>| s.as_ref().map(|s| format!("{:.1}", s.wall)).unwrap_or("-".into());
             let st = gpu
                 .as_ref()
@@ -126,7 +163,13 @@ fn main() {
                     )
                 })
                 .unwrap_or_default();
-            println!("| {name} | {mp:.1} | {payload} | {case} | {} | {} | {} | {st} |", f(&cpu), f(&gpu), f(&res));
+            println!(
+                "| {name} | {mp:.1} | {payload} | {case} | {} | {} | {} | {} ({choice}) | {st} |",
+                f(&cpu),
+                f(&gpu),
+                f(&res),
+                f(&auto)
+            );
         }
     }
 }

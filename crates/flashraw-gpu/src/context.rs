@@ -217,7 +217,7 @@ impl GpuContext {
             class,
             timestamps: device.features().contains(wgpu::Features::TIMESTAMP_QUERY),
             max_buffer_size: limits.max_buffer_size,
-            max_storage_binding: limits.max_storage_buffer_binding_size as u64,
+            max_storage_binding: limits.max_storage_buffer_binding_size,
         };
         let last_error: Arc<Mutex<Option<String>>> = Arc::default();
         {

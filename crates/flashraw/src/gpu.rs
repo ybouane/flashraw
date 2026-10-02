@@ -388,7 +388,14 @@ fn measure_cpu() -> CpuCosts {
     };
     let mut img = match RawImage::new_u16(W as u32, H as u32, 1, &flashraw_core::Limits::default()) {
         Ok(i) => i,
-        Err(_) => return CpuCosts { unpack_px_per_ms: 1e6, develop_px_per_ms: 1e5, normalize_px_per_ms: 5e5 },
+        Err(_) => {
+            return CpuCosts {
+                unpack_px_per_ms: 1e6,
+                develop_px_per_ms: 1e5,
+                develop_half_px_per_ms: 2e5,
+                normalize_px_per_ms: 5e5,
+            };
+        }
     };
     let t_unpack = best(&mut || {
         let _ = unpack(&src, layout, img.u16_mut(), W, parallel, cfg!(feature = "simd"), true);
@@ -400,9 +407,18 @@ fn measure_cpu() -> CpuCosts {
     let t_dev = best(&mut || {
         let _ = process::develop_rgba8(&img, &info, (0, 0), &params, parallel);
     });
+    let half = process::DevelopParams::new(&info, crate::Demosaic::HalfSize, Rect::full(W as u32, H as u32));
+    let t_half = best(&mut || {
+        let _ = process::develop_rgba8(&img, &info, (0, 0), &half, parallel);
+    });
     let t_norm = best(&mut || {
         let _ = process::normalize(&img, &info, (0, 0), parallel);
     });
     let px = (W * H) as f64;
-    CpuCosts { unpack_px_per_ms: px / t_unpack, develop_px_per_ms: px / t_dev, normalize_px_per_ms: px / t_norm }
+    CpuCosts {
+        unpack_px_per_ms: px / t_unpack,
+        develop_px_per_ms: px / t_dev,
+        develop_half_px_per_ms: px / t_half,
+        normalize_px_per_ms: px / t_norm,
+    }
 }

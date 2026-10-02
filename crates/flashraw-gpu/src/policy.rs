@@ -21,8 +21,12 @@ pub struct GpuCalibration {
     pub download_bytes_per_ms: f64,
     /// Fused develop (packed input → RGBA8), pixels per ms.
     pub develop_px_per_ms: f64,
+    /// Half-size (2x2 superpixel) develop, *input* samples per ms.
+    pub develop_half_px_per_ms: f64,
     /// Unpack kernel, samples per ms.
     pub unpack_px_per_ms: f64,
+    /// Normalise kernel, samples per ms.
+    pub normalize_px_per_ms: f64,
     /// Fixed cost per run (submissions, synchronisation, allocations), ms.
     pub overhead_ms: f64,
     /// True when measured; false for the static defaults.
@@ -42,7 +46,9 @@ impl GpuCalibration {
             upload_bytes_per_ms: up,
             download_bytes_per_ms: down,
             develop_px_per_ms: dev,
+            develop_half_px_per_ms: dev * 2.0,
             unpack_px_per_ms: unp,
+            normalize_px_per_ms: unp,
             overhead_ms: ovh,
             measured: false,
         }
@@ -56,6 +62,8 @@ pub struct CpuCosts {
     pub unpack_px_per_ms: f64,
     /// Fused develop + RGBA8 encode (bilinear), output pixels per ms.
     pub develop_px_per_ms: f64,
+    /// Half-size develop + RGBA8 encode, *input* samples per ms.
+    pub develop_half_px_per_ms: f64,
     /// Normalisation, samples per ms.
     pub normalize_px_per_ms: f64,
 }
@@ -114,15 +122,18 @@ pub fn decide(class: AdapterClass, gpu: &GpuCalibration, cpu: &CpuCosts, w: &Wor
         WorkOutput::Normalized => (
             w.samples as f64 / cpu.normalize_px_per_ms
                 + if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 },
-            w.samples as f64 / gpu.unpack_px_per_ms,
+            w.samples as f64 / gpu.normalize_px_per_ms,
             w.samples * 4,
         ),
-        WorkOutput::Rgb { bytes_per_px, .. } => (
-            out_px as f64 / cpu.develop_px_per_ms
-                + if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 },
-            w.samples as f64 / gpu.develop_px_per_ms,
-            out_px * bytes_per_px as u64,
-        ),
+        WorkOutput::Rgb { bytes_per_px, half_size } => {
+            let unpack = if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 };
+            let (c, g) = if half_size {
+                (w.samples as f64 / cpu.develop_half_px_per_ms, w.samples as f64 / gpu.develop_half_px_per_ms)
+            } else {
+                (out_px as f64 / cpu.develop_px_per_ms, w.samples as f64 / gpu.develop_px_per_ms)
+            };
+            (c + unpack, g, out_px * bytes_per_px as u64)
+        }
     };
     let download_ms = if w.resident { 0.0 } else { out_bytes as f64 / gpu.download_bytes_per_ms };
     let gpu_ms = gpu.overhead_ms + w.upload_bytes as f64 / gpu.upload_bytes_per_ms + gpu_kernel_ms + download_ms;
@@ -222,19 +233,42 @@ impl GpuContext {
             best.2 = best.2.min(dl);
             best.3 = best.3.min((r.timings.compute_ms - k).max(0.0));
         }
-        let _ = self.run(&frame, &info, &GpuOp::Unpack).await?;
-        let mut unpack = f64::MAX;
-        for _ in 0..2 {
-            let r = self.run(&frame, &info, &GpuOp::Unpack).await?;
-            unpack = unpack.min(r.timings.kernel_ms.unwrap_or(r.timings.compute_ms));
+        let (frame, info) = (&frame, &info);
+        let kernel_time = |op: GpuOp| async move {
+            let _ = self.run(frame, info, &op).await?; // warm-up
+            let mut t = f64::MAX;
+            for _ in 0..2 {
+                let r = self.run(frame, info, &op).await?;
+                t = t.min(r.timings.kernel_ms.unwrap_or(r.timings.compute_ms));
+            }
+            Ok::<f64, flashraw_core::Error>(t)
+        };
+        let unpack = kernel_time(GpuOp::Unpack).await?;
+        let normalize = kernel_time(GpuOp::Normalize).await?;
+        let GpuOp::Develop(spec) = dev else { unreachable!() };
+        let half = kernel_time(GpuOp::Develop(DevelopSpec { half_size: true, ..spec })).await?;
+        // Upload bandwidth from two sizes (separates the fixed per-upload cost).
+        let big: Vec<u8> = data.iter().cycle().take(data.len() * 4).copied().collect();
+        let big_payload = flashraw_core::PackedPayload { data: &big, height: H * 4, ..payload };
+        let big_frame = GpuFrame::from_packed(&big_payload);
+        let big_info = FrameInfo::new(W, H * 4, bits as u8);
+        let mut up_big = f64::MAX;
+        for _ in 0..3 {
+            let r = self.run(&big_frame, &big_info, &GpuOp::Unpack).await?;
+            up_big = up_big.min(r.timings.upload_ms);
         }
+        let upload_bw = (big.len() - data.len()) as f64 / (up_big - best.0).max(1e-2);
+        let upload_bw = upload_bw.min(big.len() as f64 / up_big.max(1e-3) * 4.0);
+        let upload_fixed = (best.0 - data.len() as f64 / upload_bw).max(0.0);
         let px = (W * H) as f64;
         Ok(GpuCalibration {
-            upload_bytes_per_ms: data.len() as f64 / best.0.max(1e-3),
+            upload_bytes_per_ms: upload_bw,
             download_bytes_per_ms: px * 4.0 / best.2.max(1e-3),
             develop_px_per_ms: px / best.1.max(1e-3),
+            develop_half_px_per_ms: px / half.max(1e-3),
             unpack_px_per_ms: px / unpack.max(1e-3),
-            overhead_ms: best.3 + 0.2,
+            normalize_px_per_ms: px / normalize.max(1e-3),
+            overhead_ms: best.3 + upload_fixed + 0.2,
             measured: true,
         })
     }
@@ -245,7 +279,12 @@ mod tests {
     use super::*;
 
     fn cpu() -> CpuCosts {
-        CpuCosts { unpack_px_per_ms: 2e6, develop_px_per_ms: 0.3e6, normalize_px_per_ms: 1e6 }
+        CpuCosts {
+            unpack_px_per_ms: 2e6,
+            develop_px_per_ms: 0.3e6,
+            develop_half_px_per_ms: 0.5e6,
+            normalize_px_per_ms: 1e6,
+        }
     }
 
     fn work(output: WorkOutput, packed: bool, mp: f64) -> Workload {
@@ -295,7 +334,12 @@ mod tests {
         );
         assert!(d.use_gpu, "{d:?}");
         // A much faster CPU flips the decision.
-        let fast = CpuCosts { unpack_px_per_ms: 20e6, develop_px_per_ms: 10e6, normalize_px_per_ms: 20e6 };
+        let fast = CpuCosts {
+            unpack_px_per_ms: 20e6,
+            develop_px_per_ms: 10e6,
+            develop_half_px_per_ms: 20e6,
+            normalize_px_per_ms: 20e6,
+        };
         let d = decide(
             AdapterClass::Discrete,
             &g,

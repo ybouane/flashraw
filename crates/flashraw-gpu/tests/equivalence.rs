@@ -147,7 +147,7 @@ fn gpu_unpack_window_and_lut() {
         }
     }
     // u16 input through the same kernel (CPU-decoded upload path) with odd width.
-    let data: Vec<u16> = (0..(w * h) as u32).map(|i| (i * 2_654_435_761 >> 18) as u16).collect();
+    let data: Vec<u16> = (0..(w * h) as u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 18) as u16).collect();
     let run = ctx.run_blocking(&GpuFrame::from_u16(&data, w as u32, h as u32, 1), &info, &GpuOp::Unpack).unwrap();
     assert_eq!(run.image.download().unwrap().0, HostPixels::U16(data));
 }
