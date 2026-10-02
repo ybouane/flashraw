@@ -7,6 +7,7 @@
 //! and tested in isolation (see `fuzz/` and `benches/`).
 
 pub mod canon_cr2;
+pub mod canon_crw;
 pub mod canon_sraw;
 pub mod deflate;
 pub mod jpeg;
