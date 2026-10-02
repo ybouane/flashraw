@@ -19,6 +19,8 @@
 //! rules so full-buffer pixels and margins compare 1:1.
 
 pub mod crypt;
+#[cfg(test)]
+mod robustness;
 mod srf;
 pub(crate) mod table;
 
