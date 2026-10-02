@@ -31,7 +31,7 @@
 //! out-of-range predictions (samples wrap to 16 bits) and of incomplete Huffman code
 //! spaces (an unassigned code consumes no bits and decodes as "end of block").
 
-use flashraw_core::bits::{BitPumpJpeg, BitRead, extend_diff};
+use flashraw_core::bits::{BitRead, extend_diff};
 use flashraw_core::{Error, Result};
 use std::sync::OnceLock;
 
@@ -179,6 +179,100 @@ impl CrwHuff {
     }
 }
 
+/// MSB-first reader with JPEG-style byte stuffing (`FF 00` → `FF`; `FF` followed by
+/// anything else, or the end of data, ends the stream and yields zero bits).
+///
+/// Unlike the general `BitPumpJpeg`, the rare slow refill passes the state by value so
+/// the whole reader stays in registers inside the decode loop.
+struct StuffedBits<'a> {
+    data: &'a [u8],
+    pos: usize,
+    cache: u64,
+    bits: u32,
+    /// Zero bytes fed after the end of the stream.
+    overrun: usize,
+    stopped: bool,
+}
+
+impl<'a> StuffedBits<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        StuffedBits { data, pos: 0, cache: 0, bits: 0, overrun: 0, stopped: false }
+    }
+}
+
+/// Byte-wise refill up to more than 56 buffered bits; handles stuffing and the stream end.
+#[cold]
+#[inline(never)]
+fn refill_slow(
+    data: &[u8],
+    mut pos: usize,
+    mut cache: u64,
+    mut bits: u32,
+    mut overrun: usize,
+    mut stopped: bool,
+) -> (usize, u64, u32, usize, bool) {
+    while bits <= 56 {
+        let mut byte = 0u8;
+        if !stopped {
+            match (data.get(pos), data.get(pos + 1)) {
+                (Some(&0xff), Some(&0)) => {
+                    byte = 0xff;
+                    pos += 2;
+                }
+                (Some(&0xff), _) | (None, _) => stopped = true,
+                (Some(&b), _) => {
+                    byte = b;
+                    pos += 1;
+                }
+            }
+        }
+        if stopped {
+            overrun += 1;
+        }
+        cache |= (byte as u64) << (56 - bits);
+        bits += 8;
+    }
+    (pos, cache, bits, overrun, stopped)
+}
+
+impl BitRead for StuffedBits<'_> {
+    #[inline(always)]
+    fn fill(&mut self) {
+        if self.bits >= 32 {
+            return;
+        }
+        if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
+            let w = u64::from_be_bytes(chunk.try_into().unwrap_or([0xff; 8]));
+            // SWAR: any 0xFF byte needs the stuffing-aware path.
+            let inv = !w;
+            let has_ff = (inv.wrapping_sub(0x0101_0101_0101_0101) & !inv & 0x8080_8080_8080_8080) != 0;
+            if !has_ff && !self.stopped {
+                self.cache |= w >> self.bits;
+                self.pos += ((63 - self.bits) >> 3) as usize;
+                self.bits |= 56;
+                return;
+            }
+        }
+        (self.pos, self.cache, self.bits, self.overrun, self.stopped) =
+            refill_slow(self.data, self.pos, self.cache, self.bits, self.overrun, self.stopped);
+    }
+    #[inline(always)]
+    fn peek_no_fill(&self, n: u32) -> u32 {
+        (self.cache >> (64 - n)) as u32
+    }
+    #[inline(always)]
+    fn skip_no_fill(&mut self, n: u32) {
+        self.cache <<= n;
+        self.bits -= n;
+    }
+    fn byte_position(&self) -> usize {
+        self.pos - (self.bits as usize >> 3)
+    }
+    fn overrun(&self) -> usize {
+        self.overrun
+    }
+}
+
 /// The (first, second) table pair for a decoder-table id; ids above 2 use set 2.
 fn tables(table: u32) -> &'static (CrwHuff, CrwHuff) {
     static SETS: [OnceLock<(CrwHuff, CrwHuff)>; 3] = [OnceLock::new(), OnceLock::new(), OnceLock::new()];
@@ -211,7 +305,7 @@ pub fn decode(stream: &[u8], p: &CrwParams, out: &mut [u16]) -> Result<()> {
         return Err(Error::InvalidArgument("CRW: output buffer smaller than width * height".into()));
     }
     let (first, second) = tables(p.table);
-    let mut bits = BitPumpJpeg::new(stream);
+    let mut bits = StuffedBits::new(stream);
     let mut carry: i32 = 0;
     let mut base = [512i32; 2];
     // Samples left in the current image row (the predictors restart at each row).
