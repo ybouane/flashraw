@@ -11,6 +11,7 @@ pub mod jpeg;
 #[cfg(feature = "jpegxl")]
 pub mod jxl;
 pub mod ljpeg;
+pub mod olympus;
 pub mod packed;
 pub mod sony_arw1;
 pub mod sony_arw2;
