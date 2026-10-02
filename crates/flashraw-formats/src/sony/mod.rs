@@ -265,6 +265,15 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     info.white_balance = lv.cam_mul.and_then(|m| sane_wb(&m));
     info.color_matrices = table::color(entry, &meta);
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
+    // Tiled raw IFDs may also carry JPEG pointers into the sensor data: drop any
+    // "preview" that starts inside the raw payload.
+    let raw_ranges: Vec<(usize, usize)> = match &payload {
+        Payload::LjpegTiles { tiles, .. } | Payload::Ycbcr { tiles, .. } => tiles.clone(),
+        _ => strips(raw),
+    };
+    meta.previews.retain(|p| {
+        !raw_ranges.iter().any(|&(o, l)| (p.offset as usize) >= o && (p.offset as usize) < o.saturating_add(l))
+    });
 
     let src = payload_bytes(data, raw, &payload)?;
     build_decoder(data, meta, info, payload, src, raw_w, buf_h)

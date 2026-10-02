@@ -45,6 +45,9 @@ struct Makernote {
     crop: [Option<u32>; 4],
     /// 0x640..=0x653.
     coder: [Option<u32>; 14],
+    /// Embedded JPEGs `(absolute offset, length)`: the makernote thumbnail (0x100)
+    /// and the CameraSettings preview (0x2020: 0x101/0x102).
+    previews: Vec<(usize, usize)>,
 }
 
 /// Payload layout.
@@ -180,6 +183,10 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     info.orientation = file_orientation(&tiff);
     info.color_matrices = table::color(entry, &meta);
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
+    for &(o, l) in &mn.previews {
+        push_jpeg(data, o, l, info.orientation, &mut meta.previews);
+    }
+    classify_previews(&mut meta.previews);
 
     // row of odd-height frames comes from the bytes after the strip).
     let src = data.get(offset..).ok_or_else(|| Error::corrupt("ORF: strip offset beyond file"))?;
@@ -409,7 +416,10 @@ fn read_makernote(data: &[u8], tiff: &Tiff) -> Makernote {
     let opts = TiffOptions { follow_sub_ifds: false, ..Default::default() };
     let Ok(root) = flashraw_core::tiff::parse_ifd_at(scope, order, ifd_off as u32, opts) else { return mn };
     apply_root(&root, &mut mn);
-    for sub in [0x2010u16, 0x2040] {
+    if let Some(t) = root.get(0x0100).filter(|e| e.typ == 7) {
+        mn.previews.push((base + t.value_pos, t.data.len()));
+    }
+    for sub in [0x2010u16, 0x2020, 0x2040] {
         let Some(e) = root.get(sub) else { continue };
         let off = match e.typ {
             // Embedded directory: offsets inside are relative to the makernote base too.
@@ -422,6 +432,10 @@ fn read_makernote(data: &[u8], tiff: &Tiff) -> Makernote {
         if let Ok(ifd) = flashraw_core::tiff::parse_ifd_at(scope, order, off, opts) {
             if sub == 0x2040 {
                 apply_image_processing(&ifd, &mut mn);
+            } else if sub == 0x2020 {
+                if let (Some(o), Some(l)) = (ifd.u32(0x0101), ifd.u32(0x0102)) {
+                    mn.previews.push((base + o as usize, l as usize));
+                }
             }
         }
     }

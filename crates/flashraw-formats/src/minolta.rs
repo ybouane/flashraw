@@ -197,6 +197,20 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     info.color_matrices = crate::sony::table::color(entry, &meta);
     if let Some((o, t)) = &tiff_holder {
         meta.previews = tiff_previews(data, *o, t, orientation);
+        // The thumbnail lives in the Minolta makernote (a plain IFD whose offsets are
+        // relative to the embedded TIFF): 0x81 holds the JPEG, 0x88/0x89 point to it.
+        if let Some(mn) = t.find_entry(flashraw_core::tiff::tags::MAKER_NOTE) {
+            let opts = flashraw_core::tiff::TiffOptions { follow_sub_ifds: false, ..Default::default() };
+            if let Ok(ifd) = flashraw_core::tiff::parse_ifd_at(t.data, t.order, mn.value_pos as u32, opts) {
+                if let Some(e) = ifd.get(0x0081).filter(|e| e.typ == 7) {
+                    push_jpeg(data, o + e.value_pos, e.data.len(), orientation, &mut meta.previews);
+                }
+                if let (Some(po), Some(pl)) = (ifd.u32(0x0088), ifd.u32(0x0089)) {
+                    push_jpeg(data, o + po as usize, pl as usize, orientation, &mut meta.previews);
+                }
+            }
+        }
+        classify_previews(&mut meta.previews);
     }
 
     let row_bytes = if packed { (w as usize * 12).div_ceil(8) } else { w as usize * 2 };
