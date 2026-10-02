@@ -303,6 +303,7 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
                 "compression": f.metadata.compression.map(|c| c.name()), "megapixels": mp,
                 "open_ms_median": omed, "open_ms_min": omin, "decode_ms_median": dmed, "decode_ms_min": dmin, "decode_ms_max": dmax,
                 "total_ms_median": tmed, "total_ms_min": tmin, "mp_per_s": mp / (tmed / 1000.0),
+                "maxrss_kb": maxrss_kb(),
                 "backend": f.stats.backend, "stages": stage_sum.iter().map(|(s, v)| (s.label(), v)).collect::<std::collections::BTreeMap<_, _>>(),
             })
         );
@@ -397,6 +398,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
         "cfa": info.cfa.map(|c| c.to_string()),
         "layout": format!("{:?}", info.layout),
         "black4": black4,
+        // 2x2 black pattern at the active-area origin (row-major), for positional comparison.
+        "black_visible": (0..4).map(|i| frame.black_level.at(info.active_area.x as usize + i % 2, info.active_area.y as usize + i / 2, 0)).collect::<Vec<_>>(),
         "black_level": frame.black_level,
         "white": info.white_level.max(),
         "wb": info.white_balance.map(|w| w.coeffs),
@@ -443,4 +446,19 @@ fn flashraw_support_matrix() -> Vec<Value> {
             json!({"format": c.first(), "mode": c.get(1), "compression": c.get(2), "status": c.get(3), "notes": c.get(4)})
         })
         .collect()
+}
+
+/// Peak resident set size of this process in KiB (0 where unavailable).
+pub fn maxrss_kb() -> i64 {
+    #[cfg(unix)]
+    {
+        // SAFETY: getrusage writes into the zero-initialised struct we pass; no other invariants.
+        unsafe {
+            let mut ru: libc::rusage = std::mem::zeroed();
+            if libc::getrusage(libc::RUSAGE_SELF, &mut ru) == 0 {
+                return ru.ru_maxrss;
+            }
+        }
+    }
+    0
 }

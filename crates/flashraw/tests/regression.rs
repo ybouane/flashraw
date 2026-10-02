@@ -19,7 +19,8 @@ fn corpus_regression() {
     }
     let filter = std::env::var("FLASHRAW_REGRESSION_FILTER").unwrap_or_default().to_lowercase();
     let mut rows = Vec::new();
-    let mut tsvs: Vec<_> = std::fs::read_dir(repo().join("tests/regression")).unwrap().flatten().map(|e| e.path()).collect();
+    let mut tsvs: Vec<_> =
+        std::fs::read_dir(repo().join("tests/regression")).unwrap().flatten().map(|e| e.path()).collect();
     tsvs.sort();
     for tsv in tsvs.iter().filter(|p| p.extension().is_some_and(|e| e == "tsv")) {
         for line in std::fs::read_to_string(tsv).unwrap().lines() {
@@ -46,7 +47,11 @@ fn corpus_regression() {
                     }
                     let got = flashraw::FlashRaw::open_path(&p)
                         .and_then(|r| r.decode(flashraw::DecodeOptions { threads: Some(2), ..Default::default() }))
-                        .map(|f| f.hash_u16(flashraw::Rect::full(f.width, f.height)).map(|h| format!("{h:016x}")).unwrap_or_default());
+                        .map(|f| {
+                            f.hash_u16(flashraw::Rect::full(f.width, f.height))
+                                .map(|h| format!("{h:016x}"))
+                                .unwrap_or_default()
+                        });
                     match got {
                         Ok(h) if &h == expected => {}
                         Ok(h) => failures.lock().unwrap().push(format!("{rel}: hash {h} != expected {expected}")),
@@ -57,6 +62,11 @@ fn corpus_regression() {
         }
     });
     let failures = failures.into_inner().unwrap();
-    eprintln!("{} regression files checked, {} missing from corpus, {} failures", rows.len(), missing.into_inner(), failures.len());
+    eprintln!(
+        "{} regression files checked, {} missing from corpus, {} failures",
+        rows.len(),
+        missing.into_inner(),
+        failures.len()
+    );
     assert!(failures.is_empty(), "regressions:\n{}", failures.join("\n"));
 }

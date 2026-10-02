@@ -1,0 +1,84 @@
+[package]
+name = "flashraw-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+flashraw = { path = "../crates/flashraw", default-features = false, features = ["simd"] }
+flashraw-core = { path = "../crates/flashraw-core", default-features = false }
+flashraw-codecs = { path = "../crates/flashraw-codecs", default-features = false }
+
+# Not part of the main workspace.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "open_decode"
+path = "fuzz_targets/open_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tiff_parse"
+path = "fuzz_targets/tiff_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bmff_parse"
+path = "fuzz_targets/bmff_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bit_pumps"
+path = "fuzz_targets/bit_pumps.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "huffman"
+path = "fuzz_targets/huffman.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ljpeg"
+path = "fuzz_targets/ljpeg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "packed_unpack"
+path = "fuzz_targets/packed_unpack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "deflate_float"
+path = "fuzz_targets/deflate_float.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dct12"
+path = "fuzz_targets/dct12.rs"
+test = false
+doc = false
+bench = false

@@ -69,6 +69,7 @@ impl LjpegHeader {
         let mut dht: [Option<HuffTable>; 4] = [None, None, None, None];
         let mut frame: Option<(u32, u32, u32, Vec<Component>, u32)> = None;
         let mut restart = 0u32;
+        let mut sof_marker = 0xC3u8;
         loop {
             // Skip fill bytes / garbage until a marker.
             while pos < data.len() && data[pos] != 0xFF {
@@ -92,12 +93,8 @@ impl LjpegHeader {
             let seg = flashraw_core::bytes::slice_at(data, pos + 2, len - 2)?;
             match marker {
                 0xC3 | 0xC0 | 0xC1 => {
-                    if marker != 0xC3 {
-                        return Err(Error::unsupported_compression(
-                            "ljpeg",
-                            format!("JPEG SOF{:X} (not lossless)", marker - 0xC0),
-                        ));
-                    }
+                    // Some encoders (e.g. Blackmagic) label lossless streams SOF0/SOF1; like
+                    sof_marker = marker;
                     if seg.len() < 6 {
                         return Err(Error::corrupt("lossless JPEG: short SOF"));
                     }
@@ -148,6 +145,12 @@ impl LjpegHeader {
                         comp_tables.push(td.min(3));
                     }
                     let predictor = seg[1 + 2 * ns] as u32;
+                    if sof_marker != 0xC3 && !(1..=7).contains(&predictor) {
+                        return Err(Error::unsupported_compression(
+                            "ljpeg",
+                            format!("JPEG SOF{:X} DCT stream (not lossless)", sof_marker - 0xC0),
+                        ));
+                    }
                     let pt = (seg[3 + 2 * ns] & 15) as u32;
                     let clrs = comps.len() as u32 + sraw;
                     // Table per MCU position: luma table repeated for sRAW extra samples.
@@ -220,9 +223,10 @@ where
         } else {
             decode_row_generic(hdr, &mut bits, &mut cur, &prev, jrow, clrs, &mut vpred)?;
         }
-        // A few bytes of zero padding at the very end are tolerated (some encoders
-        // truncate the final byte); anything more means the stream is truncated.
-        if bits.overrun() > 64 {
+        // Up to two bytes consumed past the end are tolerated at the very end (some
+        // encoders drop the final partial byte); anything more means truncation.
+        let slack = if jrow + 1 == hdr.height as usize { 2 } else { 64 };
+        if bits.past_end() > slack {
             return Err(Error::corrupt(format!("lossless JPEG: data ends at row {jrow}/{}", hdr.height)));
         }
         sink(jrow, &cur)?;
@@ -386,11 +390,11 @@ pub fn decode_into(
     decode_tile(data, opts, dst, dst_stride, width, width, height)
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
-    /// Minimal lossless JPEG encoder for tests (predictor 1..7, 1-4 components).
+/// Minimal lossless JPEG encoder, used to build synthetic fixtures for tests,
+/// fuzzing seeds and malformed-input suites (not optimised).
+pub mod encoder {
+    /// Encode `samples` (`height` rows of `width * comps` interleaved values) as a
+    /// lossless JPEG with predictor `psv` (1..=7) and a fixed Huffman table.
     pub fn encode(width: usize, height: usize, comps: usize, bits: u32, psv: u32, samples: &[u16]) -> Vec<u8> {
         // Huffman table: lengths 0..=16 with simple code lengths.
         let counts: [u8; 16] = [0, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0];
@@ -497,6 +501,12 @@ pub(crate) mod tests {
         out.extend([0xFF, 0xD9]);
         out
     }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::encoder::encode;
+    use super::*;
 
     fn pseudo(n: usize, bits: u32, seed: u32) -> Vec<u16> {
         let mut x = seed;

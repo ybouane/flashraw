@@ -243,14 +243,15 @@ impl<'a> FlashRaw<'a> {
         let mut postprocess = None;
         let mut frame_info_for_post = info.clone();
         frame_info_for_post.black_level = black.clone();
+        let mut float_scaled: Option<f32> = None;
         let (width, height, cpp, data) = match opts.output {
             OutputFormat::RawU16 => match img.data {
                 PixelData::U16(v) => (img.width, img.height, img.cpp, RawPixelData::U16(v)),
                 PixelData::F32(v) => {
-                    // Float DNG: scale [0, white] to u16.
-                    let white = info.white_level.max().max(1) as f32;
-                    let scale = if white <= 1.0 { 65535.0 } else { 1.0 };
-                    let v = v.iter().map(|x| (x * scale).round().clamp(0.0, 65535.0) as u16).collect();
+                    let (v, scale) = float_to_u16(&v, info.white_level.max());
+                    if scale != 1.0 {
+                        float_scaled = Some(scale);
+                    }
                     (img.width, img.height, img.cpp, RawPixelData::U16(v))
                 }
             },
@@ -272,14 +273,15 @@ impl<'a> FlashRaw<'a> {
                 let crop = if opts.crop { translate(info.crop) } else { Rect::full(img.width, img.height) };
                 let crop = if crop.is_empty() { Rect::full(img.width, img.height) } else { crop };
                 let params = process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop);
-                let dev = profiler.time(Stage::Postprocess, || {
-                    process::develop(&img, &frame_info_for_post, origin, &params, ctx.parallel)
-                })?;
                 if opts.output == OutputFormat::Rgba8 {
-                    let (w, h, px) =
-                        profiler.time(Stage::Postprocess, || process::to_rgba8(&dev, info.orientation, ctx.parallel));
+                    let (w, h, px) = profiler.time(Stage::Postprocess, || {
+                        process::develop_rgba8(&img, &frame_info_for_post, origin, &params, ctx.parallel)
+                    })?;
                     (w, h, 4, RawPixelData::U8(px))
                 } else {
+                    let dev = profiler.time(Stage::Postprocess, || {
+                        process::develop(&img, &frame_info_for_post, origin, &params, ctx.parallel)
+                    })?;
                     (dev.width, dev.height, 3, RawPixelData::F32(dev.rgb))
                 }
             }
@@ -318,8 +320,14 @@ impl<'a> FlashRaw<'a> {
             } else {
                 vec![]
             },
-            black_level: black,
-            white_level: info.white_level.clone(),
+            black_level: match float_scaled {
+                Some(m) => BlackLevel { values: black.values.iter().map(|v| (v * m).trunc()).collect(), ..black },
+                None => black,
+            },
+            white_level: match float_scaled {
+                Some(_) => WhiteLevel::uniform(FLOAT_TARGET as u32),
+                None => info.white_level.clone(),
+            },
             white_balance: info.white_balance,
             color_matrices: info.color_matrices.clone(),
             orientation: if opts.output == OutputFormat::Rgba8 { Orientation::Normal } else { info.orientation },
@@ -368,6 +376,18 @@ impl FlashRaw<'static> {
         reader.read_to_end(&mut v)?;
         Self::open(v)
     }
+}
+
+const FLOAT_TARGET: f32 = 16383.0;
+
+/// integer output): if the larger of the white level and the data maximum lies
+/// outside [4096, 32767], samples are scaled so that maximum maps to 16383; values
+/// are clamped at 0 and truncated. Returns the samples and the scale applied.
+fn float_to_u16(v: &[f32], white: u32) -> (Vec<u16>, f32) {
+    let data_max = v.iter().copied().fold(0f32, f32::max);
+    let tmax = (white.max(1) as f32).max(data_max).max(1.0);
+    let scale = if !(4096.0..=32767.0).contains(&tmax) { FLOAT_TARGET / tmax } else { 1.0 };
+    (v.iter().map(|&x| (x.max(0.0) * scale) as u16).collect(), scale)
 }
 
 /// File capabilities.

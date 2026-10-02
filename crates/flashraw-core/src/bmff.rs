@@ -90,10 +90,11 @@ fn parse_box<'a>(data: &'a [u8], pos: usize, base: usize) -> Result<(BmffBox<'a>
         uuid = Some(a);
         hdr += 16;
     }
-    if size < hdr as u64 || pos as u64 + size > data.len() as u64 {
+    let end = (pos as u64).checked_add(size).filter(|&e| size >= hdr as u64 && e <= data.len() as u64);
+    let Some(end) = end else {
         return Err(Error::corrupt_at(format!("invalid BMFF box size {size}"), (base + pos) as u64));
-    }
-    let end = pos + size as usize;
+    };
+    let end = end as usize;
     let b = BmffBox { typ, offset: base + pos, data: &data[pos + hdr..end], data_offset: base + pos + hdr, uuid };
     Ok((b, end))
 }

@@ -27,8 +27,18 @@ pub trait BitRead {
     fn skip_no_fill(&mut self, n: u32);
     /// Number of bytes consumed from the input (bits not yet used are excluded).
     fn byte_position(&self) -> usize;
-    /// Bytes requested past the end of the input (0 for a well-formed stream).
+    /// Bytes requested past the end of the input (0 for a well-formed stream). Includes
+    /// look-ahead that has not been consumed; see [`BitRead::past_end`].
     fn overrun(&self) -> usize;
+    /// Bits currently buffered (not yet consumed).
+    fn buffered(&self) -> u32;
+
+    /// Bytes *consumed* beyond the end of the input (padding fed but still buffered is
+    /// not counted). Decoders use this to detect truncated streams precisely.
+    #[inline]
+    fn past_end(&self) -> usize {
+        self.overrun().saturating_sub(self.buffered() as usize / 8)
+    }
 
     #[inline(always)]
     fn peek(&mut self, n: u32) -> u32 {
@@ -157,6 +167,9 @@ impl BitRead for BitPumpMsb<'_> {
     fn overrun(&self) -> usize {
         self.overrun
     }
+    fn buffered(&self) -> u32 {
+        self.bits
+    }
 }
 
 /// LSB-first bit pump (little-endian bit order).
@@ -220,6 +233,9 @@ impl BitRead for BitPumpLsb<'_> {
     }
     fn overrun(&self) -> usize {
         self.overrun
+    }
+    fn buffered(&self) -> u32 {
+        self.bits
     }
 }
 
@@ -304,6 +320,9 @@ impl<const W: usize> BitRead for BitPumpMsbWords<'_, W> {
     fn overrun(&self) -> usize {
         self.overrun
     }
+    fn buffered(&self) -> u32 {
+        self.bits
+    }
 }
 
 /// MSB-first pump for JPEG entropy-coded segments: removes `FF 00` byte stuffing and
@@ -377,6 +396,9 @@ impl<'a> BitPumpJpeg<'a> {
                 self.cache = 0;
                 self.bits = 0;
                 self.marker_hit = false;
+                // Zero padding fed while stopped at a restart marker is legitimate,
+                // not an overrun of the segment.
+                self.overrun = 0;
                 return true;
             }
             p += 1;
@@ -425,6 +447,9 @@ impl BitRead for BitPumpJpeg<'_> {
     }
     fn overrun(&self) -> usize {
         self.overrun
+    }
+    fn buffered(&self) -> u32 {
+        self.bits
     }
 }
 
