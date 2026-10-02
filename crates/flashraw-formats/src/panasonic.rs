@@ -1,19 +1,463 @@
-//! Vendor module: panasonic (implementation in progress).
+//! Panasonic RW2 and Leica RWL.
+//!
+//! RW2 is a TIFF variant (`IIU\0`) whose IFD0 uses Panasonic's own tag numbers:
+//! raw size (0x02/0x03), sensor borders (0x04–0x07), CFA (0x09), bit depth (0x0A),
+//! linearity limits (0x0E–0x10), black levels (0x1C–0x1E), white balance
+//! (0x24–0x26, older 0x11/0x12), raw format version (0x2D), embedded JPEG (0x2E),
+//! format-8 coding parameters (0x39–0x48) and the payload offset (0x118).
+//!
+//! Payload codecs live in [`flashraw_codecs::panasonic`]. Geometry and calibration
+//! `(0, 0, left_border + right_border, bottom_border + 12)` clipped to the buffer (plus
+//! a small per-size table); the sensor borders themselves become [`FrameInfo::crop`].
 
-use crate::common::OpenOptions;
-use flashraw_core::tiff::Tiff;
+use crate::common::*;
+use flashraw_codecs::panasonic::{self as codec, BlockedStream, V8Decoder, V8Params, V8Strip};
+use flashraw_core::tiff::{Entry, Ifd, Tiff, tags};
 use flashraw_core::*;
+use std::sync::Arc;
 
-/// Magic-signature probe.
-pub fn probe(_data: &[u8]) -> bool {
-    false
+/// Magic-signature probe (`IIU\0`: RW2/RWL).
+pub fn probe(data: &[u8]) -> bool {
+    data.len() >= 8 && data.starts_with(b"IIU\0")
 }
 
-pub fn open<'a>(_data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
-    Err(Error::UnsupportedFormat("panasonic: not implemented".into()))
+pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
+    let tiff = Tiff::parse(data)?;
+    open_tiff(data, tiff, opts)
 }
 
-pub fn open_tiff<'a>(_data: &'a [u8], tiff: Tiff<'a>, _opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
-    let _ = tiff;
-    Err(Error::UnsupportedFormat("panasonic: not implemented".into()))
+const ALIASES: &[(&str, &[&str])] = &[
+    ("DMC-FX150", &["DMC-FX180"]),
+    ("DC-FZ1000M2", &["DC-FZ10002", "V-Lux 5"]),
+    ("DMC-FZ1000", &["V-LUX (Typ 114)"]),
+    ("DMC-FZ2500", &["DMC-FZ2000", "DMC-FZH1"]),
+    ("DMC-FZ100", &["V-LUX 2"]),
+    ("DMC-FZ150", &["V-LUX 3"]),
+    ("DMC-FZ200", &["V-LUX 4"]),
+    ("DMC-FZ300", &["DMC-FZ330"]),
+    ("DMC-FZ35", &["DMC-FZ38"]),
+    ("DMC-FZ40", &["DMC-FZ42", "DMC-FZ45", "DC-FZ40", "DC-FZ42", "DC-FZ45"]),
+    ("DMC-FZ50", &["V-LUX 1", "V-LUX1"]),
+    ("DMC-FZ70", &["DMC-FZ72"]),
+    ("DC-FZ80", &["DC-FZ81", "DC-FZ82", "DC-FZ83", "DC-FZ85"]),
+    ("DMC-LC1", &["DIGILUX 2", "Digilux 2", "DIGILUX2"]),
+    ("DMC-LF1", &["C (Typ 112)"]),
+    ("DC-LX100M2", &["D-Lux 7"]),
+    ("DMC-LX100", &["D-LUX (Typ 109)", "D-Lux (Typ 109)"]),
+    ("DMC-LX1", &["D-Lux2", "D-LUX2", "D-LUX 2"]),
+    ("DMC-LX2", &["D-LUX 3", "D-LUX3"]),
+    ("DMC-LX3", &["D-LUX 4"]),
+    ("DMC-LX5", &["D-LUX 5"]),
+    ("DMC-LX7", &["D-LUX 6"]),
+    ("DMC-LX9", &["DMC-LX10", "DMC-LX15"]),
+    ("DMC-ZS100", &["DMC-ZS110", "DMC-TZ100", "DMC-TZ101", "DMC-TZ110", "DMC-TX1"]),
+    (
+        "DC-ZS200",
+        &[
+            "DC-ZS220",
+            "DC-TZ200",
+            "DC-TZ202",
+            "DC-TZ220",
+            "DC-TZ200D",
+            "DC-TZ202D",
+            "DC-TZ220D",
+            "DC-ZS200D",
+            "DC-ZS220DDC-TX2",
+            "C-Lux",
+            "CAM-DC25",
+        ],
+    ),
+    ("DMC-ZS40", &["DMC-TZ60", "DMC-TZ61"]),
+    ("DMC-ZS50", &["DMC-TZ70", "DMC-TZ71"]),
+    ("DMC-ZS60", &["DMC-TZ80", "DMC-TZ81", "DMC-TZ82", "DMC-TZ85"]),
+    ("DC-ZS70", &["DC-TZ90", "DC-TZ91", "DC-TZ92", "DC-TZ93"]),
+    ("DC-ZS80", &["DC-TZ95", "DC-TZ96", "DC-TZ97"]),
+    ("DC-G100", &["DC-G110"]),
+    ("DC-G99", &["DC-G90", "DC-G91", "DC-G95"]),
+    ("DMC-G7", &["DMC-G70"]),
+    ("DMC-G8", &["DMC-G80", "DMC-G81", "DMC-G85"]),
+    ("DMC-GH4", &["AG-GH4", "CGO4"]),
+    ("DC-GF10", &["DC-GF90", "DC-GX880"]),
+    ("DC-GF9", &["DC-GX850", "DC-GX800"]),
+    ("DMC-GM1", &["DMC-GM1S"]),
+    ("DMC-GX85", &["DMC-GX80", "DMC-GX7MK2"]),
+    ("DC-GX9", &["DC-GX7MK3"]),
+    ("DMC-L1", &["DIGILUX 3", "DIGILUX3"]),
+];
+
+fn base_model(model: &str) -> &str {
+    let m = model.trim();
+    ALIASES.iter().find(|(_, al)| al.iter().any(|a| a.eq_ignore_ascii_case(m))).map(|(canon, _)| *canon).unwrap_or(m)
+}
+
+fn fallback_table(model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
+    let m = model.to_ascii_uppercase();
+    flashraw_camera_db::MATRICES.iter().find(|t| {
+        t.canonical_make.eq_ignore_ascii_case("Panasonic") && m.starts_with(&t.model_prefix.to_ascii_uppercase())
+    })
+}
+
+/// (raw width, raw height, left, top, width delta, height delta).
+const MARGINS: &[[i32; 6]] = &[
+    [3130, 1743, 4, 0, -6, 0],
+    [3130, 2055, 4, 0, -6, 0],
+    [3130, 2319, 4, 0, -6, 0],
+    [3170, 2103, 18, 0, -42, 20],
+    [3170, 2367, 18, 13, -42, -21],
+    [3177, 2367, 0, 0, -1, 0],
+    [3304, 2458, 0, 0, -1, 0],
+    [3330, 2463, 9, 0, -5, 0],
+    [3330, 2479, 9, 0, -17, 4],
+    [3370, 1899, 15, 0, -44, 20],
+    [3370, 2235, 15, 0, -44, 20],
+    [3370, 2511, 15, 10, -44, -21],
+    [3690, 2751, 3, 0, -8, -3],
+    [3710, 2751, 0, 0, -3, 0],
+    [3724, 2450, 0, 0, 0, -2],
+    [3770, 2487, 17, 0, -44, 19],
+    [3770, 2799, 17, 15, -44, -19],
+    [3880, 2170, 6, 0, -6, 0],
+    [4060, 3018, 0, 0, 0, -2],
+    [4290, 2391, 3, 0, -8, -1],
+    [4330, 2439, 17, 15, -44, -19],
+    [4508, 2962, 0, 0, -3, -4],
+    [4508, 3330, 0, 0, -3, -6],
+    [10480, 7794, 0, 0, -2, 0],
+    [11560, 8680, 8, 8, -16, -16],
+];
+
+#[derive(Clone)]
+enum Payload<'a> {
+    V4(BlockedStream<'a>),
+    V5(BlockedStream<'a>, u32),
+    V6(&'a [u8], u32),
+    V7(&'a [u8], u32),
+    V8(Arc<V8Decoder>, Vec<V8Strip<'a>>),
+    /// Early bodies without a payload version: 16-bit little-endian words, 12 bits left-aligned.
+    Unpacked(&'a [u8]),
+}
+
+struct Rw2<'a> {
+    width: u32,
+    height: u32,
+    payload: Payload<'a>,
+}
+
+fn u16_tag(ifd: &Ifd, tag: u16) -> Option<u32> {
+    ifd.get(tag).and_then(|e| e.u32(0))
+}
+
+/// Panasonic "counted" arrays: a u16 count followed by values of `size` bytes.
+fn counted(e: &Entry, size: usize) -> Vec<u32> {
+    let b = e.bytes();
+    let n = b.get(..2).map(|c| u16::from_le_bytes([c[0], c[1]]) as usize).unwrap_or(0);
+    (0..n)
+        .filter_map(|i| {
+            let o = 2 + i * size;
+            let v = b.get(o..o + size)?;
+            Some(match size {
+                2 => u16::from_le_bytes([v[0], v[1]]) as u32,
+                _ => u32::from_le_bytes([v[0], v[1], v[2], v[3]]),
+            })
+        })
+        .collect()
+}
+
+fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Result<Payload<'a>> {
+    let e = |t: u16| ifd.get(t).ok_or_else(|| Error::invalid_metadata(format!("RW2 v8 tag {t:#x} missing")));
+    let mut p = V8Params { clip: u16_tag(ifd, 0x3b).unwrap_or(0xffff), ..Default::default() };
+    let slopes = counted(e(0x39)?, 4);
+    // Tag 0x3A holds (unused, point) u16 pairs.
+    let points = counted(e(0x3a)?, 4);
+    for i in 0..6 {
+        p.gamma_slopes[i] = slopes.get(i).copied().unwrap_or(0);
+        p.gamma_points[i] = points.get(i).map(|v| v >> 16).unwrap_or(0);
+    }
+    for (i, t) in (0x3cu16..=0x3f).enumerate() {
+        p.initial[i] = u16_tag(ifd, t).unwrap_or(0) as u16;
+    }
+    let codes = counted(e(0x40)?, 4);
+    p.codes = codes.iter().map(|&v| ((v & 0xffff).min(16) as u8, ((v >> 16) & 0xfff) as u16)).collect();
+    p.shift_down = counted(e(0x41)?, 2).iter().map(|&v| v.min(64) as u8).collect();
+    let count = u16_tag(ifd, 0x42).unwrap_or(0) as usize;
+    if count == 0 || count > 5 {
+        return Err(Error::corrupt(format!("RW2 v8 with {count} strips")));
+    }
+    let offsets = counted(e(0x44)?, 4);
+    let lefts = counted(e(0x45)?, 4);
+    let sizes = counted(e(0x46)?, 4);
+    let widths = counted(e(0x47)?, 2);
+    let heights = counted(e(0x48)?, 2);
+    let mut strips = Vec::with_capacity(count);
+    let mut total = 0u32;
+    for i in 0..count {
+        let get = |v: &Vec<u32>| v.get(i).copied().ok_or_else(|| Error::corrupt("RW2 v8 strip table too short"));
+        let (off, bits) = (get(&offsets)? as usize, get(&sizes)? as u64);
+        let len = bits.div_ceil(8) as usize;
+        let sdata = flashraw_core::bytes::slice_at(data, off, len)?;
+        let (left, width, height) = (get(&lefts)?, get(&widths)?, get(&heights)?);
+        if height != raw_h || (left & 0xffff) + width > raw_w {
+            return Err(Error::corrupt("RW2 v8 strip geometry does not match the image"));
+        }
+        total += width;
+        strips.push(V8Strip { data: sdata, bits, left: left & 0xffff, width, height });
+    }
+    if total != raw_w {
+        return Err(Error::corrupt("RW2 v8 strips do not cover the image width"));
+    }
+    Ok(Payload::V8(Arc::new(V8Decoder::new(&p)?), strips))
+}
+
+/// Open an RW2/RWL (or an older Panasonic TIFF-like RAW).
+pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
+    let ifd = tiff
+        .ifds
+        .iter()
+        .find(|i| i.has(0x118) || (i.has(0x02) && i.has(0x03) && i.has(tags::STRIP_OFFSETS)))
+        .ok_or_else(|| Error::invalid_metadata("Panasonic file without raw IFD"))?;
+    let mut meta = RawMetadata::default();
+    flashraw_core::exif::read_ifd0(ifd, &mut meta);
+    for i in tiff.ifds.iter().skip(1) {
+        flashraw_core::exif::read_ifd0(i, &mut meta);
+    }
+    let raw_w = u16_tag(ifd, 0x02).unwrap_or(0);
+    let raw_h = u16_tag(ifd, 0x03).unwrap_or(0);
+    opts.limits.check_dims(raw_w, raw_h, 1)?;
+    if raw_w < 22 || raw_h < 22 {
+        return Err(Error::invalid_metadata(format!("RW2 raw size {raw_w}x{raw_h}")));
+    }
+    let bps = u16_tag(ifd, 0x0a).unwrap_or(12).clamp(8, 16);
+    let version = u16_tag(ifd, 0x2d);
+    if meta.exposure.iso.is_none() || meta.exposure.iso == Some(65535) {
+        meta.exposure.iso = u16_tag(ifd, 0x17).filter(|&v| v != 0 && v != 65535).or_else(|| u16_tag(ifd, 0x37));
+    }
+
+    // Payload.
+    let (payload, compression, mode_name) = if let Some(off) = ifd.u32(0x118) {
+        let body = data
+            .get(off as usize..)
+            .filter(|b| !b.is_empty())
+            .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
+        let split = 0x2008;
+        match version.unwrap_or(4) {
+            4 => (Payload::V4(BlockedStream::new(body, split)?), Compression::Panasonic, "v4"),
+            5 => (Payload::V5(BlockedStream::new(body, split)?, bps), Compression::PanasonicV5, "v5"),
+            6 => (Payload::V6(body, bps), Compression::PanasonicV6, "v6"),
+            7 => (Payload::V7(body, bps), Compression::PanasonicV7, "v7"),
+            8 => (v8_payload(data, ifd, raw_w, raw_h)?, Compression::PanasonicV8, "v8"),
+            v => return Err(Error::unsupported_compression("RW2", format!("raw format {v}"))),
+        }
+    } else {
+        let off = ifd.u32(tags::STRIP_OFFSETS).ok_or_else(|| Error::invalid_metadata("RW2 without payload offset"))?;
+        let body = data
+            .get(off as usize..)
+            .filter(|b| !b.is_empty())
+            .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
+        if raw_w >= 7 && (body.len() / (raw_w as usize * 8 / 7)) == raw_h as usize {
+            (Payload::V4(BlockedStream::new(body, 0)?), Compression::Panasonic, "v4")
+        } else {
+            (Payload::Unpacked(body), Compression::Uncompressed, "unpacked")
+        }
+    };
+    let version = version.unwrap_or(match payload {
+        Payload::V4(_) => 4,
+        _ => 0,
+    });
+    meta.set_extra("panasonic_raw_format", version);
+    meta.set_extra("encoding", mode_name);
+
+    let (top_b, left_b, bottom_b, right_b) =
+        (u16_tag(ifd, 0x04), u16_tag(ifd, 0x05), u16_tag(ifd, 0x06), u16_tag(ifd, 0x07));
+    let mut width = match (left_b, right_b) {
+        (Some(l), Some(r)) => (l + r) as i64,
+        (Some(l), None) => l as i64,
+        _ => 0,
+    };
+    let mut height = bottom_b.unwrap_or(0) as i64;
+    if width == 0 {
+        width = raw_w as i64;
+    }
+    if height == 0 {
+        height = raw_h as i64;
+    }
+    height = (height + 12).min(raw_h as i64);
+    let (mut left, mut top) = (0i64, 0i64);
+    if let Some(m) = MARGINS.iter().find(|m| m[0] as u32 == raw_w && m[1] as u32 == raw_h) {
+        left = m[2] as i64;
+        top = m[3] as i64;
+        width += m[4] as i64;
+        height += m[5] as i64;
+    }
+    if top % 2 == 1 {
+        top += 1;
+        height -= 1;
+    }
+    if left % 2 == 1 {
+        left += 1;
+        width -= 1;
+    }
+    let mut info = FrameInfo::new(raw_w, raw_h, bps.min(16) as u8);
+    let cl = |v: i64| v.clamp(0, u32::MAX as i64) as u32;
+    info.active_area = Rect::new(cl(left), cl(top), cl(width), cl(height)).clamp_to(raw_w, raw_h);
+    info.crop = match (top_b, left_b, bottom_b, right_b) {
+        (Some(t), Some(l), Some(b), Some(r)) if r > l && b > t => {
+            Rect::new(l, t, r - l, b - t).intersect(&info.active_area).unwrap_or(info.active_area)
+        }
+        _ => info.active_area,
+    };
+    info.compression = compression;
+    info.orientation = Orientation::from_exif(ifd.u32(tags::ORIENTATION).unwrap_or(1));
+
+    // CFA (tag 0x09: 1 = RGGB, 2 = GRBG, 3 = GBRG, 4 = BGGR at the buffer origin).
+    let mut cfa_code = u16_tag(ifd, 0x09).unwrap_or(1);
+    if base_model(&meta.model).eq_ignore_ascii_case("DC-LX100M2") && raw_w == 4816 && raw_h == 3568 && cfa_code == 3 {
+        cfa_code = 4;
+    }
+    let cfa = match cfa_code {
+        2 => CfaPattern::GRBG,
+        3 => CfaPattern::GBRG,
+        4 => CfaPattern::BGGR,
+        _ => CfaPattern::RGGB,
+    };
+    info.cfa = Some(cfa);
+    info.layout = SensorLayout::Bayer;
+
+    let model = base_model(&meta.model).to_string();
+    let table = fallback_table(&model);
+    let mode = guess_mode(raw_w, raw_h);
+    let cam = db_lookup(&mut meta, mode);
+    meta.set_extra("aspect", mode);
+
+    // Black level per CFA colour.
+    let pana_black = [u16_tag(ifd, 0x1c), u16_tag(ifd, 0x1d), u16_tag(ifd, 0x1e)];
+    let modern = version >= 6;
+    let mut known = Known { cfa: true, crop: true, active_area: true, black: true, white: true, ..Default::default() };
+    let per_colour = |rgb: [f32; 3]| -> BlackLevel {
+        let v: Vec<f32> = (0..4)
+            .map(|i| match cfa.color_at(i % 2, i / 2) {
+                CfaColor::Red => rgb[0],
+                CfaColor::Blue => rgb[2],
+                _ => rgb[1],
+            })
+            .collect();
+        BlackLevel::pattern(2, 2, v)
+    };
+    if modern {
+        let b = pana_black.map(|v| v.unwrap_or(0) as f32);
+        info.black_level = per_colour(b);
+    } else if pana_black.iter().all(|v| v.is_some_and(|v| v > 0)) {
+        let add = if version == 4 { 15.0 } else { 0.0 };
+        info.black_level = per_colour(pana_black.map(|v| v.unwrap_or(0) as f32 + add));
+    } else if let Some(t) = table.filter(|t| t.black != 0) {
+        info.black_level = BlackLevel::uniform(t.black.unsigned_abs() as f32);
+    } else {
+        known.black = false;
+    }
+
+    // White level.
+    let lin: Vec<u32> = (0x0eu16..=0x10)
+        .filter_map(|t| u16_tag(ifd, t))
+        .map(|v| match v {
+            16383 => 16383 - 64,
+            4095 => 4095 - 16,
+            v => v,
+        })
+        .collect();
+    let bits_max = if bps >= 16 { 65535 } else { (1u32 << bps) - 1 };
+    info.white_level = WhiteLevel::uniform(if modern && !lin.is_empty() {
+        lin.iter().copied().max().unwrap_or(bits_max)
+    } else if let Some(t) = table.filter(|t| t.white > 0) {
+        t.white as u32
+    } else {
+        bits_max
+    });
+
+    // White balance.
+    let wb = match (u16_tag(ifd, 0x24), u16_tag(ifd, 0x25), u16_tag(ifd, 0x26)) {
+        (Some(r), Some(g), Some(b)) => WhiteBalance::from_multipliers(r as f32, g as f32, b as f32, g as f32),
+        _ => match (u16_tag(ifd, 0x11), u16_tag(ifd, 0x12)) {
+            (Some(r), Some(b)) => WhiteBalance::from_multipliers(r as f32, 256.0, b as f32, 256.0),
+            _ => None,
+        },
+    };
+    info.white_balance = wb;
+
+    if let Some(cm) = table.and_then(|t| {
+        ColorMatrix::new(Illuminant::D65, 3, t.color_matrix.iter().take(9).map(|&v| v as f32 / 10000.0).collect())
+    }) {
+        info.color_matrices = ColorMatrices { color: vec![cm], source: ColorSource::CameraDb, ..Default::default() };
+        known.color = true;
+    }
+    apply_db(&mut info, &meta, cam, known);
+
+    // Previews: the embedded full-size JPEG (0x2E) and any TIFF thumbnails.
+    meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
+    if let Some(e) = ifd.get(0x2e) {
+        push_jpeg(data, e.value_pos, e.bytes().len(), info.orientation, &mut meta.previews);
+    }
+    classify_previews(&mut meta.previews);
+
+    let rw2 = Arc::new(Rw2 { width: raw_w, height: raw_h, payload });
+    let r = rw2.clone();
+    let mut dec = SimpleDecoder::new(
+        RawFormat::Rw2,
+        meta,
+        info,
+        Box::new(move |ctx| {
+            let mut img = RawImage::new_u16(r.width, r.height, 1, &ctx.limits)?;
+            ctx.profiler.time(Stage::EntropyDecode, || r.decode(img.u16_mut(), ctx))?;
+            Ok(img)
+        }),
+    );
+    dec.random_access = match &rw2.payload {
+        Payload::V8(..) => RandomAccess::Blocks,
+        Payload::Unpacked(_) | Payload::V7(..) => RandomAccess::Rows,
+        _ => RandomAccess::Rows,
+    };
+    if let Payload::V8(_, strips) = &rw2.payload {
+        dec.units = strips
+            .iter()
+            .map(|s| DecodeUnit {
+                rect: Rect::new(s.left, 0, s.width, s.height),
+                offset: (s.data.as_ptr() as usize - data.as_ptr() as usize) as u64,
+                length: s.data.len() as u64,
+            })
+            .collect();
+    }
+    Ok(Box::new(dec))
+}
+
+fn guess_mode(w: u32, h: u32) -> &'static str {
+    let ratio = w as f32 / h.max(1) as f32;
+    let mut best = ("16:9", (ratio - 16.0 / 9.0).abs());
+    for (name, r) in [("3:2", 1.5f32), ("4:3", 4.0 / 3.0), ("1:1", 1.0)] {
+        let d = (ratio - r).abs();
+        if d < best.1 {
+            best = (name, d);
+        }
+    }
+    best.0
+}
+
+impl Rw2<'_> {
+    fn decode(&self, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
+        let (w, h) = (self.width as usize, self.height as usize);
+        let par = ctx.parallel;
+        match &self.payload {
+            Payload::V4(s) => codec::decode_v4(s, w, h, out, par),
+            Payload::V5(s, bits) => codec::decode_v5(s, *bits, w, h, out, par),
+            Payload::V6(d, bits) => codec::decode_v6(d, *bits, w, h, out, par),
+            Payload::V7(d, bits) => codec::decode_v7(d, *bits, w, h, out, par),
+            Payload::V8(dec, strips) => dec.decode(strips, out, w, par),
+            Payload::Unpacked(d) => {
+                if d.len() < w * h * 2 {
+                    return Err(Error::corrupt("RW2 unpacked payload truncated"));
+                }
+                for (o, s) in out[..w * h].iter_mut().zip(d.chunks_exact(2)) {
+                    *o = u16::from_le_bytes([s[0], s[1]]) >> 4;
+                }
+                Ok(())
+            }
+        }
+    }
 }
