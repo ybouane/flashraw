@@ -76,11 +76,7 @@ pub fn unpack_row(src: &[u8], dst: &mut [u16], bits: u32, order: PackOrder, simd
     match (bits, order) {
         (16, PackOrder::LsbBytes) => unpack_u16le(src, dst),
         (16, PackOrder::MsbBytes) => unpack_u16be(src, dst),
-        (8, PackOrder::MsbBytes | PackOrder::LsbBytes) => {
-            for (d, &s) in dst.iter_mut().zip(src) {
-                *d = s as u16;
-            }
-        }
+        (8, PackOrder::MsbBytes | PackOrder::LsbBytes) => unpack_u8(src, dst),
         (12, PackOrder::MsbBytes) => unpack12_msb(src, dst, simd),
         (12, PackOrder::LsbBytes) => unpack12_lsb(src, dst, simd),
         (14, PackOrder::MsbBytes) => unpack14_msb(src, dst),
@@ -114,15 +110,27 @@ pub fn unpack_row_scalar(src: &[u8], dst: &mut [u16], bits: u32, order: PackOrde
 }
 
 fn unpack_u16le(src: &[u8], dst: &mut [u16]) {
-    for (d, s) in dst.iter_mut().zip(src.chunks_exact(2)) {
+    let n = dst.len().min(src.len() / 2);
+    for (d, s) in dst[..n].iter_mut().zip(src.chunks_exact(2)) {
         *d = u16::from_le_bytes([s[0], s[1]]);
     }
+    tail(src, dst, n, 16, PackOrder::LsbBytes);
 }
 
 fn unpack_u16be(src: &[u8], dst: &mut [u16]) {
-    for (d, s) in dst.iter_mut().zip(src.chunks_exact(2)) {
+    let n = dst.len().min(src.len() / 2);
+    for (d, s) in dst[..n].iter_mut().zip(src.chunks_exact(2)) {
         *d = u16::from_be_bytes([s[0], s[1]]);
     }
+    tail(src, dst, n, 16, PackOrder::MsbBytes);
+}
+
+fn unpack_u8(src: &[u8], dst: &mut [u16]) {
+    let n = dst.len().min(src.len());
+    for (d, &s) in dst[..n].iter_mut().zip(src) {
+        *d = s as u16;
+    }
+    dst[n..].iter_mut().for_each(|d| *d = 0);
 }
 
 /// Fill any samples not covered by complete groups with the scalar reference.
@@ -355,6 +363,22 @@ mod tests {
                     unpack_row(&src, &mut c, bits, order, false);
                     assert_eq!(a, b, "bits {bits} {order:?} width {width} simd");
                     assert_eq!(a, c, "bits {bits} {order:?} width {width} nosimd");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn short_sources_match_reference() {
+        for bits in 1..=16u32 {
+            for order in [PackOrder::MsbBytes, PackOrder::LsbBytes, PackOrder::Msb16, PackOrder::Msb32] {
+                for len in 0..12usize {
+                    let src = pseudo(len, bits as u64 + len as u64);
+                    let mut a = vec![0xAAAAu16; 31];
+                    let mut b = vec![0x5555u16; 31];
+                    unpack_row_scalar(&src, &mut a, bits, order);
+                    unpack_row(&src, &mut b, bits, order, true);
+                    assert_eq!(a, b, "bits {bits} {order:?} len {len}");
                 }
             }
         }

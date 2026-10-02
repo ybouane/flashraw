@@ -8,3 +8,4 @@ node_modules/
 /fuzz/artifacts/
 /fuzz/corpus/
 /fuzz/coverage/
+/fuzz/target/
