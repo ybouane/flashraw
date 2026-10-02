@@ -491,7 +491,7 @@ fn decode_ljpeg_tiles(
             let max_cols = tw.min((width as usize - 1).saturating_sub(tx0).div_ceil(2) * 2);
             ljpeg::decode_rows(src, &hdr, |jrow, s| {
                 let r = jrow * 2;
-                if r + 1 >= max_rows + 1 || r >= max_rows {
+                if r >= max_rows {
                     return Ok(());
                 }
                 let quads = (s.len() / 4).min(max_cols / 2);
@@ -571,7 +571,10 @@ fn decode_ycc_tiles(
 }
 
 /// Tile offsets/sizes and the tile dimensions of a tiled raw IFD.
-fn tile_grid(raw: &Ifd) -> Result<(Vec<(usize, usize)>, u32, u32)> {
+/// Tile byte ranges plus the tile width and height.
+type TileGrid = (Vec<(usize, usize)>, u32, u32);
+
+fn tile_grid(raw: &Ifd) -> Result<TileGrid> {
     let tw = raw.req_u32(tags::TILE_WIDTH)?;
     let th = raw.req_u32(tags::TILE_LENGTH)?;
     if tw == 0 || th == 0 || tw > raw.width().max(1) * 2 || th > raw.height().max(1) * 2 {

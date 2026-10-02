@@ -220,7 +220,9 @@ fn decode(
     ctx: &DecodeContext,
 ) -> Result<()> {
     match payload {
-        Payload::Compressed(p) => ctx.profiler.time(Stage::EntropyDecode, || codec::decode(src, &p, out, w, h)),
+        Payload::Compressed(p) => {
+            ctx.profiler.time(Stage::EntropyDecode, || codec::decode_with(src, &p, out, w, h, ctx.parallel))
+        }
         Payload::Packed12Words | Payload::Packed12Msb => {
             let words = matches!(payload, Payload::Packed12Words);
             let order = if words { PackOrder::Msb32 } else { PackOrder::MsbBytes };
