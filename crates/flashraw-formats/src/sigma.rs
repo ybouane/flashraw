@@ -402,7 +402,7 @@ impl X3fRaw<'_> {
 
     fn decode_true(&self, ctx: &DecodeContext, p: &[u8], quattro: bool, img: &mut RawImage) -> Result<()> {
         let hdr = x3f::TrueHeader::parse(p, quattro)?;
-        let code = hdr.code()?;
+        let code = hdr.table()?;
         let data = &p[hdr.data_offset..];
         let ranges = hdr.plane_ranges(data.len())?;
         let (w, h) = (self.width as usize, self.height as usize);
@@ -485,7 +485,7 @@ impl X3fRaw<'_> {
             ctx.profiler.time(Stage::Calibration, || {
                 quattro_af_repair(out, w, h, self.active, self.black);
                 if layout_1114 {
-                    replicate_lower_layers(out, w, h);
+                    replicate_lower_layers(out, w, h, ctx.parallel);
                 }
             });
         }
@@ -629,24 +629,31 @@ fn af_sd(
 }
 
 /// Spread each half-resolution bottom/middle sample over its 2x2 block. Mirrors
-fn replicate_lower_layers(img: &mut [u16], w: usize, h: usize) {
+fn replicate_lower_layers(img: &mut [u16], w: usize, h: usize, parallel: bool) {
     let (bw, bh) = (w / 2, h / 2);
     if bw < 5 || bh < 5 {
         return;
     }
     let rl = w * 3;
-    for by in 2..bh - 2 {
-        let (top, bottom) = img[2 * by * rl..(2 * by + 2) * rl].split_at_mut(rl);
-        for bx in 0..bw - 4 {
-            let s = bx * 6;
-            for c in 0..2 {
-                let v = top[s + c];
-                top[s + 3 + c] = v;
-                bottom[s + c] = v;
-                bottom[s + 3 + c] = v;
+    // Block rows are independent: process pairs of image rows in parallel.
+    flashraw_core::par::for_each_row_chunk(&mut img[..bh * 2 * rl], 2 * rl, 16, parallel, |first, chunk| {
+        for (i, pair) in chunk.chunks_exact_mut(2 * rl).enumerate() {
+            let by = first + i;
+            if by < 2 || by >= bh - 2 {
+                continue;
+            }
+            let (top, bottom) = pair.split_at_mut(rl);
+            for bx in 0..bw - 4 {
+                let s = bx * 6;
+                for c in 0..2 {
+                    let v = top[s + c];
+                    top[s + 3 + c] = v;
+                    bottom[s + c] = v;
+                    bottom[s + 3 + c] = v;
+                }
             }
         }
-    }
+    });
 }
 
 #[cfg(test)]

@@ -76,6 +76,26 @@ impl PrefixCode {
         Ok(code)
     }
 
+    /// Walk the code with the `nbits` most significant bits of `prefix` (left-aligned in
+    /// `nbits`): `(code length, value)` if a leaf is reached within them.
+    pub fn walk(&self, prefix: u32, nbits: u32) -> Option<(u32, u32)> {
+        let mut n = 0usize;
+        for len in 0..=nbits {
+            if self.is_leaf(n) {
+                return (self.values[n] != NONE).then_some((len, self.values[n]));
+            }
+            if len == nbits {
+                break;
+            }
+            let next = self.nodes[n][((prefix >> (nbits - 1 - len)) & 1) as usize];
+            if next == NONE {
+                return None;
+            }
+            n = next as usize;
+        }
+        None
+    }
+
     fn is_leaf(&self, n: usize) -> bool {
         self.nodes[n] == [NONE, NONE]
     }
@@ -200,6 +220,11 @@ impl TrueHeader {
         Ok(TrueHeader { planes, seeds, table, plane_sizes, data_offset: p })
     }
 
+    /// The decoding table for the planes.
+    pub fn table(&self) -> Result<TrueTable> {
+        Ok(TrueTable::new(self.code()?))
+    }
+
     /// The prefix code (symbol = diff bit length).
     pub fn code(&self) -> Result<PrefixCode> {
         let codes: Vec<(u32, u32, u32)> = self
@@ -238,11 +263,69 @@ impl TrueHeader {
     }
 }
 
+const TT_BITS: u32 = 14;
+const TT_FULL: u32 = 1 << 6;
+const TT_VALID: u32 = 1 << 7;
+
+/// TRUE-engine decoding table: one probe yields the code *and* its difference bits
+/// whenever both fit in [`TT_BITS`] (almost always), falling back to the tree.
+#[derive(Debug, Clone)]
+pub struct TrueTable {
+    lut: Vec<u32>,
+    code: PrefixCode,
+}
+
+#[inline(always)]
+fn extend(v: u32, len: u32) -> i32 {
+    if v >> (len - 1) == 0 { v as i32 - ((1i64 << len) - 1) as i32 } else { v as i32 }
+}
+
+impl TrueTable {
+    pub fn new(code: PrefixCode) -> Self {
+        let lut = (0..1u32 << TT_BITS)
+            .map(|idx| match code.walk(idx, TT_BITS) {
+                Some((clen, sym)) if sym == 0 => clen | TT_FULL | TT_VALID,
+                Some((clen, sym)) if clen + sym <= TT_BITS => {
+                    let v = (idx >> (TT_BITS - clen - sym)) & ((1 << sym) - 1);
+                    (clen + sym) | TT_FULL | TT_VALID | ((extend(v, sym) as i16 as u16 as u32) << 16)
+                }
+                Some((clen, sym)) if sym <= 31 => clen | TT_VALID | (sym << 8),
+                _ => 0,
+            })
+            .collect();
+        TrueTable { lut, code }
+    }
+
+    /// Decode one difference.
+    #[inline(always)]
+    pub fn diff(&self, bits: &mut BitPumpMsb) -> Result<i32> {
+        bits.fill();
+        let e = self.lut[bits.peek_no_fill(TT_BITS) as usize];
+        if e & TT_FULL != 0 {
+            bits.skip_no_fill(e & 0x3F);
+            return Ok((e >> 16) as u16 as i16 as i32);
+        }
+        let len = if e & TT_VALID != 0 {
+            bits.skip_no_fill(e & 0x3F);
+            (e >> 8) & 0x3F
+        } else {
+            self.code.decode(bits)?
+        };
+        if len == 0 {
+            return Ok(0);
+        }
+        if len > 31 {
+            return Err(Error::corrupt("X3F TRUE difference too long"));
+        }
+        Ok(extend(read_bits(bits, len), len))
+    }
+}
+
 /// Decode one TRUE plane of `cols x rows` samples into `out` (`out_cols` samples per row,
 /// `out_cols <= cols`; extra columns on the right are decoded and discarded).
 #[allow(clippy::needless_range_loop)]
 pub fn decode_true_plane(
-    code: &PrefixCode,
+    code: &TrueTable,
     data: &[u8],
     seed: u16,
     cols: usize,
@@ -259,16 +342,7 @@ pub fn decode_true_plane(
         let odd_row = r & 1;
         let mut acc = [0i32; 2];
         for col in 0..cols {
-            let len = code.decode(&mut bits)?;
-            let diff = if len == 0 {
-                0
-            } else {
-                if len > 31 {
-                    return Err(Error::corrupt("X3F TRUE difference too long"));
-                }
-                let v = read_bits(&mut bits, len);
-                if v >> (len - 1) == 0 { v as i32 - ((1i64 << len) - 1) as i32 } else { v as i32 }
-            };
+            let diff = code.diff(&mut bits)?;
             let phase = col & 1;
             let value = if col < 2 {
                 let v = row_start[odd_row][phase].wrapping_add(diff);
@@ -501,7 +575,7 @@ mod tests {
             plane_sizes: [data.len() as u32, 0, 0],
             data_offset: 0,
         };
-        let code = hdr.code().unwrap();
+        let code = hdr.table().unwrap();
         let mut out = vec![0u16; (cols - 1) * rows];
         decode_true_plane(&code, &data, seed, cols, rows, cols - 1, &mut out).unwrap();
         for r in 0..rows {
@@ -514,7 +588,7 @@ mod tests {
     #[test]
     fn true_plane_truncated_is_error() {
         let code = TrueHeader { planes: None, seeds: [0; 3], table: table(), plane_sizes: [0; 3], data_offset: 0 }
-            .code()
+            .table()
             .unwrap();
         let data = [0xFFu8; 4];
         let mut out = vec![0u16; 64 * 64];
