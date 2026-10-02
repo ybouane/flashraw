@@ -128,6 +128,42 @@ fn minolta_samples_survive_malformed_input() {
     }
 }
 
+/// Corrupt every corpus file of the three vendors (slow; run with `--ignored`).
+#[test]
+#[ignore]
+fn corrupt_every_corpus_file() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+    let Ok(dirs) = std::fs::read_dir(&root) else { return };
+    let mut files = Vec::new();
+    for d in dirs.flatten() {
+        let name = d.file_name().to_string_lossy().to_lowercase();
+        if !["sony", "olympus", "om ", "minolta"].iter().any(|k| name.contains(k)) {
+            continue;
+        }
+        for m in std::fs::read_dir(d.path()).into_iter().flatten().flatten() {
+            files.extend(std::fs::read_dir(m.path()).into_iter().flatten().flatten().map(|f| f.path()));
+        }
+    }
+    files.sort();
+    for f in files {
+        let Ok(data) = std::fs::read(&f) else { continue };
+        let mut x = data.len() as u32 | 1;
+        for round in 0..3 {
+            let mut d = data.clone();
+            let n = d.len();
+            for _ in 0..(32 << round) {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                let pos = x as usize % n;
+                d[pos] ^= (x >> 24) as u8 | 1;
+            }
+            let _ = try_decode(&d);
+        }
+        let _ = try_decode(&data[..data.len() * 2 / 3]);
+    }
+}
+
 /// Region decoding (rows / intersecting tiles only) equals cropping a full decode.
 #[test]
 fn region_decode_matches_full_decode() {
