@@ -25,14 +25,20 @@ impl GpuPixelFormat {
     }
 }
 
-/// An image living in a GPU storage buffer (`STORAGE | COPY_SRC`), on the device of
-/// the [`GpuContext`] that produced it.
+/// An image living in a GPU storage buffer (`STORAGE | COPY_SRC`, plus `MAP_READ` on
+/// unified-memory adapters), on the device of the [`GpuContext`] that produced it.
 ///
 /// Use [`GpuImage::buffer`] to bind it in your own wgpu/WebGPU pipelines,
 /// [`GpuImage::to_texture`] for an `Rgba8Unorm` texture, or download it.
+///
+/// The buffer comes from FlashRaw's buffer pool and is **returned to the pool when the
+/// `GpuImage` is dropped** (large allocations are expensive to recreate). Keep the
+/// `GpuImage` alive while the GPU may still use its buffer, or take ownership with
+/// [`GpuImage::into_buffer`]. The buffer may be larger than [`GpuImage::byte_len`].
 pub struct GpuImage {
     pub(crate) ctx: Arc<GpuContext>,
-    pub(crate) buffer: wgpu::Buffer,
+    /// `None` only after [`GpuImage::into_buffer`].
+    pub(crate) buffer: Option<wgpu::Buffer>,
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) channels: u32,
@@ -56,6 +62,34 @@ impl PartialEq for GpuImage {
     fn eq(&self, other: &Self) -> bool {
         self.buffer == other.buffer
     }
+}
+
+impl Drop for GpuImage {
+    fn drop(&mut self) {
+        if let Some(b) = self.buffer.take() {
+            self.ctx.release(b);
+        }
+    }
+}
+
+/// Copy `src` into `dst` using several threads for large buffers (native): the
+/// destination is usually fresh memory, and page faults dominate a serial copy.
+fn par_copy(dst: &mut [u8], src: &[u8]) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        const CHUNK: usize = 8 << 20;
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(8);
+        if src.len() >= 2 * CHUNK && threads > 1 {
+            let per = src.len().div_ceil(threads).div_ceil(4096) * 4096;
+            std::thread::scope(|s| {
+                for (d, c) in dst.chunks_mut(per).zip(src.chunks(per)) {
+                    s.spawn(move || d.copy_from_slice(c));
+                }
+            });
+            return;
+        }
+    }
+    dst.copy_from_slice(src);
 }
 
 /// Host copy of a downloaded [`GpuImage`].
@@ -91,9 +125,13 @@ impl GpuImage {
     pub fn byte_len(&self) -> usize {
         self.len() * self.format.bytes_per_sample()
     }
-    /// The underlying storage buffer (usage `STORAGE | COPY_SRC`).
+    /// The underlying storage buffer (see the type docs for lifetime rules).
     pub fn buffer(&self) -> &wgpu::Buffer {
-        &self.buffer
+        self.buffer.as_ref().expect("buffer present until into_buffer")
+    }
+    /// Take ownership of the buffer (it will not be recycled).
+    pub fn into_buffer(mut self) -> wgpu::Buffer {
+        self.buffer.take().expect("buffer present until into_buffer")
     }
     pub fn device(&self) -> &wgpu::Device {
         &self.ctx.device
@@ -108,33 +146,42 @@ impl GpuImage {
     /// Download to host memory. Returns the pixels and the wall time in ms.
     pub async fn download_async(&self) -> Result<(HostPixels, f64)> {
         let t0 = flashraw_core::profile::now_ms();
-        let size = (self.byte_len() as u64).div_ceil(4) * 4;
+        let size = ((self.byte_len() as u64).div_ceil(4) * 4).max(4);
         let ctx = &self.ctx;
-        let staging = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("flashraw.readback"),
-            size: size.max(4),
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut enc = ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback") });
-        enc.copy_buffer_to_buffer(&self.buffer, 0, &staging, 0, size);
-        ctx.queue.submit([enc.finish()]);
         let n = self.len();
-        let px = ctx
-            .read_mapped(&staging, size.max(4), |bytes| match self.format {
-                GpuPixelFormat::Rgba8 => HostPixels::U8(bytes[..n].to_vec()),
-                GpuPixelFormat::U16 => {
-                    let mut v = vec![0u16; n];
-                    bytemuck::cast_slice_mut::<u16, u8>(&mut v).copy_from_slice(&bytes[..n * 2]);
-                    HostPixels::U16(v)
-                }
-                GpuPixelFormat::F32 => {
-                    let mut v = vec![0f32; n];
-                    bytemuck::cast_slice_mut::<f32, u8>(&mut v).copy_from_slice(&bytes[..n * 4]);
-                    HostPixels::F32(v)
-                }
-            })
-            .await?;
+        let format = self.format;
+        let copy_out = move |bytes: &[u8]| match format {
+            GpuPixelFormat::Rgba8 => {
+                let mut v = vec![0u8; n];
+                par_copy(&mut v, &bytes[..n]);
+                HostPixels::U8(v)
+            }
+            GpuPixelFormat::U16 => {
+                let mut v = vec![0u16; n];
+                par_copy(bytemuck::cast_slice_mut::<u16, u8>(&mut v), &bytes[..n * 2]);
+                HostPixels::U16(v)
+            }
+            GpuPixelFormat::F32 => {
+                let mut v = vec![0f32; n];
+                par_copy(bytemuck::cast_slice_mut::<f32, u8>(&mut v), &bytes[..n * 4]);
+                HostPixels::F32(v)
+            }
+        };
+        let buf = self.buffer();
+        let px = if buf.usage().contains(wgpu::BufferUsages::MAP_READ) {
+            // Unified memory: read the storage buffer in place.
+            ctx.read_mapped(buf, size, copy_out).await?
+        } else {
+            let staging =
+                ctx.acquire("flashraw.readback", size, wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST);
+            let mut enc =
+                ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback") });
+            enc.copy_buffer_to_buffer(buf, 0, &staging, 0, size);
+            ctx.queue.submit([enc.finish()]);
+            let px = ctx.read_mapped(&staging, size, copy_out).await;
+            ctx.release(staging);
+            px?
+        };
         if let Some(e) = ctx.take_error() {
             return Err(Error::GpuUnavailable(format!("GPU error during download: {e}")));
         }
@@ -187,7 +234,7 @@ impl GpuImage {
             layout: &ctx.tex_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: ubuf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: self.buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: self.buffer().as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&view) },
             ],
         });

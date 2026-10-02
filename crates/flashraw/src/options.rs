@@ -44,6 +44,39 @@ pub enum OutputFormat {
     LinearRgbF32,
     /// Display-ready 8-bit sRGB RGBA (orientation applied), e.g. for `ImageData`.
     Rgba8,
+    // GPU-resident outputs (feature `gpu`): same content as the host variant, returned
+    // as `RawPixelData::Gpu` without downloading (see `crate::gpu` and `RawFrame::download`).
+    /// [`OutputFormat::RawU16`] kept on the GPU (u16 pairs per 32-bit word).
+    GpuRawU16,
+    /// [`OutputFormat::NormalizedF32`] kept on the GPU.
+    GpuNormalizedF32,
+    /// [`OutputFormat::LinearRgbF32`] kept on the GPU.
+    GpuLinearRgbF32,
+    /// [`OutputFormat::Rgba8`] kept on the GPU (one packed RGBA8 pixel per 32-bit word).
+    GpuRgba8,
+}
+
+impl OutputFormat {
+    /// True for the `Gpu*` variants (result stays on the device).
+    pub fn is_gpu_resident(self) -> bool {
+        matches!(
+            self,
+            OutputFormat::GpuRawU16
+                | OutputFormat::GpuNormalizedF32
+                | OutputFormat::GpuLinearRgbF32
+                | OutputFormat::GpuRgba8
+        )
+    }
+    /// The host-memory variant with the same content (identity for host variants).
+    pub fn host_equivalent(self) -> Self {
+        match self {
+            OutputFormat::GpuRawU16 => OutputFormat::RawU16,
+            OutputFormat::GpuNormalizedF32 => OutputFormat::NormalizedF32,
+            OutputFormat::GpuLinearRgbF32 => OutputFormat::LinearRgbF32,
+            OutputFormat::GpuRgba8 => OutputFormat::Rgba8,
+            o => o,
+        }
+    }
 }
 
 impl OutputFormat {
@@ -54,6 +87,10 @@ impl OutputFormat {
             "normalized" | "normalized-f32" => OutputFormat::NormalizedF32,
             "linear-rgb" | "linear-rgb-f32" | "rgb-f32" => OutputFormat::LinearRgbF32,
             "rgba8" | "rgba" | "imagedata" => OutputFormat::Rgba8,
+            "gpu-raw-u16" | "gpu-raw" | "gpu-u16" => OutputFormat::GpuRawU16,
+            "gpu-normalized" | "gpu-normalized-f32" => OutputFormat::GpuNormalizedF32,
+            "gpu-linear-rgb" | "gpu-linear-rgb-f32" => OutputFormat::GpuLinearRgbF32,
+            "gpu-rgba8" | "gpu-rgba" => OutputFormat::GpuRgba8,
             _ => return None,
         })
     }

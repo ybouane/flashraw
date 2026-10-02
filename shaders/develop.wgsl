@@ -11,8 +11,6 @@ fn is_cfa() -> bool {
     return LAYOUT == 1u || LAYOUT == 3u;
 }
 
-// 3x3 neighbour indices ((dy + 1) * 3 + dx + 1) in Bayer summation order.
-const BAYER_ORDER = array<u32, 9>(3u, 5u, 1u, 7u, 0u, 2u, 6u, 8u, 4u);
 // 0 = RGBA8 (sRGB, orientation applied, one u32 per pixel), 1 = linear RGB f32 (3 words per pixel).
 override OUT_MODE: u32 = 0u;
 
@@ -58,6 +56,28 @@ fn finish(rgb_in: vec3<f32>, dx: u32, dy: u32) {
     dst[oy * P.out_w + ox] = srgb8(r) | (srgb8(g) << 8u) | (srgb8(b) << 16u) | (255u << 24u);
 }
 
+struct Taps {
+    s: vec3<f32>,
+    n: vec3<f32>,
+}
+
+// Accumulate 3x3 tap k ((dy + 1) * 3 + dx + 1) into the colours whose neighbour mask has it.
+fn tap(acc: ptr<function, Taps>, site: u32, k: u32, base: u32, x: u32, y: u32, interior: bool) {
+    let ky = k / 3u;
+    let kx = k - ky * 3u;
+    var sel = vec3<f32>(vec3<u32>((site >> (2u + k)) & 1u, (site >> (11u + k)) & 1u, (site >> (20u + k)) & 1u));
+    if (!interior) {
+        let xx = i32(x + kx) - 1;
+        let yy = i32(y + ky) - 1;
+        if (xx < 0 || yy < 0 || u32(xx) >= P.width || u32(yy) >= P.height) {
+            sel = vec3<f32>(0.0);
+        }
+    }
+    let v = tile[base + ky * APRON + kx];
+    (*acc).s += v * sel;
+    (*acc).n += sel;
+}
+
 @compute @workgroup_size(16, 16)
 fn develop(
     @builtin(workgroup_id) wg: vec3<u32>,
@@ -97,31 +117,33 @@ fn develop(
         // down, then diagonals); other CFAs row by row.
         let site = cfa_site(x, y);
         let interior = x > 0u && y > 0u && x + 1u < P.width && y + 1u < P.height;
-        for (var c = 0u; c < 3u; c++) {
-            let mask = (site >> (2u + 9u * c)) & 0x1ffu;
-            var s = 0.0;
-            var n = 0u;
-            for (var j = 0u; j < 9u; j++) {
-                var k = j;
-                if (LAYOUT == 3u) {
-                    k = BAYER_ORDER[j];
-                }
-                if ((mask & (1u << k)) != 0u) {
-                    let ky = k / 3u;
-                    let kx = k - ky * 3u;
-                    let xx = i32(x + kx) - 1;
-                    let yy = i32(y + ky) - 1;
-                    if (xx >= 0 && yy >= 0 && u32(xx) < P.width && u32(yy) < P.height) {
-                        s += tile[(l.y + ky) * APRON + l.x + kx];
-                        n += 1u;
-                    }
-                }
+        var acc = Taps(vec3<f32>(0.0), vec3<f32>(0.0));
+        let base = l.y * APRON + l.x;
+        // All three colours accumulate in one pass over the taps; a tap adds v * 0 to
+        // colours it does not belong to, which leaves their sums bit-identical.
+        if (LAYOUT == 3u) {
+            tap(&acc, site, 3u, base, x, y, interior);
+            tap(&acc, site, 5u, base, x, y, interior);
+            tap(&acc, site, 1u, base, x, y, interior);
+            tap(&acc, site, 7u, base, x, y, interior);
+            tap(&acc, site, 0u, base, x, y, interior);
+            tap(&acc, site, 2u, base, x, y, interior);
+            tap(&acc, site, 6u, base, x, y, interior);
+            tap(&acc, site, 8u, base, x, y, interior);
+            tap(&acc, site, 4u, base, x, y, interior);
+        } else {
+            for (var k = 0u; k < 9u; k++) {
+                tap(&acc, site, k, base, x, y, interior);
             }
-            if (n > 0u) {
+        }
+        let inv_base = P.off_cold + P.n_cold;
+        for (var c = 0u; c < 3u; c++) {
+            let n = acc.n[c];
+            if (n > 0.0) {
                 if (interior) {
-                    rgb[c] = s * tab[P.off_cold + P.n_cold + n];
+                    rgb[c] = acc.s[c] * tab[inv_base + u32(n)];
                 } else {
-                    rgb[c] = s / f32(n);
+                    rgb[c] = acc.s[c] / n;
                 }
             }
         }

@@ -45,3 +45,9 @@ pub use kernels::{reference, wgsl_sources};
 pub use run::{DevelopOutput, DevelopSpec, GpuFrame, GpuInput, GpuOp, GpuRun, GpuTimings};
 /// Re-export of the wgpu version used, for interop.
 pub use wgpu;
+
+/// Block on a future (native only; used by the synchronous `flashraw` API).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn block_on<F: std::future::Future>(f: F) -> F::Output {
+    pollster::block_on(f)
+}

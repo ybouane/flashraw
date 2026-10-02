@@ -400,7 +400,11 @@ fn gpu_image_to_texture() {
         tex.as_image_copy(),
         flashraw_gpu::wgpu::TexelCopyBufferInfo {
             buffer: &rb,
-            layout: flashraw_gpu::wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bpr), rows_per_image: None },
+            layout: flashraw_gpu::wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bpr),
+                rows_per_image: None,
+            },
         },
         tex.size(),
     );

@@ -145,7 +145,8 @@ pub struct GpuRun {
 
 pub(crate) fn buffer_init(device: &wgpu::Device, label: &str, data: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
     let size = (data.len() as u64).div_ceil(4).max(1) * 4;
-    let buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: true });
+    let buf =
+        device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: true });
     {
         let mut view = buf.get_mapped_range_mut(..).expect("buffer mapped at creation");
         let mut padded = data.to_vec();
@@ -256,26 +257,12 @@ impl GpuContext {
                     return Err(Error::InvalidArgument("unpack needs integer input".into()));
                 }
                 p.total = u32_checked(samples, "frame")?;
-                let key = PipelineKey {
-                    kernel: Kernel::Unpack,
-                    input_mode,
-                    order,
-                    use_lut,
-                    layout: 0,
-                    out_mode: 0,
-                };
+                let key = PipelineKey { kernel: Kernel::Unpack, input_mode, order, use_lut, layout: 0, out_mode: 0 };
                 (key, w, h, cpp, GpuPixelFormat::U16, grid_1d(samples.div_ceil(2)))
             }
             GpuOp::Normalize => {
                 p.total = u32_checked(samples, "frame")?;
-                let key = PipelineKey {
-                    kernel: Kernel::Normalize,
-                    input_mode,
-                    order,
-                    use_lut,
-                    layout: 0,
-                    out_mode: 0,
-                };
+                let key = PipelineKey { kernel: Kernel::Normalize, input_mode, order, use_lut, layout: 0, out_mode: 0 };
                 (key, w, h, cpp, GpuPixelFormat::F32, grid_1d(samples))
             }
             GpuOp::Develop(d) => {
@@ -347,22 +334,42 @@ impl GpuContext {
 
         // ---- Upload ----
         let t0 = flashraw_core::profile::now_ms();
-        let src = dev.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("flashraw.src"),
-            size: src_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        write_padded(&self.queue, &src, src_bytes);
+        let mut staging = None;
+        let src = if self.uma {
+            // Unified memory: write straight into the storage buffer.
+            let b = self.acquire("flashraw.src", src_size, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::MAP_WRITE);
+            self.write_mapped(&b, src_bytes).await?;
+            b
+        } else if src_size >= 1 << 20 {
+            // Reused mapped staging buffer + one device copy.
+            let st =
+                self.acquire("flashraw.upload", src_size, wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC);
+            self.write_mapped(&st, src_bytes).await?;
+            let b = self.acquire("flashraw.src", src_size, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST);
+            let mut enc =
+                dev.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("flashraw.upload") });
+            enc.copy_buffer_to_buffer(&st, 0, &b, 0, src_size);
+            self.queue.submit([enc.finish()]);
+            staging = Some(st);
+            b
+        } else {
+            let b = dev.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("flashraw.src"),
+                size: src_size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            write_padded(&self.queue, &b, src_bytes);
+            b
+        };
         let tab = buffer_init(dev, "flashraw.calib", bytemuck::cast_slice(&calib.tab), wgpu::BufferUsages::STORAGE);
         let lutb = buffer_init(dev, "flashraw.lut", bytemuck::cast_slice(&lut), wgpu::BufferUsages::STORAGE);
         let ubuf = buffer_init(dev, "flashraw.params", bytemuck::bytes_of(&p), wgpu::BufferUsages::UNIFORM);
-        let dst = dev.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("flashraw.output"),
-            size: out_size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
+        let mut dst_usage = wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC;
+        if self.uma {
+            dst_usage |= wgpu::BufferUsages::MAP_READ;
+        }
+        let dst = self.acquire("flashraw.output", out_size, dst_usage);
         self.queue.submit([]);
         self.wait_idle().await?;
         let upload_ms = flashraw_core::profile::now_ms() - t0;
@@ -424,13 +431,21 @@ impl GpuContext {
         let compute_ms = flashraw_core::profile::now_ms() - t1;
         let kernel_ms = match &ts {
             Some((_, _, read)) => {
-                let t = self.read_mapped(read, 16, |b| [bytemuck::pod_read_unaligned::<u64>(&b[0..8]), bytemuck::pod_read_unaligned::<u64>(&b[8..16])]).await?;
+                let t = self
+                    .read_mapped(read, 16, |b| {
+                        [bytemuck::pod_read_unaligned::<u64>(&b[0..8]), bytemuck::pod_read_unaligned::<u64>(&b[8..16])]
+                    })
+                    .await?;
                 let ns = t[1].saturating_sub(t[0]) as f64 * self.queue.get_timestamp_period() as f64;
                 // Some drivers report zeros when sampling is unsupported mid-pass.
                 (ns > 0.0).then_some(ns / 1e6)
             }
             None => None,
         };
+        self.release(src);
+        if let Some(st) = staging {
+            self.release(st);
+        }
         let e2 = oom.pop().await;
         let e1 = validation.pop().await;
         if let Some(e) = e2.or(e1) {
@@ -440,7 +455,7 @@ impl GpuContext {
             return Err(Error::GpuUnavailable(format!("GPU error: {e}")));
         }
         Ok(GpuRun {
-            image: GpuImage { ctx: self.clone(), buffer: dst, width: out_w, height: out_h, channels, format },
+            image: GpuImage { ctx: self.clone(), buffer: Some(dst), width: out_w, height: out_h, channels, format },
             timings: GpuTimings { upload_ms, compute_ms, kernel_ms },
         })
     }

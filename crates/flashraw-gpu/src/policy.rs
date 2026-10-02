@@ -66,7 +66,10 @@ pub enum WorkOutput {
     RawU16,
     Normalized,
     /// Developed RGB with this many output bytes per pixel (4 for RGBA8, 12 for f32 RGB).
-    Rgb { bytes_per_px: u32, half_size: bool },
+    Rgb {
+        bytes_per_px: u32,
+        half_size: bool,
+    },
 }
 
 /// Description of one decode for the cost model.
@@ -109,12 +112,14 @@ pub fn decide(class: AdapterClass, gpu: &GpuCalibration, cpu: &CpuCosts, w: &Wor
             (c, w.samples as f64 / gpu.unpack_px_per_ms, w.samples * 2)
         }
         WorkOutput::Normalized => (
-            w.samples as f64 / cpu.normalize_px_per_ms + if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 },
+            w.samples as f64 / cpu.normalize_px_per_ms
+                + if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 },
             w.samples as f64 / gpu.unpack_px_per_ms,
             w.samples * 4,
         ),
         WorkOutput::Rgb { bytes_per_px, .. } => (
-            out_px as f64 / cpu.develop_px_per_ms + if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 },
+            out_px as f64 / cpu.develop_px_per_ms
+                + if w.packed { w.samples as f64 / cpu.unpack_px_per_ms } else { 0.0 },
             w.samples as f64 / gpu.develop_px_per_ms,
             out_px * bytes_per_px as u64,
         ),
@@ -166,6 +171,11 @@ impl GpuContext {
             self.measure().await.unwrap_or_else(|_| GpuCalibration::defaults(self.info.class))
         };
         *self.calibration.get_or_init(|| c)
+    }
+
+    /// The calibration if it has already been measured (never runs the benchmark).
+    pub fn cached_calibration(&self) -> Option<GpuCalibration> {
+        self.calibration.get().copied()
     }
 
     /// Blocking [`GpuContext::calibration`] (native only).
@@ -246,14 +256,24 @@ mod tests {
     #[test]
     fn software_never_auto() {
         let g = GpuCalibration::defaults(AdapterClass::Discrete);
-        let d = decide(AdapterClass::Software, &g, &cpu(), &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0));
+        let d = decide(
+            AdapterClass::Software,
+            &g,
+            &cpu(),
+            &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0),
+        );
         assert!(!d.use_gpu);
     }
 
     #[test]
     fn small_frames_stay_on_cpu() {
         let g = GpuCalibration::defaults(AdapterClass::Discrete);
-        let d = decide(AdapterClass::Discrete, &g, &cpu(), &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 1.0));
+        let d = decide(
+            AdapterClass::Discrete,
+            &g,
+            &cpu(),
+            &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 1.0),
+        );
         assert!(!d.use_gpu);
     }
 
@@ -267,11 +287,21 @@ mod tests {
     #[test]
     fn large_rgb_on_fast_gpu() {
         let g = GpuCalibration::defaults(AdapterClass::Discrete);
-        let d = decide(AdapterClass::Discrete, &g, &cpu(), &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0));
+        let d = decide(
+            AdapterClass::Discrete,
+            &g,
+            &cpu(),
+            &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0),
+        );
         assert!(d.use_gpu, "{d:?}");
         // A much faster CPU flips the decision.
         let fast = CpuCosts { unpack_px_per_ms: 20e6, develop_px_per_ms: 10e6, normalize_px_per_ms: 20e6 };
-        let d = decide(AdapterClass::Discrete, &g, &fast, &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0));
+        let d = decide(
+            AdapterClass::Discrete,
+            &g,
+            &fast,
+            &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0),
+        );
         assert!(!d.use_gpu, "{d:?}");
     }
 

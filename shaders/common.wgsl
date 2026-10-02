@@ -99,10 +99,26 @@ fn packed_sample(i: u32, y: u32) -> u32 {
     let bitpos = i * P.bits;
     let k = bitpos >> 3u;
     let sh = bitpos & 7u;
+    let mask = (1u << P.bits) - 1u;
+    if (ORDER <= 1u && row + k + 3u <= P.src_len) {
+        // Fast path for byte orders: the 3 bytes come from two adjacent words. Bytes
+        // past the row's data only feed bits outside this sample, so no clamping needed.
+        let a = row + k + P.src_offset;
+        let wi = a >> 2u;
+        let sb = (a & 3u) * 8u;
+        var v24 = src[wi] >> sb;
+        if (sb > 8u) {
+            v24 |= src[wi + 1u] << (32u - sb);
+        }
+        if (ORDER == 1u) {
+            return (v24 >> sh) & mask;
+        }
+        let msb = ((v24 & 0xffu) << 16u) | (v24 & 0xff00u) | ((v24 >> 16u) & 0xffu);
+        return (msb >> (24u - sh - P.bits)) & mask;
+    }
     let b0 = row_byte(row, k);
     let b1 = row_byte(row, k + 1u);
     let b2 = row_byte(row, k + 2u);
-    let mask = (1u << P.bits) - 1u;
     if (ORDER == 1u) {
         let v = b0 | (b1 << 8u) | (b2 << 16u);
         return (v >> sh) & mask;
@@ -138,11 +154,19 @@ fn raw_value(x: u32, y: u32, c: u32) -> f32 {
     return f32(int_sample(x, y, c));
 }
 
+// a % m for uniform m: a mask when m is a power of two (integer division is slow on GPUs).
+fn umod(a: u32, m: u32) -> u32 {
+    if ((m & (m - 1u)) == 0u) {
+        return a & (m - 1u);
+    }
+    return a % m;
+}
+
 // Black-subtracted, white-normalised value (same operation order as the CPU `Calib::norm`).
 fn norm(v: f32, x: u32, y: u32, c: u32) -> f32 {
     let sx = x + P.origin_x;
     let sy = y + P.origin_y;
-    let i = c * P.pat_w * P.pat_h + (sy % P.pat_h) * P.pat_w + sx % P.pat_w;
+    let i = c * P.pat_w * P.pat_h + umod(sy, P.pat_h) * P.pat_w + umod(sx, P.pat_w);
     var b = tab[i];
     if (sy < P.n_rowd) {
         b += tab[P.off_rowd + sy];
@@ -163,7 +187,7 @@ fn sample_norm(x: u32, y: u32, c: u32) -> f32 {
 fn cfa_site(x: u32, y: u32) -> u32 {
     let sx = x + P.origin_x;
     let sy = y + P.origin_y;
-    return lut[P.off_cfa + (sy % P.cfa_h) * P.cfa_w + sx % P.cfa_w];
+    return lut[P.off_cfa + umod(sy, P.cfa_h) * P.cfa_w + umod(sx, P.cfa_w)];
 }
 
 // Linear thread index for 1-D kernels dispatched as a 2-D grid of 256-wide groups.

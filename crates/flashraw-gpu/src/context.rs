@@ -92,7 +92,14 @@ pub struct GpuContext {
     pub(crate) srgb: Vec<u32>,
     pub(crate) last_error: Arc<Mutex<Option<String>>>,
     pub(crate) calibration: OnceLock<crate::policy::GpuCalibration>,
+    /// Storage buffers are host-mappable (unified memory): no staging copies.
+    pub(crate) uma: bool,
+    /// Recycled buffers (large allocations are expensive: page mapping + zero-fill).
+    pool: Mutex<Vec<wgpu::Buffer>>,
 }
+
+/// Upper bound of memory kept in the buffer pool.
+const POOL_MAX_BYTES: u64 = 1 << 30;
 
 impl std::fmt::Debug for GpuContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -161,6 +168,12 @@ impl GpuContext {
         if adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
             features |= wgpu::Features::TIMESTAMP_QUERY;
         }
+        // Unified memory (Apple Silicon, most integrated GPUs): map storage buffers
+        // directly instead of staging through extra copies.
+        let integrated = adapter.get_info().device_type == wgpu::DeviceType::IntegratedGpu;
+        if integrated && adapter.features().contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS) {
+            features |= wgpu::Features::MAPPABLE_PRIMARY_BUFFERS;
+        }
         // Large frames (60 MP RGBA8 is 240 MB) need more than the WebGPU default limits.
         let limits = adapter.limits();
         let (device, queue) = adapter
@@ -191,6 +204,7 @@ impl GpuContext {
             class = AdapterClass::Software;
         }
         let limits = device.limits();
+        let uma = device.features().contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
         let info = GpuAdapterInfo {
             name: if ai.name.is_empty() { "WebGPU adapter".into() } else { ai.name.clone() },
             backend: format!("{:?}", ai.backend),
@@ -262,7 +276,62 @@ impl GpuContext {
             srgb: kernels::srgb_table(),
             last_error,
             calibration: OnceLock::new(),
+            uma,
+            pool: Mutex::default(),
         }
+    }
+
+    /// A buffer of at least `size` bytes with exactly `usage`, recycled when possible.
+    /// Large sizes are rounded up so that frames of similar size share buffers.
+    pub(crate) fn acquire(&self, label: &str, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
+        let size = size.max(4);
+        {
+            let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+            let best = pool
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| b.usage() == usage && b.size() >= size && b.size() <= size + size / 4 + (16 << 20))
+                .min_by_key(|(_, b)| b.size())
+                .map(|(i, _)| i);
+            if let Some(i) = best {
+                return pool.swap_remove(i);
+            }
+        }
+        let granule: u64 = if size > (64 << 20) { 4 << 20 } else { 256 };
+        self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: size.div_ceil(granule) * granule,
+            usage,
+            mapped_at_creation: false,
+        })
+    }
+
+    /// Return a buffer to the pool (the caller guarantees no one else uses it any more).
+    pub(crate) fn release(&self, b: wgpu::Buffer) {
+        if b.size() < (1 << 20) {
+            return; // small buffers are cheap to recreate
+        }
+        let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        pool.push(b);
+        let mut total: u64 = pool.iter().map(|b| b.size()).sum();
+        while total > POOL_MAX_BYTES && !pool.is_empty() {
+            let old = pool.remove(0);
+            total -= old.size();
+            old.destroy();
+        }
+    }
+
+    /// Free all pooled buffers.
+    pub fn trim(&self) {
+        let mut pool = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        for b in pool.drain(..) {
+            b.destroy();
+        }
+    }
+
+    /// True when storage buffers are mapped directly (unified memory).
+    pub fn unified_memory(&self) -> bool {
+        self.uma
     }
 
     pub fn info(&self) -> &GpuAdapterInfo {
@@ -404,6 +473,38 @@ impl GpuContext {
         Ok(out)
     }
 
+    /// Map `buffer[..size]` for writing and fill it with `data` (zero-padded).
+    pub(crate) async fn write_mapped(&self, buffer: &wgpu::Buffer, data: &[u8]) -> Result<()> {
+        let size = (data.len() as u64).div_ceil(4).max(1) * 4;
+        let (tx, rx) = oneshot::channel();
+        buffer.map_async(wgpu::MapMode::Write, ..size, move |r| tx.send(r));
+        #[cfg(not(target_arch = "wasm32"))]
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| Error::GpuUnavailable(format!("device poll failed: {e}")))?;
+        let r = match rx.try_take() {
+            Some(r) => Some(r),
+            None => rx.await,
+        };
+        match r {
+            Some(Ok(())) => {}
+            Some(Err(e)) => return Err(Error::GpuUnavailable(format!("buffer mapping failed: {e}"))),
+            None => return Err(Error::GpuUnavailable("buffer mapping was cancelled".into())),
+        }
+        {
+            let mut view = buffer
+                .get_mapped_range_mut(..size)
+                .map_err(|e| Error::GpuUnavailable(format!("mapped range unavailable: {e}")))?;
+            let bulk = data.len();
+            view.slice(..bulk).copy_from_slice(data);
+            if (bulk as u64) < size {
+                view.slice(bulk..).fill(0);
+            }
+        }
+        buffer.unmap();
+        Ok(())
+    }
+
     /// Take the last uncaptured device error, if any.
     pub(crate) fn take_error(&self) -> Option<String> {
         self.last_error.lock().ok()?.take()
@@ -464,8 +565,7 @@ fn with_slot<T>(f: impl FnOnce(&mut Slot) -> T) -> T {
 /// Initialise the global GPU context (idempotent). Required before any GPU work in
 /// the browser, where initialisation cannot block.
 pub async fn init() -> Result<Arc<GpuContext>> {
-    if let Some(r) = with_slot(|s| s.tried.then(|| s.ctx.clone().ok_or_else(|| s.error.clone().unwrap_or_default())))
-    {
+    if let Some(r) = with_slot(|s| s.tried.then(|| s.ctx.clone().ok_or_else(|| s.error.clone().unwrap_or_default()))) {
         return r.map_err(Error::GpuUnavailable);
     }
     let r = GpuContext::new().await.map(Arc::new);
@@ -492,7 +592,8 @@ pub async fn init() -> Result<Arc<GpuContext>> {
 pub fn context() -> Result<Arc<GpuContext>> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        if let Some(r) = with_slot(|s| s.tried.then(|| s.ctx.clone().ok_or_else(|| s.error.clone().unwrap_or_default())))
+        if let Some(r) =
+            with_slot(|s| s.tried.then(|| s.ctx.clone().ok_or_else(|| s.error.clone().unwrap_or_default())))
         {
             return r.map_err(Error::GpuUnavailable);
         }
