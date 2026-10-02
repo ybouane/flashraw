@@ -1,0 +1,7 @@
+FORMAT	MODE	COMPRESSION	STATUS	NOTES
+TIF	EOS-1D/1Ds raw	lossless-jpeg	verified	Raw located via maker note 0x0081; bit-exact on 2 files
+TIF	EOS D2000C	lossless-jpeg	verified	Kodak-built: linearisation curve, Kodak-IFD black/WB; 1 file bit-exact
+CR3	craw	canon-crx	verified	C-RAW wavelet (CMP1 0x100 per-line QP, 0x200 QP maps), multi-tile; bit-exact on 51 files
+CRW	packed-10bit	uncompressed	verified	PowerShot Pro70 bit-exact (CMYG 8x2 CFA); A5/A50 share the path but are untested
+CRW	canon600-10bit	uncompressed	experimental	PowerShot 600; no sample
+CRW/CR2	CHDK headerless	uncompressed	unsupported	Headerless CHDK dumps go through the generic file-size path (misc), not the Canon decoders
