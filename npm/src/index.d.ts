@@ -313,11 +313,11 @@ export interface BackendReport {
 }
 
 export interface FrameData {
-  'raw-u16': Uint16Array;
-  'raw-f32': Float32Array;
-  normalized: Float32Array;
-  'linear-rgb': Float32Array;
-  rgba8: Uint8ClampedArray;
+  'raw-u16': Uint16Array<ArrayBuffer>;
+  'raw-f32': Float32Array<ArrayBuffer>;
+  normalized: Float32Array<ArrayBuffer>;
+  'linear-rgb': Float32Array<ArrayBuffer>;
+  rgba8: Uint8ClampedArray<ArrayBuffer>;
 }
 
 /** Decoded frame metadata (no pixels): what the worker pool returns alongside `data`. */
@@ -399,13 +399,13 @@ export interface PreviewOptions {
 export interface EncodedPreview extends PreviewDescriptor {
   format: 'encoded';
   /** The embedded image bytes; wrap in a Blob with `mimeType` to display. */
-  data: Uint8Array;
+  data: Uint8Array<ArrayBuffer>;
 }
 
 export interface RgbaPreview extends PreviewDescriptor {
   format: 'rgba8';
   /** Decoded RGBA pixels (orientation NOT applied; see `orientation`). */
-  data: Uint8ClampedArray;
+  data: Uint8ClampedArray<ArrayBuffer>;
   decodeMs: number;
 }
 

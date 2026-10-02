@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flashraw browser test</title>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+  // Driven by tests/browser/run.mjs. Query: ?simd=0 forces the fallback binary.
+  import * as fr from '/dist/browser.js';
+  import { createWorkerPool } from '/dist/worker.browser.js';
+
+  function fnv1a64U16(data) {
+    let lo = 0x84222325, hi = 0xcbf29ce4;
+    const step = (b) => {
+      lo ^= b;
+      const l = (lo >>> 0) * 0x1b3;
+      const carry = Math.floor(l / 4294967296);
+      hi = ((hi >>> 0) * 0x1b3 + carry + ((lo << 8) >>> 0)) >>> 0;
+      lo = l >>> 0;
+    };
+    for (let i = 0; i < data.length; i++) { step(data[i] & 0xff); step(data[i] >>> 8); }
+    return (hi >>> 0).toString(16).padStart(8, '0') + (lo >>> 0).toString(16).padStart(8, '0');
+  }
+
+  async function run() {
+    const q = new URLSearchParams(location.search);
+    const t0 = performance.now();
+    const info = await fr.init(q.get('simd') === '0' ? { simd: false } : {});
+    const initMs = performance.now() - t0;
+    const caps = await fr.getCapabilities();
+    const out = { info, initMs, caps, files: {} };
+    for (const name of (q.get('files') ?? '').split(',').filter(Boolean)) {
+      const resp = await fetch(`/tests/fixtures/${name}`);
+      // Exercise the Blob streaming path (File from drag & drop behaves the same).
+      const blob = new File([await resp.blob()], name);
+      const r = {};
+      r.supports = await fr.supportsFile(blob);
+      const raw = await fr.FlashRaw.open(blob);
+      r.metadata = { format: raw.metadata.format, camera: raw.metadata.camera.name, rawWidth: raw.metadata.rawWidth };
+      const p = await raw.preview();
+      if (p) {
+        r.preview = { mimeType: p.mimeType, bytes: p.data.length, width: p.width, height: p.height };
+        if (p.mimeType === 'image/jpeg') {
+          const bmp = await createImageBitmap(new Blob([p.data], { type: p.mimeType }));
+          r.preview.bitmap = [bmp.width, bmp.height];
+        }
+      }
+      const u16 = await raw.decode({ output: 'raw-u16' });
+      r.raw = { width: u16.width, height: u16.height, hash: fnv1a64U16(u16.data), backend: u16.backend, timings: u16.timings };
+      const rgba = await raw.decode({ output: 'rgba8' });
+      const img = rgba.toImageData();
+      const c = document.getElementById('c');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').putImageData(img, 0, 0);
+      const px = c.getContext('2d').getImageData(img.width >> 1, img.height >> 1, 1, 1).data;
+      r.rgba = { width: rgba.width, height: rgba.height, bytes: rgba.data.length, isClamped: rgba.data instanceof Uint8ClampedArray, center: [...px], timings: rgba.timings };
+      const gpu = await raw.decode({ backend: 'gpu', output: 'raw-u16' });
+      r.gpu = { kind: gpu.backend.kind, fallbackReason: gpu.backend.fallbackReason };
+      r.gpuError = await raw.decode({ backend: 'gpu', fallback: 'error' }).then(() => null, (e) => ({ name: e.name, kind: e.kind }));
+      raw.close();
+      out.files[name] = r;
+    }
+    // Errors are structured in the browser too.
+    out.garbage = await fr.FlashRaw.open(new Uint8Array(512)).then(() => null, (e) => ({ name: e.name, kind: e.kind, isFlashRawError: e instanceof fr.FlashRawError }));
+    // Worker pool: decode off the main thread.
+    if (q.get('worker') === '1') {
+      const pool = createWorkerPool({ size: 2 });
+      const name = (q.get('files') ?? '').split(',')[0];
+      const blob = await (await fetch(`/tests/fixtures/${name}`)).blob();
+      const [a, b] = await Promise.all([pool.decode(blob), pool.decode(await blob.arrayBuffer(), { transfer: true })]);
+      out.worker = { a: fnv1a64U16(a.data), b: fnv1a64U16(b.data), caps: await pool.getCapabilities() };
+      pool.terminate();
+    }
+    return out;
+  }
+  run().then((r) => { window.__result = r; }, (e) => { window.__result = { error: String(e?.stack ?? e) }; });
+</script>
+</body>
+</html>

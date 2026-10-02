@@ -24,7 +24,12 @@
     "reference"
   ],
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/browser.js",
+    "./dist/node.js",
+    "./dist/worker-entry.browser.js",
+    "./dist/worker-entry.node.js"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -71,7 +76,7 @@
     "build": "node scripts/build.mjs",
     "build:dev": "node scripts/build.mjs --no-opt",
     "test": "node --expose-gc --test --test-concurrency=1 tests/*.test.mjs",
-    "test:types": "tsc -p tests/types/tsconfig.json",
+    "test:types": "tsc -p tests/types/tsconfig.json && tsc -p tests/types/tsconfig.node.json",
     "test:browser": "node tests/browser/run.mjs",
     "test:bundlers": "node tests/bundlers/run.mjs",
     "test:all": "npm test && npm run test:types && npm run test:browser && npm run test:bundlers",
@@ -83,6 +88,7 @@
     "esbuild": "^0.28.2",
     "playwright": "^1.63.0",
     "typescript": "^5.9.3",
-    "vite": "^8.3.2"
+    "vite": "^8.3.2",
+    "webpack": "^5.111.1"
   }
 }
