@@ -397,15 +397,11 @@ const MIN_VALUE: i32 = 0x40;
 /// Smallest `k` (capped at 15) such that `n << k >= sum`: the Rice parameter.
 #[inline(always)]
 fn bit_diff(sum: i32, n: i32) -> u32 {
-    if n >= sum || n <= 0 {
-        return 0;
-    }
-    let (s, n) = (sum as u32, n as u32);
-    let mut k = n.leading_zeros() - s.leading_zeros();
-    if (n as u64) << k < s as u64 {
-        k += 1;
-    }
-    k.clamp(1, 15)
+    // Branch-free: start from the bit-length difference and correct by one.
+    let (s, n) = (sum.max(1) as u32, n.max(1) as u32);
+    let k = n.leading_zeros().saturating_sub(s.leading_zeros());
+    let k = k + (((n as u64) << k) < s as u64) as u32;
+    k.min(15)
 }
 
 /// Decode all lines of one stripe, handing each finished line's buffers to `emit`.
@@ -637,8 +633,9 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         let w = self.window(line, pos);
         let (rc, rb, rd) = (w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
         let (ra, rg) = (w[2 * s - 1] as i32, w[2 * s + 1] as i32);
-        let interp =
-            if (rb > rc && rb > rd) || (rb < rc && rb < rd) { (rg + ra + 2 * rb) >> 2 } else { (ra + rg) >> 1 };
+        // `rb` is a local extremum among (rc, rb, rd) exactly when both differences share a sign.
+        let extremum = ((rb - rc) as i64 * (rb - rd) as i64) > 0;
+        let interp = if extremum { (rg + ra + 2 * rb) >> 2 } else { (ra + rg) >> 1 };
         let flat = (rb - rc).abs() + (rc - ra).abs();
         let v = self.decode_residual::<1>(g, flat, rb - rc, rc - ra, interp);
         self.window(line, pos)[2 * s] = v;
@@ -693,14 +690,26 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         } else {
             self.grads[SIDE][g].main[gi.min(40)]
         };
-        let sample = self.zero_run();
-        let code = if sample < c.max_bits - qt.raw_bits as i32 - 1 {
-            let k = bit_diff(sum, n);
-            ((sample as u32) << k | self.bits.get(k)) as i32
+        // Fast path: the unary prefix and the Rice remainder fit in one 32-bit peek.
+        self.bits.fill();
+        let w = self.bits.peek_no_fill(32);
+        let lz = w.leading_zeros();
+        let k = bit_diff(sum, n);
+        let code = if w != 0 && (lz as i32) < c.max_bits - qt.raw_bits as i32 - 1 && lz + 1 + k <= 32 {
+            let total = lz + 1 + k;
+            let v = self.bits.peek_no_fill(total) & ((1u32 << k) - 1);
+            self.bits.skip_no_fill(total);
+            ((lz << k) | v) as i32
         } else {
-            self.bits.get(qt.raw_bits) as i32 + 1
+            let sample = self.zero_run();
+            if sample < c.max_bits - qt.raw_bits as i32 - 1 {
+                ((sample as u32) << k | self.bits.get(k)) as i32
+            } else {
+                self.bits.get(qt.raw_bits) as i32 + 1
+            }
         };
-        let code = if code & 1 != 0 { -1 - code / 2 } else { code / 2 };
+        // Zig-zag decode (odd codes are negative): branch-free `code & 1 ? -1 - code/2 : code/2`.
+        let code = (code >> 1) ^ -(code & 1);
         let (mut sum, mut n) = (sum + code.abs(), n);
         if n == MIN_VALUE {
             sum >>= 1;
@@ -713,7 +722,8 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         };
         *stat = (sum, n + 1);
         let step = 2 * qt.q_base + 1;
-        let mut v = if grad < 0 { interp - code * step } else { interp + code * step };
+        // The residual's sign follows the gradient's (branch-free: (grad >> 31) | 1 is ±1).
+        let mut v = interp + ((grad >> 31) | 1) * code * step;
         if v < -qt.q_base {
             v += qt.total_values * step;
         } else if v > qt.q_base + max {
@@ -727,13 +737,18 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
 #[inline(always)]
 fn even_prediction(rf: i32, rc: i32, rb: i32, rd: i32) -> i32 {
     let (d_cb, d_fb, d_db) = ((rc - rb).abs(), (rf - rb).abs(), (rd - rb).abs());
-    if d_cb > d_fb && d_cb > d_db {
-        rf + rd + 2 * rb
-    } else if d_db > d_cb && d_db > d_fb {
-        rf + rc + 2 * rb
+    // Drop the neighbour that deviates most from `rb` (written as selects so the
+    // compiler can avoid unpredictable branches).
+    let drop_c = (d_cb > d_fb) & (d_cb > d_db);
+    let drop_d = (d_db > d_cb) & (d_db > d_fb);
+    let pair = if drop_c {
+        rf + rd
+    } else if drop_d {
+        rf + rc
     } else {
-        rd + rc + 2 * rb
-    }
+        rd + rc
+    };
+    pair + 2 * rb
 }
 
 #[cfg(test)]

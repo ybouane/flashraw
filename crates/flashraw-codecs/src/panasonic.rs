@@ -542,51 +542,48 @@ impl V8Decoder {
         Ok(V8Decoder { lut, shift_down, clip: p.clip, gamma, initial: p.initial })
     }
 
-    /// Decode strips into `out` (`raw_width` samples per row). Strips decode in parallel.
+    /// Decode strips into `out` (`raw_width` samples per row). Strips decode in
+    /// parallel, each straight into its own column band of the output.
     pub fn decode(&self, strips: &[V8Strip], out: &mut [u16], raw_width: usize, parallel: bool) -> Result<()> {
         let height = strips.first().map(|s| s.height as usize).unwrap_or(0);
-        if out.len() < raw_width * height {
+        if out.len() < raw_width * height || raw_width == 0 {
             return Err(Error::InvalidArgument("Panasonic v8 output too small".into()));
         }
-        // Strips are vertical bands; give each its own column range via a tile grid
-        // with variable widths emulated by per-strip row slices.
-        let mut bounds = Vec::new();
-        for s in strips {
+        let mut order: Vec<usize> = (0..strips.len()).collect();
+        order.sort_by_key(|&i| strips[i].left);
+        let mut prev_end = 0usize;
+        for &i in &order {
+            let s = &strips[i];
             let (l, w) = (s.left as usize, s.width as usize);
-            if s.height as usize != height || l + w > raw_width || w < 2 || s.height < 2 {
+            if s.height as usize != height || l + w > raw_width || w < 2 || s.height < 2 || l < prev_end {
                 return Err(Error::corrupt("invalid Panasonic v8 strip geometry"));
             }
-            bounds.push((l, l + w));
+            prev_end = l + w;
         }
-        let mut order: Vec<usize> = (0..strips.len()).collect();
-        order.sort_by_key(|&i| bounds[i].0);
-        for w in order.windows(2) {
-            if bounds[w[0]].1 > bounds[w[1]].0 {
-                return Err(Error::corrupt("overlapping Panasonic v8 strips"));
+        // Hand every strip the matching segment of each output row (disjoint borrows).
+        let mut segments: Vec<Vec<&mut [u16]>> = order.iter().map(|_| Vec::with_capacity(height)).collect();
+        for row in out[..raw_width * height].chunks_exact_mut(raw_width) {
+            let mut rest = row;
+            let mut consumed = 0usize;
+            for (k, &i) in order.iter().enumerate() {
+                let (l, w) = (strips[i].left as usize, strips[i].width as usize);
+                let (_, tail) = std::mem::take(&mut rest).split_at_mut(l - consumed);
+                let (seg, tail) = tail.split_at_mut(w);
+                segments[k].push(seg);
+                rest = tail;
+                consumed = l + w;
             }
         }
-        // Decode each strip into its own buffer, then scatter (strips are few and wide).
-        let results = par::map(order.clone(), parallel, |i| {
-            let s = &strips[i];
-            let mut buf = vec![0u16; s.width as usize * height];
-            self.decode_strip(s, &mut buf).map(|_| (i, buf))
-        });
-        for r in results {
-            let (i, buf) = r?;
-            let s = &strips[i];
-            let (l, w) = (s.left as usize, s.width as usize);
-            for (y, src) in buf.chunks_exact(w).enumerate() {
-                out[y * raw_width + l..y * raw_width + l + w].copy_from_slice(src);
-            }
-        }
-        Ok(())
+        let jobs: Vec<(usize, Vec<&mut [u16]>)> = order.iter().copied().zip(segments).collect();
+        let results = par::map(jobs, parallel, |(i, rows)| self.decode_strip(&strips[i], rows));
+        results.into_iter().collect::<Result<Vec<()>>>().map(|_| ())
     }
 
-    /// Decode one strip into a `width × height` buffer.
-    pub fn decode_strip(&self, s: &V8Strip, out: &mut [u16]) -> Result<()> {
+    /// Decode one strip into `rows` (its `height` row segments of `width` samples).
+    pub fn decode_strip(&self, s: &V8Strip, mut rows: Vec<&mut [u16]>) -> Result<()> {
         let (w, h) = (s.width as usize, s.height as usize);
         let half_w = w / 2;
-        if half_w == 0 || h / 2 == 0 || out.len() < w * h {
+        if half_w == 0 || h / 2 == 0 || rows.len() < h || rows.iter().any(|r| r.len() < w) {
             return Err(Error::corrupt("invalid Panasonic v8 strip"));
         }
         let budget = s.bits.div_ceil(64) * 64;
@@ -597,7 +594,8 @@ impl V8Decoder {
         const SLOT: [usize; 4] = [0, 2, 1, 3];
         for pair in 0..h / 2 {
             let mut base = line_base;
-            let (r0, r1) = out[pair * 2 * w..(pair * 2 + 2) * w].split_at_mut(w);
+            let (top, bottom) = rows[pair * 2..pair * 2 + 2].split_at_mut(1);
+            let (r0, r1) = (&mut *top[0], &mut *bottom[0]);
             for bx in 0..half_w {
                 let mut blk = [0i32; 4];
                 for slot in SLOT {
@@ -626,20 +624,21 @@ impl V8Decoder {
 
     #[inline(always)]
     fn next_diff(&self, bits: &mut RevBits) -> Result<i32> {
+        // One refill covers the code (<= 16 bits) and its magnitude bits (<= 16).
         bits.fill();
-        let (len, sym) = self.lut.entries[bits.peek(16) as usize];
+        let window = bits.cache;
+        let (len, sym) = self.lut.entries[(window >> 48) as usize];
         if len == 0 {
             return Err(Error::corrupt("invalid Panasonic v8 Huffman code"));
         }
-        bits.skip(len as u32);
         let i = sym as u32;
         let s = self.shift_down[sym as usize] as u32;
         let d = i.saturating_sub(s);
-        bits.fill();
+        let after = window << len;
+        bits.skip(len as u32 + d);
         // The bit following the code decides the sign (JPEG-style), even when no
-        let next_bit_set = bits.peek(1) == 1;
-        let raw = if d > 0 { bits.peek(d) as i32 } else { 0 };
-        bits.skip(d);
+        let next_bit_set = (after >> 63) == 1;
+        let raw = if d > 0 { (after >> (64 - d)) as i32 } else { 0 };
         let v = raw << s;
         let delta1 = if next_bit_set {
             v
