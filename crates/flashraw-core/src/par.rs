@@ -27,6 +27,26 @@ where
     }
 }
 
+/// Workers worth using for purely memory-bound kernels (copies, byte swaps, 16-bit
+/// unpack). Measured: such loops saturate memory bandwidth at ~4 threads and slow down
+/// beyond that from contention, so callers cap their parallelism with this.
+pub const MEMORY_BOUND_WORKERS: usize = 4;
+
+/// Like [`for_each_row_chunk`] but split into at most `max_workers` tasks (used for
+/// memory-bound kernels where more threads only add contention).
+pub fn for_each_row_chunk_bounded<T, F>(data: &mut [T], row_len: usize, max_workers: usize, parallel: bool, f: F)
+where
+    T: Send,
+    F: Fn(usize, &mut [T]) + Sync + Send,
+{
+    if row_len == 0 || data.is_empty() {
+        return;
+    }
+    let rows = data.len().div_ceil(row_len);
+    let workers = max_workers.clamp(1, threads().max(1));
+    for_each_row_chunk(data, row_len, rows.div_ceil(workers), parallel && workers > 1, f)
+}
+
 /// Map `f` over `items` in parallel (when enabled), preserving order.
 pub fn map<I, O, F>(items: Vec<I>, parallel: bool, f: F) -> Vec<O>
 where

@@ -1,0 +1,4 @@
+# FORMAT	MODE	COMPRESSION	STATUS	NOTES
+DNG	any	deflate + integer predictors 1/2/34892/34893	verified	
+DNG	LinearRaw	lossy JPEG (34892)	verified	converter-produced lossy files
+DNG	CFALayout != 1	staggered layouts	unsupported	no corpus samples; explicit error

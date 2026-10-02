@@ -57,7 +57,7 @@ pub fn unpack(
     let rows_per_chunk = (64 * 1024 / dst_stride.max(1)).max(1);
     let n = (dst_stride * height).min(dst.len());
     let dst = &mut dst[..n];
-    par::for_each_row_chunk(dst, dst_stride, rows_per_chunk, parallel, |first, chunk| {
+    let body = |first: usize, chunk: &mut [u16]| {
         for (i, row) in chunk.chunks_mut(dst_stride).enumerate() {
             let y = first + i;
             if y >= avail_rows {
@@ -67,7 +67,13 @@ pub fn unpack(
             let s = &s[..row_bytes.min(s.len())];
             unpack_row(s, &mut row[..width], bits, layout.order, simd);
         }
-    });
+    };
+    // 8/16-bit samples are plain copies: memory-bound, so fewer workers are faster.
+    if matches!(bits, 8 | 16) {
+        par::for_each_row_chunk_bounded(dst, dst_stride, par::MEMORY_BOUND_WORKERS, parallel, body);
+    } else {
+        par::for_each_row_chunk(dst, dst_stride, rows_per_chunk, parallel, body);
+    }
     Ok(())
 }
 

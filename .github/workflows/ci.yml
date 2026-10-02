@@ -50,6 +50,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p flashraw-cli -- camera-db validate camera-db/cameras
+      - run: python3 tools/support_matrix.py --check
 
   wasm:
     runs-on: ubuntu-latest

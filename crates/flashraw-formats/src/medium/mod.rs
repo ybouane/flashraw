@@ -86,7 +86,8 @@ pub fn unpack_u16_rows(
     if src.len() < width * 2 {
         return Err(Error::corrupt("uncompressed raw data truncated before the first row"));
     }
-    par::for_each_row_chunk(out, width, 64, parallel, |first, chunk| {
+    // Plain 16-bit copies are memory-bound: more than a few workers only add contention.
+    par::for_each_row_chunk_bounded(out, width, par::MEMORY_BOUND_WORKERS, parallel, |first, chunk| {
         for (i, row) in chunk.chunks_mut(width).enumerate() {
             let off = (first + i) * row_stride_bytes;
             if let Some(s) = src.get(off..) {

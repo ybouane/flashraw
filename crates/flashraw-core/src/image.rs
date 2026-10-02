@@ -56,9 +56,35 @@ pub fn alloc_zeroed<T: zeroable::Zeroable>(len: usize) -> Result<Vec<T>> {
         if ptr.is_null() {
             return Err(Error::OutOfMemory(format!("failed to allocate {} bytes", layout.size())));
         }
+        advise_huge_pages(ptr as *mut u8, layout.size());
         Ok(Vec::from_raw_parts(ptr, len, len))
     }
 }
+
+/// Ask the kernel to back large buffers with transparent huge pages. Decoders write
+/// every byte of their output, so first-touch page faults dominate memory-bound paths
+/// (e.g. 16-bit uncompressed unpack); 2 MiB pages cut the fault count ~500x and avoid
+/// fault-lock contention between worker threads. Purely advisory.
+#[cfg(target_os = "linux")]
+fn advise_huge_pages(ptr: *mut u8, size: usize) {
+    const HUGE: usize = 2 << 20;
+    if size < 4 * HUGE {
+        return;
+    }
+    let start = (ptr as usize).next_multiple_of(HUGE);
+    let end = (ptr as usize + size) & !(HUGE - 1);
+    if end > start {
+        // SAFETY: [start, end) lies within the allocation we just obtained; madvise with
+        // MADV_HUGEPAGE only changes how the kernel backs these pages, never their contents
+        // or ownership, and failure is harmless.
+        unsafe {
+            libc::madvise(start as *mut libc::c_void, end - start, libc::MADV_HUGEPAGE);
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn advise_huge_pages(_ptr: *mut u8, _size: usize) {}
 
 /// Marker for types whose all-zero bit pattern is a valid value.
 pub mod zeroable {

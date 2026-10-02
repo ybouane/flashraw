@@ -68,17 +68,38 @@ pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel>
     }
     let data = img.data.as_u16()?;
     let (pw, ph) = info.cfa.map(|p| (p.width(), p.height())).unwrap_or((1, 1));
-    let mut sum = vec![0f64; pw * ph];
-    let mut cnt = vec![0u64; pw * ph];
+    let w = img.width as usize;
+    // (row, x0, x1) spans of every masked area; rows are summed in parallel with integer
+    // accumulators and no per-pixel modulo.
+    let mut spans: Vec<(usize, usize, usize)> = Vec::new();
     for r in &info.masked_areas {
         let r = r.clamp_to(img.width, img.height);
         for y in r.y as usize..r.bottom() as usize {
-            let row = &data[y * img.width as usize..];
-            for x in r.x as usize..r.right() as usize {
-                let i = (y % ph) * pw + x % pw;
-                sum[i] += row[x] as f64;
-                cnt[i] += 1;
+            spans.push((y, r.x as usize, r.right() as usize));
+        }
+    }
+    let partial = par::map(spans, true, |(y, x0, x1)| {
+        let mut sum = vec![0u64; pw * ph];
+        let mut cnt = vec![0u64; pw * ph];
+        let row = &data[y * w..y * w + w];
+        let base = (y % ph) * pw;
+        for k in 0..pw {
+            // First x >= x0 with x % pw == k.
+            let mut x = x0 + (k + pw - x0 % pw) % pw;
+            while x < x1 {
+                sum[base + k] += row[x] as u64;
+                cnt[base + k] += 1;
+                x += pw;
             }
+        }
+        (sum, cnt)
+    });
+    let mut sum = vec![0f64; pw * ph];
+    let mut cnt = vec![0u64; pw * ph];
+    for (s, c) in partial {
+        for i in 0..pw * ph {
+            sum[i] += s[i] as f64;
+            cnt[i] += c[i];
         }
     }
     if cnt.contains(&0) {
@@ -822,6 +843,21 @@ mod tests {
         let p = DevelopParams::new(&info, Demosaic::HalfSize, Rect::full(8, 8));
         let d = develop(&img, &info, (0, 0), &p, false).unwrap();
         assert!(d.rgb.iter().all(|&v| (v - 0.25).abs() < 1e-5), "{:?}", &d.rgb[..3]);
+    }
+
+    #[test]
+    fn masked_black_per_position() {
+        let mut img = RawImage::new_u16(10, 6, 1, &Limits::default()).unwrap();
+        for y in 0..6 {
+            for x in 0..10 {
+                img.u16_mut()[y * 10 + x] = (100 + (y % 2) * 20 + (x % 2) * 10) as u16;
+            }
+        }
+        let mut info = FrameInfo::new(10, 6, 12);
+        info.cfa = Some(CfaPattern::RGGB);
+        info.masked_areas = vec![Rect::new(1, 0, 3, 6), Rect::new(0, 4, 10, 2)];
+        let b = black_from_masked(&img, &info).unwrap();
+        assert_eq!(b.values, vec![100.0, 110.0, 120.0, 130.0]);
     }
 
     #[test]

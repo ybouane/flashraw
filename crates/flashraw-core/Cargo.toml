@@ -20,6 +20,9 @@ rayon = { workspace = true, optional = true }
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 proptest.workspace = true
 

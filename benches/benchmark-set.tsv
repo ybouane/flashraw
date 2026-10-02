@@ -1,0 +1,102 @@
+# Representative benchmark set: largest and median file of every (format, compression) pair
+Hasselblad/H3D/A9391120.3FR	3FR	hasselblad
+Hasselblad/Hasselblad H4D/A0000902.3FR	3FR	hasselblad
+Hasselblad/CFV 100CElectronic Shutter/B0003499.3FR	3FR	uncompressed
+Hasselblad/X2D 100C/B0000080.3FR	3FR	uncompressed
+SONY/ILCE-7M5/full_compressed.ARW	ARW	other
+SONY/ILCE-7M5/full_compressed_HQ.ARW	ARW	other
+Sony/DSLR-A380/DSC05353.ARW	ARW	sony-arw1
+Sony/DSLR-A390/RAW_SONY_A390.ARW	ARW	sony-arw1
+Sony/ILCE-7M2/SONY ILCE-7M2 tungsten.arw	ARW	sony-arw2
+Sony/ILCE-7RM5/7RM5-LossyCompressed.ARW	ARW	sony-arw2
+Sony/ILCE-7CR/DSC00800.ARW	ARW	sony-lossless
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW	ARW	sony-lossless
+Sony/ILCE-7RM3/DSC03792.ARW	ARW	uncompressed
+Sony/ILCE-7RM3/Indoor_Multi-20190712-094102.ARQ	ARW	uncompressed
+Canon/EOS 5D Mark III/5G4A9395.CR2	CR2	canon-sraw
+Canon/EOS 5DS R/_DSR2003.CR2	CR2	canon-sraw
+Canon/EOS 5D Mark IV/B13A0729.CR2	CR2	lossless-jpeg
+Canon/EOS Rebel T1i/IMG_0493.CR2	CR2	lossless-jpeg
+Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_nocrop_dual.CR3	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0355-craw-dual-full.cr3	CR3	canon-crx
+Canon/EOS 10D/CRW_7673.CRW	CRW	canon-crw
+Canon/EOS 10D/crw_2127.crw	CRW	canon-crw
+Canon/PowerShot Pro70/RAW_CANON_PRO70_SRGB.CRW	CRW	uncompressed
+Kodak/DCS Pro 14N/D4C50031.DCR	DCR	kodak-65000
+Kodak/DCS Pro 14nx/D7465857.DCR	DCR	kodak-65000
+Kodak/DCS560C/RAW_KODAK_DCS560C.TIF	DCS	lossless-jpeg
+Kodak/DCS460D/RAW_KODAK_DCS460D_FILEVERSION_3.TIF	DCS	uncompressed
+Kodak/EOS DCS 1/RAW_CANON_DCS1.TIF	DCS	uncompressed
+Canon/EOS 5D Mark III/hdrmerge-bayer-fp24-w-pred-deflate.dng	DNG	deflate
+Canon/EOS 5D Mark III/hdrmerge-bayer-fp32-w-pred-deflate.dng	DNG	deflate
+Leica/M Monochrom (Typ 246)/M2462362.DNG	DNG	lossless-jpeg
+Pentax/K-1 Mark II/_K1I9784.DNG	DNG	lossless-jpeg
+Light/L16/L16_00148.dng	DNG	uncompressed
+Xiaomi/Mi 9 Lite/IMG_20200324_073611.dng	DNG	uncompressed
+Epson/R-D1s/EPSN3575.ERF	ERF	uncompressed
+Epson/R-D1x/_EPS1919.ERF	ERF	uncompressed
+Hasselblad/H5D-50c/20151114_CCSG_on_Hasselblad_H5D50c-0017.fff	FFF	hasselblad
+Hasselblad/X2D 100C/Job_0079.fff	FFF	hasselblad
+Leaf/Credo 40/0008_20_23.IIQ	IIQ	phaseone
+Phase One/IQ4 150MP/IQ4_150MPIIQ_L_16bit.iiq	IIQ	phaseone
+Phase One/iXM-RS150F/RGB_86_0_4.IIQ	IIQ	phaseone-s
+Phase One/iXU180/cap_22908.IIQ	IIQ	phaseone-s
+Phase One/H 25/H25_IT8.7-2_Card.TIF	IIQ	uncompressed
+Kodak/DC120/RAW_KODAK_DC120.KDC	KDC	kodak-dc120
+Kodak/DC50/RAW_KODAK_DC50.KDC	KDC	other
+Kodak/EasyShare Z981/100_1548.KDC	KDC	uncompressed
+Kodak/Z1015 IS/RAW_KODAK_EASYSHARE_Z1015-IS.KDC	KDC	uncompressed
+Mamiya/ZD/RAW_MAMIYA_ZD.MEF	MEF	uncompressed
+Leaf/AFi-II 12/L_000859.mos	MOS	leaf
+Leaf/Aptus 75/RAW_APTUS_75.MOS	MOS	leaf
+Leaf/Aptus 22/L_003173.mos	MOS	uncompressed
+MINOLTA/DYNAX 5D/Minolta_Dynax_5D.MRW	MRW	minolta-packed
+Minolta/DiMAGE A2/PICT0881.MRW	MRW	minolta-packed
+Minolta/DiMAGE 7/RAW_MINOLTA_DIMAGE7.MRW	MRW	uncompressed
+Minolta/DiMAGE 7i/RAW_MINOLTA_DIMAGE_7I.MRW	MRW	uncompressed
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_1_1.NEF	NEF	nikon-huffman
+Nikon/Z 8/Nikon_Z8_raw_14_bit_lossless_compression.NEF	NEF	nikon-huffman
+Nikon/D4/_DSC2256[1].NEF	NEF	uncompressed
+Nikon/D850/Nikon-D850-14bit-uncompressed.NEF	NEF	uncompressed
+Nikon/COOLPIX P950/DSCN0014.NRW	NRW	uncompressed
+Nikon/Coolpix A1000/DSCN0417.NRW	NRW	uncompressed
+OM System/OM-1 Mark II/80mp-14bit-tripod.orf	ORF	olympus
+Olympus/E-M10 Mark IV/PA040002.ORF	ORF	olympus
+Olympus/E-330/P3307182.ORF	ORF	uncompressed
+Olympus/PEN-F/PenFHiRes.orf	ORF	uncompressed
+Pentax/K-1 Mark II/_K1I9781.PEF	PEF	pentax-huffman
+Pentax/K-3 Mark III/IMGP9854.PEF	PEF	pentax-huffman
+Pentax/K100D/IMGP1754.PEF	PEF	uncompressed
+Pentax/ist D/pentax.PEF	PEF	uncompressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-16bits-losslesscompressed-4_3.RAF	RAF	fuji-compressed
+Fujifilm/X100V/DSCF0734.RAF	RAF	fuji-compressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-16bits-uncompress-4_3.RAF	RAF	uncompressed
+Fujifilm/X-E2/DSCF9050.RAF	RAF	uncompressed
+Canon/PowerShot SX20 IS/CRW_6488.CRW	RAW	uncompressed
+GITUP/GIT2P/git2p_43.raw	RAW	uncompressed
+Panasonic/DC-G9/PANA2371_16x9.RW2	RW2	panasonic-v4
+Panasonic/DC-LX100M2/P1020077.RW2	RW2	panasonic-v4
+Panasonic/DC-G9/P1000475.RW2	RW2	panasonic-v5
+Panasonic/DC-GH5S/P1022090.RW2	RW2	panasonic-v5
+Panasonic/DC-S1H/P1000006.RW2	RW2	panasonic-v6
+Panasonic/DC-S1R/P1000077.RW2	RW2	panasonic-v6
+Panasonic/DC-S5/P1047513.RW2	RW2	panasonic-v7
+Panasonic/DC-S5/dc-s5_hr_96MP.RW2	RW2	panasonic-v7
+Panasonic/DC-GH6/3-2.RW2	RW2	panasonic-v8
+Panasonic/DC-GH6/P1000116.RW2	RW2	panasonic-v8
+Leica/Leica D-LUX 3/RAW_LEICA_DLUX3.RAW	RW2	uncompressed
+Panasonic/DMC-FZ30/RAW_PANASONIC_FZ30_SRGB.RAW	RW2	uncompressed
+Samsung/NX30/2015-03-07-163604_sam_7204.srw	SRW	samsung-v0
+Samsung/NX300/nx300.SRW	SRW	samsung-v0
+Samsung/NX3000/_3184416.SRW	SRW	samsung-v1
+Samsung/NX3300/SAM_4260.SRW	SRW	samsung-v1
+Samsung/NX1/2016-07-23-142101_sam_9364.srw	SRW	samsung-v2
+Samsung/NX500/SAM_2935.SRW	SRW	samsung-v2
+Samsung/NX20/03194133.SRW	SRW	uncompressed
+Samsung/NX210/nx210.SRW	SRW	uncompressed
+Sigma/DP1 Merrill/SDIM0555.X3F	X3F	sigma-x3f
+Sigma/sd Quattro H/SDIM0061.X3F	X3F	sigma-x3f
+Kodak/Kodak C603  Kodak C643/KODAK_C603_C643_FORMAT_NONE_YRGB0001.RAW	other	kodak-ycbcr
+SJCam/5000X Elite/2016_0104_005847_665To_send.RAW	other	kodak-ycbcr
+RaspberryPi/RP_ov5647/Pi_V1.3_picamera.raw	other	uncompressed
+Sinarback/Sinarback eVolution 75, Sinar p3  f3/Tomatio_03.sti	other	uncompressed

@@ -278,6 +278,8 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
         raw.decode(opts.clone()).map_err(|e| e.to_string())?;
     }
     for _ in 0..iterations {
+        // Release the previous frame first so peak RSS reflects a single decode.
+        drop(last.take());
         let t = std::time::Instant::now();
         let raw = FlashRaw::open(&bytes[..]).map_err(|e| e.to_string())?;
         open_ms.push(t.elapsed().as_secs_f64() * 1000.0);
