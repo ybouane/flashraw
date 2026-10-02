@@ -293,7 +293,9 @@ impl GpuContext {
                 p.m0 = [m[0][0], m[0][1], m[0][2], 0.0];
                 p.m1 = [m[1][0], m[1][1], m[1][2], 0.0];
                 p.m2 = [m[2][0], m[2][1], m[2][2], 0.0];
-                let layout = if cpp == 1 && info.cfa.is_some() {
+                let layout = if cpp == 1 && info.cfa.is_some_and(|c| c.is_bayer()) {
+                    3
+                } else if cpp == 1 && info.cfa.is_some() {
                     1
                 } else if cpp >= 3 {
                     2

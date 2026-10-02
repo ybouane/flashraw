@@ -123,6 +123,8 @@ pub(crate) fn calib_table(info: &FrameInfo, cpp: usize) -> CalibTable {
     tab.extend_from_slice(&b.row_deltas);
     let off_cold = tab.len();
     tab.extend_from_slice(&b.col_deltas);
+    // Reciprocals 1/n (n = 0..=9) at off_cold + n_cold, computed like the CPU's `1.0 / len as f32`.
+    tab.extend((0..=9).map(|n| if n == 0 { 0.0 } else { 1.0 / n as f32 }));
     CalibTable {
         tab,
         pat_w: pw as u32,
@@ -143,7 +145,8 @@ pub(crate) fn cfa_sites(info: &FrameInfo) -> (u32, u32, Vec<u32>) {
     let mut out = Vec::with_capacity(pw * ph);
     for py in 0..ph {
         for px in 0..pw {
-            let mut d = (p.color_at(px, py) as u32).min(3);
+            let own = (p.color_at(px, py) as u32).min(3);
+            let mut d = own;
             for dy in -1isize..=1 {
                 for dx in -1isize..=1 {
                     let c = (p.color_at(
@@ -151,7 +154,8 @@ pub(crate) fn cfa_sites(info: &FrameInfo) -> (u32, u32, Vec<u32>) {
                         (py as isize + dy + ph as isize * 4) as usize,
                     ) as u32)
                         .min(3);
-                    if c < 3 {
+                    // A site's own colour is measured (centre only), not interpolated.
+                    if c < 3 && (c != own || (dx == 0 && dy == 0)) {
                         let bit = ((dy + 1) * 3 + (dx + 1)) as u32;
                         d |= 1 << (2 + 9 * c + bit);
                     }
@@ -306,12 +310,14 @@ mod tests {
         info.cfa = Some(flashraw_core::CfaPattern::RGGB);
         let (w, h, sites) = cfa_sites(&info);
         assert_eq!((w, h), (2, 2));
-        // R site: R only at centre (bit 4), G at the 4 cross positions, B at the corners.
+        // R site: own colour R only at the centre (bit 4), G at the cross, B at the corners.
         let r = sites[0];
         assert_eq!(r & 3, 0);
         assert_eq!((r >> 2) & 0x1ff, 1 << 4);
         assert_eq!((r >> 11) & 0x1ff, (1 << 1) | (1 << 3) | (1 << 5) | (1 << 7));
         assert_eq!((r >> 20) & 0x1ff, (1 << 0) | (1 << 2) | (1 << 6) | (1 << 8));
+        // G site (top right): G only at the centre, not the diagonals.
+        assert_eq!((sites[1] >> 11) & 0x1ff, 1 << 4);
     }
 
     #[test]

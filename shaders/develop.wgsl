@@ -3,8 +3,16 @@
 // (RGBA8: sRGB transfer + EXIF orientation) -> store. One pass, no full-size
 // intermediates (CPU reference: `flashraw::process::{develop, to_rgba8}`).
 
-// 0 = single-plane without CFA (grey), 1 = CFA mosaic (cpp 1), 2 = RGB(+) planes (cpp >= 3).
+// 0 = single-plane without CFA (grey), 1 = CFA mosaic (cpp 1), 2 = RGB(+) planes (cpp >= 3),
+// 3 = Bayer mosaic (as 1, with the CPU Bayer fast-path summation order).
 override LAYOUT: u32 = 1u;
+
+fn is_cfa() -> bool {
+    return LAYOUT == 1u || LAYOUT == 3u;
+}
+
+// 3x3 neighbour indices ((dy + 1) * 3 + dx + 1) in Bayer summation order.
+const BAYER_ORDER = array<u32, 9>(3u, 5u, 1u, 7u, 0u, 2u, 6u, 8u, 4u);
 // 0 = RGBA8 (sRGB, orientation applied, one u32 per pixel), 1 = linear RGB f32 (3 words per pixel).
 override OUT_MODE: u32 = 0u;
 
@@ -58,7 +66,7 @@ fn develop(
 ) {
     let bx = wg.x * TILE;
     let by = wg.y * TILE;
-    if (LAYOUT == 1u) {
+    if (is_cfa()) {
         // Stage the normalised (TILE + 2)^2 neighbourhood once per workgroup.
         for (var t = li; t < APRON * APRON; t += 256u) {
             let ty = t / APRON;
@@ -81,15 +89,23 @@ fn develop(
     let x = P.crop_x + dx;
     let y = P.crop_y + dy;
     var rgb = vec3<f32>(0.0);
-    if (LAYOUT == 1u) {
-        // Average of the same-colour samples in the 3x3 neighbourhood (bilinear for Bayer),
-        // accumulated in the CPU order (dy outer, dx inner).
+    if (is_cfa()) {
+        // Own colour: the centre sample. Other colours: mean of the same-colour samples
+        // of the 3x3 neighbourhood inside the frame. Interior sites multiply by the
+        // host-computed 1/count (like the CPU fast paths); borders divide by the
+        // in-bounds count. Bayer sums in the CPU fast-path order (left, right, up,
+        // down, then diagonals); other CFAs row by row.
         let site = cfa_site(x, y);
+        let interior = x > 0u && y > 0u && x + 1u < P.width && y + 1u < P.height;
         for (var c = 0u; c < 3u; c++) {
             let mask = (site >> (2u + 9u * c)) & 0x1ffu;
             var s = 0.0;
-            var n = 0.0;
-            for (var k = 0u; k < 9u; k++) {
+            var n = 0u;
+            for (var j = 0u; j < 9u; j++) {
+                var k = j;
+                if (LAYOUT == 3u) {
+                    k = BAYER_ORDER[j];
+                }
                 if ((mask & (1u << k)) != 0u) {
                     let ky = k / 3u;
                     let kx = k - ky * 3u;
@@ -97,12 +113,16 @@ fn develop(
                     let yy = i32(y + ky) - 1;
                     if (xx >= 0 && yy >= 0 && u32(xx) < P.width && u32(yy) < P.height) {
                         s += tile[(l.y + ky) * APRON + l.x + kx];
-                        n += 1.0;
+                        n += 1u;
                     }
                 }
             }
-            if (n > 0.0) {
-                rgb[c] = s / n;
+            if (n > 0u) {
+                if (interior) {
+                    rgb[c] = s * tab[P.off_cold + P.n_cold + n];
+                } else {
+                    rgb[c] = s / f32(n);
+                }
             }
         }
     } else if (LAYOUT == 2u) {
@@ -129,7 +149,7 @@ fn develop_half(@builtin(global_invocation_id) gid: vec3<u32>) {
         let x = x0 + (k & 1u);
         let y = y0 + (k >> 1u);
         if (x < P.width && y < P.height) {
-            if (LAYOUT == 1u) {
+            if (is_cfa()) {
                 let c = cfa_site(x, y) & 3u;
                 acc[c] += sample_norm(x, y, 0u);
                 n[c] += 1.0;

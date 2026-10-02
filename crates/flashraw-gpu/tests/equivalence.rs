@@ -292,7 +292,7 @@ fn gpu_develop_matches_cpu() {
                     eprintln!("{what}: linear max |Δ| = {d:e}");
                     assert!(d <= 1e-4, "{what}: linear diff {d}");
                 }
-                let (ow, oh, want) = process::to_rgba8(&dev, orientation, false);
+                let (ow, oh, want) = process::develop_rgba8(&img, &info, origin, &params, false).unwrap();
                 let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec(DevelopOutput::Rgba8))).unwrap();
                 assert_eq!((run.image.width(), run.image.height()), (ow, oh), "{what}");
                 let HostPixels::U8(got) = run.image.download().unwrap().0 else { panic!() };
