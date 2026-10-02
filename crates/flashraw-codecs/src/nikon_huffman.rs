@@ -43,7 +43,7 @@ pub struct DirectHuff {
     direct: Vec<u16>,
     /// Combined table indexed by the next `FAST_BITS` bits. Entry layout:
     /// bits 0..5 bits consumed; bit 5 FULL (diff in bits 16..32); bits 8..16 symbol.
-    fast: Box<[u32]>,
+    fast: Box<[u32; FAST_SIZE]>,
 }
 
 impl std::fmt::Debug for DirectHuff {
@@ -98,7 +98,7 @@ impl DirectHuff {
     /// Build from a direct table of `1 << peek_bits` entries (`code_len << 8 | symbol`).
     pub fn from_direct(peek_bits: u32, direct: Vec<u16>) -> Self {
         debug_assert_eq!(direct.len(), 1 << peek_bits);
-        let mut fast = vec![0u32; FAST_SIZE].into_boxed_slice();
+        let mut fast: Box<[u32; FAST_SIZE]> = vec![0u32; FAST_SIZE].into_boxed_slice().try_into().expect("FAST_SIZE");
         for (idx, e) in fast.iter_mut().enumerate() {
             // Code bits are the top `peek_bits` of the FAST_BITS index. When the table is
             // wider than the fast index, only codes short enough to be determined by
@@ -226,37 +226,6 @@ impl<'a> ExactBits<'a> {
         let b = self.get(len.saturating_sub(shl));
         symbol_diff(b, sym)
     }
-
-    /// Fast symbol+difference decode. Precondition: at least 64 bits of real data
-    /// remain beyond any position this call can reach (checked by the caller per row).
-    #[inline(always)]
-    fn diff_fast(&mut self, t: &DirectHuff) -> i32 {
-        let w = self.window();
-        let e = t.fast[(w >> (64 - FAST_BITS)) as usize];
-        if e & FLAG_FULL != 0 {
-            self.pos += (e & 0x1F) as u64;
-            return (e >> 16) as u16 as i16 as i32;
-        }
-        self.diff_slow_in_window(t, w, e)
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn diff_slow_in_window(&mut self, t: &DirectHuff, w: u64, e: u32) -> i32 {
-        let (clen, sym) = if e == SLOW_MARK {
-            let d = t.direct((w >> (64 - t.peek_bits)) as u32);
-            ((d >> 8) as u32, (d & 0xFF) as u32)
-        } else {
-            (e & 0x1F, (e >> 8) & 0xFF)
-        };
-        let len = sym & 15;
-        let shl = sym >> 4;
-        let n = len.saturating_sub(shl);
-        let w2 = w << clen;
-        let b = if n == 0 { 0 } else { (w2 >> (64 - n)) as u32 };
-        self.pos += (clen + n) as u64;
-        symbol_diff(b, sym)
-    }
 }
 
 /// Parameters of a predictive Huffman image.
@@ -298,8 +267,9 @@ where
     let mut vpred = vpred;
     let mut bits = ExactBits::new(src);
     let mut ti = 0usize;
-    // Worst case bits per sample: 16-bit code + 16 difference bits.
-    let row_budget = width as u64 * 32 + 64;
+    // Worst case bits per sample is 31 (16-bit code + 15 difference bits); the fast
+    // reader also looks up to 16 bytes ahead of its position.
+    let row_budget = width as u64 * 32 + 192;
     for row in 0..rows {
         while ti + 1 < tables.len() && tables[ti + 1].0 <= row {
             ti += 1;
@@ -309,7 +279,9 @@ where
         let vp = &mut vpred[row & 1];
         let fast = !bits.dead && bits.pos + row_budget <= bits.total_bits();
         if fast {
-            decode_row_fast(&mut bits, t, vp, line, &map);
+            let mut rb = RowBits::start(bits.data, bits.pos);
+            decode_row_fast(&mut rb, t, vp, line, &map);
+            bits.pos = rb.position();
         } else {
             decode_row_exact(&mut bits, t, vp, line, &map);
         }
@@ -317,30 +289,91 @@ where
     Ok(bits)
 }
 
+/// Register bit cache for rows that are provably inside the data (see the row budget
+/// in [`decode_predictive`]): branchless refills keep 56..=63 bits buffered, so a
+/// symbol and its difference bits never need a second load.
+struct RowBits<'a> {
+    data: &'a [u8],
+    /// Next byte to load.
+    ptr: usize,
+    /// Valid bits, left aligned (zero below them).
+    buf: u64,
+    nbits: u32,
+}
+
+impl<'a> RowBits<'a> {
+    fn start(data: &'a [u8], pos: u64) -> Self {
+        let mut b = RowBits { data, ptr: (pos >> 3) as usize, buf: 0, nbits: 0 };
+        b.refill();
+        let skip = (pos & 7) as u32;
+        b.buf <<= skip;
+        b.nbits -= skip;
+        b
+    }
+
+    /// Bit position in the data.
+    fn position(&self) -> u64 {
+        self.ptr as u64 * 8 - self.nbits as u64
+    }
+
+    #[inline(always)]
+    fn refill(&mut self) {
+        let w = u64::from_be_bytes(self.data[self.ptr..self.ptr + 8].try_into().unwrap());
+        self.buf |= w >> self.nbits;
+        self.ptr += ((63 - self.nbits) >> 3) as usize;
+        self.nbits |= 56;
+    }
+
+    #[inline(always)]
+    fn diff(&mut self, t: &DirectHuff) -> i32 {
+        self.refill();
+        let e = t.fast[(self.buf >> (64 - FAST_BITS)) as usize];
+        if e & FLAG_FULL != 0 {
+            let n = e & 0x1F;
+            self.buf <<= n;
+            self.nbits -= n;
+            return (e >> 16) as u16 as i16 as i32;
+        }
+        self.diff_long(t, e)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn diff_long(&mut self, t: &DirectHuff, e: u32) -> i32 {
+        let (clen, sym) = if e == SLOW_MARK {
+            let d = t.direct((self.buf >> (64 - t.peek_bits)) as u32);
+            ((d >> 8) as u32, (d & 0xFF) as u32)
+        } else {
+            (e & 0x1F, (e >> 8) & 0xFF)
+        };
+        let n = (sym & 15).saturating_sub(sym >> 4);
+        let w2 = self.buf << clen;
+        let b = if n == 0 { 0 } else { (w2 >> (64 - n)) as u32 };
+        let used = clen + n;
+        self.buf = if used >= 64 { 0 } else { self.buf << used };
+        self.nbits -= used;
+        symbol_diff(b, sym)
+    }
+}
+
 #[inline(always)]
-fn decode_row_fast<M: Fn(u16) -> u16>(
-    bits: &mut ExactBits,
-    t: &DirectHuff,
-    vp: &mut [u16; 2],
-    line: &mut [u16],
-    map: &M,
-) {
-    let d0 = bits.diff_fast(t);
+fn decode_row_fast<M: Fn(u16) -> u16>(bits: &mut RowBits, t: &DirectHuff, vp: &mut [u16; 2], line: &mut [u16], map: &M) {
+    let d0 = bits.diff(t);
     vp[0] = vp[0].wrapping_add(d0 as u16);
-    let d1 = bits.diff_fast(t);
+    let d1 = bits.diff(t);
     vp[1] = vp[1].wrapping_add(d1 as u16);
     let (mut h0, mut h1) = (vp[0], vp[1]);
     line[0] = map(h0);
     line[1] = map(h1);
     let mut pairs = line[2..].chunks_exact_mut(2);
     for pair in &mut pairs {
-        h0 = h0.wrapping_add(bits.diff_fast(t) as u16);
-        h1 = h1.wrapping_add(bits.diff_fast(t) as u16);
+        h0 = h0.wrapping_add(bits.diff(t) as u16);
+        h1 = h1.wrapping_add(bits.diff(t) as u16);
         pair[0] = map(h0);
         pair[1] = map(h1);
     }
     if let [last] = pairs.into_remainder() {
-        h0 = h0.wrapping_add(bits.diff_fast(t) as u16);
+        h0 = h0.wrapping_add(bits.diff(t) as u16);
         *last = map(h0);
     }
 }
@@ -487,7 +520,8 @@ pub fn decode_nikon(
         tables.push((meta.split_row, &after));
     }
     let p = PredictiveParams { width, rows, tables: &tables, vpred: meta.vpred };
-    let curve = &meta.curve;
+    let curve: &[u16; 0x4000] =
+        meta.curve.as_slice().try_into().map_err(|_| Error::corrupt("Nikon curve has the wrong size"))?;
     let bits = decode_predictive(src, &p, out, stride, |h| {
         let i = (h as i16).clamp(0, 0x3fff) as usize;
         curve[i]
