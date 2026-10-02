@@ -11,5 +11,18 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+# WebGPU backend (forwards to flashraw/gpu). The JS layer reports `capabilities.gpu.compiled`
+# and falls back to the CPU (or errors, per `fallback`) when it is absent.
+gpu = ["flashraw/gpu"]
+
 [dependencies]
 flashraw = { workspace = true, default-features = false, features = ["simd"] }
+serde_json.workspace = true
+
+# The JS glue is generated with the matching wasm-bindgen-cli (npm/scripts/build.mjs checks the
+# version against Cargo.lock). Keep this in sync with wgpu's requirement so the `gpu` feature unifies.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.129"
+js-sys = "0.3.106"
