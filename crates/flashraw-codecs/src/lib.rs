@@ -8,6 +8,7 @@
 
 pub mod dct12;
 pub mod deflate;
+pub mod dng_opcodes;
 pub mod jpeg;
 #[cfg(feature = "jpegxl")]
 pub mod jxl;

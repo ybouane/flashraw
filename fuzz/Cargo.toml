@@ -82,3 +82,10 @@ path = "fuzz_targets/dct12.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dng_opcodes"
+path = "fuzz_targets/dng_opcodes.rs"
+test = false
+doc = false
+bench = false
