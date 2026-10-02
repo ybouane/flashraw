@@ -6,6 +6,7 @@
 //! Codecs are independent of container formats so they can be fuzzed, benchmarked
 //! and tested in isolation (see `fuzz/` and `benches/`).
 
+pub mod canon_crx;
 pub mod deflate;
 pub mod jpeg;
 #[cfg(feature = "jpegxl")]
