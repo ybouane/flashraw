@@ -45,3 +45,6 @@ with full-frame geometry, the colour-table black and white 0x3fff.
 ## Verification
 
 
+Performance (16 threads, decode only, `flashraw benchmark`): Merrill 4928x3264x3 ≈ 52 ms
+TRUE planes use a fused 14-bit table (prefix code + difference bits in one probe); the Quattro top
+plane (a single sequential stream of up to 30 M samples) bounds the wall time.
