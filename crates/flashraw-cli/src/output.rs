@@ -397,6 +397,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
         "cfa": info.cfa.map(|c| c.to_string()),
         "layout": format!("{:?}", info.layout),
         "black4": black4,
+        // 2x2 black pattern at the active-area origin (row-major), for positional comparison.
+        "black_visible": (0..4).map(|i| frame.black_level.at(info.active_area.x as usize + i % 2, info.active_area.y as usize + i / 2, 0)).collect::<Vec<_>>(),
         "black_level": frame.black_level,
         "white": info.white_level.max(),
         "wb": info.white_balance.map(|w| w.coeffs),

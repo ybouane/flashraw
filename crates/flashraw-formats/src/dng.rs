@@ -128,7 +128,12 @@ fn find_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>) -> Option<&'t Ifd<'a>> {
                 || (i.u32(tags::PHOTOMETRIC) == Some(1) && i.bps() > 8)
         })
         .filter(|i| i.width() > 0 && i.height() > 0)
-        .max_by_key(|i| i.width() as u64 * i.height() as u64)
+        .fold(None, |best: Option<&'t Ifd<'a>>, i| match best {
+            // Keep the first of equally large images: multi-frame DNGs (e.g. Pentax Pixel
+            // Shift) store frames in order and frame 0 is the primary image.
+            Some(b) if b.width() as u64 * b.height() as u64 >= i.width() as u64 * i.height() as u64 => Some(b),
+            _ => Some(i),
+        })
 }
 
 fn rational_pair(ifd: &Ifd, tag: u16) -> Option<(f64, f64)> {
@@ -555,7 +560,13 @@ impl DngRaw<'_> {
     }
 
     fn unit_bytes(&self, i: usize) -> Result<&[u8]> {
-        let (o, l) = *self.units.get(i).ok_or_else(|| Error::corrupt(format!("missing DNG tile {i}")))?;
+        let (o, mut l) = *self.units.get(i).ok_or_else(|| Error::corrupt(format!("missing DNG tile {i}")))?;
+        if self.payload == Payload::Uncompressed {
+            // Some writers (e.g. DJI) understate StripByteCounts; uncompressed data is
+            // addressed by geometry, so read what the geometry needs if the file has it.
+            let needed = (self.tile_row_len() * self.bps as usize).div_ceil(8) * self.tile_h as usize;
+            l = l.max(needed);
+        }
         flashraw_core::bytes::slice_at_lenient(self.data, o, l)
     }
 
@@ -612,7 +623,13 @@ impl DngRaw<'_> {
                 Ok(())
             }
             Payload::Ljpeg => {
-                let hdr = ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions { dng_bug16: self.dng_bug16 })?;
+                let hdr = match ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions { dng_bug16: self.dng_bug16 }) {
+                    Ok(h) => h,
+                    Err(Error::UnsupportedCompression { .. }) if cpp == 1 => {
+                        return self.decode_dct12_tile(src, &mut t, sx, sy, finish);
+                    }
+                    Err(e) => return Err(e),
+                };
                 let (mut row, mut col) = (0usize, 0usize);
                 let (cx0, cx1) = (sx, sx + w * cpp);
                 ljpeg::decode_rows(src, &hdr, |_, mut s| {
@@ -691,6 +708,44 @@ impl DngRaw<'_> {
             }
             Payload::JpegXl => decode_jxl_u16(src, &mut t, sx, sy, cpp, finish),
         }
+    }
+
+    /// Blackmagic 12-bit DCT tiles: the JPEG frame is twice the tile width; block
+    /// columns in the left half fill even tile rows, the right half odd rows, and each
+    /// 8x8 block covers 16 tile rows (every other row).
+    fn decode_dct12_tile(
+        &self,
+        src: &[u8],
+        t: &mut TileMut<'_, '_, u16>,
+        sx: usize,
+        sy: usize,
+        finish: impl Fn(&mut [u16]),
+    ) -> Result<()> {
+        let d = flashraw_codecs::dct12::Dct12::parse(src, self.dng_bug16)?;
+        let tw = self.tile_w as usize;
+        let (w, h) = t.size();
+        d.decode_blocks(src, |jrow, jcol, block| {
+            let (jrow, jcol) = (jrow as usize, jcol as usize);
+            let row0 = jcol / tw + jrow * 2;
+            let col0 = jcol % tw;
+            for bi in 0..8 {
+                let r = row0 + bi * 2;
+                if r < sy || r - sy >= h {
+                    continue;
+                }
+                let line = t.row(r - sy);
+                for j in 0..8 {
+                    let c = col0 + j;
+                    if c >= sx && c - sx < w {
+                        line[c - sx] = block[bi * 8 + j];
+                    }
+                }
+            }
+        })?;
+        for y in 0..h {
+            finish(t.row(y));
+        }
+        Ok(())
     }
 
     fn decode_unit_f32(&self, i: usize, mut t: TileMut<'_, '_, f32>) -> Result<()> {

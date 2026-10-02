@@ -131,6 +131,13 @@ fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
 }
 
 fn main() -> ExitCode {
+    // Behave like a normal Unix tool when piped into `head` etc.: exit quietly on
+    // EPIPE instead of panicking in `println!`.
+    #[cfg(unix)]
+    // SAFETY: restoring the default SIGPIPE disposition at startup, before any threads exist.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
     match run(cli) {
         Ok(code) => code,

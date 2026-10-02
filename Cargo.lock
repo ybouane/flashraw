@@ -478,6 +478,7 @@ dependencies = [
  "flashraw",
  "flashraw-camera-db",
  "jpeg-encoder",
+ "libc",
  "serde",
  "serde_json",
 ]

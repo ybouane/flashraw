@@ -377,6 +377,9 @@ impl<'a> BitPumpJpeg<'a> {
                 self.cache = 0;
                 self.bits = 0;
                 self.marker_hit = false;
+                // Zero padding fed while stopped at a restart marker is legitimate,
+                // not an overrun of the segment.
+                self.overrun = 0;
                 return true;
             }
             p += 1;
