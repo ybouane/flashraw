@@ -8,7 +8,7 @@
 //! format when the corpus is available.
 
 use flashraw::{DecodeOptions, FlashRaw, Limits};
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
 const W: u32 = 64;
@@ -323,8 +323,19 @@ fn invalid_bmff_sizes() {
 #[test]
 fn random_garbage_and_magic_prefixes() {
     let magics: &[&[u8]] = &[
-        b"II*\0", b"MM\0*", b"IIRO", b"IIRS", b"MMOR", b"IIU\0", b"FUJIFILMCCD-RAW ", b"FOVb", b"\0MRM", b"IIII",
-        b"II\x1a\0\0\0HEAPCCDR", b"\0\0\0\x18ftypcrx ", b"\xFF\xD8\xFF\xE1",
+        b"II*\0",
+        b"MM\0*",
+        b"IIRO",
+        b"IIRS",
+        b"MMOR",
+        b"IIU\0",
+        b"FUJIFILMCCD-RAW ",
+        b"FOVb",
+        b"\0MRM",
+        b"IIII",
+        b"II\x1a\0\0\0HEAPCCDR",
+        b"\0\0\0\x18ftypcrx ",
+        b"\xFF\xD8\xFF\xE1",
     ];
     let mut x: u64 = 0x9E3779B97F4A7C15;
     for m in magics {
@@ -361,7 +372,10 @@ fn corpus_mutations() {
             } else if let Some(ext) = p.extension().map(|x| x.to_string_lossy().to_lowercase()) {
                 let size = e.metadata().map(|m| m.len()).unwrap_or(u64::MAX);
                 if size < 30_000_000 {
-                    let better = by_ext.get(&ext).map(|q| std::fs::metadata(q).map(|m| m.len()).unwrap_or(0) > size).unwrap_or(true);
+                    let better = by_ext
+                        .get(&ext)
+                        .map(|q| std::fs::metadata(q).map(|m| m.len()).unwrap_or(0) > size)
+                        .unwrap_or(true);
                     if better {
                         by_ext.insert(ext, p);
                     }

@@ -273,14 +273,15 @@ impl<'a> FlashRaw<'a> {
                 let crop = if opts.crop { translate(info.crop) } else { Rect::full(img.width, img.height) };
                 let crop = if crop.is_empty() { Rect::full(img.width, img.height) } else { crop };
                 let params = process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop);
-                let dev = profiler.time(Stage::Postprocess, || {
-                    process::develop(&img, &frame_info_for_post, origin, &params, ctx.parallel)
-                })?;
                 if opts.output == OutputFormat::Rgba8 {
-                    let (w, h, px) =
-                        profiler.time(Stage::Postprocess, || process::to_rgba8(&dev, info.orientation, ctx.parallel));
+                    let (w, h, px) = profiler.time(Stage::Postprocess, || {
+                        process::develop_rgba8(&img, &frame_info_for_post, origin, &params, ctx.parallel)
+                    })?;
                     (w, h, 4, RawPixelData::U8(px))
                 } else {
+                    let dev = profiler.time(Stage::Postprocess, || {
+                        process::develop(&img, &frame_info_for_post, origin, &params, ctx.parallel)
+                    })?;
                     (dev.width, dev.height, 3, RawPixelData::F32(dev.rgb))
                 }
             }
