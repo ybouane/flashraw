@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlashRaw — worker pool demo</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f5f5f7; --card: #fff; --muted: #6e6e73; --line: #d2d2d7; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111113; --card: #1c1c1f; --muted: #a1a1a6; --line: #333338; } }
+  body { margin: 0; padding: 16px 20px; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+  figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  figure canvas { width: 100%; height: auto; display: block; border-radius: 6px; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; word-break: break-all; }
+  #summary { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1 style="font-size:18px;margin:0 0 8px">Decode many RAW files in parallel (Web Worker pool)</h1>
+<input type="file" id="pick" multiple accept=".dng,.cr2,.cr3,.nef,.arw,.raf,.rw2,.orf,.pef">
+<label>Workers <input type="number" id="size" min="1" max="16" style="width:4em"></label>
+<span id="summary"></span>
+<div id="grid"></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

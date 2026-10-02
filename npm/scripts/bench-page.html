@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>flashraw bench</title></head>
+<body>
+<script type="module">
+  // Driven by scripts/bench.mjs --browser. ?simd=0 → fallback binary; ?files=url,url
+  import * as fr from '/dist/browser.js';
+  import { benchFile } from '/scripts/bench-lib.mjs';
+  const q = new URLSearchParams(location.search);
+  (async () => {
+    const t0 = performance.now();
+    const info = await fr.init(q.get('simd') === '0' ? { simd: false } : {});
+    const initMs = performance.now() - t0;
+    const results = [];
+    for (const url of q.get('files').split(',')) {
+      const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      results.push(await benchFile(fr, decodeURIComponent(url.split('/').pop()), bytes, { iterations: Number(q.get('n') ?? 7) }));
+    }
+    window.__result = { variant: info.variant, initMs, moduleInitMs: info.initMs, results };
+  })().catch((e) => { window.__result = { error: String(e?.stack ?? e) }; });
+</script>
+</body>
+</html>

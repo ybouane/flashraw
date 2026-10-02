@@ -1,0 +1,94 @@
+{
+  "name": "flashraw",
+  "version": "0.1.0",
+  "description": "Fast, safe camera RAW decoding (DNG, CR2, CR3, NEF, ARW, RAF, ...) for browsers and Node.js via WebAssembly",
+  "license": "MIT OR Apache-2.0",
+  "author": "Yassine Bouanane",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ybouane/flashraw.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/ybouane/flashraw/tree/main/npm#readme",
+  "keywords": [
+    "raw",
+    "dng",
+    "camera",
+    "decoder",
+    "image",
+    "wasm",
+    "webassembly",
+    "cr3",
+    "nef",
+    "arw",
+    "reference"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "./dist/browser.js",
+    "./dist/node.js",
+    "./dist/worker-entry.browser.js",
+    "./dist/worker-entry.node.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/node.js",
+  "browser": "./dist/browser.js",
+  "module": "./dist/browser.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/node.js"
+      },
+      "browser": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/browser.js"
+      },
+      "default": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/browser.js"
+      }
+    },
+    "./worker": {
+      "node": {
+        "types": "./dist/worker.d.ts",
+        "default": "./dist/worker.node.js"
+      },
+      "default": {
+        "types": "./dist/worker.d.ts",
+        "default": "./dist/worker.browser.js"
+      }
+    },
+    "./wasm/simd": "./dist/flashraw_simd.wasm",
+    "./wasm/fallback": "./dist/flashraw.wasm",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.d.ts",
+    "dist/*.wasm",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:dev": "node scripts/build.mjs --no-opt",
+    "test": "node --expose-gc --test --test-concurrency=1 tests/*.test.mjs",
+    "test:types": "tsc -p tests/types/tsconfig.json && tsc -p tests/types/tsconfig.node.json",
+    "test:browser": "node tests/browser/run.mjs",
+    "test:bundlers": "node tests/bundlers/run.mjs",
+    "test:all": "npm test && npm run test:types && npm run test:browser && npm run test:bundlers",
+    "bench": "node scripts/bench.mjs",
+    "prepack": "node scripts/check-dist.mjs"
+  },
+  "devDependencies": {
+    "binaryen": "^132.0.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.2",
+    "webpack": "^5.111.1"
+  }
+}

@@ -201,6 +201,7 @@ word_unpack!(unpack10_msb, 10, 5, 4, true, PackOrder::MsbBytes);
 word_unpack!(unpack10_lsb, 10, 5, 4, false, PackOrder::LsbBytes);
 
 /// 12-bit SIMD kernels: 12 source bytes → 8 samples per 128-bit vector.
+#[allow(dead_code)] // tables/helpers unused on targets without a SIMD kernel
 mod simd12 {
     /// Shuffle placing (hi, lo) byte pairs for MSB packing into little-endian u16 lanes.
     pub(super) const SHUF_MSB: [u8; 16] = [1, 0, 2, 1, 4, 3, 5, 4, 7, 6, 8, 7, 10, 9, 11, 10];

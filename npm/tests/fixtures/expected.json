@@ -1,0 +1,50 @@
+{
+  "bmpcc-tiles.dng": {
+    "format": "DNG",
+    "make": "Blackmagic",
+    "model": "Pocket Cinema Camera",
+    "width": 1952,
+    "height": 1112,
+    "cpp": 1,
+    "cfa": "GBRG",
+    "white": 51080,
+    "hash_full": "62d2eb2145670cc5",
+    "previews": 0
+  },
+  "canon-5d3-lossy.dng": {
+    "format": "DNG",
+    "make": "Canon",
+    "model": "EOS 5D Mark III",
+    "width": 3960,
+    "height": 2640,
+    "cpp": 3,
+    "cfa": null,
+    "white": 255,
+    "hash_full": "7320fd46b1b1e3e1",
+    "previews": 3
+  },
+  "canon-5d3-mlv.dng": {
+    "format": "DNG",
+    "make": "Canon",
+    "model": "EOS 5D Mark III",
+    "width": 1920,
+    "height": 1080,
+    "cpp": 1,
+    "cfa": "RGGB",
+    "white": 5586,
+    "hash_full": "ec88ca511154e121",
+    "previews": 2
+  },
+  "canon-a410-chdk.dng": {
+    "format": "DNG",
+    "make": "Canon",
+    "model": "PowerShot A410",
+    "width": 2144,
+    "height": 1560,
+    "cpp": 1,
+    "cfa": "RGGB",
+    "white": 1023,
+    "hash_full": "437b0ba5c16a94b6",
+    "previews": 1
+  }
+}

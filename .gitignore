@@ -9,3 +9,5 @@ node_modules/
 /fuzz/corpus/
 /fuzz/coverage/
 /fuzz/target/
+/npm/.tools/
+/npm/node_modules/
