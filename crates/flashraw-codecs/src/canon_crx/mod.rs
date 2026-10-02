@@ -18,6 +18,7 @@
 //! Decoding parallelises over (tile, plane) units; within a unit the streams are
 //! sequential.
 
+mod bits;
 mod entropy;
 mod layout;
 mod plane;

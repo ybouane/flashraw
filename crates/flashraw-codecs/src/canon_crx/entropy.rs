@@ -11,7 +11,7 @@
 //! padding values left by one line are part of the context of the next line (and
 //! are therefore reproduced exactly).
 
-use flashraw_core::bits::{BitPumpMsb, BitRead};
+use super::bits::CrxBits;
 use flashraw_core::{Error, Result};
 
 /// Run length added per continuation bit for run state `s`.
@@ -23,56 +23,25 @@ const RUN_STEP: [u32; 32] = [
 const RUN_EXTRA_BITS: [u32; 32] =
     [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-/// Count zero bits up to (and consume) the next one bit.
 #[inline(always)]
-pub(crate) fn zeros(b: &mut BitPumpMsb) -> u32 {
-    let mut n = 0u32;
-    loop {
-        b.fill();
-        let w = b.peek_no_fill(32);
-        if w != 0 {
-            let z = w.leading_zeros();
-            b.skip_no_fill(z + 1);
-            return n + z;
-        }
-        b.skip_no_fill(32);
-        n = n.saturating_add(32);
-        if b.exhausted() {
-            // Corrupt stream: all zeros up to (and past) the end.
-            return n;
-        }
-    }
-}
-
-#[inline(always)]
-fn bits(b: &mut BitPumpMsb, n: u32) -> u32 {
-    debug_assert!(n > 0 && n <= 32);
+fn bits(b: &mut CrxBits, n: u32) -> u32 {
     b.get(n)
 }
 
-/// Read one Golomb–Rice code word with parameter `k`; prefixes `>= escape` are
-/// followed by an `escape_bits`-bit raw value instead.
 #[inline(always)]
-fn code(b: &mut BitPumpMsb, k: u32, escape: u32, escape_bits: u32) -> u32 {
-    let z = zeros(b);
-    if z >= escape {
-        bits(b, escape_bits)
-    } else if k != 0 {
-        bits(b, k) | (z << k)
-    } else {
-        z
-    }
+fn code(b: &mut CrxBits, k: u32, escape: u32, escape_bits: u32) -> u32 {
+    b.code(k, escape, escape_bits)
 }
 
 /// Sample code word (escape after 41 zeros to a 21-bit value).
 #[inline(always)]
-fn sample_code(b: &mut BitPumpMsb, k: u32) -> u32 {
+fn sample_code(b: &mut CrxBits, k: u32) -> u32 {
     code(b, k, 41, 21)
 }
 
 /// Quantisation-parameter code word (escape after 23 zeros to an 8-bit value).
 #[inline(always)]
-pub(crate) fn qp_code(b: &mut BitPumpMsb, k: u32) -> u32 {
+pub(crate) fn qp_code(b: &mut CrxBits, k: u32) -> u32 {
     code(b, k, 23, 8)
 }
 
@@ -116,7 +85,7 @@ pub(crate) enum LineMode {
 
 /// Line-by-line decoder of one subband bit stream.
 pub(crate) struct BandDecoder<'a> {
-    bits: BitPumpMsb<'a>,
+    bits: CrxBits<'a>,
     width: usize,
     height: usize,
     line: usize,
@@ -133,7 +102,7 @@ pub(crate) struct BandDecoder<'a> {
 /// The run-length part shared by all line decoders: given that a run starts and at
 /// most `left` samples remain, return the run length. `Err` on an inconsistent run.
 #[inline]
-fn run_length(b: &mut BitPumpMsb, s: &mut u32, left: usize, strict_after_extra: bool) -> Result<usize> {
+fn run_length(b: &mut CrxBits, s: &mut u32, left: usize, strict_after_extra: bool) -> Result<usize> {
     let mut n = 1usize;
     while bits(b, 1) != 0 {
         n += RUN_STEP[*s as usize] as usize;
@@ -181,7 +150,7 @@ impl<'a> BandDecoder<'a> {
             _ => 0,
         };
         BandDecoder {
-            bits: BitPumpMsb::new(data),
+            bits: CrxBits::new(data),
             width,
             height,
             line: 0,
@@ -244,7 +213,7 @@ impl<'a> BandDecoder<'a> {
 
 /// First line of a predictive band: each sample is coded relative to its left
 /// neighbour; runs repeat a non-zero left value... (zero left values start runs).
-fn top_line(b: &mut BitPumpMsb, k: &mut u32, s: &mut u32, c: &mut [i32], w: usize) -> Result<()> {
+fn top_line(b: &mut CrxBits, k: &mut u32, s: &mut u32, c: &mut [i32], w: usize) -> Result<()> {
     c[0] = 0;
     let mut o = 0usize;
     let mut len = w;
@@ -283,7 +252,7 @@ fn top_line(b: &mut BitPumpMsb, k: &mut u32, s: &mut u32, c: &mut [i32], w: usiz
 }
 
 /// Near-lossless variant of [`top_line`]: residuals are scaled by `2 * mask`.
-fn top_line_rounded(b: &mut BitPumpMsb, k: &mut u32, s: &mut u32, c: &mut [i32], w: usize, mask: i32) -> Result<()> {
+fn top_line_rounded(b: &mut CrxBits, k: &mut u32, s: &mut u32, c: &mut [i32], w: usize, mask: i32) -> Result<()> {
     c[0] = 0;
     let mut o = 0usize;
     let mut len = w;
@@ -328,7 +297,7 @@ fn top_line_rounded(b: &mut BitPumpMsb, k: &mut u32, s: &mut u32, c: &mut [i32],
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn predictive_symbol(
-    b: &mut BitPumpMsb,
+    b: &mut CrxBits,
     k: &mut u32,
     p: &[i32],
     c: &mut [i32],
@@ -352,7 +321,7 @@ fn predictive_symbol(
 }
 
 /// Subsequent line of a predictive band.
-fn line_predictive(b: &mut BitPumpMsb, k: &mut u32, s: &mut u32, p: &[i32], c: &mut [i32], w: usize) -> Result<()> {
+fn line_predictive(b: &mut CrxBits, k: &mut u32, s: &mut u32, p: &[i32], c: &mut [i32], w: usize) -> Result<()> {
     c[0] = p[1];
     let (mut o0, mut o1) = (0usize, 0usize);
     let mut len = w;
@@ -390,7 +359,7 @@ fn line_predictive(b: &mut BitPumpMsb, k: &mut u32, s: &mut u32, p: &[i32], c: &
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn rounded_symbol(
-    b: &mut BitPumpMsb,
+    b: &mut CrxBits,
     k: &mut u32,
     p: &[i32],
     c: &mut [i32],
@@ -423,7 +392,7 @@ fn rounded_symbol(
 /// Subsequent line of a near-lossless predictive band.
 #[allow(clippy::too_many_arguments)]
 fn line_rounded(
-    b: &mut BitPumpMsb,
+    b: &mut CrxBits,
     k: &mut u32,
     s: &mut u32,
     p: &mut [i32],
@@ -478,7 +447,7 @@ fn line_rounded(
 
 /// First line of a detail (wavelet high-pass) band.
 fn top_line_detail(
-    b: &mut BitPumpMsb,
+    b: &mut CrxBits,
     k: &mut u32,
     s: &mut u32,
     c: &mut [i32],
@@ -539,7 +508,7 @@ fn detail_k(k: u32, code: u32, above: i32) -> u32 {
 
 /// Subsequent line of a detail band.
 fn line_detail(
-    b: &mut BitPumpMsb,
+    b: &mut CrxBits,
     k: &mut u32,
     s: &mut u32,
     p: &[i32],
@@ -592,7 +561,7 @@ fn line_detail(
 /// Decode the per-tile quantisation-parameter map of C-RAW v2 (`qp_w x qp_h`,
 /// values already offset by +4).
 pub(crate) fn decode_qp_map(data: &[u8], qp_w: usize, qp_h: usize) -> Result<Vec<i32>> {
-    let mut b = BitPumpMsb::new(data);
+    let mut b = CrxBits::new(data);
     let mut out = Vec::with_capacity(qp_w * qp_h);
     let stride = qp_w + 2;
     let mut lines = vec![0i32; 2 * stride];
@@ -712,7 +681,7 @@ mod tests {
         w.put(0x12345, 21);
         w.rice(77, 3);
         let data = w.finish();
-        let mut b = BitPumpMsb::new(&data);
+        let mut b = CrxBits::new(&data);
         assert_eq!(sample_code(&mut b, 3), 0x12345);
         assert_eq!(sample_code(&mut b, 3), 77);
     }
@@ -720,8 +689,8 @@ mod tests {
     #[test]
     fn zeros_terminate_on_empty_stream() {
         let data = [0u8; 16];
-        let mut b = BitPumpMsb::new(&data);
-        let n = zeros(&mut b);
+        let mut b = CrxBits::new(&data);
+        let n = b.zeros();
         assert!(n >= 128);
         assert!(b.exhausted());
     }
