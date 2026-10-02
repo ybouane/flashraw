@@ -284,7 +284,7 @@ impl TrueTable {
     pub fn new(code: PrefixCode) -> Self {
         let lut = (0..1u32 << TT_BITS)
             .map(|idx| match code.walk(idx, TT_BITS) {
-                Some((clen, sym)) if sym == 0 => clen | TT_FULL | TT_VALID,
+                Some((clen, 0)) => clen | TT_FULL | TT_VALID,
                 Some((clen, sym)) if clen + sym <= TT_BITS => {
                     let v = (idx >> (TT_BITS - clen - sym)) & ((1 << sym) - 1);
                     (clen + sym) | TT_FULL | TT_VALID | ((extend(v, sym) as i16 as u16 as u32) << 16)
