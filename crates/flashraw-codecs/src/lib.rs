@@ -13,6 +13,7 @@ pub mod canon_sraw;
 pub mod dct12;
 pub mod deflate;
 pub mod dng_opcodes;
+pub mod fuji_compressed;
 pub mod hasselblad;
 pub mod jpeg;
 #[cfg(feature = "jpegxl")]
@@ -24,6 +25,7 @@ pub mod misc_packed;
 pub mod nikon_huffman;
 pub mod nikon_packed;
 pub mod packed;
+pub mod panasonic;
 pub mod pentax_huffman;
 pub mod phaseone;
 pub mod samsung;
