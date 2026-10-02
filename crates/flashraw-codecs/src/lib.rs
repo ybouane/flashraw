@@ -11,6 +11,8 @@ pub mod jpeg;
 #[cfg(feature = "jpegxl")]
 pub mod jxl;
 pub mod ljpeg;
+pub mod nikon_huffman;
+pub mod nikon_packed;
 pub mod packed;
 
 pub use packed::{PackedLayout, unpack, unpack_row, unpack_row_scalar};
