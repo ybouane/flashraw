@@ -530,3 +530,106 @@ fn open_sraw<'a>(
     dec.units = vec![DecodeUnit { rect: Rect::full(out_w, out_h), offset, length: len }];
     Ok(Box::new(dec))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn corpus() -> Option<PathBuf> {
+        let p = std::env::var("FLASHRAW_CORPUS")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
+        p.exists().then_some(p)
+    }
+
+    fn decode_all(data: &[u8]) -> Result<RawImage> {
+        let dec = crate::open(data, &OpenOptions::default())?;
+        let prof = Profiler::new();
+        dec.decode(&DecodeContext::new(&prof))
+    }
+
+    /// Minimal lossless-JPEG header (SOI, DHT, SOF3, SOS) with the given components.
+    fn header(w: u16, h: u16, comps: &[(u8, u8)]) -> LjpegHeader {
+        let mut d = vec![0xFF, 0xD8, 0xFF, 0xC4, 0x00, 0x14, 0x00, 1];
+        d.extend([0u8; 15]);
+        d.push(0);
+        let n = comps.len() as u8;
+        d.extend([0xFF, 0xC3, 0, 8 + 3 * n, 14]);
+        d.extend(h.to_be_bytes());
+        d.extend(w.to_be_bytes());
+        d.push(n);
+        for (i, (hs, vs)) in comps.iter().enumerate() {
+            d.extend([i as u8 + 1, hs << 4 | vs, 0]);
+        }
+        d.extend([0xFF, 0xDA, 0, 6 + 2 * n, n]);
+        for i in 0..n {
+            d.extend([i + 1, 0]);
+        }
+        d.extend([1, 0, 0, 0, 0]);
+        LjpegHeader::parse(&d, LjpegOptions::default()).unwrap()
+    }
+
+    #[test]
+    fn jpeg_dims_follow_reference_rules() {
+        // 2 components: the frame covers twice its width.
+        assert_eq!(jpeg_raw_dims(&header(2960, 3950, &[(1, 1), (1, 1)])), (5920, 3950));
+        // 4 components and very wide: two sensor rows per JPEG row.
+        assert_eq!(jpeg_raw_dims(&header(3440, 2272, &[(1, 1); 4])), (6880, 4544));
+        // sRAW (2x2 luma): luma columns only.
+        assert_eq!(jpeg_raw_dims(&header(3888, 2592, &[(2, 2), (1, 1), (1, 1)])), (3888, 2592));
+    }
+
+    #[test]
+    fn filters_to_cfa() {
+        assert_eq!(cfa_from_filters(0x94), CfaPattern::RGGB);
+        assert_eq!(cfa_from_filters(0x49), CfaPattern::GBRG);
+        assert_eq!(cfa_from_filters(0x61), CfaPattern::GRBG);
+    }
+
+    #[test]
+    fn short_model_names() {
+        assert_eq!(short_model("Canon PowerShot G16"), "PowerShot G16");
+        assert_eq!(short_model("EOS D2000C"), "EOS D2000C");
+    }
+
+    /// Truncated and bit-flipped copies of real files must fail cleanly (or decode), never panic.
+    #[test]
+    fn corrupted_corpus_files_do_not_panic() {
+        let Some(root) = corpus() else { return };
+        let files = [
+            "Canon/EOS 5D Mark III/5G4A9394.CR2",
+            "Canon/EOS 5D Mark III/5G4A9395.CR2",
+            "Canon/EOS 5D Mark II/10.canon.sraw2.cr2",
+            "Canon/EOS-1D/B53A0011-20171118-ss200-ap2.8-fl50-iso200.TIF",
+            "Canon/EOS D2000C/RAW_CANON_D2000.TIF",
+            "Canon/EOS 20D/IMG_3893.CR2",
+        ];
+        for f in files {
+            let Ok(data) = std::fs::read(root.join(f)) else { continue };
+            assert!(decode_all(&data).is_ok(), "{f} must decode");
+            for frac in [0.05, 0.3, 0.6, 0.95, 0.999] {
+                let cut = (data.len() as f64 * frac) as usize;
+                let _ = decode_all(&data[..cut]);
+            }
+            let mut x = 0x2545_F491u32;
+            for _ in 0..8 {
+                let mut d = data.clone();
+                for _ in 0..64 {
+                    x ^= x << 13;
+                    x ^= x >> 17;
+                    x ^= x << 5;
+                    let i = x as usize % d.len();
+                    d[i] ^= (x >> 24) as u8 | 1;
+                }
+                let _ = decode_all(&d);
+            }
+            // Header area (IFDs, maker note, JPEG markers).
+            for i in (0..data.len().min(2048)).step_by(61) {
+                let mut d = data.clone();
+                d[i] = d[i].wrapping_add(0x55);
+                let _ = decode_all(&d);
+            }
+        }
+    }
+}
