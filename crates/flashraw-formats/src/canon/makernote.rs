@@ -113,6 +113,9 @@ fn words<const N: usize>(w: &[u16], at: usize) -> Option<[u16; N]> {
     Some(out)
 }
 
+/// Word offsets within ColorData: as-shot WB, sRAW WB, black, white, alternate black.
+type Offsets = (Option<usize>, Option<usize>, Option<usize>, Option<usize>, Option<usize>);
+
 impl ColorData {
     /// Parse a ColorData block from its 16-bit words. `len` is the tag's value count,
     /// which identifies the layout (PowerShots store the block as UNDEFINED bytes, so
@@ -123,13 +126,7 @@ impl ColorData {
         }
         let mut cd = ColorData { len, sub_version: w[0], ..Default::default() };
         // (as-shot WB word offset, sRAW WB offset, black offset, white offset, alt black offset)
-        let (wb, sraw, black, white, black2): (
-            Option<usize>,
-            Option<usize>,
-            Option<usize>,
-            Option<usize>,
-            Option<usize>,
-        ) = match len {
+        let (wb, sraw, black, white, black2): Offsets = match len {
             582 => {
                 cd.version = 1; // 20D, 350D
                 (Some(0x19), None, Some(0xa6), None, None)
@@ -263,10 +260,8 @@ impl CanonMakernote {
                 }
                 0x4001 => mn.color = ColorData::parse(&u16s(e), e.count as usize),
                 // Multi-shot (HDR / multiple exposure) composites are already white balanced.
-                0x4021 => {
-                    if e.u32(0).is_some_and(|v| v != 0) && e.u32(1).is_some_and(|v| v != 0) {
-                        mn.multishot = true;
-                    }
+                0x4021 if e.u32(0).is_some_and(|v| v != 0) && e.u32(1).is_some_and(|v| v != 0) => {
+                    mn.multishot = true;
                 }
                 _ => {}
             }

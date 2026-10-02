@@ -158,7 +158,7 @@ fn kodak_calibration(tiff: &Tiff) -> (Option<f32>, Option<[f32; 4]>) {
                 }
             }
             t @ 0x0848..=0x084d => {
-                let slot = (t - 0x0848) as u16;
+                let slot = t - 0x0848;
                 if t == 0x084d && wbi.is_none() {
                     wbi = Some(Some(5));
                 }

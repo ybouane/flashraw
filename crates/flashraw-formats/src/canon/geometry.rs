@@ -21,6 +21,7 @@ pub struct SensorLayout {
     pub filters: u8,
 }
 
+#[allow(clippy::too_many_arguments)]
 const fn l(
     raw_width: u32,
     raw_height: u32,

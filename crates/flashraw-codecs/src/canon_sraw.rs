@@ -56,7 +56,7 @@ impl SrawParams {
 /// Decode an sRAW stream into `out` (`width * height * 3` samples, RGB interleaved).
 pub fn decode(data: &[u8], hdr: &LjpegHeader, p: &SrawParams, out: &mut [u16]) -> Result<()> {
     let clrs = hdr.clrs as usize;
-    if hdr.sraw == 0 || clrs < 4 || clrs > 6 {
+    if hdr.sraw == 0 || !(4..=6).contains(&clrs) {
         return Err(Error::corrupt("sRAW: frame is not subsampled YCbCr"));
     }
     let (w, h) = (p.width, p.height);
