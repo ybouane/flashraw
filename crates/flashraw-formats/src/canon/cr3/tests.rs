@@ -48,7 +48,7 @@ fn corrupted_corpus_samples_do_not_panic() {
                 let d = std::fs::read(p).ok()?;
                 let c = Cr3::parse(&d).ok()?;
                 let (_, _, h) = c.main_raw()?;
-                ((h.levels > 0) == want_wavelet).then(|| (d.len(), p))
+                ((h.levels > 0) == want_wavelet).then_some((d.len(), p))
             })
             .min_by_key(|x| x.0);
         if let Some((_, p)) = best {
@@ -104,16 +104,4 @@ fn parallel_matches_sequential() {
     c.parallel = false;
     let b = dec.decode(&c).unwrap();
     assert_eq!(a.u16(), b.u16());
-}
-
-#[test]
-#[ignore]
-fn debug_makernote() {
-    let p = std::env::var("CR3").unwrap();
-    let data = std::fs::read(p).unwrap();
-    let c = Cr3::parse(&data).unwrap();
-    let t = Tiff::parse(c.cmt[2].unwrap()).unwrap();
-    let mn = CanonMakernote::parse(&t.ifds[0]);
-    eprintln!("{:x?}", t.ifds[0].entries.iter().map(|e| (e.tag, e.count)).collect::<Vec<_>>());
-    eprintln!("{mn:?}");
 }

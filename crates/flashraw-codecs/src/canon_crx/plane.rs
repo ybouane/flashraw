@@ -98,6 +98,8 @@ fn dequant_v2(line: &mut [i32], b: &Subband, q: &QStep, row: usize) {
     } else {
         b.height as i32 - b.row_end - b.row_start - 1
     };
+    // Valid streams stay inside the map; clamp so inconsistent headers cannot index past it.
+    let qrow = qrow.min(q.height as i32 - 1);
     let base = (q.width as i64 * qrow as i64).max(0) as usize;
     let tbl = |i: i64| -> u32 {
         if i < 0 {
@@ -117,9 +119,14 @@ fn dequant_v2(line: &mut [i32], b: &Subband, q: &QStep, row: usize) {
         *v = v.wrapping_mul(first);
     }
     let mid_end = (w - ce).clamp(0, w);
-    for i in cs.max(0)..mid_end {
-        let s = scale(tbl((i - cs) >> shift));
-        line[i as usize] = line[i as usize].wrapping_mul(s);
+    let mid_start = cs.clamp(0, mid_end);
+    // Each map entry covers `1 << shift` consecutive coefficients.
+    let run = 1usize << shift.min(16);
+    for (j, chunk) in line[mid_start as usize..mid_end as usize].chunks_mut(run).enumerate() {
+        let s = scale(tbl(((mid_start - cs) >> shift) + j as i64));
+        for v in chunk {
+            *v = v.wrapping_mul(s);
+        }
     }
     let last = scale(tbl((w - ce - cs - 1) >> shift));
     for v in line.iter_mut().skip(mid_end as usize) {
@@ -186,8 +193,7 @@ fn produce(lv: &mut Level<'_>, lower: &mut [Level<'_>], ll: &mut BandSource<'_>)
     }
     let [e, h, f1, f2] = &mut lv.bufs;
     let (e, h, f1, f2) = (&mut e[..w], &mut h[..w], &mut f1[..w], &mut f2[..w]);
-    let n;
-    if lv.emitted == 0 {
+    let n = if lv.emitted == 0 {
         low_row(lower, ll, &mut lv.hl, e, hs)?;
         if lv.height > 1 {
             if lv.v.before {
@@ -200,16 +206,16 @@ fn produce(lv: &mut Level<'_>, lower: &mut [Level<'_>], ll: &mut BandSource<'_>)
             }
         }
         lv.queue[0] = 0;
-        n = 1;
+        1
     } else if !lv.v.after && rows_left == 1 {
         wavelet::step_last_even(e, h);
         lv.queue[0] = 1;
-        n = 1;
+        1
     } else if !lv.v.after && rows_left == 2 {
         low_row(lower, ll, &mut lv.hl, f1, hs)?;
         wavelet::step_last_odd(e, h, f1);
         lv.queue[..2].copy_from_slice(&[1, 2]);
-        n = 2;
+        2
     } else {
         low_row(lower, ll, &mut lv.hl, f1, hs)?;
         high_row(&mut lv.lh, &mut lv.hh, f2, hs)?;
@@ -220,8 +226,8 @@ fn produce(lv: &mut Level<'_>, lower: &mut [Level<'_>], ll: &mut BandSource<'_>)
         lv.bufs.swap(1, 3); // slot1 = new high, slot3 = odd row
         lv.queue[0] = 3;
         lv.queue[1] = 0;
-        n = if rows_left >= 2 { 2 } else { 1 };
-    }
+        if rows_left >= 2 { 2 } else { 1 }
+    };
     lv.q_pos = 0;
     lv.q_len = n;
     lv.emitted += n;

@@ -65,11 +65,10 @@ fn predict(left: i32, top: i32, top_left: i32) -> i32 {
     let delta = top.wrapping_sub(top_left);
     let neg = delta < 0;
     let gradient = left.wrapping_add(delta);
-    match (((top_left < left) ^ neg), ((left < top) ^ neg)) {
-        (false, _) => gradient,
-        (true, false) => left,
-        (true, true) => top,
-    }
+    // Written as selects so it compiles to conditional moves (the choice is
+    // data-dependent and unpredictable).
+    let edge = if (left < top) ^ neg { top } else { left };
+    if (top_left < left) ^ neg { edge } else { gradient }
 }
 
 /// How a subband's lines are coded.
@@ -294,6 +293,7 @@ fn top_line_rounded(b: &mut CrxBits, k: &mut u32, s: &mut u32, c: &mut [i32], w:
 
 /// One predicted sample of [`line_predictive`] at output index `o1 + 1`, context
 /// index `o0` in the previous line.
+#[cfg(test)]
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
 fn predictive_symbol(
@@ -320,8 +320,68 @@ fn predictive_symbol(
     *o1 += 1;
 }
 
-/// Subsequent line of a predictive band.
+/// Subsequent line of a predictive band (hot loop of lossless planes): the
+/// cursors only diverge after the last sample).
 fn line_predictive(b: &mut CrxBits, k: &mut u32, s: &mut u32, p: &[i32], c: &mut [i32], w: usize) -> Result<()> {
+    let p = &p[..w + 2];
+    let c = &mut c[..w + 2];
+    c[0] = p[1];
+    let mut kk = *k;
+    let mut x = 0usize;
+    let mut len = w;
+    while len > 1 {
+        let (tl, t, tr) = (p[x], p[x + 1], p[x + 2]);
+        let left = c[x];
+        if left != t || left != tr {
+            let code = sample_code(b, kk);
+            c[x + 1] = predict(left, t, tl).wrapping_add(unzigzag(code));
+            let nd = tr.wrapping_sub(t).wrapping_shl(1);
+            kk = adapt_k(kk, code.wrapping_add(nd.wrapping_abs() as u32) >> 1, 15);
+            x += 1;
+            len -= 1;
+            continue;
+        }
+        if b.bit() {
+            let n = run_length(b, s, len, true)?;
+            len -= n;
+            c[x + 1..x + 1 + n].fill(left);
+            x += n;
+        }
+        if len == 0 {
+            break;
+        }
+        let code = sample_code(b, kk);
+        c[x + 1] = p[x + 1].wrapping_add(unzigzag(code));
+        kk = if len > 1 {
+            let nd = p[x + 2].wrapping_sub(p[x + 1]).wrapping_shl(1);
+            adapt_k(kk, code.wrapping_add(nd.wrapping_abs() as u32) >> 1, 15)
+        } else {
+            adapt_k(kk, code, 15)
+        };
+        x += 1;
+        len -= 1;
+    }
+    if len == 1 {
+        let code = sample_code(b, kk);
+        c[x + 1] = predict(c[x], p[x + 1], p[x]).wrapping_add(unzigzag(code));
+        kk = adapt_k(kk, code, 15);
+        x += 1;
+    }
+    c[x + 1] = c[x].wrapping_add(1);
+    *k = kk;
+    Ok(())
+}
+
+/// Straightforward two-cursor form of [`line_predictive`] (test reference).
+#[cfg(test)]
+fn line_predictive_reference(
+    b: &mut CrxBits,
+    k: &mut u32,
+    s: &mut u32,
+    p: &[i32],
+    c: &mut [i32],
+    w: usize,
+) -> Result<()> {
     c[0] = p[1];
     let (mut o0, mut o1) = (0usize, 0usize);
     let mut len = w;
@@ -509,12 +569,16 @@ fn line_detail(
     ks: &mut [i32],
     w: usize,
 ) -> Result<()> {
+    let p = &p[..w + 2];
+    let c = &mut c[..w + 2];
+    let ks = &mut ks[..w];
+    let mut kk = *k;
     let mut i = 0usize;
     while i + 1 < w {
         if p[i + 2] | p[i + 1] | c[i] != 0 {
-            let code = sample_code(b, *k);
+            let code = sample_code(b, kk);
             c[i + 1] = unzigzag(code);
-            *k = detail_k(*k, code, ks[i + 1]);
+            kk = detail_k(kk, code, ks[i + 1]);
         } else {
             let mut n = 0usize;
             if bits(b, 1) != 0 {
@@ -527,27 +591,28 @@ fn line_detail(
             }
             if i + 1 >= w {
                 if i + 1 == w {
-                    let code = sample_code(b, *k);
+                    let code = sample_code(b, kk);
                     c[i + 1] = unzigzag(code.wrapping_add(1));
-                    *k = adapt_k(*k, code, 15);
-                    ks[i] = *k as i32;
+                    kk = adapt_k(kk, code, 15);
+                    ks[i] = kk as i32;
                 }
                 i += 1;
                 continue;
             }
-            let code = sample_code(b, *k);
+            let code = sample_code(b, kk);
             c[i + 1] = unzigzag(code.wrapping_add(1));
-            *k = detail_k(*k, code, ks[i + 1]);
+            kk = detail_k(kk, code, ks[i + 1]);
         }
-        ks[i] = *k as i32;
+        ks[i] = kk as i32;
         i += 1;
     }
     if i + 1 == w {
-        let code = sample_code(b, *k);
+        let code = sample_code(b, kk);
         c[i + 1] = unzigzag(code);
-        *k = adapt_k(*k, code, 15);
-        ks[i] = *k as i32;
+        kk = adapt_k(kk, code, 15);
+        ks[i] = kk as i32;
     }
+    *k = kk;
     Ok(())
 }
 
@@ -750,6 +815,40 @@ mod tests {
         assert_eq!(d.next_line().unwrap(), &row0);
         assert_eq!(d.next_line().unwrap(), &row1);
         assert!(d.next_line().is_err());
+    }
+
+    /// The optimised predictive line decoder matches the two-cursor reference on
+    /// random streams (any decodable bit pattern is a valid input).
+    #[test]
+    fn predictive_fast_matches_reference() {
+        let mut seed = 5u32;
+        for trial in 0..200 {
+            let w = 1 + (trial % 37) as usize;
+            let data: Vec<u8> = (0..2048)
+                .map(|_| {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    // Bias towards ones so runs (left == top == top-right) occur.
+                    let v = (seed >> 24) as u8;
+                    if trial % 3 == 0 { v | 0x88 } else { v }
+                })
+                .collect();
+            let mut prev: Vec<i32> = (0..w + 2).map(|i| if trial % 2 == 0 { 7 } else { (i as i32 * 13) % 5 }).collect();
+            let (mut b1, mut b2) = (CrxBits::new(&data), CrxBits::new(&data));
+            let (mut k1, mut k2, mut s1, mut s2) = (0, 0, 0, 0);
+            for _ in 0..8 {
+                let mut c1 = vec![0i32; w + 2];
+                let mut c2 = vec![0i32; w + 2];
+                let r1 = line_predictive(&mut b1, &mut k1, &mut s1, &prev, &mut c1, w);
+                let r2 = line_predictive_reference(&mut b2, &mut k2, &mut s2, &prev, &mut c2, w);
+                assert_eq!(r1.is_ok(), r2.is_ok());
+                if r1.is_err() {
+                    break;
+                }
+                assert_eq!(c1, c2, "trial {trial}");
+                assert_eq!((k1, s1), (k2, s2));
+                prev = c1;
+            }
+        }
     }
 
     #[test]

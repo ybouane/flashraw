@@ -281,6 +281,7 @@ fn combine_e3(p: [u16; 4], median_bits: u32) -> [u16; 4] {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn cmp1(version: u16, w: u32, h: u32, tw: u32, th: u32, bits: u8, planes_cfa: u8, enc_lev: u8) -> Vec<u8> {
         let mut d = vec![0u8; 52];
         d[4..6].copy_from_slice(&version.to_be_bytes());

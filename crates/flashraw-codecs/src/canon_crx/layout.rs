@@ -69,10 +69,7 @@ pub(crate) struct Tile {
 /// Plane-level geometry of a CRX image.
 #[derive(Debug, Clone)]
 pub(crate) struct Image {
-    pub plane_width: usize,
     pub plane_height: usize,
-    pub tile_cols: usize,
-    pub tile_rows: usize,
     pub tiles: Vec<Tile>,
 }
 
@@ -156,7 +153,7 @@ impl Image {
                 });
             }
         }
-        Ok(Image { plane_width: pw, plane_height: ph, tile_cols: cols, tile_rows: rows, tiles })
+        Ok(Image { plane_height: ph, tiles })
     }
 
     /// Parse the per-sample header (`data[..h.mdat_header_size]`) and resolve the
@@ -421,7 +418,7 @@ mod tests {
     #[test]
     fn tile_grid() {
         let img = Image::grid(&header(6888, 4546, 3444, 4546, 3)).unwrap();
-        assert_eq!((img.plane_width, img.plane_height, img.tile_cols, img.tile_rows), (3444, 2273, 2, 1));
+        assert_eq!((img.plane_height, img.tiles.len()), (2273, 2));
         assert_eq!(img.tiles[0].flags, TileFlags { left: false, right: true, top: false, bottom: false });
         assert_eq!(img.tiles[1].flags, TileFlags { left: true, right: false, top: false, bottom: false });
         assert_eq!((img.tiles[1].x, img.tiles[1].width), (1722, 1722));
