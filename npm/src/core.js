@@ -424,7 +424,7 @@ export class FlashRaw {
     if (o.index !== undefined && o.index !== null && !(Number.isInteger(o.index) && o.index >= 0)) {
       throw new InvalidArgumentError('preview index must be a non-negative integer');
     }
-    if (o.index === undefined && this.metadata.previews.length === 0) return null;
+    if ((o.index ?? null) === null && this.metadata.previews.length === 0) return null;
     const format = o.format ?? 'encoded';
     if (format === 'rgba8') {
       const t0 = now();

@@ -7,3 +7,4 @@ test-results/
 examples/*/dist/
 tests/bundlers/*/dist/
 tests/bundlers/*/node_modules/
+examples/*/package-lock.json

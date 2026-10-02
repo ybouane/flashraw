@@ -1,0 +1,60 @@
+name: wasm
+
+on:
+  push:
+    paths:
+      - "crates/**"
+      - "npm/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/wasm.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "npm/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/wasm.yml"
+
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: npm/package-lock.json
+      - name: Native unit tests of the bindings
+        working-directory: .
+        run: cargo test -p flashraw-wasm
+      - name: Native CLI (reference hashes for the WASM tests)
+        working-directory: .
+        run: cargo build --release -p flashraw-cli
+      - run: npm ci
+      - name: Build (SIMD + fallback, wasm-bindgen, wasm-opt)
+        run: npm run build
+      - name: Node tests
+        run: npm test
+      - name: Type tests
+        run: npm run test:types
+      - name: Chromium tests
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
+      - name: Bundler smoke tests (Vite, esbuild, webpack)
+        run: npm run test:bundlers
+      - name: Package contents
+        run: npm pack --dry-run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flashraw-npm-dist
+          path: npm/dist

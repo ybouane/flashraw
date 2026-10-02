@@ -83,7 +83,7 @@ pub fn wb(w: Option<WhiteBalance>) -> Value {
 fn matrix(m: &ColorMatrix) -> Value {
     json!({
         "illuminant": m.illuminant.0,
-        "temperature": m.illuminant.temperature().map(|t| f32v(t)).unwrap_or(Value::Null),
+        "temperature": m.illuminant.temperature().map(f32v).unwrap_or(Value::Null),
         "rows": m.rows,
         "values": f32s(&m.values),
     })

@@ -130,6 +130,14 @@ function inputTransfer(input, transfer) {
   return [];
 }
 
+// Remote handles dropped without close() are closed in their worker once garbage-collected.
+const remoteFinalizer =
+  typeof FinalizationRegistry === 'function'
+    ? new FinalizationRegistry(({ pool, slot, handle }) => {
+        pool._request(slot, 'close', { handle }).catch(() => {});
+      })
+    : null;
+
 /** A FlashRaw handle living in a worker. Methods mirror `FlashRaw`. */
 export class RemoteFlashRaw {
   #pool;
@@ -145,6 +153,7 @@ export class RemoteFlashRaw {
     this.tiles = info.tiles;
     this.byteLength = info.byteLength;
     this.parseMs = info.parseMs;
+    remoteFinalizer?.register(this, { pool, slot, handle: info.handle }, this);
   }
   get format() {
     return this.metadata.format;
@@ -177,6 +186,7 @@ export class RemoteFlashRaw {
   async close() {
     const h = this.#handle;
     this.#handle = null;
+    remoteFinalizer?.unregister(this);
     if (h !== null) await this.#pool._request(this.#slot, 'close', { handle: h }).catch(() => {});
   }
   [Symbol.asyncDispose ?? Symbol.for('Symbol.asyncDispose')]() {
