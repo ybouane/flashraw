@@ -54,7 +54,6 @@ pub fn unpack(
     if avail_rows < height && !lenient {
         return Err(Error::corrupt(format!("packed data truncated: {avail_rows}/{height} rows present")));
     }
-    let rows_per_chunk = (64 * 1024 / dst_stride.max(1)).max(1);
     let n = (dst_stride * height).min(dst.len());
     let dst = &mut dst[..n];
     let body = |first: usize, chunk: &mut [u16]| {
@@ -68,12 +67,8 @@ pub fn unpack(
             unpack_row(s, &mut row[..width], bits, layout.order, simd);
         }
     };
-    // 8/16-bit samples are plain copies: memory-bound, so fewer workers are faster.
-    if matches!(bits, 8 | 16) {
-        par::for_each_row_chunk_bounded(dst, dst_stride, par::MEMORY_BOUND_WORKERS, parallel, body);
-    } else {
-        par::for_each_row_chunk(dst, dst_stride, rows_per_chunk, parallel, body);
-    }
+    // Unpacking is memory-bound at every bit depth (see par::memory_bound_workers).
+    par::for_each_row_chunk_bounded(dst, dst_stride, par::memory_bound_workers(), parallel, body);
     Ok(())
 }
 

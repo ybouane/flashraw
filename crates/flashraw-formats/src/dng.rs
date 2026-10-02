@@ -562,7 +562,7 @@ impl DngRaw<'_> {
         let x0 = region.x as usize * cpp;
         let lin = self.linearization.as_deref();
         let simd = ctx.simd;
-        par::for_each_row_chunk(out, out_rl, 64, ctx.parallel, |first, chunk| {
+        par::for_each_row_chunk_bounded(out, out_rl, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
             let mut tmp = if x0 == 0 && out_rl == full_rl { Vec::new() } else { vec![0u16; full_rl] };
             for (i, row) in chunk.chunks_mut(out_rl).enumerate() {
                 let y = region.y as usize + first + i;

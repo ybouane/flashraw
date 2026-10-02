@@ -372,7 +372,7 @@ pub fn apply_curve(img: &mut [u16], curve: &[u16], parallel: bool) {
     }
     let last = *curve.last().unwrap();
     let n = curve.len();
-    flashraw_core::par::for_each_row_chunk(img, 1 << 16, 1, parallel, |_, c| {
+    flashraw_core::par::for_each_row_chunk_bounded(img, 1 << 16, par::memory_bound_workers(), parallel, |_, c| {
         for v in c.iter_mut() {
             let i = *v as usize;
             *v = if i < n { curve[i] } else { last };

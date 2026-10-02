@@ -27,20 +27,26 @@ pub(crate) fn decode_rows_region(src: &[u8], rl: RowLayout, region: Rect, ctx: &
     let truncated = AtomicBool::new(false);
     let (simd, shift) = (ctx.simd, rl.shift);
     ctx.profiler.time(Stage::Unpack, || {
-        par::for_each_row_chunk(img.u16_mut(), out_w, 64, ctx.parallel, |first, chunk| {
-            let mut tmp = vec![0u16; l.width];
-            for (i, row) in chunk.chunks_mut(out_w).enumerate() {
-                let y = r.y as usize + first + i;
-                let Some(s) = src.get(y * l.row_stride..y * l.row_stride + row_bytes) else {
-                    truncated.store(true, Ordering::Relaxed);
-                    break;
-                };
-                packed::unpack_row(s, &mut tmp, l.bits, l.order, simd);
-                for (o, &v) in row.iter_mut().zip(&tmp[x0..x0 + out_w]) {
-                    *o = v >> shift;
+        par::for_each_row_chunk_bounded(
+            img.u16_mut(),
+            out_w,
+            par::memory_bound_workers(),
+            ctx.parallel,
+            |first, chunk| {
+                let mut tmp = vec![0u16; l.width];
+                for (i, row) in chunk.chunks_mut(out_w).enumerate() {
+                    let y = r.y as usize + first + i;
+                    let Some(s) = src.get(y * l.row_stride..y * l.row_stride + row_bytes) else {
+                        truncated.store(true, Ordering::Relaxed);
+                        break;
+                    };
+                    packed::unpack_row(s, &mut tmp, l.bits, l.order, simd);
+                    for (o, &v) in row.iter_mut().zip(&tmp[x0..x0 + out_w]) {
+                        *o = v >> shift;
+                    }
                 }
-            }
-        })
+            },
+        )
     });
     if truncated.into_inner() {
         return Err(Error::corrupt("packed data truncated inside the requested region"));

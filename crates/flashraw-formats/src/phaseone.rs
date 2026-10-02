@@ -790,7 +790,7 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
                 let mut tmp = alloc_zeroed::<u16>(out.len())?;
                 flashraw_codecs::leaf::decode_linear(src, &hdr, &mut tmp, ctx.parallel)?;
                 let tmp = &tmp;
-                par::for_each_row_chunk(out, wu, 64, ctx.parallel, |first, chunk| {
+                par::for_each_row_chunk_bounded(out, wu, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(wu).enumerate() {
                         let r = first + i;
                         // Inverse mapping: raw row r came from JPEG row j.
@@ -816,19 +816,25 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
                     return crate::medium::unpack_u16_rows(src, order, w as usize, out, w as usize * 2, ctx.parallel);
                 }
                 let errs = ErrorSlot::default();
-                par::for_each_row_chunk(out, w as usize, band as usize, ctx.parallel, |first, chunk| {
-                    let i = first / band as usize;
-                    let Some(&(o, l)) = units.get(i) else {
-                        errs.set(Error::corrupt(format!("MOS: missing band {i}")));
-                        return;
-                    };
-                    match bytes::slice_at_lenient(data, o, l.max(chunk.len() * 2)) {
-                        Ok(src) => {
-                            read_u16s(src, order, chunk);
+                par::for_each_row_chunk_bounded(
+                    out,
+                    w as usize,
+                    par::memory_bound_workers(),
+                    ctx.parallel,
+                    |first, chunk| {
+                        let i = first / band as usize;
+                        let Some(&(o, l)) = units.get(i) else {
+                            errs.set(Error::corrupt(format!("MOS: missing band {i}")));
+                            return;
+                        };
+                        match bytes::slice_at_lenient(data, o, l.max(chunk.len() * 2)) {
+                            Ok(src) => {
+                                read_u16s(src, order, chunk);
+                            }
+                            Err(e) => errs.set(e),
                         }
-                        Err(e) => errs.set(e),
-                    }
-                });
+                    },
+                );
                 errs.into_result()
             })?,
         }

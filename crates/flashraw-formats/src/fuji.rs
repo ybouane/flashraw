@@ -842,16 +842,22 @@ impl Raf<'_> {
             return Err(Error::corrupt("RAF payload truncated"));
         }
         let simd = ctx.simd;
-        par::for_each_row_chunk(&mut out[..rw * rect.height as usize], rw, 64, ctx.parallel, |first, chunk| {
-            let mut tmp = vec![0u16; w];
-            for (i, row) in chunk.chunks_mut(rw).enumerate() {
-                let y = rect.y as usize + first + i;
-                let src = &self.payload[y * row_bytes..];
-                let src = &src[..(w * bits as usize).div_ceil(8).min(src.len())];
-                packed::unpack_row(src, &mut tmp, bits, order, simd);
-                row.copy_from_slice(&tmp[rect.x as usize..rect.x as usize + rw]);
-            }
-        });
+        par::for_each_row_chunk_bounded(
+            &mut out[..rw * rect.height as usize],
+            rw,
+            par::memory_bound_workers(),
+            ctx.parallel,
+            |first, chunk| {
+                let mut tmp = vec![0u16; w];
+                for (i, row) in chunk.chunks_mut(rw).enumerate() {
+                    let y = rect.y as usize + first + i;
+                    let src = &self.payload[y * row_bytes..];
+                    let src = &src[..(w * bits as usize).div_ceil(8).min(src.len())];
+                    packed::unpack_row(src, &mut tmp, bits, order, simd);
+                    row.copy_from_slice(&tmp[rect.x as usize..rect.x as usize + rw]);
+                }
+            },
+        );
         Ok(())
     }
 
@@ -867,16 +873,22 @@ impl Raf<'_> {
                 let po = if order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
                 let simd = ctx.simd;
                 let src = self.payload;
-                par::for_each_row_chunk(&mut out[..w * h], w, 64, ctx.parallel, |first, chunk| {
-                    for (i, row) in chunk.chunks_mut(w).enumerate() {
-                        let y = first + i;
-                        if y >= rows {
-                            break;
+                par::for_each_row_chunk_bounded(
+                    &mut out[..w * h],
+                    w,
+                    par::memory_bound_workers(),
+                    ctx.parallel,
+                    |first, chunk| {
+                        for (i, row) in chunk.chunks_mut(w).enumerate() {
+                            let y = first + i;
+                            if y >= rows {
+                                break;
+                            }
+                            let s = &src[y * row_bytes..y * row_bytes + w * 2];
+                            packed::unpack_row(s, row, 16, po, simd);
                         }
-                        let s = &src[y * row_bytes..y * row_bytes + w * 2];
-                        packed::unpack_row(s, row, 16, po, simd);
-                    }
-                });
+                    },
+                );
                 if rows < h {
                     return Err(Error::corrupt(format!("RAF payload truncated: {rows}/{h} rows")));
                 }
@@ -890,15 +902,21 @@ impl Raf<'_> {
                     return Err(Error::corrupt("RAF tiled payload truncated"));
                 }
                 let (src, simd) = (self.payload, ctx.simd);
-                par::for_each_row_chunk(&mut out[..w * h], w, 64, ctx.parallel, |first, chunk| {
-                    for (i, row) in chunk.chunks_mut(w).enumerate() {
-                        let y = first + i;
-                        for (t, seg) in row.chunks_exact_mut(tw).enumerate().take(tiles) {
-                            let base = (t * h + y) * tw * 2;
-                            packed::unpack_row(&src[base..base + tw * 2], seg, 16, po, simd);
+                par::for_each_row_chunk_bounded(
+                    &mut out[..w * h],
+                    w,
+                    par::memory_bound_workers(),
+                    ctx.parallel,
+                    |first, chunk| {
+                        for (i, row) in chunk.chunks_mut(w).enumerate() {
+                            let y = first + i;
+                            for (t, seg) in row.chunks_exact_mut(tw).enumerate().take(tiles) {
+                                let base = (t * h + y) * tw * 2;
+                                packed::unpack_row(&src[base..base + tw * 2], seg, 16, po, simd);
+                            }
                         }
-                    }
-                });
+                    },
+                );
                 Ok(())
             }
             Layout::Packed { bits, order } => {

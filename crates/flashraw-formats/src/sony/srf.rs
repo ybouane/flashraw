@@ -104,7 +104,7 @@ pub fn decode(src: &[u8], key: u32, width: u32, height: u32, ctx: &DecodeContext
     let ks = ctx.profiler.time(Stage::Unpack, || keystream(key, w / 2 * height as usize));
     let bad = std::sync::atomic::AtomicUsize::new(0);
     ctx.profiler.time(Stage::Unpack, || {
-        par::for_each_row_chunk(img.u16_mut(), w, 64, ctx.parallel, |first, chunk| {
+        par::for_each_row_chunk_bounded(img.u16_mut(), w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
             let mut nbad = 0;
             for (i, out) in chunk.chunks_exact_mut(w).enumerate() {
                 let y = first + i;

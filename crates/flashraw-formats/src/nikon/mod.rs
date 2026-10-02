@@ -537,39 +537,45 @@ impl<'a> NefRaw<'a> {
         let curve = sraw_curve();
         let mut img = RawImage::new_u16(w as u32, h as u32, 3, &ctx.limits)?;
         let src = self.src;
-        par::for_each_row_chunk(img.u16_mut(), w * 3, 16, ctx.parallel, |first, chunk| {
-            let mut ycc = vec![[0u16; 3]; w];
-            for (i, out) in chunk.chunks_mut(w * 3).enumerate() {
-                let row = first + i;
-                let rd = &src[row * row_bytes..(row + 1) * row_bytes];
-                let mut col = 0;
-                while col + 1 < w {
-                    let b = &rd[col * 3..col * 3 + 6];
-                    let y0 = ((b[1] as u16 & 0xf) << 8) | b[0] as u16;
-                    let y1 = ((b[2] as u16) << 4) | (b[1] as u16 >> 4);
-                    let cb = ((b[4] as u16 & 0xf) << 8) | b[3] as u16;
-                    let cr = ((b[5] as u16) << 4) | (b[4] as u16 >> 4);
-                    ycc[col] = [y0, cb, cr];
-                    ycc[col + 1] = [y1, 2048, 2048];
-                    col += 2;
-                }
-                let mut col = 0;
-                while col < w {
-                    let col2 = if col + 2 < w { col + 2 } else { col };
-                    if col + 1 < w {
-                        ycc[col + 1][1] = ((ycc[col][1] as u32 + ycc[col2][1] as u32) / 2) as u16;
-                        ycc[col + 1][2] = ((ycc[col][2] as u32 + ycc[col2][2] as u32) / 2) as u16;
+        par::for_each_row_chunk_bounded(
+            img.u16_mut(),
+            w * 3,
+            par::memory_bound_workers(),
+            ctx.parallel,
+            |first, chunk| {
+                let mut ycc = vec![[0u16; 3]; w];
+                for (i, out) in chunk.chunks_mut(w * 3).enumerate() {
+                    let row = first + i;
+                    let rd = &src[row * row_bytes..(row + 1) * row_bytes];
+                    let mut col = 0;
+                    while col + 1 < w {
+                        let b = &rd[col * 3..col * 3 + 6];
+                        let y0 = ((b[1] as u16 & 0xf) << 8) | b[0] as u16;
+                        let y1 = ((b[2] as u16) << 4) | (b[1] as u16 >> 4);
+                        let cb = ((b[4] as u16 & 0xf) << 8) | b[3] as u16;
+                        let cr = ((b[5] as u16) << 4) | (b[4] as u16 >> 4);
+                        ycc[col] = [y0, cb, cr];
+                        ycc[col + 1] = [y1, 2048, 2048];
+                        col += 2;
                     }
-                    col += 2;
+                    let mut col = 0;
+                    while col < w {
+                        let col2 = if col + 2 < w { col + 2 } else { col };
+                        if col + 1 < w {
+                            ycc[col + 1][1] = ((ycc[col][1] as u32 + ycc[col2][1] as u32) / 2) as u16;
+                            ycc[col + 1][2] = ((ycc[col][2] as u32 + ycc[col2][2] as u32) / 2) as u16;
+                        }
+                        col += 2;
+                    }
+                    for (px, o) in ycc.iter().zip(out.chunks_exact_mut(3)) {
+                        let [r, g, b] = ycc_to_rgb(*px);
+                        o[0] = curve[(r * 3072.0) as usize];
+                        o[1] = curve[(g * 3072.0) as usize];
+                        o[2] = curve[(b * 3072.0) as usize];
+                    }
                 }
-                for (px, o) in ycc.iter().zip(out.chunks_exact_mut(3)) {
-                    let [r, g, b] = ycc_to_rgb(*px);
-                    o[0] = curve[(r * 3072.0) as usize];
-                    o[1] = curve[(g * 3072.0) as usize];
-                    o[2] = curve[(b * 3072.0) as usize];
-                }
-            }
-        });
+            },
+        );
         Ok(img)
     }
 

@@ -27,10 +27,13 @@ where
     }
 }
 
-/// Workers worth using for purely memory-bound kernels (copies, byte swaps, 16-bit
-/// unpack). Measured: such loops saturate memory bandwidth at ~4 threads and slow down
-/// beyond that from contention, so callers cap their parallelism with this.
-pub const MEMORY_BOUND_WORKERS: usize = 4;
+/// Workers worth using for memory-bound kernels (copies, byte swaps, packed unpack,
+/// lookup curves). Measured on a 16-thread x86 server: such loops peak at ~4 threads and
+/// get 1.7-1.9x slower at 16 from memory-controller and page-fault contention. Machines
+/// with more bandwidth per core scale further, so the cap grows with the thread count.
+pub fn memory_bound_workers() -> usize {
+    (threads() / 4).clamp(2, 8)
+}
 
 /// Like [`for_each_row_chunk`] but split into at most `max_workers` tasks (used for
 /// memory-bound kernels where more threads only add contention).

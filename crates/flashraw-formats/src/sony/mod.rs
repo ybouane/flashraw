@@ -407,18 +407,24 @@ fn decode_region(
             let mut img = RawImage::new_u16(region.width, region.height, 4, &ctx.limits)?;
             let rl = region.width as usize * 4;
             ctx.profiler.time(Stage::Unpack, || {
-                par::for_each_row_chunk(img.u16_mut(), rl, 16, ctx.parallel, |first, chunk| {
-                    for (i, row) in chunk.chunks_mut(rl).enumerate() {
-                        let y = region.y as usize + first + i;
-                        let s = &src[y * w * 8 + region.x as usize * 8..];
-                        for (o, b) in row.chunks_exact_mut(4).zip(s.chunks_exact(8)) {
-                            o[0] = u16::from_le_bytes([b[0], b[1]]);
-                            o[1] = u16::from_le_bytes([b[2], b[3]]);
-                            o[2] = u16::from_le_bytes([b[6], b[7]]);
-                            o[3] = u16::from_le_bytes([b[4], b[5]]);
+                par::for_each_row_chunk_bounded(
+                    img.u16_mut(),
+                    rl,
+                    par::memory_bound_workers(),
+                    ctx.parallel,
+                    |first, chunk| {
+                        for (i, row) in chunk.chunks_mut(rl).enumerate() {
+                            let y = region.y as usize + first + i;
+                            let s = &src[y * w * 8 + region.x as usize * 8..];
+                            for (o, b) in row.chunks_exact_mut(4).zip(s.chunks_exact(8)) {
+                                o[0] = u16::from_le_bytes([b[0], b[1]]);
+                                o[1] = u16::from_le_bytes([b[2], b[3]]);
+                                o[2] = u16::from_le_bytes([b[6], b[7]]);
+                                o[3] = u16::from_le_bytes([b[4], b[5]]);
+                            }
                         }
-                    }
-                });
+                    },
+                );
             });
             Ok(img)
         }
@@ -483,19 +489,25 @@ fn unpack_rows(
     let x0 = region.x as usize * cpp;
     let simd = ctx.simd;
     ctx.profiler.time(Stage::Unpack, || {
-        par::for_each_row_chunk(img.u16_mut(), rl, 64, ctx.parallel, |first, chunk| {
-            let mut tmp = if rl == samples { Vec::new() } else { vec![0u16; samples] };
-            for (i, row) in chunk.chunks_mut(rl).enumerate() {
-                let y = region.y as usize + first + i;
-                let s = &src[y * stride..y * stride + stride];
-                if tmp.is_empty() {
-                    packed::unpack_row(s, row, bits, order, simd);
-                } else {
-                    packed::unpack_row(s, &mut tmp, bits, order, simd);
-                    row.copy_from_slice(&tmp[x0..x0 + rl]);
+        par::for_each_row_chunk_bounded(
+            img.u16_mut(),
+            rl,
+            par::memory_bound_workers(),
+            ctx.parallel,
+            |first, chunk| {
+                let mut tmp = if rl == samples { Vec::new() } else { vec![0u16; samples] };
+                for (i, row) in chunk.chunks_mut(rl).enumerate() {
+                    let y = region.y as usize + first + i;
+                    let s = &src[y * stride..y * stride + stride];
+                    if tmp.is_empty() {
+                        packed::unpack_row(s, row, bits, order, simd);
+                    } else {
+                        packed::unpack_row(s, &mut tmp, bits, order, simd);
+                        row.copy_from_slice(&tmp[x0..x0 + rl]);
+                    }
                 }
-            }
-        });
+            },
+        );
     });
     Ok(img)
 }

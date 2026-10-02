@@ -534,7 +534,7 @@ fn unpack_packed12(
     if d.len() < padded * (y0 + rows) {
         return Err(Error::corrupt("RW2 packed payload truncated"));
     }
-    par::for_each_row_chunk(&mut out[..w * rows], w, 32, par, |first, chunk| {
+    par::for_each_row_chunk_bounded(&mut out[..w * rows], w, par::memory_bound_workers(), par, |first, chunk| {
         let mut row = vec![0u8; tight + 16];
         for (i, o) in chunk.chunks_mut(w).enumerate() {
             let src = &d[(y0 + first + i) * padded..(y0 + first + i + 1) * padded];

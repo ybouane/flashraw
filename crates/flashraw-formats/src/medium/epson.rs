@@ -131,18 +131,24 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             return Err(Error::corrupt("ERF: raw data truncated"));
         }
         ctx.profiler.time(Stage::Unpack, || {
-            par::for_each_row_chunk(img.u16_mut(), wu, 64, ctx.parallel, |first, chunk| {
-                for (i, row) in chunk.chunks_mut(wu).enumerate() {
-                    let y = first + i;
-                    let Some(s) = src.get(y * rb..) else { break };
-                    let s = &s[..rb.min(s.len())];
-                    if padded {
-                        unpack_row_12_padded(s, row);
-                    } else {
-                        flashraw_codecs::packed::unpack_row(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+            par::for_each_row_chunk_bounded(
+                img.u16_mut(),
+                wu,
+                par::memory_bound_workers(),
+                ctx.parallel,
+                |first, chunk| {
+                    for (i, row) in chunk.chunks_mut(wu).enumerate() {
+                        let y = first + i;
+                        let Some(s) = src.get(y * rb..) else { break };
+                        let s = &s[..rb.min(s.len())];
+                        if padded {
+                            unpack_row_12_padded(s, row);
+                        } else {
+                            flashraw_codecs::packed::unpack_row(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+                        }
                     }
-                }
-            });
+                },
+            );
         });
         let _ = hu;
         Ok(img)

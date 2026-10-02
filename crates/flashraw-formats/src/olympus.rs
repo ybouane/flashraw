@@ -261,7 +261,7 @@ fn decode(
             let second = (half * stride).div_ceil(2048) * 2048;
             require(src, second + stride * (coded_rows / 2))?;
             ctx.profiler.time(Stage::Unpack, || {
-                par::for_each_row_chunk(out, w, 32, ctx.parallel, |first, chunk| {
+                par::for_each_row_chunk_bounded(out, w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let y = first + i;
                         let off = if y % 2 == 0 { y / 2 * stride } else { second + y / 2 * stride };
@@ -279,7 +279,7 @@ fn decode(
             let stride = w / 10 * 16;
             require(src, stride * coded_rows)?;
             ctx.profiler.time(Stage::Unpack, || {
-                par::for_each_row_chunk(out, w, 32, ctx.parallel, |first, chunk| {
+                par::for_each_row_chunk_bounded(out, w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let y = first + i;
                         let Some(s) = src.get(y * stride..(y + 1) * stride) else { continue };
@@ -295,7 +295,7 @@ fn decode(
             require(src, w * 2 * coded_rows)?;
             let order = if big_endian { PackOrder::MsbBytes } else { PackOrder::LsbBytes };
             ctx.profiler.time(Stage::Unpack, || {
-                par::for_each_row_chunk(out, w, 64, ctx.parallel, |first, chunk| {
+                par::for_each_row_chunk_bounded(out, w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let y = first + i;
                         let Some(s) = src.get(y * w * 2..(y + 1) * w * 2) else { continue };

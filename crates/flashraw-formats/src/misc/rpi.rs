@@ -169,7 +169,7 @@ fn decode_rows(src: &[u8], b: Brcm, out: &mut [u16], parallel: bool) {
     if b.bits == 10 && w.div_ceil(4) * 5 <= stride {
         return misc_packed::mipi10_rows(src, w, h, stride, out, parallel);
     }
-    par::for_each_row_chunk(&mut out[..w * h], w, 32, parallel, |first, chunk| {
+    par::for_each_row_chunk_bounded(&mut out[..w * h], w, par::memory_bound_workers(), parallel, |first, chunk| {
         // (OV5647's 2611-sample rows) pick up the start of the row again.
         let mut tmp = vec![0u8; 2 * stride + 8];
         for (i, row) in chunk.chunks_exact_mut(w).enumerate() {
