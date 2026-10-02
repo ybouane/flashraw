@@ -1,0 +1,19 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Polaroid/Polaroid x530/RAW_POLAROID_X530.X3F	51b06135f72bb249	X3F	sigma-x3f
+Sigma/DP0 Quattro/_SDI0263.X3F	5cdfe3dd19ee9337	X3F	sigma-x3f
+Sigma/DP1 Merrill/SDIM0555.X3F	a98afe008d83f5ef	X3F	sigma-x3f
+Sigma/DP1/RAW_SIGMA_DP1.X3F	251cf6bd9ad0b920	X3F	sigma-x3f
+Sigma/DP3 Merrill/_P3M9383.X3F	8e9a8aed58c589b1	X3F	sigma-x3f
+Sigma/SIGMA DP2 Merrill/DP2M1726.X3F	baba53315ee5b615	X3F	sigma-x3f
+Sigma/SIGMA DP2 Merrill/DP2M5265.X3F	84fbad166abf2def	X3F	sigma-x3f
+Sigma/SIGMA DP2 Merrill/SDIM0076.X3F	3f9ac0649f05ed2e	X3F	sigma-x3f
+Sigma/SIGMA DP2 Merrill/SDIM1223.X3F	7032a5ab4ce57bd5	X3F	sigma-x3f
+Sigma/SIGMA SD1 Merrill/SDIM0042.X3F	f7ad9b7138fdcbdc	X3F	sigma-x3f
+Sigma/SIGMA SD14/20120818-SDIM4579.X3F	40b4e7c15d16c1c0	X3F	sigma-x3f
+Sigma/SIGMA SD15/_SDI5651.X3F	82f0163c605af6ea	X3F	sigma-x3f
+Sigma/SIGMA dp2 Quattro/SDIM4388.X3F	8dd868b56a29e52b	X3F	sigma-x3f
+Sigma/Sigma DP1s/RAW_SIGMA_DP1S.X3F	9fef2cee158ce20a	X3F	sigma-x3f
+Sigma/Sigma SD10/RAW_SIGMA_SD10.X3F	4a1f162a4e088286	X3F	sigma-x3f
+Sigma/Sigma SD9/RAW_SIGMA_SD9_SRGB.X3F	9831b2628e677be0	X3F	sigma-x3f
+Sigma/sd Quattro H/SDIM0061.X3F	855fb8bca03dd159	X3F	sigma-x3f
+Sigma/sd Quattro/sample3.X3F	fa1fb657002bd3e4	X3F	sigma-x3f

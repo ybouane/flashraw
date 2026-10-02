@@ -12,5 +12,6 @@ pub mod jpeg;
 pub mod jxl;
 pub mod ljpeg;
 pub mod packed;
+pub mod x3f;
 
 pub use packed::{PackedLayout, unpack, unpack_row, unpack_row_scalar};
