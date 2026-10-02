@@ -673,6 +673,11 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         }
     }
 
+    // samples span 14 bits whenever the white level says so.
+    if ctiff.is_none() && info.white_level.max() > 4095 {
+        info.bits_per_sample = 14;
+    }
+
     // White balance.
     let wb = ctiff.as_ref().and_then(|c| c.wb).or(rmeta.wb);
     if let Some([r, g, b]) = wb {
