@@ -1,0 +1,12 @@
+# FORMAT	MODE	COMPRESSION	STATUS	NOTES
+ARW	arw2	sony-arw2	verified	114 corpus files (cooked 8-bit delta blocks + tone curve), row-parallel
+ARW	arw1	sony-arw1	verified	9 corpus files (A100–A390 Huffman column stream), sequential
+ARW	12bit-packed	uncompressed	verified	A850/A900 12-bit LSB packing; 14-bit levels scaled
+ARW	uncompressed	uncompressed	verified	38 corpus files, 12/14-bit data in 16-bit containers incl. APS-C and S35 crops
+SR2	uncompressed	uncompressed	verified	DSC-R1 big-endian samples; SR2Private decryption for black/WB
+ARW	lossless	sony-lossless	verified	19 corpus files, lossless JPEG tiles (L sizes, crop modes), tile-parallel
+ARW	lossless-ycbcr	sony-lossless	verified	19 corpus files, S/M sizes: 4:2:0 and 4:2:2 YCbCr tiles converted to RGB (4 samples/pixel)
+ARW	arw6	other	verified	4 corpus files (ILCE-7M5 compressed / compressed HQ), wavelet codec, parallel
+ARQ	arq	uncompressed	verified	4-shot pixel shift (4 samples/pixel); 16-shot layout follows the same path, no sample
+SRF	srf	uncompressed	verified	DSC-F828 (RGBE CFA, measured black); DSC-V3 implemented, no sample
+ARW	8-bit	other	unsupported	8-bit ARW variants are rejected with an error

@@ -260,7 +260,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
         if raw_w >= 7 && (body.len() / (raw_w as usize * 8 / 7)) == raw_h as usize {
             (Payload::V4(BlockedStream::new(body, 0)?), Compression::Panasonic, "v4")
-        } else if u16_tag(ifd, 0x0a).unwrap_or(0) == 12 || ifd.bps() == 12 {
+        } else if (u16_tag(ifd, 0x0a).unwrap_or(0) == 12 || ifd.bps() == 12)
+            && body.len() < raw_w as usize * raw_h as usize * 2
+        {
             (Payload::Packed12(body), Compression::Uncompressed, "packed12")
         } else {
             (Payload::Unpacked(body), Compression::Uncompressed, "unpacked")

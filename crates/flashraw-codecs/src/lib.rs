@@ -24,11 +24,17 @@ pub mod ljpeg;
 pub mod misc_packed;
 pub mod nikon_huffman;
 pub mod nikon_packed;
+pub mod olympus;
 pub mod packed;
 pub mod panasonic;
 pub mod pentax_huffman;
 pub mod phaseone;
 pub mod samsung;
+pub mod sony_arw1;
+pub mod sony_arw2;
+pub mod sony_arw6;
+pub mod sony_arw6_curve;
+pub mod sony_ycc;
 pub mod vc5;
 pub mod x3f;
 

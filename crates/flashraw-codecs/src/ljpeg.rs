@@ -193,6 +193,13 @@ impl LjpegHeader {
     pub fn row_len(&self) -> usize {
         self.width as usize * self.clrs as usize
     }
+
+    /// Huffman table used for value position `i` of an MCU (`i < clrs`). Lets
+    /// vendor codecs with non-standard sample layouts (e.g. Sony YCbCr) reuse the
+    /// parsed stream headers.
+    pub fn table(&self, i: usize) -> Option<&HuffTable> {
+        self.tables.get(i)
+    }
 }
 
 /// Decode all rows of `data` (a complete lossless JPEG stream), invoking

@@ -1,0 +1,9 @@
+# FORMAT	MODE	COMPRESSION	STATUS	NOTES
+ORF	compressed	olympus	verified	90 corpus files incl. 14-bit and 50/80 MP high-res; entropy/prediction pipelined on two threads
+ORI	compressed	olympus	verified	ORI base frames of high-res shots (same decoder)
+ORF	12bit-packed	uncompressed	verified	12-bit in 32-bit LE words and MSB-first bytes
+ORF	12bit-packed-interlaced	uncompressed	verified	C-/SP-series even/odd row fields
+ORF	12bit-packed-padded	uncompressed	verified	E-300/E-330/E-500 and E-M5 II / PEN-F high-res (pad byte per 10 samples)
+ORF	uncompressed	uncompressed	verified	E-1, E-10/E-20 (big-endian, 10-bit), E-400
+ORF	compressed (non-standard coder tags)	olympus	experimental	generic coder path, unit-tested against a reference only
+ORF	C-740UZ/C-770UZ headerless	other	unsupported	size-identified dumps without TIFF structure
