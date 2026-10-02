@@ -1,0 +1,232 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossless.DNG	21cca83cb3ed0815	DNG	lossless-jpeg
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-uncompressed.DNG	21cca83cb3ed0815	DNG	uncompressed
+Apple/iPhone 6s Plus/IMG_0853.DNG	17e4d3c620d593c9	DNG	lossless-jpeg
+Apple/iPhone 7 Plus/IMG_0739.DNG	d0095a8b553f0f8a	DNG	lossless-jpeg
+Apple/iPhone 8/RAW_2018_11_07_14_43_14_820_noflash.dng	f9d2d33bd709319d	DNG	lossless-jpeg
+Apple/iPhone SE/A4973FFB-9CBD-4ED8-805D-E30F4AE08A95.dng	f21a6eded91d1629	DNG	lossless-jpeg
+Apple/iPhone XS/IMG_1105.dng	a8e819ac4e5beb2a	DNG	lossless-jpeg
+Arashi Vision/Insta360 One X/IMG_20201122_142733_00_015.dng	2d85e1d07cb1508e	DNG	uncompressed
+Autel Robotics/XB015/MAX_0001.DNG	1c8ab4cfe191d1f9	DNG	uncompressed
+Autel/Model 323/MAX_0005.DNG	8485acea8774ff98	DNG	uncompressed
+Blackmagic Design/Pocket Cinema Camera 6k Pro/A010_04101355_S068.dng	dda068a1738d1d54	DNG	uncompressed
+Blackmagic/Blackmagic Pocket Cinema Camera 4k/4k_DCI_uncompressed.dng	56d4a6e9856eadea	DNG	uncompressed
+Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_lossless.dng	9349a99c041933a7	DNG	lossless-jpeg
+Blackmagic/Blackmagic Pocket Cinema Camera 4k/BMPCC_4k_DCI_uncompressed.dng	6cb004fe5e0d0d6f	DNG	uncompressed
+Blackmagic/Micro Cinema Camera/CAM1_2000-01-01_1659_C0002_000100.dng	4b0dd72b768e6684	DNG	lossless-jpeg
+Blackmagic/Pocket Cinema Camera/Blackmagic_Pocket_Cinema_Camera_1_2016-09-17_0053_C0022_000007.dng	62d2eb2145670cc5	DNG	lossless-jpeg
+Blackmagic/URSA 4K/Blackmagic URSA_1_1999-12-31_2153_C0003_000001.dng	bc7181a1ccce8309	DNG	lossless-jpeg
+Canon/Canon DIGITAL IXUS 60/CRW_2069.DNG	e9dccfce52a04fe0	DNG	uncompressed
+Canon/Canon DIGITAL IXUS 95 IS/CRW_2593_01.DNG	97504a3f5a1d513f	DNG	uncompressed
+Canon/Canon PowerShot A3100 IS/CRW_3338.DNG	9bcc39f2d2117d17	DNG	uncompressed
+Canon/Canon PowerShot A3300 IS/CRW_1140.DNG	20500a2eaf3f96d0	DNG	uncompressed
+Canon/Canon PowerShot A410/CANON_A410_CHDK_CRW_0741.DNG	437b0ba5c16a94b6	DNG	uncompressed
+Canon/Canon PowerShot A480/CRW_0010.DNG	98b9fd5e579b2af2	DNG	uncompressed
+Canon/Canon PowerShot A540/CANON_A540_CHDK_CRW_0010.DNG	af893288a1f2dca7	DNG	uncompressed
+Canon/Canon PowerShot A550/CRW_0006.DNG	e1a4fcd4742fd55c	DNG	uncompressed
+Canon/Canon PowerShot A560/IMG_2641.DNG	240dd7eec3393520	DNG	uncompressed
+Canon/Canon PowerShot A570 IS/CRW_1918.DNG	7c382f6a57c1985c	DNG	uncompressed
+Canon/Canon PowerShot A640/CRW_0440.DNG	d069ba4d8134d687	DNG	uncompressed
+Canon/Canon PowerShot D10/CANON_D10_CHDK_CRW_0626.DNG	269b221aadb5541a	DNG	uncompressed
+Canon/Canon PowerShot ELPH 130 IS/CANON_IXUS140_ELPH130_CHDK_CRW_5645.DNG	00b4506f78679a2b	DNG	uncompressed
+Canon/Canon PowerShot ELPH 160/RAW_CANON_POWERSHOT_IXUS160_CHDK.DNG	643cd0f84fc146d4	DNG	uncompressed
+Canon/Canon PowerShot ELPH 180/CANON_IXUS175_ELPH180_CHDK_CRW_0194.DNG	5cdecef1a4820b61	DNG	uncompressed
+Canon/Canon PowerShot ELPH 180/CRW_0334.DNG	1132e08fe2be611f	DNG	uncompressed
+Canon/Canon PowerShot ELPH 310 HS/CRW_9720.DNG	c786e998445041bd	DNG	uncompressed
+Canon/Canon PowerShot S2 IS/IMG_1739.DNG	f473973d01970ef6	DNG	uncompressed
+Canon/Canon PowerShot S3IS/CRW_8531.DNG	e203d76774ae4bc0	DNG	uncompressed
+Canon/EOS 5D Mark III/M24-1221_000202.dng	ec88ca511154e121	DNG	lossless-jpeg
+Canon/EOS 5D Mark III/compress.dng	b457883a20a5e540	DNG	lossless-jpeg
+Canon/EOS 5D Mark III/hdrmerge-bayer-fp16-uncompressed.dng	42a74c9f2a87169b	DNG	uncompressed
+Canon/EOS 5D Mark III/hdrmerge-bayer-fp16-w-pred-deflate.dng	05bc8039a569aaf9	DNG	deflate
+Canon/EOS 5D Mark III/hdrmerge-bayer-fp24-uncompressed.dng	a77d3bbf673397a0	DNG	uncompressed
+Canon/EOS 5D Mark III/hdrmerge-bayer-fp32-uncompressed.dng	a77d3bbf673397a0	DNG	uncompressed
+Canon/EOS 60D/M14-1451_000085_cDNG_compressed.dng	1f0d572254f81c21	DNG	lossless-jpeg
+Canon/EOS 7D Mark II/0P9A0410-Enhanced-NR.dng	468f14074957c08e	DNG	lossless-jpeg
+Canon/IXY 220F/canon_ixy_220f.DNG	41291afde73e11ce	DNG	uncompressed
+Canon/PowerShot A3200 IS/RAW_CANON_POWERSHOT_A3200IS_CHDK.DNG	09da365b2e983771	DNG	uncompressed
+Canon/PowerShot A720 IS/IMG_8329.DNG	e9458e17010c4ac1	DNG	uncompressed
+Canon/PowerShot G1 X/CRW_0004.DNG	0d023f27892d67ae	DNG	uncompressed
+Canon/PowerShot G7 X/CANON_G7X_CHDK_CRW_6740.DNG	0f9681797ac25954	DNG	uncompressed
+Canon/PowerShot S100/CRW_1369.DNG	ed853670ebbd8703	DNG	uncompressed
+Canon/PowerShot SD450/RAW_CANON_POWERSHOT_SD450_CHDK_V0.9.7-725.DNG	11819e6106ca8fc7	DNG	uncompressed
+Canon/PowerShot SX10 IS/CRW_1627.DNG	d848f4721d3625ad	DNG	uncompressed
+Canon/PowerShot SX100 IS/CRW_0964_01.DNG	39a4cdd391ba4d3b	DNG	uncompressed
+Canon/PowerShot SX130 IS/CRW_8815.DNG	9f72947e535fa314	DNG	uncompressed
+Canon/PowerShot SX160 IS/CANON_SX160IS_CHDK_CRW_5152.DNG	08cc5ed3c1760451	DNG	uncompressed
+Canon/PowerShot SX20 IS/CRW_6489.DNG	e04d16827ee9e816	DNG	uncompressed
+Canon/PowerShot SX220 HS/CRW_7733.DNG	06736f4db70ec0c8	DNG	uncompressed
+Canon/PowerShot SX230 HS/CRW_5894.DNG	c3d44ccd42e1f26c	DNG	uncompressed
+Canon/PowerShot SX240 HS/CRW_5797.DNG	93691242f99afdd3	DNG	uncompressed
+Canon/PowerShot SX260 HS/CRW_3027.DNG	c9d29987ca896548	DNG	uncompressed
+Canon/PowerShot SX30 IS/CRW_0763.DNG	345369579aae14eb	DNG	uncompressed
+Canon/PowerShot SX40 HS/CRW_6037.DNG	19a3060e4e8b4398	DNG	uncompressed
+Canon/PowerShot SX50 HS/CRW_4061.DNG	e46348f507a57cd7	DNG	uncompressed
+Canon/PowerShot SX510 HS/RAW_CANON_POWERSHOT_SX510HS.DNG	593b2e38c2263553	DNG	uncompressed
+Canon/PowerShot SX530 HS/CRW_4494.DNG	60c84905ce8d37ed	DNG	uncompressed
+Canon/PowerShot SX60 HS/Canon-SX60HS-CHDK-RAW.DNG	f0e9dd207b9df1ef	DNG	uncompressed
+Canon/PowerShot SX710 HS/CANON_SX710HS_CHDK_CRW_0716.DNG	4b7873ef18890ffb	DNG	uncompressed
+DJI/DJI Osmo Action/DJI_0254.DNG	d90149dc4bd30158	DNG	uncompressed
+DJI/FC220/DJI_0004.DNG	12b608bc544e8cb8	DNG	uncompressed
+DJI/FC350/DJI_0040.DNG	14ffa7e06e4888ee	DNG	uncompressed
+DJI/FC4382/DJI_20250506184749_0011_D.DNG	8a992801454d0b79	DNG	lossless-jpeg
+DJI/FC6310/DJI_0220.DNG	6ebc2a580c7c2603	DNG	uncompressed
+DJI/FC7303/DJI_0109.DNG	d1e66e08f335b55b	DNG	uncompressed
+DJI/FC7303/DJI_0765.DNG	acaab4fe42d3dc58	DNG	uncompressed
+DJI/FC9287/DJI_20250528104510_0025_D.DNG	d1babb4646097d6f	DNG	lossless-jpeg
+Eyedeas/E1/EYED0651.DNG	f62d18cbc47e4310	DNG	uncompressed
+FIMI/X8SE/IMG_20180808_081040_0001.DNG	ed461c58723bc71b	DNG	uncompressed
+Fujifilm/X100S/fujifilm-x100s-daylight-DSCF9505.dng	2aa1f85b8ed497f4	DNG	lossless-jpeg
+Google/Pixel 2 XL/IMG_20180109_080629.dng	fe0de13db26eed8c	DNG	uncompressed
+Google/Pixel 3a/IMG_20190918_164153.dng	77416aac6552d936	DNG	lossless-jpeg
+Google/Pixel 4 XL/IMG_20191023_125156.dng	d121f233fdbaff2c	DNG	lossless-jpeg
+Google/Pixel 4a/PXL_20201121_100251397.dng	ac056154d440cb2d	DNG	lossless-jpeg
+Google/Pixel 6 Pro/PXL_20220910_093206982.dng	96631250f12729ad	DNG	lossless-jpeg
+Google/Pixel 7 Pro/PXL_20221204_063131635.dng	a70c41fc7f646f2b	DNG	lossless-jpeg
+Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng	5e30a4d3bfc914b3	DNG	lossless-jpeg
+HMD Global/Nokia 7 plus/IMG_20190612_120131.dng	a88ea0026184a60c	DNG	uncompressed
+HTC/HTC 10/IMAG1305.dng	74b042e2a4df21ce	DNG	uncompressed
+HUAWEI/ANE-LX1/IMG_20200920_112515.dng	1ffe3500c9c43a6b	DNG	uncompressed
+HUAWEI/AUM-L29/IMG_20181222_154757.dng	cdfc3c8a5fc028d7	DNG	uncompressed
+HUAWEI/BLA-L29/IMG_20180119_175851.dng	ea71c402b718a30b	DNG	uncompressed
+HUAWEI/CLT-L09/IMG_20191010_085409.dng	94fccd5aadc908e8	DNG	uncompressed
+HUAWEI/DLI-L22/IMG_20171028_150510.dng	81ba2e4b7a94dcc7	DNG	uncompressed
+HUAWEI/EML-L09/IMG_20190316_130857_(2).dng	a3a03105fb362da8	DNG	uncompressed
+HUAWEI/EML-L29/IMG_20190507_233457.dng	3418db38a0d65e4e	DNG	uncompressed
+HUAWEI/EVA-AL00/IMG_20171015_200142.dng	b77c93bb8bd10f24	DNG	uncompressed
+HUAWEI/EVA-L09/Huawai_P9_Leica.dng	3be6ef64bdaf50fb	DNG	uncompressed
+HUAWEI/FRD-L09/IMG_20180520_132951.dng	24661360f761eb6d	DNG	uncompressed
+HUAWEI/HRY-LX1/IMG_20190427_200711.dng	4962bdea766fb058	DNG	uncompressed
+HUAWEI/HUAWEI NXT-L29/IMG_20190508_113343.dng	1313583f64167151	DNG	uncompressed
+HUAWEI/PRA-LX1/IMG_20180330_171432.dng	f668606fa0e21280	DNG	uncompressed
+HUAWEI/SNE-LX1/IMG_20191221_095657.dng	6ee1e30d91f9cc92	DNG	uncompressed
+HUAWEI/VKY-L09/IMG_20180429_160450.dng	72aad50fc2dd983d	DNG	uncompressed
+HUAWEI/VOG-L29/IMG_20190330_123314.dng	e97a7a2ab5a18913	DNG	uncompressed
+HUAWEI/VTR-L09/IMG_20180307_120152.dng	409ff6239a6cbe78	DNG	uncompressed
+HUAWEI/WAS-LX1A/IMG_20180416_193350.dng	51da5ef4f0eb4f44	DNG	uncompressed
+Hasselblad/L1D-20c/DJI_0017.DNG	b207313fa7dee601	DNG	uncompressed
+KanDao/QooCam/KD3D_20190310_123825_000001.DNG	93b0021b015640ef	DNG	uncompressed
+KanDao/QooCam/KDRaw_Q360_20190310_125715_000001.dng	55a986c83810ddce	DNG	lossless-jpeg
+KanDao/QooCam/Q360_20190310_123437_000001.DNG	6a4a7c92cd7cdddb	DNG	uncompressed
+Kandao/QooCam 8K/Q360_20210330_100513_00000D.DNG	740ce6e435af8085	DNG	uncompressed
+LEICA CAMERA AG/LEICA SL2/L1020010.DNG	adbf7522c3d0a02d	DNG	uncompressed
+LG/D855/IMG_2017_07_16_13_10_47.dng	d586cf9c311c1859	DNG	uncompressed
+LG/H815/20161227_150823.dng	edfc90b0653b53af	DNG	uncompressed
+LG/LG-F800K/20171028_174609.dng	e1b6deb49c2d2b1f	DNG	uncompressed
+LG/LG-H850/LGG5_Camera_Front.dng	0222048adb36fb8e	DNG	uncompressed
+LG/LG-H870/20180705_215945.dng	05af8af63342ff42	DNG	uncompressed
+LG/LG-H910/opn_20190921_065338_0.dng	a5be6d6ca733c476	DNG	uncompressed
+LG/Nexus 5X/IMG_20170214_170637_637.dng	0ce7793362364912	DNG	uncompressed
+LG/US996/IMG_20170821_025047.dng	b1fee961d5e6abe1	DNG	uncompressed
+LG/VS995/0313171232.dng	166468d52e831bd0	DNG	uncompressed
+Leica Camera AG/LEICA M10-R/M10R0324.DNG	573a9fc49aa2284c	DNG	lossless-jpeg
+Leica/CL/L1080510_2018_CL-35-135-Chateau_Thy__Chateau_Ham.DNG	c59f487fbb926877	DNG	uncompressed
+Leica/M (Typ 240)/ADG_RPUsubmit_compressed_L1006373.DNG	795576128c83a10f	DNG	lossless-jpeg
+Leica/M (Typ 240)/ADG_RPUsubmit_uncompressed_L1006374.DNG	c1d1f9feccabc2e9	DNG	uncompressed
+Leica/M Monochrom (Typ 246)/M2462362.DNG	c0d057faed5c0d1d	DNG	lossless-jpeg
+Leica/M Monochrom/L1000622.DNG	17ef59641abc6b39	DNG	uncompressed
+Leica/M10/f5381888.dng	1594dd1cca00d124	DNG	lossless-jpeg
+Leica/M8/L1030132.DNG	8354ac17b3caf4b8	DNG	uncompressed
+Leica/M9 Digital Camera/L1049391.DNG	0c9fe6d81b1fc3ae	DNG	uncompressed
+Leica/M9/L1049390.DNG	141c4039429d5676	DNG	uncompressed
+Leica/Q (Typ 116)/L1070048.DNG	11f99859db23b42e	DNG	uncompressed
+Leica/Q2/L1000750.DNG	bb4b2bf3ffd0e412	DNG	uncompressed
+Leica/SL (Typ 601)/20160915_Lechtaler_001.DNG	a3dfd8cf9d7ceff2	DNG	uncompressed
+Leica/X2/L1021324.DNG	bde8541194311bd6	DNG	uncompressed
+MADV/QJXJ01FJ/IMG_20190326_134416.DNG	2272b1acd8d00424	DNG	uncompressed
+Microsoft/Lumia 950 XL Dual SIM/Microsoft_-_Lumia_950XL.dng	5d5844ceb669ebee	DNG	uncompressed
+Nikon/D80/DSC_0143.dng	0f7928212660abae	DNG	lossless-jpeg
+Nokia/Lumia 1020/RAW_NOKIA_LUMIA_1020.DNG	a9e40d1fdc94b497	DNG	uncompressed
+Nokia/Lumia 930/WP_20180612_19_16_03_Raw__highres.dng	9138cad0d89e8859	DNG	uncompressed
+OnePlus/ONEPLUS A3003/IMG_20170316_134557.dng	b483c7bee7745724	DNG	uncompressed
+OnePlus/ONEPLUS A5000/IMG_20171224_201301.dng	66b915eb234326af	DNG	uncompressed
+OnePlus/ONEPLUS A6003/IMG_20201019_093659.dng	66ba9a3a554b068f	DNG	uncompressed
+OnePlus/One/IMG_20150729_201116.dng	7f7537c3ba2b1093	DNG	uncompressed
+PARROT/Bebop 2/Bebop2_20170330115857+0200.dng	a04f21760b75c9ae	DNG	uncompressed
+PARROT/Bebop Drone/Bebop_Drone_2015-11-07T180428+0000_C10611.dng	3490169cfadabb40	DNG	uncompressed
+PENTAX/PENTAX K-r/IMGP4425.DNG	e82d0f1f88d44a10	DNG	lossless-jpeg
+Panasonic/DMC-LX1/P1080763.dng	b7c5ed5678562a0a	DNG	lossless-jpeg
+Parrot/Anafi/100000190019.DNG	07a188c932a25a31	DNG	uncompressed
+Pentax/645D/645D2839.DNG	bf13df20b6fce20c	DNG	lossless-jpeg
+Pentax/645Z/IMGP2836.DNG	252954b5a64e1536	DNG	lossless-jpeg
+Pentax/K-01/_IGP2068.DNG	57ee22b22cb5b2cf	DNG	lossless-jpeg
+Pentax/K-1 Mark II/_IMG2387.DNG	f2ed12fa98247028	DNG	lossless-jpeg
+Pentax/K-1 Mark II/_K1I9779.DNG	c57457b4200eaed5	DNG	lossless-jpeg
+Pentax/K-1 Mark II/_K1I9786.DNG	0b7f90bef78474c2	DNG	lossless-jpeg
+Pentax/K-1/IMGP8551.DNG	b6b2a072bc097266	DNG	lossless-jpeg
+Pentax/K-3 II/20170430-121325.dng	8ab383d090d3ccc6	DNG	lossless-jpeg
+Pentax/K-3 II/IMGP0668.DNG	921bd4883bc3a6af	DNG	lossless-jpeg
+Pentax/K-3 Mark III Monochrome/K3III.DNG	3fc204b34c788959	DNG	lossless-jpeg
+Pentax/K-3 Mark III/_IMG0114.DNG	09ff329b6eaf046d	DNG	lossless-jpeg
+Pentax/K-3/IMGP6916.DNG	037b2556babdb896	DNG	lossless-jpeg
+Pentax/K-30/_IGP4042.DNG	e6656a2581ec4895	DNG	lossless-jpeg
+Pentax/K-5 II s/_JAK3776.DNG	fe91762bd245bd8b	DNG	lossless-jpeg
+Pentax/K-5 II/IMGP2032.DNG	c6b0b56b76ab74d6	DNG	lossless-jpeg
+Pentax/K-5/_MAR0543.DNG	d02063f6a9a5c566	DNG	lossless-jpeg
+Pentax/K-50/IMGP1385.DNG	772875354feb08e3	DNG	lossless-jpeg
+Pentax/K-500/Pentax_-_K-500.DNG	bc6c575ae188acbe	DNG	lossless-jpeg
+Pentax/K-7/IMGP6297.DNG	d7c8ec3d5bbc0b22	DNG	lossless-jpeg
+Pentax/K-70/IMGP6855.DNG	8a82eccfd26a96bf	DNG	lossless-jpeg
+Pentax/K-S1/IMGP4743.DNG	a987c18222c88fe3	DNG	lossless-jpeg
+Pentax/K-S2/IMGP3368.DNG	056e63c687e4e504	DNG	lossless-jpeg
+Pentax/K-x/IMGP6431.DNG	ad8d0b397a77bfb7	DNG	lossless-jpeg
+Pentax/K10D/IMGP5398.DNG	ee61c0b3aed8fe81	DNG	uncompressed
+Pentax/K200D/IMGP2292.DNG	ecc6d5f8d5e56cb3	DNG	uncompressed
+Pentax/K20D/RAW_Pentax_K20.DNG	5bb19a98babd4bbf	DNG	uncompressed
+Pentax/KP/IMGP0236.DNG	a1a6c4b484c5d21f	DNG	lossless-jpeg
+Pentax/MX-1/pentax_mx1_raw2.dng	b8e1011c4b496dc3	DNG	uncompressed
+Pentax/Q/IMGP0647.DNG	b4e3dd90ef7f874f	DNG	uncompressed
+Pentax/Q7/IMGP1691.DNG	8b2bcf5ba63b8811	DNG	uncompressed
+Plustek/OpticFilm 8100/SF8_processed_-_Mon_Jun_17_19-45-39_2019.dng	a59d6300fc6ca589	DNG	uncompressed
+Plustek/OpticFilm 8200i SE/AristaUltra_400_Test1.dng	55c5bee555e1d295	DNG	uncompressed
+RICOH/GXR/R0017428.DNG	625534a27d0776aa	DNG	uncompressed
+RICOH/RICOH GX200/R0014336-20180515-ss620-ap4.6-fl5-iso64.DNG	b7b6ff868f383ab2	DNG	uncompressed
+RaspberryPi/RP_imx477/pi.dng	a512e3e34d467cb8	DNG	uncompressed
+RaspberryPi/RP_imx477/pi_hq_picamera.dng	4e3f83cac45ee5f3	DNG	uncompressed
+RaspberryPi/RP_imx477/pi_hq_raspistill.dng	44de427a6230d093	DNG	uncompressed
+Realme/RMX1851/IMG_OCT_20191005_163311.dng	7845837a7206145e	DNG	uncompressed
+Ricoh/GR DIGITAL 2/RAW_RICOH_GR2.DNG	e6ecb508fb7a0618	DNG	uncompressed
+Ricoh/GR II/R0000443.DNG	9724b08b6259ba49	DNG	lossless-jpeg
+Ricoh/GR III/R0000357.DNG	39ce6c55a5f1de6f	DNG	lossless-jpeg
+Ricoh/GR IIIx/R0001005.DNG	8be6fa1723794d1a	DNG	lossless-jpeg
+Ricoh/GR/R0003611.DNG	3e5e9ce5a4ac0dc6	DNG	lossless-jpeg
+Samsung/G920F/LRM_20170316_152407.dng	e1d030ce736ebfef	DNG	uncompressed
+Samsung/G935F/20170403_104110.dng	7e99d7da67022e5a	DNG	uncompressed
+Samsung/GX10/_G107701.DNG	25d51c29e67f99e8	DNG	uncompressed
+Samsung/GX20/_G205027.DNG	516f3df8c879a2c7	DNG	uncompressed
+Samsung/SAMSUNG-SM-G930A/20180105_103031.dng	0d1541316efb4fcc	DNG	uncompressed
+Samsung/SM-G930F/20200125_130015.dng	23daa26593481e6c	DNG	uncompressed
+Samsung/SM-G930T/20180602_132834.dng	1557e1ec76c6249f	DNG	uncompressed
+Samsung/SM-G950F/2018-06-08_12.48.51.dng	b70ca9a743283754	DNG	uncompressed
+Samsung/SM-G950U/20170828_141409.dng	5da2b29f39476f5a	DNG	uncompressed
+Samsung/SM-G955F/20180202_091722.dng	c3a20523ad3b18cf	DNG	uncompressed
+Samsung/SM-G960F/20191119_101508.dng	194e74ce3c0e74ec	DNG	uncompressed
+Samsung/SM-G965F/Samsung_SM-G965F_4-3_ratio_f2.4.dng	b97f27ac85fdea54	DNG	uncompressed
+Samsung/SM-G973F/20191114_225157.dng	17f847e649e261f0	DNG	uncompressed
+Sigma/fp L/SDIM0915.DNG	6896f73ec6b49231	DNG	lossless-jpeg
+Sigma/fp/A002_647_20240229_000001_4k_12bit.DNG	63977e2c68c68d4b	DNG	uncompressed
+Sigma/fp/A002_648_20240229_000001_4k_10bit.DNG	81c9c622ed6d19ef	DNG	uncompressed
+Sigma/fp/A002_650_20240229_000001_4k_8bit.DNG	1e743044e8466b36	DNG	uncompressed
+Sigma/fp/A002_651_20240229_000001_2k_12bit.DNG	5842daf2331c0c72	DNG	uncompressed
+Sigma/fp/A002_652_20240229_000001_2k_10bit.DNG	37534e0ce1ad8c54	DNG	uncompressed
+Sigma/fp/A002_653_20240229_000001_2k_8bit.DNG	2741c8b9d7e5fdcd	DNG	uncompressed
+Sigma/fp/SDIM4591.DNG	f7b92f1904d6cc31	DNG	lossless-jpeg
+XIAOYI/YDXJ 2/ydxj0065.dng	88dae5260e23001b	DNG	lossless-jpeg
+XIAOYI/YI 4K/YDXJ0026.DNG	7f1ea6c56d91f4f6	DNG	lossless-jpeg
+XIAOYI/YIAC 3/YIAC0075.DNG	672051c99f842294	DNG	lossless-jpeg
+Xiaomi/HM NOTE 1LTE/IMG_2016.07.31_15.48.08.dng	1a7dd28090ef5389	DNG	uncompressed
+Xiaomi/M2010J19CG/IMG_20201224_141323.dng	b421746db3663e6e	DNG	uncompressed
+Xiaomi/MI 8/IMG_20200101_174326.dng	c496cb86012a2a7a	DNG	lossless-jpeg
+Xiaomi/MI MAX/IMG_2019_10_27_14_47_40.dng	880395c067cee4d7	DNG	uncompressed
+Xiaomi/Mi 9 Lite/IMG_20200324_073611.dng	519b1aebd63d4b8b	DNG	uncompressed
+Xiaomi/Redmi Note 7/IMG_20190615_155524.dng	d5ed4945dad91416	DNG	uncompressed
+Xiaomi/Redmi Note 8T/IMG_20200715_094601.dng	066a0049507f97e3	DNG	uncompressed
+YI TECHNOLOGY/M1/PC070001.DNG	2f4a78b67cfa27b3	DNG	uncompressed
+Yuneec/CGO3/YUN00038.dng	6429e34c190efc71	DNG	lossless-jpeg
+Yuneec/CGO3P/YUN00007.dng	9f9a130395caa591	DNG	uncompressed
+asus/ASUS_I01WD/P_20190922_161212.dng	cd1af1899fbe9367	DNG	uncompressed
+asus/ASUS_Z01KD/2018-12-02_07.39.26-1.dng	5d711cd4ca13555a	DNG	uncompressed
+bq/Aquaris U Plus/IMG_20180217_111328_894.dng	3096f7568f7f437c	DNG	uncompressed
+motorola/Moto G (5S) Plus/IMG_20180328_152254.dng	3d4d296c31756689	DNG	uncompressed
+motorola/Nexus 6/DSC_0017.DNG	2426b37d1f834dbd	DNG	uncompressed
+motorola/moto g(7) play/IMG_20191114_091702382.dng	4bd77fc1ea17a36d	DNG	uncompressed
