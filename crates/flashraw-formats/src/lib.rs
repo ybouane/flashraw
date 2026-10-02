@@ -66,12 +66,18 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if phaseone::probe(data) {
         return phaseone::open(data, opts);
     }
+    if kodak::probe(data) {
+        return kodak::open(data, opts);
+    }
     if misc::probe(data) {
         return misc::open(data, opts);
     }
     let tiff = match Tiff::parse(data) {
         Ok(t) => t,
-        Err(_) => return misc::open_headerless(data, opts),
+        Err(_) => {
+            // Size-identified Kodak dumps first, then the generic header-less table.
+            return kodak::open_headerless(data, opts).unwrap_or_else(|| misc::open_headerless(data, opts));
+        }
     };
     let make = tiff.all_ifds().into_iter().find_map(|i| i.string(tags::MAKE)).unwrap_or_default();
     let brand = flashraw_camera_db::canonical_make(&make);
@@ -130,6 +136,9 @@ pub fn detect(data: &[u8]) -> Option<RawFormat> {
     }
     if phaseone::probe(data) {
         return Some(RawFormat::Iiq);
+    }
+    if kodak::probe(data) {
+        return Some(RawFormat::Other);
     }
     if misc::probe(data) {
         return Some(RawFormat::Other);

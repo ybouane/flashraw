@@ -11,6 +11,7 @@ pub mod hasselblad;
 pub mod jpeg;
 #[cfg(feature = "jpegxl")]
 pub mod jxl;
+pub mod kodak;
 pub mod leaf;
 pub mod ljpeg;
 pub mod packed;
