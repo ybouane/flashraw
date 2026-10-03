@@ -76,7 +76,8 @@ Largest files (decode, ms):
   single-strip lossless DNG, Kodak DCS, Hasselblad, Nikon, Pentax) are decoded in
   parallel by speculation (see [architecture.md](architecture.md)). Samsung V2 cannot
   be: rows start wherever the previous one ended and are predicted from earlier rows,
-  so parsing and reconstruction only run as a two-thread pipeline (about 1.4× faster
+  parse/reconstruct pipeline was measured and rejected — it gained 7% on x86 and lost
+  7% on Apple M1).
 
 ## Kernels (criterion, `cargo bench -p flashraw --bench kernels`)
 

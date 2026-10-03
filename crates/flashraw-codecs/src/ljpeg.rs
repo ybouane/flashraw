@@ -513,13 +513,27 @@ pub fn decode_tile(
     clip_w: usize,
     clip_h: usize,
 ) -> Result<LjpegHeader> {
+    decode_tile_impl(data, opts, dst, dst_stride, tile_row_len, clip_w, clip_h, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_tile_impl(
+    data: &[u8],
+    opts: LjpegOptions,
+    dst: &mut [u16],
+    dst_stride: usize,
+    tile_row_len: usize,
+    clip_w: usize,
+    clip_h: usize,
+    parallel: bool,
+) -> Result<LjpegHeader> {
     let hdr = LjpegHeader::parse(data, opts)?;
     if tile_row_len == 0 || clip_w == 0 || clip_h == 0 {
         return Ok(hdr);
     }
     let clip_w = clip_w.min(tile_row_len).min(dst_stride);
     let (mut row, mut col) = (0usize, 0usize);
-    decode_rows(data, &hdr, |_, mut src| {
+    decode_rows_par(data, &hdr, parallel, |_, mut src| {
         while !src.is_empty() && row < clip_h {
             let take = (tile_row_len - col).min(src.len());
             if col < clip_w {
@@ -551,6 +565,20 @@ pub fn decode_into(
     height: usize,
 ) -> Result<LjpegHeader> {
     decode_tile(data, opts, dst, dst_stride, width, width, height)
+}
+
+/// [`decode_into`] that may decode large restart-free streams on all threads
+/// (see [`decode_rows_par`]).
+pub fn decode_into_par(
+    data: &[u8],
+    opts: LjpegOptions,
+    dst: &mut [u16],
+    dst_stride: usize,
+    width: usize,
+    height: usize,
+    parallel: bool,
+) -> Result<LjpegHeader> {
+    decode_tile_impl(data, opts, dst, dst_stride, width, width, height, parallel)
 }
 
 /// Minimal lossless JPEG encoder, used to build synthetic fixtures for tests,

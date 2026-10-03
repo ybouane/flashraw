@@ -241,7 +241,7 @@ impl Plan<'_> {
                 .time(Stage::EntropyDecode, || decode_65000_color(data, offset, w, h, curve, out, true, bits))?,
             Kind::Ljpeg { offset, len } => ctx.profiler.time(Stage::EntropyDecode, || {
                 let src = bytes::slice_at_lenient(data, offset, len)?;
-                flashraw_codecs::ljpeg::decode_into(src, Default::default(), out, w, w, h)?;
+                flashraw_codecs::ljpeg::decode_into_par(src, Default::default(), out, w, w, h, ctx.parallel)?;
                 if !self.curve.is_empty() {
                     apply_curve(out, curve, ctx.parallel);
                 }

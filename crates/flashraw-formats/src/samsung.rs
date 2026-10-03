@@ -360,9 +360,7 @@ impl SrwRaw<'_> {
             Payload::V1 => {
                 ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v1(self.src, w, h, out))?;
             }
-            Payload::V2 => {
-                ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v2(self.src, w, h, out, ctx.parallel))?
-            }
+            Payload::V2 => ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v2(self.src, w, h, out))?,
             Payload::Packed(spec) => ctx
                 .profiler
                 .time(Stage::Unpack, || nikon_packed::decode(self.src, spec, out, w, ctx.parallel, ctx.simd))?,

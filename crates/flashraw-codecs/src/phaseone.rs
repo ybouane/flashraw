@@ -47,6 +47,7 @@ fn low_curve_table() -> [u16; 256] {
 ///
 /// (out-of-range sums wrap when stored), and blocks whose prefix is a single `1` bit
 /// keep the previous width.
+#[inline(never)]
 pub fn decode_l_row<B: BitRead>(bits: &mut B, out: &mut [u16], p: IiqLParams) -> Result<()> {
     let width = out.len();
     let full_blocks = width & !7;
@@ -58,13 +59,19 @@ pub fn decode_l_row<B: BitRead>(bits: &mut B, out: &mut [u16], p: IiqLParams) ->
             len = [14, 14];
         } else if col & 7 == 0 {
             for l in len.iter_mut() {
-                let mut zeros = 0;
-                while zeros < 5 && bits.get(1) == 0 {
-                    zeros += 1;
-                }
+                // Up to five zero bits terminated by a one; a non-zero count selects a
+                // length together with one more bit. One peek replaces the bit loop.
+                bits.fill();
+                let peek = bits.peek_no_fill(7);
+                let top = peek >> 2;
+                let zeros = if top == 0 { 5 } else { top.leading_zeros() as usize - 27 };
+                let mut used = if zeros < 5 { zeros as u32 + 1 } else { 5 };
                 if zeros > 0 {
-                    *l = L_LENGTHS[(zeros - 1) * 2 + bits.get(1) as usize];
+                    let extra = (peek >> (6 - used)) & 1;
+                    used += 1;
+                    *l = L_LENGTHS[(zeros - 1) * 2 + extra as usize];
                 }
+                bits.skip_no_fill(used);
             }
         }
         let parity = col & 1;
