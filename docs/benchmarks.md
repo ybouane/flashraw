@@ -28,23 +28,23 @@ cargo bench -p flashraw-gpu --bench gpu_pipeline  # GPU (needs an adapter)
 ## Results
 
 Full results: [`benches/results/linux-x86_64.md`](../benches/results/linux-x86_64.md).
-Median throughput over the set: **2,000 MP/s** decode, **590 MP/s** RAW → RGBA8.
+Median throughput over the set: **1,960 MP/s** decode, **580 MP/s** RAW → RGBA8.
 
 Per format (median throughput of the files in the set, MP/s):
 
 | Format | files | decode | RAW→RGB | | Format | files | decode | RAW→RGB |
 |---|---:|---:|---:|---|---|---:|---:|---:|
-| 3FR | 4 | 4,170 | 659 | | MOS | 3 | 1,619 | 586 |
-| ARW | 10 | 1,202 | 454 | | MRW | 4 | 35,857 | 821 |
-| CR2 | 4 | 703 | 374 | | NEF | 4 | 4,342 | 602 |
-| CR3 | 2 | 736 | 394 | | NRW | 2 | 6,491 | 702 |
-| CRW | 3 | 330 | 231 | | ORF | 4 | 1,710 | 455 |
-| DCR / DCS | 5 | 796–22,344 | 414–837 | | PEF | 4 | 15,160 | 603 |
-| DNG | 6 | 1,072 | 491 | | RAF | 4 | 4,290 | 511 |
-| ERF | 2 | 1,690 | 552 | | RW2 | 12 | 4,221 | 713 |
-| FFF | 2 | 1,126 | 503 | | SRW | 8 | 486 | 305 |
-| IIQ | 5 | 3,279 | 637 | | X3F | 2 | 307 | 220 |
-| KDC / MEF | 5 | 8,490–10,273 | 644–708 | | headerless / other | 6 | 5,070–6,884 | 725–743 |
+| 3FR | 4 | 4,114 | 659 | | MOS | 3 | 1,545 | 546 |
+| ARW | 10 | 1,748 | 587 | | MRW | 4 | 33,106 | 772 |
+| CR2 | 4 | 717 | 368 | | NEF | 4 | 4,375 | 592 |
+| CR3 | 2 | 724 | 382 | | NRW | 2 | 6,076 | 702 |
+| CRW | 3 | 318 | 227 | | ORF | 4 | 2,462 | 441 |
+| DCR / DCS | 5 | 800–16,429 | 412–755 | | PEF | 4 | 12,104 | 557 |
+| DNG | 6 | 1,084 | 476 | | RAF | 4 | 4,296 | 525 |
+| ERF | 2 | 1,614 | 531 | | RW2 | 12 | 4,398 | 694 |
+| FFF | 2 | 1,108 | 494 | | SRW | 8 | 552 | 327 |
+| IIQ | 5 | 3,438 | 637 | | X3F | 2 | 309 | 220 |
+| KDC / MEF | 5 | 7,715–10,059 | 642–723 | | headerless / other | 6 | 4,759–6,941 | 657–749 |
 
 Uncompressed and packed formats run at memory bandwidth; entropy-coded formats are
 bound by their entropy decoder (parallel over tiles, strips or blocks where the format
@@ -55,20 +55,21 @@ Largest files (ms):
 
 | Camera | Codec | MP | Decode | RAW→RGBA8 |
 |---|---|---:|---:|---:|
-| Phase One IQ4 150MP | IIQ L | 154 | 53.7 | 214.1 |
-| Phase One iXM-RS150F | IIQ S | 154 | 47.0 | 206.3 |
-| Hasselblad X2D 100C | uncompressed 3FR | 105 | 14.3 | 123.4 |
-| Hasselblad X2D 100C | Hasselblad LJPEG | 105 | 90.3 | 200.4 |
-| Fujifilm GFX100S | Fuji compressed | 103 | 155.5 | 255.5 |
-| Fujifilm GFX100S | 16-bit uncompressed | 103 | 13.1 | 123.2 |
-| Panasonic DC-GH6 | RW2 v8 | 100 | 204.3 | 311.6 |
-| Panasonic DC-S5 | RW2 v7 | 97 | 18.2 | 122.0 |
-| Panasonic DC-G9 | RW2 v5 | 82 | 13.8 | 102.4 |
+| Phase One IQ4 150MP | IIQ L | 154 | 52.7 | 216.2 |
+| Phase One iXM-RS150F | IIQ S | 154 | 44.8 | 204.8 |
+| Hasselblad X2D 100C | uncompressed 3FR | 105 | 14.6 | 124.2 |
+| Hasselblad X2D 100C | Hasselblad LJPEG | 105 | 92.4 | 202.2 |
+| Fujifilm GFX100S | Fuji compressed | 103 | 142.6 | 232.7 |
+| Fujifilm GFX100S | 16-bit uncompressed | 103 | 13.1 | 123.9 |
+| Panasonic DC-GH6 | RW2 v8 | 100 | 101.6 | 212.8 |
+| Panasonic DC-S5 | RW2 v7 | 97 | 16.8 | 127.8 |
+| Panasonic DC-G9 | RW2 v5 | 82 | 14.3 | 102.3 |
 
-Single sequential streams that cannot be split speculatively stay single-threaded:
-Samsung V2 rows start wherever the previous one ended and are predicted from earlier
-rows (a parse/reconstruct pipeline was measured and rejected — it gained 7% on x86 and
-lost 7% on Apple M1).
+Single sequential streams are decoded in parallel by speculation (lossless JPEG,
+Hasselblad, Nikon, Pentax, Panasonic v8 strips, Sony ARW1). Samsung V2 cannot be: rows
+start wherever the previous one ended and are predicted from earlier rows, so it runs
+on one thread with a staged block decoder (a parse/reconstruct pipeline was measured
+and rejected — it gained 7% on x86 and lost 7% on Apple M1).
 
 ## Kernels (criterion, `cargo bench -p flashraw --bench kernels`)
 

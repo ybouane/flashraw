@@ -28,11 +28,11 @@ representative files (AMD Ryzen 7 9700X, 16 threads):
 
 | | Median throughput | Largest file (154 MP IIQ) |
 |---|---:|---:|
-| Full decode | **2,000 MP/s** | 54 ms |
-| RAW → display RGB (bilinear) | **590 MP/s** | 214 ms |
+| Full decode | **1,960 MP/s** | 53 ms |
+| RAW → display RGB (bilinear) | **580 MP/s** | 216 ms |
 
-Single sequential entropy streams (CR2, lossless DNG, Hasselblad, Nikon, Pentax) are
-decoded on all cores by speculation. Details: [docs/benchmarks.md](docs/benchmarks.md).
+Single sequential entropy streams (CR2, lossless DNG, Hasselblad, Nikon, Pentax,
+Panasonic v8, Sony ARW1) are decoded on all cores by speculation. Details: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Rust
 
