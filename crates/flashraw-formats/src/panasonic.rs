@@ -26,68 +26,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     open_tiff(data, tiff, opts)
 }
 
-const ALIASES: &[(&str, &[&str])] = &[
-    ("DMC-FX150", &["DMC-FX180"]),
-    ("DC-FZ1000M2", &["DC-FZ10002", "V-Lux 5"]),
-    ("DMC-FZ1000", &["V-LUX (Typ 114)"]),
-    ("DMC-FZ2500", &["DMC-FZ2000", "DMC-FZH1"]),
-    ("DMC-FZ100", &["V-LUX 2"]),
-    ("DMC-FZ150", &["V-LUX 3"]),
-    ("DMC-FZ200", &["V-LUX 4"]),
-    ("DMC-FZ300", &["DMC-FZ330"]),
-    ("DMC-FZ35", &["DMC-FZ38"]),
-    ("DMC-FZ40", &["DMC-FZ42", "DMC-FZ45", "DC-FZ40", "DC-FZ42", "DC-FZ45"]),
-    ("DMC-FZ50", &["V-LUX 1", "V-LUX1"]),
-    ("DMC-FZ70", &["DMC-FZ72"]),
-    ("DC-FZ80", &["DC-FZ81", "DC-FZ82", "DC-FZ83", "DC-FZ85"]),
-    ("DMC-LC1", &["DIGILUX 2", "Digilux 2", "DIGILUX2"]),
-    ("DMC-LF1", &["C (Typ 112)"]),
-    ("DC-LX100M2", &["D-Lux 7"]),
-    ("DMC-LX100", &["D-LUX (Typ 109)", "D-Lux (Typ 109)"]),
-    ("DMC-LX1", &["D-Lux2", "D-LUX2", "D-LUX 2"]),
-    ("DMC-LX2", &["D-LUX 3", "D-LUX3"]),
-    ("DMC-LX3", &["D-LUX 4"]),
-    ("DMC-LX5", &["D-LUX 5"]),
-    ("DMC-LX7", &["D-LUX 6"]),
-    ("DMC-LX9", &["DMC-LX10", "DMC-LX15"]),
-    ("DMC-ZS100", &["DMC-ZS110", "DMC-TZ100", "DMC-TZ101", "DMC-TZ110", "DMC-TX1"]),
-    (
-        "DC-ZS200",
-        &[
-            "DC-ZS220",
-            "DC-TZ200",
-            "DC-TZ202",
-            "DC-TZ220",
-            "DC-TZ200D",
-            "DC-TZ202D",
-            "DC-TZ220D",
-            "DC-ZS200D",
-            "DC-ZS220DDC-TX2",
-            "C-Lux",
-            "CAM-DC25",
-        ],
-    ),
-    ("DMC-ZS40", &["DMC-TZ60", "DMC-TZ61"]),
-    ("DMC-ZS50", &["DMC-TZ70", "DMC-TZ71"]),
-    ("DMC-ZS60", &["DMC-TZ80", "DMC-TZ81", "DMC-TZ82", "DMC-TZ85"]),
-    ("DC-ZS70", &["DC-TZ90", "DC-TZ91", "DC-TZ92", "DC-TZ93"]),
-    ("DC-ZS80", &["DC-TZ95", "DC-TZ96", "DC-TZ97"]),
-    ("DC-G100", &["DC-G110"]),
-    ("DC-G99", &["DC-G90", "DC-G91", "DC-G95"]),
-    ("DMC-G7", &["DMC-G70"]),
-    ("DMC-G8", &["DMC-G80", "DMC-G81", "DMC-G85"]),
-    ("DMC-GH4", &["AG-GH4", "CGO4"]),
-    ("DC-GF10", &["DC-GF90", "DC-GX880"]),
-    ("DC-GF9", &["DC-GX850", "DC-GX800"]),
-    ("DMC-GM1", &["DMC-GM1S"]),
-    ("DMC-GX85", &["DMC-GX80", "DMC-GX7MK2"]),
-    ("DC-GX9", &["DC-GX7MK3"]),
-    ("DMC-L1", &["DIGILUX 3", "DIGILUX3"]),
-];
-
 fn base_model(model: &str) -> &str {
-    let m = model.trim();
-    ALIASES.iter().find(|(_, al)| al.iter().any(|a| a.eq_ignore_ascii_case(m))).map(|(canon, _)| *canon).unwrap_or(m)
+    flashraw_camera_db::base_model("Panasonic", model)
 }
 
 fn fallback_table(model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
@@ -96,35 +36,6 @@ fn fallback_table(model: &str) -> Option<&'static flashraw_camera_db::FallbackMa
         t.canonical_make.eq_ignore_ascii_case("Panasonic") && m.starts_with(&t.model_prefix.to_ascii_uppercase())
     })
 }
-
-/// (raw width, raw height, left, top, width delta, height delta).
-const MARGINS: &[[i32; 6]] = &[
-    [3130, 1743, 4, 0, -6, 0],
-    [3130, 2055, 4, 0, -6, 0],
-    [3130, 2319, 4, 0, -6, 0],
-    [3170, 2103, 18, 0, -42, 20],
-    [3170, 2367, 18, 13, -42, -21],
-    [3177, 2367, 0, 0, -1, 0],
-    [3304, 2458, 0, 0, -1, 0],
-    [3330, 2463, 9, 0, -5, 0],
-    [3330, 2479, 9, 0, -17, 4],
-    [3370, 1899, 15, 0, -44, 20],
-    [3370, 2235, 15, 0, -44, 20],
-    [3370, 2511, 15, 10, -44, -21],
-    [3690, 2751, 3, 0, -8, -3],
-    [3710, 2751, 0, 0, -3, 0],
-    [3724, 2450, 0, 0, 0, -2],
-    [3770, 2487, 17, 0, -44, 19],
-    [3770, 2799, 17, 15, -44, -19],
-    [3880, 2170, 6, 0, -6, 0],
-    [4060, 3018, 0, 0, 0, -2],
-    [4290, 2391, 3, 0, -8, -1],
-    [4330, 2439, 17, 15, -44, -19],
-    [4508, 2962, 0, 0, -3, -4],
-    [4508, 3330, 0, 0, -3, -6],
-    [10480, 7794, 0, 0, -2, 0],
-    [11560, 8680, 8, 8, -16, -16],
-];
 
 #[derive(Clone)]
 enum Payload<'a> {
@@ -291,11 +202,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     height = (height + 12).min(raw_h as i64);
     let (mut left, mut top) = (0i64, 0i64);
-    if let Some(m) = MARGINS.iter().find(|m| m[0] as u32 == raw_w && m[1] as u32 == raw_h) {
-        left = m[2] as i64;
-        top = m[3] as i64;
-        width += m[4] as i64;
-        height += m[5] as i64;
+    // Older bodies without sensor-border tags: geometry by raw size (camera database).
+    if let Some(m) = flashraw_camera_db::size_rule("Panasonic", raw_w, raw_h) {
+        left = m.left as i64;
+        top = m.top as i64;
+        width += m.width_delta as i64;
+        height += m.height_delta as i64;
     }
     if top % 2 == 1 {
         top += 1;

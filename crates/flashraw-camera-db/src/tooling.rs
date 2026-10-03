@@ -10,49 +10,71 @@ include!("schema.rs");
 /// Errors from tooling operations.
 pub type ToolResult<T> = Result<T, String>;
 
-fn file_key(make: &str) -> String {
-    let c = crate::canonical_make(make);
-    let base = if c.is_empty() { make } else { c };
-    base.to_ascii_lowercase().replace(|c: char| !c.is_ascii_alphanumeric(), "-").trim_matches('-').to_string()
+/// Write the database as pretty-printed JSON (entries sorted for stable diffs).
+pub fn write_db(path: &Path, db: &DbFile) -> ToolResult<()> {
+    let mut db = db.clone();
+    db.version = db.version.max(1);
+    db.cameras.sort_by(|a, b| {
+        (crate::canonical_make(&a.make), a.make.to_lowercase(), a.model.to_lowercase(), a.mode.to_lowercase()).cmp(&(
+            crate::canonical_make(&b.make),
+            b.make.to_lowercase(),
+            b.model.to_lowercase(),
+            b.mode.to_lowercase(),
+        ))
+    });
+    let value = serde_json::to_value(&db).map_err(|e| e.to_string())?;
+    let mut text = String::new();
+    format_json(&value, 0, &mut text);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(path, text + "\n").map_err(|e| e.to_string())
 }
 
-/// Write cameras and matrices as one TOML file per canonical make into `dir`.
-pub fn write_db(dir: &Path, cameras: &[DbCamera], matrices: &[DbMatrix]) -> ToolResult<usize> {
-    let mut files: BTreeMap<String, DbFile> = BTreeMap::new();
-    for c in cameras {
-        files.entry(file_key(&c.make)).or_default().cameras.push(c.clone());
-    }
-    for m in matrices {
-        files.entry(file_key(&m.canonical_make)).or_default().matrices.push(m.clone());
-    }
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    for (k, f) in &files {
-        let mut text = String::from(
-            "# FlashRaw camera database; see camera-db/README.md.
-
-",
-        );
-        text.push_str(&toml::to_string(f).map_err(|e| e.to_string())?);
-        std::fs::write(dir.join(format!("{k}.toml")), text).map_err(|e| e.to_string())?;
-    }
-    Ok(files.len())
-}
-
-/// Load all TOML files from a directory.
-pub fn load_db(dir: &Path) -> ToolResult<DbFile> {
-    let mut all = DbFile::default();
-    let mut entries: Vec<_> =
-        std::fs::read_dir(dir).map_err(|e| e.to_string())?.filter_map(|e| e.ok()).map(|e| e.path()).collect();
-    entries.sort();
-    for p in entries {
-        if p.extension().is_some_and(|x| x == "toml") {
-            let text = std::fs::read_to_string(&p).map_err(|e| e.to_string())?;
-            let f: DbFile = toml::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))?;
-            all.cameras.extend(f.cameras);
-            all.matrices.extend(f.matrices);
+/// Pretty-print JSON with 2-space indentation, keeping short arrays of scalars (matrices,
+/// crops, levels, alias lists) on one line so the file stays reviewable.
+fn format_json(v: &serde_json::Value, indent: usize, out: &mut String) {
+    use serde_json::Value;
+    let pad = |n: usize| " ".repeat(n);
+    match v {
+        Value::Object(m) if m.is_empty() => out.push_str("{}"),
+        Value::Object(m) => {
+            out.push_str("{\n");
+            for (i, (k, val)) in m.iter().enumerate() {
+                out.push_str(&pad(indent + 2));
+                out.push_str(&serde_json::to_string(k).unwrap_or_default());
+                out.push_str(": ");
+                format_json(val, indent + 2, out);
+                out.push_str(if i + 1 < m.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&pad(indent));
+            out.push('}');
         }
+        Value::Array(a) if a.is_empty() => out.push_str("[]"),
+        Value::Array(a) => {
+            let scalars = a.iter().all(|x| !x.is_object() && !x.is_array());
+            let inline = serde_json::to_string(v).unwrap_or_default();
+            if scalars && inline.len() <= 160 {
+                out.push_str(&inline.replace(',', ", "));
+                return;
+            }
+            out.push_str("[\n");
+            for (i, x) in a.iter().enumerate() {
+                out.push_str(&pad(indent + 2));
+                format_json(x, indent + 2, out);
+                out.push_str(if i + 1 < a.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&pad(indent));
+            out.push(']');
+        }
+        other => out.push_str(&serde_json::to_string(other).unwrap_or_default()),
     }
-    Ok(all)
+}
+
+/// Load the JSON database.
+pub fn load_db(path: &Path) -> ToolResult<DbFile> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Validation problems found in a database.
@@ -89,6 +111,20 @@ pub fn validate(db: &DbFile) -> Vec<String> {
             if x < 0 || y < 0 {
                 problems.push(format!("{id}: negative crop origin"));
             }
+        }
+    }
+    for g in &db.model_aliases {
+        if g.model.trim().is_empty() || g.aliases.is_empty() {
+            problems.push(format!("alias group {} {:?}: empty", g.canonical_make, g.model));
+        }
+    }
+    let mut sizes = BTreeMap::new();
+    for r in &db.size_rules {
+        if sizes.insert((r.canonical_make.to_lowercase(), r.raw_width, r.raw_height), ()).is_some() {
+            problems.push(format!("size rule {} {}x{}: duplicate", r.canonical_make, r.raw_width, r.raw_height));
+        }
+        if r.raw_width == 0 || r.raw_height == 0 {
+            problems.push(format!("size rule {}: zero dimension", r.canonical_make));
         }
     }
     for m in &db.matrices {

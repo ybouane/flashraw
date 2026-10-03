@@ -344,45 +344,9 @@ fn visible_size(model: &str, raw_w: u32, h: u32, payload: &Payload) -> (u32, u32
     (w.min(raw_w), h)
 }
 
+/// Reference model for Olympus EXIF names that differ from marketing names (camera database aliases).
 fn normalized_model(model: &str) -> &str {
-    const ALIASES: &[(&str, &[&str])] = &[
-        ("AIR A01", &["AIR-A01"]),
-        ("C-3030Z", &["C3030Z"]),
-        ("C-5050Z", &["C5050Z"]),
-        ("C-5060WZ", &["C5060WZ"]),
-        ("C-7000Z", &["C7000Z", "C70Z,C7000Z", "C70Z"]),
-        ("C-7070WZ", &["C7070WZ"]),
-        ("C-8080WZ", &["C8080WZ"]),
-        ("C-350Z", &["C350Z", "X200,D560Z,C350Z", "X200", "D560Z"]),
-        ("C-740UZ", &["C740UZ"]),
-        ("C-770UZ", &["C770UZ"]),
-        ("E-20", &["E-20,E-20N,E-20P", "E-20N", "E-20P"]),
-        ("E-M10 Mark II", &["E-M10MarkII", "E-M10_M2", "piX 5oo"]),
-        ("E-M10 Mark III", &["E-M10MarkIII", "E-M10_M3"]),
-        ("E-M10 Mark IV", &["E-M10MarkIV", "E-M10_M4"]),
-        ("E-M1 Mark II", &["E-M1MarkII", "E-M1_M2"]),
-        ("E-M1 Mark III", &["E-M1MarkIII", "E-M1_M3"]),
-        ("E-M5 Mark II", &["E-M5MarkII", "E-M5_M2"]),
-        ("E-M5 Mark III", &["E-M5MarkIII", "E-M5_M3"]),
-        ("OM-1 Mark II", &["OM-1MarkII", "OM-1_M2"]),
-        ("SH-2", &["SH-3"]),
-        ("SP-310", &["SP310"]),
-        ("SP-320", &["SP320"]),
-        ("SP-350", &["SP350"]),
-        ("SP-500UZ", &["SP500UZ"]),
-        ("SP-510UZ", &["SP510UZ"]),
-        ("SP-550UZ", &["SP550UZ"]),
-        ("SP-560UZ", &["SP560UZ"]),
-        ("SP-565UZ", &["SP565UZ"]),
-        ("SP-570UZ", &["SP570UZ"]),
-        ("Stylus 1", &["STYLUS1", "STYLUS1s", "STYLUS1,1s"]),
-    ];
-    for (canon, names) in ALIASES {
-        if names.contains(&model) {
-            return canon;
-        }
-    }
-    model
+    flashraw_camera_db::base_model("Olympus", model)
 }
 
 /// First non-default orientation in IFD order.

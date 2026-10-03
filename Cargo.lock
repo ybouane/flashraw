@@ -467,7 +467,7 @@ name = "flashraw-camera-db"
 version = "0.1.0"
 dependencies = [
  "serde",
- "toml",
+ "serde_json",
 ]
 
 [[package]]

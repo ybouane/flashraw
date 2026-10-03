@@ -94,17 +94,17 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum CameraDbCmd {
-    /// Validate camera-db/cameras/*.toml.
+    /// Validate the database file.
     Validate {
-        #[arg(default_value = "camera-db/cameras")]
-        dir: PathBuf,
+        #[arg(default_value = "camera-db/cameras.json")]
+        db: PathBuf,
     },
-    /// Re-normalise (load and rewrite) the database files.
+    /// Re-normalise (load, sort and rewrite) the database file.
     Generate {
-        #[arg(default_value = "camera-db/cameras")]
-        dir: PathBuf,
+        #[arg(default_value = "camera-db/cameras.json")]
+        db: PathBuf,
     },
-    /// Compare two database directories.
+    /// Compare two database files.
     Compare { a: PathBuf, b: PathBuf },
     /// Show statistics of the compiled-in database.
     Stats,
@@ -260,24 +260,30 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
 fn camera_db(c: CameraDbCmd) -> Result<ExitCode, String> {
     use flashraw_camera_db::tooling::*;
     match c {
-        CameraDbCmd::Validate { dir } => {
-            let db = load_db(&dir)?;
-            let problems = validate(&db);
+        CameraDbCmd::Validate { db } => {
+            let d = load_db(&db)?;
+            let problems = validate(&d);
             for p in &problems {
                 println!("{p}");
             }
             println!(
-                "{} cameras, {} fallback matrices, {} problems",
-                db.cameras.len(),
-                db.matrices.len(),
+                "{} cameras, {} fallback matrices, {} alias groups, {} size rules, {} problems",
+                d.cameras.len(),
+                d.matrices.len(),
+                d.model_aliases.len(),
+                d.size_rules.len(),
                 problems.len()
             );
             Ok(if problems.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(1) })
         }
-        CameraDbCmd::Generate { dir } => {
-            let db = load_db(&dir)?;
-            let n = write_db(&dir, &db.cameras, &db.matrices)?;
-            println!("rewrote {n} files ({} cameras); rebuild to regenerate the compiled tables", db.cameras.len());
+        CameraDbCmd::Generate { db } => {
+            let d = load_db(&db)?;
+            write_db(&db, &d)?;
+            println!(
+                "rewrote {} ({} cameras); rebuild to regenerate the compiled tables",
+                db.display(),
+                d.cameras.len()
+            );
             Ok(ExitCode::SUCCESS)
         }
         CameraDbCmd::Compare { a, b } => {
@@ -294,7 +300,13 @@ fn camera_db(c: CameraDbCmd) -> Result<ExitCode, String> {
             for c in all {
                 *makes.entry(c.canonical_make).or_default() += 1;
             }
-            println!("{} entries", all.len());
+            println!(
+                "{} entries, {} fallback matrices, {} alias groups, {} size rules",
+                all.len(),
+                flashraw_camera_db::MATRICES.len(),
+                flashraw_camera_db::ALIAS_GROUPS.len(),
+                flashraw_camera_db::SIZE_RULES.len()
+            );
             for (m, n) in makes {
                 println!("  {m:24} {n}");
             }

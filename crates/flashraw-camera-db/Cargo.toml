@@ -11,14 +11,14 @@ include = ["src/**", "build.rs", "data/**", "Cargo.toml"]
 
 [features]
 # Validate/compare tooling used by `flashraw camera-db ...` (not needed at runtime).
-tooling = ["dep:serde", "dep:toml"]
+tooling = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 serde = { workspace = true, optional = true }
-toml = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true, features = ["preserve_order"] }
 
 [build-dependencies]
-toml.workspace = true
+serde_json.workspace = true
 serde.workspace = true
 
 [lints]

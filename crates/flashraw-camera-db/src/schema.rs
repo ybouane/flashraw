@@ -1,14 +1,64 @@
-// Shared between build.rs (via `include!`) and the `tooling` module: the on-disk
-// TOML schema of camera-db/cameras/*.toml.
+// Shared between build.rs (via `include!`) and the `tooling` module: the schema of
+// the single camera database file, camera-db/cameras.json.
 
+/// The whole camera database.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DbFile {
-    #[serde(default, rename = "camera", skip_serializing_if = "Vec::is_empty")]
+    /// Schema version of this file.
+    #[serde(default)]
+    pub version: u32,
+    /// Per-camera (and per decoder mode) entries.
+    #[serde(default)]
     pub cameras: Vec<DbCamera>,
     /// Fallback colour data matched by canonical make + model prefix (table order).
-    #[serde(default, rename = "matrix", skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub matrices: Vec<DbMatrix>,
+    /// Model-name aliases: rebadged / regional names that map to a reference model.
+    #[serde(default)]
+    pub model_aliases: Vec<DbAliasGroup>,
+    /// Sensor geometry selected by raw buffer size (older bodies without margin metadata).
+    #[serde(default)]
+    pub size_rules: Vec<DbSizeRule>,
+}
+
+/// Rebadged or regional model names that share a reference model's data.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbAliasGroup {
+    pub canonical_make: String,
+    /// The reference model name.
+    pub model: String,
+    /// Other names written by cameras sharing the reference model's data.
+    pub aliases: Vec<String>,
+}
+
+/// Geometry for a canonical make and exact raw buffer size: active area left/top and
+/// width/height deltas relative to the buffer.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbSizeRule {
+    pub canonical_make: String,
+    pub raw_width: u32,
+    pub raw_height: u32,
+    pub left: i32,
+    pub top: i32,
+    pub width_delta: i32,
+    pub height_delta: i32,
+}
+
+/// How an entry's values were confirmed against sample files.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbVerification {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub corpus_files: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -59,6 +109,8 @@ pub struct DbCamera {
     pub hints: std::collections::BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_size_match: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<DbVerification>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]

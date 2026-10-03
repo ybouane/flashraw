@@ -1,6 +1,6 @@
 //! # flashraw-camera-db
 //!
-//! Static camera database compiled from `camera-db/cameras/*.toml` at build time
+//! Static camera database compiled from `camera-db/cameras.json` at build time
 //! (see `build.rs`). Lookups are binary searches over a sorted, normalised key
 //! index — no parsing happens at runtime.
 //!
@@ -70,7 +70,49 @@ pub struct FallbackMatrix {
     pub color_matrix: &'static [i32],
 }
 
+/// Rebadged / regional model names sharing a reference model's data.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AliasGroup {
+    pub canonical_make: &'static str,
+    pub model: &'static str,
+    pub aliases: &'static [&'static str],
+}
+
+/// Sensor geometry selected by exact raw buffer size (bodies without margin metadata).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SizeRule {
+    pub canonical_make: &'static str,
+    pub raw_width: u32,
+    pub raw_height: u32,
+    pub left: i32,
+    pub top: i32,
+    pub width_delta: i32,
+    pub height_delta: i32,
+}
+
 include!(concat!(env!("OUT_DIR"), "/cameras.rs"));
+
+/// Map a rebadged / regional model name to its reference model (case-insensitive);
+/// returns `model` unchanged when it is not an alias.
+pub fn base_model<'a>(canonical_make: &str, model: &'a str) -> &'a str
+where
+    'static: 'a,
+{
+    let m = model.trim();
+    ALIAS_GROUPS
+        .iter()
+        .filter(|g| g.canonical_make.eq_ignore_ascii_case(canonical_make))
+        .find(|g| g.aliases.iter().any(|a| a.eq_ignore_ascii_case(m)))
+        .map(|g| g.model)
+        .unwrap_or(m)
+}
+
+/// Geometry rule for a canonical make and exact raw buffer size.
+pub fn size_rule(canonical_make: &str, raw_width: u32, raw_height: u32) -> Option<&'static SizeRule> {
+    SIZE_RULES.iter().find(|r| {
+        r.raw_width == raw_width && r.raw_height == raw_height && r.canonical_make.eq_ignore_ascii_case(canonical_make)
+    })
+}
 
 /// Fallback matrix lookup by canonical make and model (first prefix match in table order,
 /// preferring the longest prefix on ties of the same make).
