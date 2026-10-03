@@ -18,8 +18,9 @@ data-parallel:
 crates/flashraw-gpu/
   src/context.rs   adapter/device management (lazy, cached, async + blocking), adapter class,
                    pipeline cache (override-specialised), buffer pool, error capture
-  src/run.rs       GpuFrame/GpuInput (what to upload), GpuOp (what to compute), GpuContext::run
-  src/image.rs     GpuImage (device-resident result), download, to_texture
+  src/run.rs       GpuFrame/GpuInput (what to upload), GpuOp (what to compute), GpuContext::run,
+                   band planner (tiling) and the pipelined band loop
+  src/image.rs     GpuImage (device-resident result, single buffer or tiles), download, to_texture
   src/kernels.rs   Params block (mirrors WGSL), calibration/CFA/sRGB tables, scalar reference model
   src/policy.rs    cost model for Backend::Auto + one-time GPU calibration
 shaders/           WGSL sources (shared by native and browser builds, include_str!'d)
@@ -48,7 +49,8 @@ uncaptured-error handler, and returned as `Error::GpuUnavailable`. Set
 LUT, CFA layout, output mode), so per-file branches are compiled out. They are cached
 per context.
 
-**Buffers.** Large allocations are pooled (≤ 1 GB kept). On Apple Silicon a fresh
+**Buffers.** Large allocations are pooled (≤ 1 GB kept). Every binding names an
+explicit size, so a pooled buffer larger than the binding limit is still usable. On Apple Silicon a fresh
 200 MB buffer costs several milliseconds of page mapping and zero-fill: before pooling,
 "kernel" time for a 47 MP develop was 16.6 ms, and with pooling 5.8 ms.
 * **Unified memory** (`MAPPABLE_PRIMARY_BUFFERS`): input is written straight into the
@@ -110,7 +112,8 @@ store.
      are uploaded and unpacked on the GPU. Region decodes window into the payload.
    * Otherwise (entropy-coded payloads, black level measured from masked pixels, float
      data), the CPU decodes and the u16/f32 samples are uploaded once.
-2. **Compute.** One dispatch.
+2. **Compute.** One dispatch per band. There is one band unless the frame exceeds the
+   adapter's buffer limits (see [Tiling](#tiling-frames-beyond-the-adapter-limits)).
 3. **Output.** Downloaded for `RawU16`, `NormalizedF32`, `LinearRgbF32` and `Rgba8`.
    The `Gpu*` variants (`GpuRawU16`, `GpuNormalizedF32`, `GpuLinearRgbF32`, `GpuRgba8`)
    leave it on the device and return `RawPixelData::Gpu(Arc<GpuImage>)`.
@@ -123,6 +126,108 @@ store.
 * `backend.postprocess`, e.g. `GPU Apple M1 Ultra (Metal, integrated), kernel 5.80 ms [auto: …]`.
   The kernel time comes from GPU timestamps when supported.
 * `backend.decode`: `GPU unpack (…)` when the GPU unpacked the payload.
+* `, N bands` appended to `backend.postprocess` when the frame was tiled.
+
+## Tiling (frames beyond the adapter limits)
+
+Frames of any size work. When the input or the output of a run does not fit in one
+storage binding, `GpuContext::run` processes the frame in horizontal bands.
+
+**Band planning** (`run.rs`, `BandGeometry::plan`). The budget per binding is
+`min(max_storage_buffer_binding_size, max_buffer_size, 4 GB)` (32-bit addressing), or
+the cap set with `GpuContext::override_limits`. A band is a range of *computed rows*:
+frame rows for unpack/normalise, developed rows for develop. The planner picks the
+largest row count whose input and output both fit the budget:
+
+| Kernel | Input rows read for computed rows `[y0, y1)` | Band granularity |
+|---|---|---|
+| unpack, normalise | `[y0, y1)` | 2 rows when a row holds an odd number of u16 samples, so bands start on whole output words |
+| develop (bilinear / 3x3 same-colour) | `[crop_y + y0 − 1, crop_y + y1 + 1)` (±1-row halo) | multiples of the 16-row workgroup tile |
+| develop half-size | `[crop_y + 2·y0, crop_y + 2·y1)` (whole 2x2 blocks) | multiples of 16 rows |
+
+Bands span the full width, so no column halo is needed. The number of rows per band is
+also bounded by `max_compute_workgroups_per_dimension`.
+
+**Coordinates stay global.** Each band gets its own `Params` (one uniform buffer,
+256-byte stride). `width`/`height`, `origin`, the crop and the developed size are those
+of the whole frame. The CFA phase, black pattern, row/column deltas and border handling
+are therefore exactly those of an untiled run. Only two things are band-relative:
+
+* **The source fetch.** `src_y` is the frame row of the first uploaded row; the kernel
+  reads row `y − src_y` of the band's upload.
+* **The store.** `band_y`/`band_end` select the rows the dispatch computes.
+  `dst_x`/`dst_y`/`dst_stride`/`dst_off` locate the output rectangle bound at `dst`.
+
+As a result, the banded output is **bit-identical** to the untiled one (tested).
+
+**Input per band.** Each band uploads only the rows it needs:
+
+* **Packed payloads:** bytes `[(win.y + in0) · row_stride, (win.y + in1 − 1) · row_stride +
+  max(row_stride, row_bytes))`, clipped to the payload.
+  * The slice is uploaded from the 4-byte-aligned address below its start, and
+    `src_offset` skips the alignment bytes.
+  * `src_len` keeps the "bytes past the payload read as 0" rule for truncated files.
+  * Large packed files therefore still skip the CPU decode.
+* **u16/f32 rasters:** whole raster rows `[win.y + in0, win.y + in1)`; `src_x` windows
+  the columns.
+
+Region decodes also benefit: they upload only the rows of the region.
+
+**Output.** One of three layouts:
+
+1. **Single binding** (output ≤ budget): one buffer, bound whole by every band.
+2. **Sub-range binding** (output ≤ `max_buffer_size`, row bands): one buffer. Each band
+   binds only the byte range it writes. The range starts at an offset aligned to
+   `min_storage_buffer_offset_alignment`, and `dst_off` absorbs the remainder. The
+   result is an ordinary single-buffer `GpuImage`.
+3. **Tiled** (output > `max_buffer_size`, or rotated RGBA8 output > budget): one buffer
+   per band, and the `GpuImage` is tiled (see below).
+
+**Orientation.** A band of developed rows `[y0, y1)` covers this part of the RGBA8
+output (`dw`, `dh` = developed size):
+
+| EXIF orientation | Output rectangle |
+|---|---|
+| 1, 2 | rows `[y0, y1)` |
+| 3, 4 | rows `[dh − y1, dh − y0)` |
+| 5, 8 | columns `[y0, y1)`, full height |
+| 6, 7 | columns `[dh − y1, dh − y0)`, full height |
+
+Column bands are not contiguous in a row-major buffer. Rotated outputs larger than one
+binding therefore use the tiled layout, with full-height column tiles.
+
+**Tiled `GpuImage`.**
+* **Shape:** `is_tiled()` is true, `buffer()` returns `None`, and `tiles()` returns the
+  `GpuTile { rect, buffer }` list in image order. Tiles are disjoint and cover the image.
+* **Tile layout:** each tile holds the pixels of `rect`, row-major, with
+  `rect.width * channels` samples per row, starting at byte 0. The element format is
+  the same as for an untiled image.
+* **Your own pipeline:** bind each tile's buffer and offset your coordinates by
+  `rect.x`/`rect.y`.
+* **Built-in helpers:**
+  * `download()` reassembles the frame on the host (contiguous copies for row tiles,
+    row by row for column tiles);
+  * `to_texture()` writes every tile into one texture (one dispatch per tile, offset
+    by `rect`);
+  * `into_tiles()` takes ownership of the buffers.
+
+**Pipelining.** Bands alternate between two upload slots. The host fills the slot for
+band N+1 while the GPU runs band N. Before mapping a slot, FlashRaw waits only for the
+submission that last used it (band N−1), not for the whole queue. What a slot is
+depends on the memory model:
+* **Unified memory:** the storage buffer itself (mapped write).
+* **Elsewhere:** a mapped staging buffer, copied into the storage buffer at the start
+  of the band's command buffer; inputs under 1 MB use `write_buffer`.
+
+Output, slot and staging buffers come from the pool. Timings with several bands:
+* `GpuTimings::upload_ms` counts only host copies; waiting for a slot is part of
+  `compute_ms`;
+* `kernel_ms` sums the per-band GPU timestamps.
+
+**Limit override.** `GpuContext::override_limits(max_binding, max_buffer)` caps the
+binding and buffer sizes FlashRaw plans with (4 KB minimum). It bounds peak device
+memory. The tests and the benchmark also use it to force tiling on adapters with large
+limits.
 
 ## Backend selection (`Backend::Auto`)
 
@@ -140,14 +245,26 @@ Otherwise a cost model compares estimated end-to-end times:
 
 ```
 cpu = [samples / cpu_unpack if packed] + pixels / cpu_develop        (or normalize / half rates)
-gpu = overhead + upload_bytes / upload_bw + samples / gpu_develop + out_bytes / download_bw
+gpu = overhead + (bands - 1) * band_overhead
+      + upload_bytes / upload_bw + samples / gpu_develop + out_bytes / download_bw
 use GPU if gpu < 0.85 * cpu
 ```
 
-* The **GPU numbers** come from a one-time micro-benchmark per context: a synthetic
-  2048x2048 12-bit packed frame through develop, half-size, unpack and normalise;
-  upload at two sizes to separate fixed cost from bandwidth; download. It takes about
-  80 ms on the M1 Ultra, including pipeline compilation.
+There is no size cut-off: frames beyond the adapter's limits run tiled.
+* `bands` comes from `GpuContext::estimate_bands` (input and output size against the
+  binding budget).
+* `band_overhead` is measured by the calibration, which runs its frame in 8 bands and
+  compares with one band.
+
+* The **GPU numbers** come from a one-time micro-benchmark per context. It takes about
+  100 ms on the M1 Ultra, including pipeline compilation, and runs:
+  * a synthetic 2048x2048 12-bit packed frame through develop, half-size, unpack and
+    normalise;
+  * transfers at two sizes, to separate fixed cost from bandwidth. A transfer is the
+    host copy plus the non-kernel part of the compute wall time, which includes device
+    copies on discrete GPUs;
+  * the 8-band run;
+  * a download.
 * The **CPU numbers** come from timing the CPU kernels on a 2048x1024 frame (about
   15 ms, cached per thread count).
 * `FLASHRAW_GPU_CALIBRATION=static` uses conservative per-class defaults instead.
@@ -167,10 +284,13 @@ applications do.
   * `GpuImage::buffer()` is a `STORAGE | COPY_SRC` buffer (plus `MAP_READ` on unified
     memory). RGBA8 is one `u32` per pixel (`R | G<<8 | B<<16 | A<<24`); f32 RGB is
     3 floats per pixel; u16 is two samples per word.
+  * For tiled images (larger than one storage binding) `buffer()` returns `None`; use
+    `GpuImage::tiles()` instead (see Tiling).
   * `GpuImage::to_texture()` produces an `Rgba8Unorm` texture
     (`TEXTURE_BINDING | STORAGE_BINDING | COPY_SRC`).
   * Buffers come from FlashRaw's pool and are recycled when the `GpuImage` is dropped.
-    Keep it alive while the GPU uses the buffer, or take ownership with `into_buffer()`.
+    Keep it alive while the GPU uses the buffer, or take ownership with `into_buffer()`
+    (untiled) or `into_tiles()`.
     `flashraw_gpu::wgpu` re-exports the wgpu version used.
 * **WebGPU (browser).** The crate builds for `wasm32-unknown-unknown`
   (`cargo check -p flashraw-gpu --target wasm32-unknown-unknown`, and `flashraw` with
@@ -236,6 +356,62 @@ Reading the numbers:
   --output rgba8` gives 33 ms for the Q2, `--backend gpu` 17 ms and `--backend auto`
   14 ms; each of those CLI numbers includes per-process warm-up).
 
+### Tiling (forced bands)
+
+On the M1 Ultra, both the storage-binding limit and the buffer limit are 4.29 GB, so
+no real frame needs tiling there. To measure what tiling costs, the bands were forced:
+* `FLASHRAW_BENCH_BAND_MB` caps the binding size;
+* `FLASHRAW_BENCH_TILED=1` caps the buffer size too, so resident outputs are tiled
+  (one buffer per band).
+
+Same command as above, median of 7, RAW→RGBA8 bilinear. Half-size behaves the same way
+and is omitted.
+
+| File | MP | Bands config | Bands | CPU ms | GPU ms (download) | GPU ms (resident) |
+|---|---|---|---|---|---|---|
+| Phase One IQ4 150MP (IIQ L 14) | 154.0 | natural (untiled) | 1 | 149.9 | 94.2 | 77.1 |
+| | | 64 MB bindings, one output buffer | 10 | 149.7 | 82.8 | 74.0 |
+| | | 64 MB, tiled output | 10 | 148.1 | 92.7 | 73.8 |
+| | | 16 MB bindings, one output buffer | 37 | 144.3 | 88.4 | 81.3 |
+| | | 16 MB, tiled output | 37 | 143.2 | 99.0 | 75.7 |
+| Fujifilm GFX100S II (uncompressed) | 103.4 | natural (untiled) | 1 | 75.7 | 31.1 | 18.6 |
+| | | 64 MB bindings, one output buffer | 7 | 75.8 | 31.6 | 14.6 |
+| | | 64 MB, tiled output | 7 | 77.5 | 33.5 | 20.7 |
+| | | 16 MB bindings, one output buffer | 25 | 76.7 | 31.8 | 15.1 |
+| | | 16 MB, tiled output | 25 | 77.2 | 37.8 | 22.4 |
+| Hasselblad X2D 100C (3FR) | 105.3 | natural (untiled) | 1 | 79.8 | 44.1 | 28.9 |
+| | | 64 MB bindings, one output buffer | 7 | 81.5 | 38.3 | 27.6 |
+| | | 64 MB, tiled output | 7 | 79.4 | 39.4 | 32.3 |
+| | | 16 MB bindings, one output buffer | 25 | 80.6 | 42.6 | 33.9 |
+| | | 16 MB, tiled output | 25 | 77.8 | 47.7 | 31.7 |
+
+Two more large files at natural limits (no tiling), RAW→RGBA8:
+
+| File | MP | Payload | CPU ms | GPU ms (download) | GPU ms (resident) |
+|---|---|---|---|---|---|
+| Sony ILCE-7RM5 uncompressed | 61.2 | packed 14-bit | 44.1 | 17.2 | 11.1 |
+| Light L16 linear DNG | 64.6 | 3 planes, uncompressed | 51.5 | 32.0 | 24.8 |
+
+Reading the numbers:
+
+* **Banding costs little.** With one output buffer and sub-range bindings, 7–37 bands
+  are within run-to-run noise of the untiled run, and sometimes faster. Two effects
+  explain it: the upload of band N+1 overlaps the kernel of band N, and the input
+  slots are band-sized instead of frame-sized.
+* **Tiled outputs cost more to read back.** Separate per-band buffers add 2–8 ms to
+  100–150 MP downloads (one map per tile), and the summed per-band kernel timestamps
+  are higher. FlashRaw only tiles the output when it must, so prefer adapters or caps
+  where `max_buffer_size` allows the single-buffer layouts.
+* **Two of these files include a CPU decode in every column.**
+  * The IQ4 payload is entropy-coded.
+  * The 3FR payload is packed, but its black level is measured from masked pixels, so
+    the CPU decodes it first.
+  * The GFX100S II payload is unpacked on the GPU.
+* **No discrete GPU was available to measure.** On a discrete GPU, each band uses the
+  staging path: a mapped staging buffer plus a device copy. Overlapping the PCIe upload
+  of band N+1 with the kernel of band N should matter more there than on unified
+  memory, but this is unmeasured.
+
 ## Limitations
 
 * **Rendering scope:** only bilinear / 3x3 same-colour / superpixel demosaic and a
@@ -244,9 +420,15 @@ Reading the numbers:
 * **Interop requires a shared device:** outputs live on the device of the context that
   produced them. Use `GpuContext::from_device` for zero-copy interop with your own
   device.
-* **Buffer-size limits:** frames larger than the adapter's `max_storage_buffer_binding_size`
-  are rejected with `Error::LimitExceeded`; Auto falls back to the CPU in that case.
-  There is no tiling yet. Indices are 32-bit, so payloads must be under 4 GB.
+* **Buffer-size limits:** frames beyond the adapter's binding/buffer limits are tiled
+  (see Tiling).
+  * Only a band row larger than the binding budget is rejected
+    (`Error::LimitExceeded`); that would take a row of about 1 GB.
+  * Indices are 32-bit *per band*, so one band uploads at most 4 GB. Whole frames have
+    no such limit.
+  * `GpuImage::to_texture` is still bounded by `max_texture_dimension_2d`.
+* **Tiled outputs are row or column bands only** (no 2-D tiles): a band spans the full
+  width of the output, or the full height for rotated RGBA8.
 * **Half-size mono:** for half-size develop of single-plane non-CFA images, the GPU
   returns the grey average. The CPU reference currently returns black (it averages a
   channel it never accumulates), so that case is excluded from equivalence tests.
