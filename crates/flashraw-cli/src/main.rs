@@ -34,6 +34,9 @@ struct DecodeArgs {
     /// Demosaic for RGB outputs: bilinear, half.
     #[arg(long, default_value = "bilinear")]
     demosaic: String,
+    /// Do not apply DNG opcode lists (bad pixels, lens shading, ...).
+    #[arg(long)]
+    no_opcodes: bool,
     /// Print per-stage timings.
     #[arg(long)]
     profile: bool,
@@ -126,6 +129,7 @@ fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
         threads: a.threads,
         region: a.region,
         demosaic: if a.demosaic.starts_with("half") { Demosaic::HalfSize } else { Demosaic::Bilinear },
+        apply_opcodes: !a.no_opcodes,
         ..Default::default()
     })
 }

@@ -119,6 +119,9 @@ pub struct DecodeOptions {
     /// Crop RGB outputs to the default crop (raw outputs are never cropped implicitly).
     pub crop: bool,
     pub demosaic: Demosaic,
+    /// Apply DNG opcode lists (bad pixels, lens-shading gain maps, ...) in their
+    /// specified stages. Geometric opcodes are never applied. Default: true.
+    pub apply_opcodes: bool,
     /// Safety limits for untrusted input.
     pub limits: Limits,
 }
@@ -132,6 +135,7 @@ impl Default for DecodeOptions {
             region: None,
             crop: true,
             demosaic: Demosaic::Bilinear,
+            apply_opcodes: true,
             limits: Limits::default(),
         }
     }

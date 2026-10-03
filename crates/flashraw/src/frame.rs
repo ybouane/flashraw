@@ -81,6 +81,8 @@ pub struct DecodeStatistics {
     pub input_bytes: u64,
     /// Bytes of the output buffer.
     pub output_bytes: u64,
+    /// DNG opcode lists: what was applied and what was not (empty without lists).
+    pub opcodes: Vec<String>,
 }
 
 impl DecodeStatistics {

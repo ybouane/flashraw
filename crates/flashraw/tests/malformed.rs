@@ -5,9 +5,10 @@
 //! invalid offsets, recursive IFDs, huge dimensions, invalid bit depth, bad Huffman
 //! tables, corrupted strip offsets, overlapping data, BMFF size errors, integer
 //! overflow, dangling maker-note pointers). Part 2 mutates real corpus files of every
-//! format when the corpus is available.
+//! format when the corpus is available. The DNG opcode-list test also checks that
+//! lists apply in their stages and that unparsable lists are reported and ignored.
 
-use flashraw::{DecodeOptions, FlashRaw, Limits};
+use flashraw::{DecodeOptions, FlashRaw, Limits, OutputFormat, RawPixelData};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
@@ -416,4 +417,79 @@ fn corpus_mutations() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Big-endian opcode list with one opcode.
+fn opcode_list(id: u32, body: &[u8]) -> Vec<u8> {
+    let mut v = 1u32.to_be_bytes().to_vec();
+    for x in [id, 0x0103_0000, 0, body.len() as u32] {
+        v.extend(x.to_be_bytes());
+    }
+    v.extend(body);
+    v
+}
+
+fn whole_region() -> Vec<u8> {
+    [0, 0, H, W, 0, 1, 1, 1].iter().flat_map(|v: &u32| v.to_be_bytes()).collect()
+}
+
+#[test]
+fn dng_opcode_lists() {
+    // List 1: MapTable doubling every stored value.
+    let mut body = whole_region();
+    body.extend(65536u32.to_be_bytes());
+    for i in 0..65536u32 {
+        body.extend(((i * 2).min(65535) as u16).to_be_bytes());
+    }
+    let mut d = uncompressed_dng();
+    d.set(0xC740, 7, 0, opcode_list(7, &body));
+    let n = d.entries.len() - 1;
+    d.entries[n].2 = d.entries[n].3.len() as u32;
+    let bytes = d.build();
+    let raw = FlashRaw::open(&bytes[..]).unwrap();
+    let on = raw.decode(DecodeOptions::default()).unwrap();
+    let off = raw.decode(DecodeOptions { apply_opcodes: false, ..Default::default() }).unwrap();
+    let (a, b) = (on.as_u16().unwrap(), off.as_u16().unwrap());
+    assert!(a.iter().zip(b).all(|(x, y)| *x == *y * 2)); // samples stay below 32768
+    assert!(on.stats.opcodes.iter().any(|n| n.contains("applied MapTable")), "{:?}", on.stats.opcodes);
+    // Region decodes use whole-buffer coordinates.
+    let r = raw.decode_region(flashraw::Rect::new(3, 2, 5, 4), DecodeOptions::default()).unwrap();
+    assert_eq!(r.as_u16().unwrap()[0], b[2 * W as usize + 3] * 2);
+
+    // List 2: rows scaled by 0.5 on normalised output; raw output untouched.
+    let mut body = whole_region();
+    body.extend(H.to_be_bytes());
+    for _ in 0..H {
+        body.extend(0.5f32.to_bits().to_be_bytes());
+    }
+    let mut d = uncompressed_dng();
+    d.set(0xC741, 7, 0, opcode_list(12, &body));
+    let n = d.entries.len() - 1;
+    d.entries[n].2 = d.entries[n].3.len() as u32;
+    let bytes = d.build();
+    let raw = FlashRaw::open(&bytes[..]).unwrap();
+    let norm = |apply| {
+        let f = raw
+            .decode(DecodeOptions { output: OutputFormat::NormalizedF32, apply_opcodes: apply, ..Default::default() })
+            .unwrap();
+        match f.data {
+            RawPixelData::F32(v) => v,
+            _ => unreachable!(),
+        }
+    };
+    let (a, b) = (norm(true), norm(false));
+    assert!(a.iter().zip(&b).all(|(x, y)| (x - y * 0.5).abs() < 1e-6));
+    let raw_out = raw.decode(DecodeOptions::default()).unwrap();
+    assert_eq!(raw_out.as_u16().unwrap(), &samples()[..]);
+    // RGB output takes the staged path and still succeeds.
+    raw.decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() }).unwrap();
+
+    // Garbage lists are reported and ignored.
+    let mut d = uncompressed_dng();
+    d.set(0xC740, 7, 12, vec![0, 0, 0, 9, 1, 2, 3, 4, 5, 6, 7, 8]);
+    let bytes = d.build();
+    let f = FlashRaw::open(&bytes[..]).unwrap().decode(DecodeOptions::default()).unwrap();
+    assert_eq!(f.as_u16().unwrap(), &samples()[..]);
+    assert!(f.stats.opcodes.iter().any(|n| n.contains("OpcodeList1: not applied")), "{:?}", f.stats.opcodes);
+    exercise(&bytes).unwrap();
 }

@@ -33,6 +33,7 @@ mod frame;
 // GPU backend (see crate::gpu and docs/gpu.md).
 #[cfg(feature = "gpu")]
 pub mod gpu;
+mod opcodes;
 mod options;
 pub mod process;
 mod source;
@@ -232,11 +233,19 @@ impl<'a> FlashRaw<'a> {
             }
             None => None,
         };
-        let img = match region {
+        let mut img = match region {
             Some(r) if r != full => self.decoder.decode_region(&ctx, r)?,
             _ => self.decoder.decode(&ctx)?,
         };
         let origin = region.map(|r| (r.x, r.y)).unwrap_or((0, 0));
+        let mut lists = opcodes::Lists::of(info);
+        if let Some(l) = &mut lists {
+            if opts.apply_opcodes {
+                profiler.time(Stage::Calibration, || l.apply_list1(&mut img, info, origin, ctx.parallel));
+            } else {
+                (0..3).for_each(|i| l.record_unused(i, "disabled"));
+            }
+        }
         let frame_rect = Rect::new(origin.0, origin.1, img.width, img.height);
         let translate = |r: Rect| -> Rect {
             r.intersect(&frame_rect)
@@ -279,8 +288,14 @@ impl<'a> FlashRaw<'a> {
             }
             OutputFormat::NormalizedF32 => {
                 postprocess = Some(format!("CPU x{threads}"));
-                let v = profiler
+                let mut v = profiler
                     .time(Stage::Postprocess, || process::normalize(&img, &frame_info_for_post, origin, ctx.parallel));
+                if let Some(l) = lists.as_mut().filter(|_| opts.apply_opcodes) {
+                    profiler.time(Stage::Postprocess, || {
+                        l.apply_list2(&mut v, img.width, img.cpp, &frame_info_for_post, origin, ctx.parallel)
+                    });
+                    l.record_unused(2, "applies after demosaicing");
+                }
                 (img.width, img.height, img.cpp, RawPixelData::F32(v))
             }
             // GPU-resident outputs are handled (or rejected) by the GPU hook above.
@@ -293,7 +308,21 @@ impl<'a> FlashRaw<'a> {
                 let crop = if opts.crop { translate(info.crop) } else { Rect::full(img.width, img.height) };
                 let crop = if crop.is_empty() { Rect::full(img.width, img.height) } else { crop };
                 let params = process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop);
-                if opts.output == OutputFormat::Rgba8 {
+                let staged =
+                    opts.apply_opcodes && lists.as_ref().is_some_and(|l| l.has_pixel_ops(1) || l.has_pixel_ops(2));
+                if let Some(l) = lists.as_mut().filter(|_| staged) {
+                    profiler.time(Stage::Postprocess, || {
+                        l.develop(
+                            &img,
+                            &frame_info_for_post,
+                            origin,
+                            opts.demosaic,
+                            crop,
+                            opts.output == OutputFormat::Rgba8,
+                            ctx.parallel,
+                        )
+                    })?
+                } else if opts.output == OutputFormat::Rgba8 {
                     let (w, h, px) = profiler.time(Stage::Postprocess, || {
                         process::develop_rgba8(&img, &frame_info_for_post, origin, &params, ctx.parallel)
                     })?;
@@ -306,6 +335,11 @@ impl<'a> FlashRaw<'a> {
                 }
             }
         };
+        if let Some(l) = lists.as_mut().filter(|_| opts.apply_opcodes) {
+            if matches!(opts.output, OutputFormat::RawU16 | OutputFormat::RawF32) {
+                (1..3).for_each(|i| l.record_unused(i, "sensor-domain output"));
+            }
+        }
         let raw_output =
             matches!(opts.output, OutputFormat::RawU16 | OutputFormat::RawF32 | OutputFormat::NormalizedF32);
         let total = flashraw_core::profile::now_ms() - t0 + self.parse_ms;
@@ -322,6 +356,7 @@ impl<'a> FlashRaw<'a> {
             total_ms: total,
             input_bytes: self.bytes().len() as u64,
             output_bytes,
+            opcodes: lists.map(|l| l.into_notes()).unwrap_or_default(),
         };
         Ok(RawFrame {
             width,

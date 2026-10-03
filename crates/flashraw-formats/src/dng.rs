@@ -213,6 +213,12 @@ fn parse_raw<'a>(
     info.sample_format = if float { SampleFormat::F32 } else { SampleFormat::U16 };
     info.compression = comp_kind;
     info.orientation = Orientation::from_exif(ifd0.u32(tags::ORIENTATION).unwrap_or(1));
+    let lists = [tags::OPCODE_LIST1, tags::OPCODE_LIST2, tags::OPCODE_LIST3]
+        .map(|t| raw.get(t).or_else(|| ifd0.get(t)).map(|e| e.bytes().to_vec()).unwrap_or_default());
+    let opcodes = flashraw_core::decoder::OpcodeLists { lists };
+    if !opcodes.is_empty() {
+        info.opcodes = Some(std::sync::Arc::new(opcodes));
+    }
 
     // Active area & crop.
     let active = raw

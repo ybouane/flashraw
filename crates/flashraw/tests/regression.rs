@@ -46,7 +46,13 @@ fn corpus_regression() {
                         continue;
                     }
                     let got = flashraw::FlashRaw::open_path(&p)
-                        .and_then(|r| r.decode(flashraw::DecodeOptions { threads: Some(2), ..Default::default() }))
+                        .and_then(|r| {
+                            r.decode(flashraw::DecodeOptions {
+                                threads: Some(2),
+                                apply_opcodes: false,
+                                ..Default::default()
+                            })
+                        })
                         .map(|f| {
                             f.hash_u16(flashraw::Rect::full(f.width, f.height))
                                 .map(|h| format!("{h:016x}"))

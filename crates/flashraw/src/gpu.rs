@@ -96,6 +96,14 @@ fn workload(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Workload> {
 fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuContext>, Option<String>)>> {
     let resident = opts.output.is_gpu_resident();
     let base = opts.output.host_equivalent();
+    // DNG opcode lists that change this output are applied by the CPU pipeline.
+    if !resident
+        && opts.apply_opcodes
+        && crate::opcodes::Lists::of(raw.frame_info()).is_some_and(|l| l.affects(base))
+        && !matches!(opts.backend, Backend::Cpu | Backend::CpuSimd)
+    {
+        return Ok(None);
+    }
     match opts.backend {
         Backend::Cpu | Backend::CpuSimd => {
             if resident {
@@ -158,6 +166,14 @@ pub(crate) fn decode(
             "synchronous GPU decoding is unavailable in the browser; use decode_gpu_async".into(),
         ))
     }
+}
+
+/// The GPU pipeline only runs when no opcode list changes the output (see [`select`]),
+/// or for GPU-resident outputs, which do not apply them.
+fn gpu_opcode_notes(raw: &FlashRaw<'_>) -> Vec<String> {
+    let Some(mut l) = crate::opcodes::Lists::of(raw.frame_info()) else { return Vec::new() };
+    (0..3).for_each(|i| l.record_unused(i, "GPU pipeline"));
+    l.into_notes()
 }
 
 impl FlashRaw<'_> {
@@ -304,6 +320,7 @@ async fn run(
         total_ms: flashraw_core::profile::now_ms() - t0 + raw.parse_ms,
         input_bytes: raw.bytes().len() as u64,
         output_bytes: data.byte_len() as u64,
+        opcodes: gpu_opcode_notes(raw),
     };
     Ok(RawFrame {
         width,

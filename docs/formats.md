@@ -73,7 +73,7 @@ Generated from `docs/support/*.tsv` by `tools/support_matrix.py` (also printed b
 `flashraw supported`).
 
 <!-- BEGIN GENERATED SUPPORT TABLE (tools/support_matrix.py) -->
-Status counts: experimental: 17, partial: 8, unsupported: 20, verified: 110
+Status counts: experimental: 17, partial: 7, supported: 1, unsupported: 20, verified: 110
 
 | Format | Mode | Compression | Status | Notes |
 |---|---|---|---|---|
@@ -99,6 +99,7 @@ Status counts: experimental: 17, partial: 8, unsupported: 20, verified: 110
 | DNG | CFALayout != 1 | staggered layouts | unsupported | no corpus samples; explicit error |
 | DNG | LinearRaw | lossy JPEG (34892) | verified | converter-produced lossy files |
 | DNG | any | deflate + integer predictors 1/2/34892/34893 | verified |  |
+| DNG | opcode lists | OpcodeList1/2/3 | supported | applied by default, each list in its stage (1: stored values; 2: normalised active area; 3: demosaiced camera RGB): GainMap, MapTable, MapPolynomial, per-row/column delta and scale, FixBadPixelsConstant/List, FixVignetteRadial; geometric opcodes (WarpRectilinear, WarpFisheye, TrimBounds) are reported, not applied; `DecodeOptions::apply_opcodes = false` / `--no-opcodes` disables |
 | FFF | Imacon/Flexcolor (Imacon tags 0xB4C3) | - | unsupported | Ixpress Imacon-tag container; no sample |
 | FFF | multi-shot (4/6-shot) | - | unsupported | several samples per pixel; no sample |
 | IA | Sinar IA container | - | unsupported | no sample |

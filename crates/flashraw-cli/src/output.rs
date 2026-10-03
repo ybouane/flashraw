@@ -24,7 +24,24 @@ pub fn frame_info_json(i: &FrameInfo) -> Value {
         "color_matrices": i.color_matrices,
         "orientation": i.orientation,
         "compression": i.compression.name(),
+        "opcodes": opcode_lists_json(i),
     })
+}
+
+/// Opcode names per DNG opcode list (`null` without lists).
+fn opcode_lists_json(i: &FrameInfo) -> Value {
+    use flashraw::low_level::codecs::dng_opcodes;
+    let Some(l) = &i.opcodes else { return Value::Null };
+    let names = |b: &[u8]| -> Value {
+        if b.len() <= 4 {
+            return json!([]);
+        }
+        match dng_opcodes::parse(b) {
+            Ok(ops) => json!(ops.iter().map(|o| o.name()).collect::<Vec<_>>()),
+            Err(e) => json!(format!("unparsable: {e}")),
+        }
+    };
+    json!({ "list1": names(&l.lists[0]), "list2": names(&l.lists[1]), "list3": names(&l.lists[2]) })
 }
 
 pub fn info_json(path: &Path, raw: &FlashRaw) -> Value {
@@ -306,7 +323,7 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
                 "open_ms_median": omed, "open_ms_min": omin, "decode_ms_median": dmed, "decode_ms_min": dmin, "decode_ms_max": dmax,
                 "total_ms_median": tmed, "total_ms_min": tmin, "mp_per_s": mp / (tmed / 1000.0),
                 "maxrss_kb": maxrss_kb(),
-                "backend": f.stats.backend, "stages": stage_sum.iter().map(|(s, v)| (s.label(), v)).collect::<std::collections::BTreeMap<_, _>>(),
+                "backend": f.stats.backend, "opcodes": f.stats.opcodes, "stages": stage_sum.iter().map(|(s, v)| (s.label(), v)).collect::<std::collections::BTreeMap<_, _>>(),
             })
         );
     } else {
@@ -324,6 +341,9 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
             println!("    {:<22}{v:8.2} ms", format!("{}:", s.label()));
         }
         println!("  backend: {}", f.stats.backend.decode);
+        for n in &f.stats.opcodes {
+            println!("  {n}");
+        }
     }
     Ok(())
 }
@@ -338,7 +358,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
     let m = raw.metadata().clone();
     let info = raw.frame_info().clone();
     let t1 = std::time::Instant::now();
-    let frame = match raw.decode(DecodeOptions::default()) {
+    // apply DNG opcode lists.
+    let frame = match raw.decode(DecodeOptions { apply_opcodes: false, ..Default::default() }) {
         Ok(f) => f,
         Err(e) => {
             return json!({"file": path, "error": e.to_string(), "error_kind": e.kind(), "format": raw.format().name(),

@@ -1,4 +1,5 @@
 # FORMAT	MODE	COMPRESSION	STATUS	NOTES
 DNG	any	deflate + integer predictors 1/2/34892/34893	verified	
 DNG	LinearRaw	lossy JPEG (34892)	verified	converter-produced lossy files
+DNG	opcode lists	OpcodeList1/2/3	supported	applied by default, each list in its stage (1: stored values; 2: normalised active area; 3: demosaiced camera RGB): GainMap, MapTable, MapPolynomial, per-row/column delta and scale, FixBadPixelsConstant/List, FixVignetteRadial; geometric opcodes (WarpRectilinear, WarpFisheye, TrimBounds) are reported, not applied; `DecodeOptions::apply_opcodes = false` / `--no-opcodes` disables
 DNG	CFALayout != 1	staggered layouts	unsupported	no corpus samples; explicit error

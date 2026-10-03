@@ -47,6 +47,22 @@ pub struct FrameInfo {
     /// Pixel aspect ratio (width / height of a sensor site); 1.0 for almost all cameras.
     pub pixel_aspect: f32,
     pub compression: Compression,
+    /// DNG opcode lists carried by the file (applied by the high-level API).
+    pub opcodes: Option<std::sync::Arc<OpcodeLists>>,
+}
+
+/// DNG opcode lists exactly as stored (big-endian opcode data, DNG spec chapter 7).
+/// List 1 applies to stored values, list 2 to linear reference values of the active
+/// area, list 3 to the demosaiced camera-RGB image.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OpcodeLists {
+    pub lists: [Vec<u8>; 3],
+}
+
+impl OpcodeLists {
+    pub fn is_empty(&self) -> bool {
+        self.lists.iter().all(|l| l.len() <= 4)
+    }
 }
 
 impl FrameInfo {
@@ -71,6 +87,7 @@ impl FrameInfo {
             orientation: Orientation::Normal,
             pixel_aspect: 1.0,
             compression: Compression::Uncompressed,
+            opcodes: None,
         }
     }
 
