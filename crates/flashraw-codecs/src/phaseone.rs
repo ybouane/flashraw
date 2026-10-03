@@ -47,7 +47,9 @@ fn low_curve_table() -> [u16; 256] {
 ///
 /// (out-of-range sums wrap when stored), and blocks whose prefix is a single `1` bit
 /// keep the previous width.
-#[inline(never)]
+// Inlined into the per-row caller: as an out-of-line function the bit-pump calls lose
+// their register allocation on aarch64 (measured 35% slower on Apple M1).
+#[inline(always)]
 pub fn decode_l_row<B: BitRead>(bits: &mut B, out: &mut [u16], p: IiqLParams) -> Result<()> {
     let width = out.len();
     let full_blocks = width & !7;
