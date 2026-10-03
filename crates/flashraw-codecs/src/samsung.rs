@@ -360,102 +360,146 @@ pub fn decode_v2(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Re
     bits.get(8);
     bits.get(2);
     let init_val = bits.get(14) as u16;
-    let total = (width * height) as i64;
-    const MOTION_OFFSET: [i64; 7] = [-4, -2, -2, 0, 0, 2, 4];
-    const MOTION_AVERAGE: [bool; 7] = [false, false, true, false, true, false, false];
-    const SCALEVALS: [i32; 3] = [0, -2, 2];
+    let hdr = V2Hdr { bit_depth, datamax, optflags, init_val };
     for row in 0..height {
         // Each row starts at the next 16-byte boundary (relative to the data start).
         let p = bits.pos();
         bits.reset_at(p + ((16 - p % 16) % 16));
-        let rowstart = row * width;
-        let mut motion = 7u32;
-        let mut scale: i32 = 0;
-        let mut mode = [[if row < 2 { 7u32 } else { 4 }; 2]; 3];
-        let mut col = 0usize;
-        while col + 15 < width {
-            if optflags & 4 == 0 && col & 63 == 0 {
-                let i = bits.get(2);
-                if i < 3 {
-                    scale += SCALEVALS[i as usize];
-                } else {
-                    scale = bits.get(12) as i32;
-                }
-            }
-            if optflags & 2 != 0 {
-                motion = if bits.get(1) != 0 { 3 } else { 7 };
-            } else if bits.get(1) == 0 {
-                motion = bits.get(3);
-            }
-            if motion == 7 {
-                for i in 0..16 {
-                    out[rowstart + col + i] = if col == 0 { init_val } else { out[rowstart + col + i - 2] };
-                }
-            } else {
-                if row < 2 {
-                    return Err(Error::corrupt("Samsung V2: motion prediction on the first rows"));
-                }
-                let m = motion as usize;
-                for i in 0..16 {
-                    let odd = ((row + i) & 1) as i64;
-                    let refrow = if odd == 1 { row - 2 } else { row - 1 } as i64;
-                    let refcol = (col + i) as i64 + MOTION_OFFSET[m] + (1 - odd) * (1 - 2 * (i as i64 & 1));
-                    let refidx = refrow * width as i64 + refcol;
-                    let avg = MOTION_AVERAGE[m];
-                    if refidx < 0 || refidx + if avg { 2 } else { 0 } >= total {
-                        return Err(Error::corrupt("Samsung V2: motion reference out of range"));
-                    }
-                    let r = refidx as usize;
-                    out[rowstart + col + i] =
-                        if avg { ((out[r] as u32 + out[r + 2] as u32 + 1) >> 1) as u16 } else { out[r] };
-                }
-            }
-            let mut diff_bits = [0u32; 4];
-            if optflags & 1 != 0 || bits.get(1) == 0 {
-                let mut flags = [0u32; 4];
-                for f in flags.iter_mut() {
-                    *f = bits.get(2);
-                }
-                for i in 0..4 {
-                    let colornum = if row % 2 == 1 { i >> 1 } else { ((i >> 1) + 2) % 3 };
-                    diff_bits[i] = match flags[i] {
-                        0 => mode[colornum][0],
-                        1 => mode[colornum][0].wrapping_add(1),
-                        2 => mode[colornum][0].wrapping_sub(1),
-                        _ => bits.get(4),
-                    };
-                    mode[colornum][0] = mode[colornum][1];
-                    mode[colornum][1] = diff_bits[i];
-                    if diff_bits[i] > bit_depth + 1 {
-                        return Err(Error::corrupt("Samsung V2: invalid difference length"));
-                    }
-                }
-            }
-            for i in 0..16 {
-                let len = diff_bits[i >> 2];
-                let diff = if len == 0 {
-                    scale
-                } else {
-                    let sign_mask = 1i32 << (len - 1);
-                    let v = bits.get(len) as i32;
-                    ((v ^ sign_mask).wrapping_sub(sign_mask))
-                        .wrapping_mul(scale.wrapping_mul(2).wrapping_add(1))
-                        .wrapping_add(scale)
-                };
-                let rcol =
-                    if row % 2 == 1 { col + ((i & 7) << 1) + 1 - (i >> 3) } else { col + ((i & 7) << 1) + (i >> 3) };
-                let idx = rowstart + rcol;
-                if idx >= total as usize {
-                    return Err(Error::corrupt("Samsung V2: sample out of range"));
-                }
-                let val = out[idx] as i32 + diff;
-                out[idx] = val.clamp(0, datamax) as u16;
-            }
-            col += 16;
-        }
+        v2_row(&mut bits, &hdr, row, width, height, out)?;
         if bits.overrun() {
             return Err(Error::corrupt(format!("Samsung V2 data truncated at row {row}/{height}")));
         }
+    }
+    Ok(())
+}
+
+struct V2Hdr {
+    bit_depth: u32,
+    datamax: i32,
+    optflags: u32,
+    init_val: u16,
+}
+
+/// Position of difference `i` within a 16-sample block, for even and odd rows.
+const V2_ORDER_EVEN: [u8; 16] = {
+    let mut o = [0u8; 16];
+    let mut i = 0;
+    while i < 16 {
+        o[i] = (((i & 7) << 1) + (i >> 3)) as u8;
+        i += 1;
+    }
+    o
+};
+const V2_ORDER_ODD: [u8; 16] = {
+    let mut o = [0u8; 16];
+    let mut i = 0;
+    while i < 16 {
+        o[i] = (((i & 7) << 1) + 1 - (i >> 3)) as u8;
+        i += 1;
+    }
+    o
+};
+
+/// Decode row `row` of a V2 image (motion-compensated blocks of 16 samples).
+#[inline(always)]
+fn v2_row(bits: &mut Ph1Bits, h: &V2Hdr, row: usize, width: usize, height: usize, out: &mut [u16]) -> Result<()> {
+    let V2Hdr { bit_depth, datamax, optflags, init_val } = *h;
+    let total = (width * height) as i64;
+    const MOTION_OFFSET: [i64; 7] = [-4, -2, -2, 0, 0, 2, 4];
+    const MOTION_AVERAGE: [bool; 7] = [false, false, true, false, true, false, false];
+    const SCALEVALS: [i32; 3] = [0, -2, 2];
+    let rowstart = row * width;
+    let mut motion = 7u32;
+    let mut scale: i32 = 0;
+    let mut mode = [[if row < 2 { 7u32 } else { 4 }; 2]; 3];
+    let mut col = 0usize;
+    while col + 15 < width {
+        if optflags & 4 == 0 && col & 63 == 0 {
+            let i = bits.get(2);
+            if i < 3 {
+                scale += SCALEVALS[i as usize];
+            } else {
+                scale = bits.get(12) as i32;
+            }
+        }
+        if optflags & 2 != 0 {
+            motion = if bits.get(1) != 0 { 3 } else { 7 };
+        } else if bits.get(1) == 0 {
+            motion = bits.get(3);
+        }
+        // Stages as plain arrays (prediction, bit reading, shuffle, scaled add) so the
+        // arithmetic vectorises and bit reading is not interleaved with stores.
+        let mut base = [0u16; 16];
+        if motion == 7 {
+            // Repeat the previous two samples (the initial value at the row start).
+            let (a, b) =
+                if col == 0 { (init_val, init_val) } else { (out[rowstart + col - 2], out[rowstart + col - 1]) };
+            for px in base.chunks_exact_mut(2) {
+                px[0] = a;
+                px[1] = b;
+            }
+        } else {
+            if row < 2 {
+                return Err(Error::corrupt("Samsung V2: motion prediction on the first rows"));
+            }
+            let m = motion as usize;
+            let avg = MOTION_AVERAGE[m];
+            // Red/blue samples (row + i odd) use the same colour two rows up; green ones the
+            // diagonal green one row up. Indices are checked once for the whole block.
+            let (up2, up1) = (((row - 2) * width) as i64, ((row - 1) * width) as i64);
+            let mut idx = [0i64; 16];
+            for (i, x) in idx.iter_mut().enumerate() {
+                let c = (col + i) as i64 + MOTION_OFFSET[m];
+                *x = if (row + i) & 1 == 1 { up2 + c } else { up1 + c + 1 - 2 * (i as i64 & 1) };
+            }
+            let (lo, hi) = idx.iter().fold((i64::MAX, i64::MIN), |(a, b), &x| (a.min(x), b.max(x)));
+            if lo < 0 || hi + if avg { 2 } else { 0 } >= total {
+                return Err(Error::corrupt("Samsung V2: motion reference out of range"));
+            }
+            for (b, &x) in base.iter_mut().zip(&idx) {
+                let r = x as usize;
+                *b = if avg { ((out[r] as u32 + out[r + 2] as u32 + 1) >> 1) as u16 } else { out[r] };
+            }
+        }
+        let mut diff_bits = [0u32; 4];
+        if optflags & 1 != 0 || bits.get(1) == 0 {
+            let mut flags = [0u32; 4];
+            for f in flags.iter_mut() {
+                *f = bits.get(2);
+            }
+            for i in 0..4 {
+                let colornum = if row % 2 == 1 { i >> 1 } else { ((i >> 1) + 2) % 3 };
+                diff_bits[i] = match flags[i] {
+                    0 => mode[colornum][0],
+                    1 => mode[colornum][0].wrapping_add(1),
+                    2 => mode[colornum][0].wrapping_sub(1),
+                    _ => bits.get(4),
+                };
+                mode[colornum][0] = mode[colornum][1];
+                mode[colornum][1] = diff_bits[i];
+                if diff_bits[i] > bit_depth + 1 {
+                    return Err(Error::corrupt("Samsung V2: invalid difference length"));
+                }
+            }
+        }
+        // Sample order inside the block: even positions then odd ones, shifted by the
+        // row parity. Positions stay inside `col..col + 16`, so inside the row.
+        let order = if row % 2 == 1 { &V2_ORDER_ODD } else { &V2_ORDER_EVEN };
+        let mut raw = [0i32; 16];
+        for (i, &o) in order.iter().enumerate() {
+            let len = diff_bits[i >> 2];
+            if len != 0 {
+                let sign_mask = 1i32 << (len - 1);
+                let v = bits.get(len) as i32;
+                raw[o as usize] = (v ^ sign_mask).wrapping_sub(sign_mask);
+            }
+        }
+        let mul = scale.wrapping_mul(2).wrapping_add(1);
+        let blk = &mut out[rowstart + col..rowstart + col + 16];
+        for ((dst, &b), &r) in blk.iter_mut().zip(&base).zip(&raw) {
+            *dst = (b as i32 + r.wrapping_mul(mul).wrapping_add(scale)).clamp(0, datamax) as u16;
+        }
+        col += 16;
     }
     Ok(())
 }
