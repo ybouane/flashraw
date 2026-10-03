@@ -108,6 +108,8 @@ enum Payload {
 
 struct PefRaw<'a> {
     src: &'a [u8],
+    /// Payload length the strip declares (`src` may run on).
+    declared: usize,
     width: usize,
     height: usize,
     payload: Payload,
@@ -258,7 +260,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     info.color_matrices = conventions::color_from_table(table, &meta, cam);
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
 
-    let pef = Arc::new(PefRaw { src, width: w as usize, height: h as usize, payload });
+    let pef = Arc::new(PefRaw { src, declared: bytes, width: w as usize, height: h as usize, payload });
     let p2 = pef.clone();
     let packed = match &pef.payload {
         Payload::Packed(s) => s.fast_layout().map(|l| PackedPayload {
@@ -300,7 +302,9 @@ impl PefRaw<'_> {
         let out = img.u16_mut();
         match &self.payload {
             Payload::Huffman(t) => {
-                ctx.profiler.time(Stage::EntropyDecode, || pentax_huffman::decode(self.src, t, w, h, out, w))?;
+                ctx.profiler.time(Stage::EntropyDecode, || {
+                    pentax_huffman::decode(self.src, t, w, h, out, w, ctx.parallel, self.declared)
+                })?;
             }
             Payload::Packed(spec) => {
                 ctx.profiler

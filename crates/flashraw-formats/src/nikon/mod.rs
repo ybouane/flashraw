@@ -60,6 +60,8 @@ enum Payload {
 struct NefRaw<'a> {
     /// past the declared strip length).
     src: &'a [u8],
+    /// Payload length the strip declares.
+    declared: usize,
     width: usize,
     height: usize,
     payload: Payload,
@@ -387,7 +389,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         meta.set_extra("color_balance_version", mn.color_balance_version);
     }
 
-    let nef = Arc::new(NefRaw { src, width: geo.raw_width as usize, height: raw_h as usize, payload });
+    let nef = Arc::new(NefRaw { src, declared: bytes, width: geo.raw_width as usize, height: raw_h as usize, payload });
     let packed_payload = nef.packed_payload();
     let row_layout = nef.row_layout();
     let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
@@ -489,7 +491,7 @@ impl<'a> NefRaw<'a> {
         match &self.payload {
             Payload::Huffman { meta, rows } => {
                 ctx.profiler.time(Stage::EntropyDecode, || {
-                    nikon_huffman::decode_nikon(self.src, meta, w, (*rows).min(h), out, w)
+                    nikon_huffman::decode_nikon(self.src, meta, w, (*rows).min(h), out, w, ctx.parallel, self.declared)
                 })?;
             }
             Payload::Packed(spec) => {

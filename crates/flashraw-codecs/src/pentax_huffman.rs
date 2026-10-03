@@ -9,7 +9,7 @@
 //! values (left-aligned in 12 bits) and `n` code lengths. Cameras without the tag use
 //! the classic default table.
 
-use crate::nikon_huffman::{DirectHuff, PredictiveParams, decode_predictive};
+use crate::nikon_huffman::{DirectHuff, PredictiveParams, decode_predictive_par};
 use flashraw_core::bytes::ByteOrder;
 use flashraw_core::{Error, Result};
 
@@ -51,6 +51,7 @@ pub fn default_table() -> Result<DirectHuff> {
 }
 
 /// Decode a Pentax Huffman payload into `out` (rows of `stride` samples).
+#[allow(clippy::too_many_arguments)]
 pub fn decode(
     src: &[u8],
     table: &DirectHuff,
@@ -58,10 +59,11 @@ pub fn decode(
     height: usize,
     out: &mut [u16],
     stride: usize,
+    parallel: bool,
+    declared: usize,
 ) -> Result<bool> {
     let p = PredictiveParams { width, rows: height, tables: &[(0, table)], vpred: [[0; 2]; 2] };
-    let bits = decode_predictive(src, &p, out, stride, |h| h)?;
-    Ok(bits.is_dead())
+    decode_predictive_par(src, &p, out, stride, |h| h, parallel, declared)
 }
 
 #[cfg(test)]
@@ -79,7 +81,7 @@ mod tests {
         // Stream: symbol 1 (code '1') + diff bit '1' (=+1), then symbol 0 (code '0') x3.
         let data = [0b1100_0000u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let mut out = vec![0u16; 4];
-        decode(&data, &t, 4, 1, &mut out, 4).unwrap();
+        decode(&data, &t, 4, 1, &mut out, 4, false, 0).unwrap();
         assert_eq!(out, vec![1, 0, 1, 0]);
     }
 
@@ -96,7 +98,7 @@ mod tests {
         for len in [0usize, 1, 7, 100] {
             let data = vec![0x5Au8; len];
             let mut out = vec![0u16; 64 * 8];
-            decode(&data, &t, 64, 8, &mut out, 64).unwrap();
+            decode(&data, &t, 64, 8, &mut out, 64, false, 0).unwrap();
         }
     }
 }

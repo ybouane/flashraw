@@ -291,6 +291,24 @@ pub type BitPumpMsb32<'a> = BitPumpMsbWords<'a, 4>;
 impl<'a, const W: usize> BitPumpMsbWords<'a, W> {
     common_fields!();
 
+    /// Bits consumed from the start of the input (padding past the end included).
+    #[inline(always)]
+    pub fn bit_position(&self) -> u64 {
+        self.pos as u64 * 8 - self.bits as u64
+    }
+
+    /// A pump positioned `bit` bits into `data` (word-aligned start, then skipped).
+    pub fn at_bit(data: &'a [u8], bit: u64) -> Self {
+        let word_bits = 8 * W as u64;
+        let base = (bit / word_bits) as usize * W;
+        let mut p = Self::new(data.get(base..).unwrap_or(&[]));
+        p.fill();
+        p.skip_no_fill((bit % word_bits) as u32);
+        p.pos += base;
+        p.data = data;
+        p
+    }
+
     #[cold]
     fn fill_slow(&mut self) {
         while self.bits <= 64 - 8 * W as u32 {

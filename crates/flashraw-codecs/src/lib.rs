@@ -28,6 +28,7 @@ pub mod nikon_packed;
 pub mod olympus;
 pub mod packed;
 pub mod panasonic;
+mod par_entropy;
 pub mod pentax_huffman;
 pub mod phaseone;
 pub mod samsung;

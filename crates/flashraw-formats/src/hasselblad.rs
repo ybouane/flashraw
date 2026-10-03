@@ -9,7 +9,7 @@
 
 use crate::common::*;
 use crate::medium::{cfa_at_origin, even_margins};
-use flashraw_codecs::hasselblad::{HasselbladHeader, decode};
+use flashraw_codecs::hasselblad::{HasselbladHeader, decode_par};
 use flashraw_core::tiff::{Ifd, Tiff, tags};
 use flashraw_core::*;
 
@@ -290,7 +290,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         match payload {
             Payload::Ljpeg { base } => ctx.profiler.time(Stage::EntropyDecode, || {
                 let hdr = HasselbladHeader::parse(src)?;
-                decode(src, &hdr, img.u16_mut(), wu, hu, base)
+                decode_par(src, &hdr, img.u16_mut(), wu, hu, base, ctx.parallel)
             })?,
             Payload::Raw16 => ctx.profiler.time(Stage::Unpack, || {
                 crate::medium::unpack_u16_rows(src, order, wu, img.u16_mut(), wu * 2, ctx.parallel)

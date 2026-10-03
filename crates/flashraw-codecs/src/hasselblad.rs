@@ -163,6 +163,121 @@ pub fn decode(
     Ok(())
 }
 
+/// [`decode`] that entropy-decodes large predictor-1 streams on all threads
+/// ([`crate::par_entropy`]) when `parallel` is set. Output and errors are identical to
+/// [`decode`]: anything speculation cannot prove takes the sequential path.
+pub fn decode_par(
+    data: &[u8],
+    hdr: &HasselbladHeader,
+    out: &mut [u16],
+    width: usize,
+    height: usize,
+    base: i32,
+    parallel: bool,
+) -> Result<()> {
+    if parallel
+        && hdr.predictor != 11
+        && width % 2 == 0
+        && width > 0
+        && out.len() >= width * height
+        && width * height >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES
+        && decode_parallel(data, hdr, &mut out[..width * height], width, base, None)
+    {
+        return Ok(());
+    }
+    decode(data, hdr, out, width, height, base)
+}
+
+/// The scan as a stream of pixel pairs (two length symbols, then two differences).
+struct PairScan<'a> {
+    scan: &'a [u8],
+    table: &'a HuffTable,
+}
+
+impl crate::par_entropy::SymbolStream for PairScan<'_> {
+    type Pump<'p>
+        = BitPumpMsb32<'p>
+    where
+        Self: 'p;
+    const WIDTH: usize = 2;
+    fn cycle(&self) -> usize {
+        1
+    }
+    fn period(&self) -> usize {
+        1
+    }
+    fn total_bits(&self) -> u64 {
+        self.scan.len() as u64 * 8
+    }
+    fn end_check(&self, pos: u64) -> crate::par_entropy::EndCheck {
+        use crate::par_entropy::EndCheck;
+        // The sequential decoder rejects a row once more than 8 bytes of padding were
+        // fetched; that never happens before the data is consumed, and always happens
+        // 8 bytes after. In between it depends on the refill history.
+        let end = self.total_bits();
+        if pos <= end {
+            EndCheck::Valid
+        } else if pos <= end + 64 {
+            EndCheck::Unknown
+        } else {
+            EndCheck::Invalid
+        }
+    }
+    fn pump_at(&self, bit: u64) -> BitPumpMsb32<'_> {
+        BitPumpMsb32::at_bit(self.scan, bit)
+    }
+    fn position(p: &BitPumpMsb32<'_>) -> u64 {
+        p.bit_position()
+    }
+    #[inline(always)]
+    fn decode(&self, p: &mut BitPumpMsb32<'_>, _phase: usize, out: &mut [u16]) -> bool {
+        let before = p.bit_position();
+        let lens = (self.table.decode_symbol(p), self.table.decode_symbol(p));
+        let (Ok(l0), Ok(l1)) = lens else {
+            if p.bit_position() == before {
+                p.skip(1);
+            }
+            return false;
+        };
+        if l0 > 16 || l1 > 16 {
+            return false;
+        }
+        out[0] = diff(p, l0) as u16;
+        out[1] = diff(p, l1) as u16;
+        true
+    }
+}
+
+/// Parallel predictor-1 decode: pairs are entropy-decoded speculatively, then every row
+/// (which restarts from `0x8000 + base`) is rebuilt independently.
+fn decode_parallel(
+    data: &[u8],
+    hdr: &HasselbladHeader,
+    out: &mut [u16],
+    width: usize,
+    base: i32,
+    chunk: Option<usize>,
+) -> bool {
+    let Some(scan) = data.get(hdr.scan_offset..) else { return false };
+    let Some(chunk) = chunk.or_else(|| crate::par_entropy::default_chunk(scan.len())) else { return false };
+    let src = PairScan { scan, table: &hdr.table };
+    let Some(values) = crate::par_entropy::decode(&src, out.len() / 2, chunk) else { return false };
+    let start = (0x8000 + base) as u16;
+    flashraw_core::par::for_each_row_chunk(out, width, 16, true, |r0, rows| {
+        for (i, row) in rows.chunks_exact_mut(width).enumerate() {
+            values.copy_to((r0 + i) * width, row);
+            let (mut p0, mut p1) = (start, start);
+            for px in row.chunks_exact_mut(2) {
+                p0 = p0.wrapping_add(px[0]);
+                p1 = p1.wrapping_add(px[1]);
+                px[0] = p0;
+                px[1] = p1;
+            }
+        }
+    });
+    true
+}
+
 /// Fast path for the plain left predictor: the two running predictions live in
 /// registers and no row history is kept.
 fn decode_left(
@@ -291,5 +406,26 @@ mod tests {
             *b = b.wrapping_mul(31).wrapping_add(7);
         }
         let _ = decode(&g, &hdr, &mut out, w, h, 0);
+    }
+
+    #[test]
+    fn parallel_matches_sequential() {
+        let (w, h) = (64usize, 40usize);
+        let mut x = 7u32;
+        let samples: Vec<u16> = (0..w * h)
+            .map(|i| {
+                x = x.wrapping_mul(1103515245).wrapping_add(12345);
+                (0x8000 + (i % w) as i32 * 3 + ((x >> 20) & 63) as i32) as u16
+            })
+            .collect();
+        let data = encode(w, h, &samples);
+        let hdr = HasselbladHeader::parse(&data).unwrap();
+        let mut seq = vec![0u16; w * h];
+        decode(&data, &hdr, &mut seq, w, h, 0).unwrap();
+        for chunk in [5usize, 37, 200, 1 << 20] {
+            let mut par = vec![0u16; w * h];
+            assert!(decode_parallel(&data, &hdr, &mut par, w, 0, Some(chunk)), "chunk {chunk}");
+            assert_eq!(par, seq, "chunk {chunk}");
+        }
     }
 }

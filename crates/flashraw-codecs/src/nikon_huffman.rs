@@ -289,6 +289,147 @@ where
     Ok(bits)
 }
 
+/// [`decode_predictive`] that entropy-decodes large single-table streams on all threads
+/// ([`crate::par_entropy`]) when `parallel` is set. Returns whether the stream ran past
+/// its data (`is_dead`). Output is identical to [`decode_predictive`]: streams whose
+/// speculation cannot be proven equal (table switches, truncation, invalid codes) take
+/// the sequential path. `declared` is the payload length the container states (`src`
+/// may run on to the end of the file); speculation covers about that much.
+pub fn decode_predictive_par<M>(
+    src: &[u8],
+    p: &PredictiveParams,
+    out: &mut [u16],
+    stride: usize,
+    map: M,
+    parallel: bool,
+    declared: usize,
+) -> Result<bool>
+where
+    M: Fn(u16) -> u16 + Sync,
+{
+    let (width, rows) = (p.width, p.rows);
+    if parallel
+        && p.tables.len() == 1
+        && width >= 2
+        && stride >= width
+        && rows > 0
+        && out.len() >= stride * (rows - 1) + width
+        && rows * width >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES
+        && decode_predictive_parallel(src, p, out, stride, &map, declared, None)
+    {
+        return Ok(false);
+    }
+    Ok(decode_predictive(src, p, out, stride, map)?.is_dead())
+}
+
+/// The stream as one difference per symbol.
+struct DiffScan<'a> {
+    src: &'a [u8],
+    table: &'a DirectHuff,
+    span: u64,
+}
+
+impl crate::par_entropy::SymbolStream for DiffScan<'_> {
+    type Pump<'p>
+        = ExactBits<'p>
+    where
+        Self: 'p;
+    const WIDTH: usize = 1;
+    fn cycle(&self) -> usize {
+        1
+    }
+    fn period(&self) -> usize {
+        1
+    }
+    fn total_bits(&self) -> u64 {
+        self.src.len() as u64 * 8
+    }
+    fn span_bits(&self) -> u64 {
+        self.span
+    }
+    fn end_check(&self, pos: u64) -> crate::par_entropy::EndCheck {
+        // Past the end the reader goes dead and yields zeros: leave that to the
+        // sequential decoder.
+        if pos <= self.total_bits() {
+            crate::par_entropy::EndCheck::Valid
+        } else {
+            crate::par_entropy::EndCheck::Unknown
+        }
+    }
+    fn pump_at(&self, bit: u64) -> ExactBits<'_> {
+        ExactBits { data: self.src, pos: bit, dead: false }
+    }
+    fn position(p: &ExactBits<'_>) -> u64 {
+        p.pos
+    }
+    #[inline(always)]
+    fn decode(&self, p: &mut ExactBits<'_>, _phase: usize, out: &mut [u16]) -> bool {
+        let before = p.pos;
+        out[0] = p.diff(self.table) as u16;
+        if p.pos == before {
+            // A code of length zero (unused table slot): the sequential decoder would not
+            // advance either; treat it as invalid so it decodes this stream itself.
+            p.pos += 1;
+            return false;
+        }
+        true
+    }
+}
+
+fn decode_predictive_parallel<M>(
+    src: &[u8],
+    p: &PredictiveParams,
+    out: &mut [u16],
+    stride: usize,
+    map: &M,
+    declared: usize,
+    chunk: Option<usize>,
+) -> bool
+where
+    M: Fn(u16) -> u16 + Sync,
+{
+    let (width, rows) = (p.width, p.rows);
+    // Declared lengths can be a little short; a true path running past the span falls
+    // back to sequential decoding, so a margin is cheap insurance.
+    let span = if declared == 0 { src.len() } else { (declared + declared / 16 + (64 << 10)).min(src.len()) };
+    let Some(chunk) = chunk.or_else(|| crate::par_entropy::default_chunk(span)) else { return false };
+    let scan = DiffScan { src, table: p.tables[0].1, span: span as u64 * 8 };
+    let Some(values) = crate::par_entropy::decode(&scan, rows * width, chunk) else { return false };
+    // Rows depend on the rows above only through the first two columns of the previous
+    // row of the same parity: chain those, then rebuild rows in parallel.
+    let mut vp = p.vpred;
+    let starts: Vec<[u16; 2]> = (0..rows)
+        .map(|r| {
+            let st = vp[r & 1];
+            for c in 0..2 {
+                vp[r & 1][c] = vp[r & 1][c].wrapping_add(values.get(r * width + c));
+            }
+            st
+        })
+        .collect();
+    let n = out.len().min(rows * stride);
+    flashraw_core::par::for_each_row_chunk(&mut out[..n], stride, 16, true, |r0, chunk| {
+        let mut d = vec![0u16; width];
+        for (i, line) in chunk.chunks_mut(stride).enumerate() {
+            let r = r0 + i;
+            values.copy_to(r * width, &mut d);
+            let mut vpl = starts[r];
+            let mut h = [0u16; 2];
+            for (col, (v, &dv)) in line[..width].iter_mut().zip(&d).enumerate() {
+                let c = col & 1;
+                if col < 2 {
+                    vpl[c] = vpl[c].wrapping_add(dv);
+                    h[c] = vpl[c];
+                } else {
+                    h[c] = h[c].wrapping_add(dv);
+                }
+                *v = map(h[c]);
+            }
+        }
+    });
+    true
+}
+
 /// Register bit cache for rows that are provably inside the data (see the row budget
 /// in [`decode_predictive`]): branchless refills keep 56..=63 bits buffered, so a
 /// symbol and its difference bits never need a second load.
@@ -504,6 +645,7 @@ impl NikonMeta {
 }
 
 /// Decode a Nikon Huffman NEF payload. `src` should extend to the end of the file
+#[allow(clippy::too_many_arguments)]
 pub fn decode_nikon(
     src: &[u8],
     meta: &NikonMeta,
@@ -511,6 +653,8 @@ pub fn decode_nikon(
     rows: usize,
     out: &mut [u16],
     stride: usize,
+    parallel: bool,
+    declared: usize,
 ) -> Result<bool> {
     let main = DirectHuff::from_counts(NIKON_TREES[meta.tree])?;
     let after;
@@ -522,11 +666,18 @@ pub fn decode_nikon(
     let p = PredictiveParams { width, rows, tables: &tables, vpred: meta.vpred };
     let curve: &[u16; 0x4000] =
         meta.curve.as_slice().try_into().map_err(|_| Error::corrupt("Nikon curve has the wrong size"))?;
-    let bits = decode_predictive(src, &p, out, stride, |h| {
-        let i = (h as i16).clamp(0, 0x3fff) as usize;
-        curve[i]
-    })?;
-    Ok(bits.is_dead())
+    decode_predictive_par(
+        src,
+        &p,
+        out,
+        stride,
+        |h| {
+            let i = (h as i16).clamp(0, 0x3fff) as usize;
+            curve[i]
+        },
+        parallel,
+        declared,
+    )
 }
 
 #[cfg(test)]
@@ -689,5 +840,27 @@ mod tests {
         assert_eq!(m.tree, 5);
         assert!(m.is_lossless());
         assert_eq!(m.curve[1234], 1234);
+    }
+
+    #[test]
+    fn parallel_matches_sequential() {
+        let t = DirectHuff::from_counts(NIKON_TREES[2]).unwrap();
+        let (width, rows) = (96usize, 50usize);
+        let mut x = 99u32;
+        let data: Vec<u8> = (0..width * rows * 2)
+            .map(|_| {
+                x = x.wrapping_mul(1103515245).wrapping_add(12345);
+                (x >> 24) as u8
+            })
+            .collect();
+        let p = PredictiveParams { width, rows, tables: &[(0, &t)], vpred: [[100, 200], [300, 400]] };
+        let stride = width + 3;
+        let mut seq = vec![0u16; stride * rows];
+        decode_predictive(&data, &p, &mut seq, stride, |h| h ^ 0x55).unwrap();
+        for chunk in [3usize, 50, 999] {
+            let mut par = vec![0u16; stride * rows];
+            assert!(decode_predictive_parallel(&data, &p, &mut par, stride, &|h| h ^ 0x55, 0, Some(chunk)), "{chunk}");
+            assert_eq!(par, seq, "chunk {chunk}");
+        }
     }
 }

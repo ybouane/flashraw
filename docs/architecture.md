@@ -86,9 +86,10 @@ precisely without per-symbol checks.
 fully-decoded difference (code + diff bits ≤ 12), so most lossless-JPEG samples
 decode with one lookup and one shift.
 
-**Parallel decoding of one Huffman stream.** Formats whose single lossless-JPEG scan
-has no restart markers (CR2, sRAW, single-strip DNG, Kodak DCS) are still decoded on all
-threads: the stream is cut into chunks that are decoded speculatively (one full decode
+**Parallel decoding of one Huffman stream.** Formats that store the image as one
+sequential prefix-coded stream (lossless JPEG without restart markers in CR2, sRAW,
+single-strip DNG and Kodak DCS; Hasselblad pair coding; Nikon and Pentax predictive
+Huffman) are still decoded on all threads (`flashraw-codecs::par_entropy`): the stream is cut into chunks that are decoded speculatively (one full decode
 per chunk; starts in other table phases run only until they join it), Huffman
 self-synchronisation locates where each chunk's speculation joins the true path
 (typically within a few dozen symbols), and rows are rebuilt from the differences by
