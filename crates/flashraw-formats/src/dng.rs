@@ -783,42 +783,44 @@ impl DngRaw<'_> {
         let trl = self.tile_row_len();
         let bytes_ps = (self.bps / 8) as usize;
         let row_bytes = trl * bytes_ps;
-        let owned;
+        thread_local! {
+            static SCRATCH: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+        }
+        let mut scratch = SCRATCH.with(|c| std::mem::take(&mut *c.borrow_mut()));
         let raw: &[u8] = match self.payload {
             Payload::Uncompressed => src,
             Payload::Deflate => {
-                owned = deflate::inflate_zlib(src, row_bytes * self.tile_h as usize)?;
-                &owned
+                let need = row_bytes * self.tile_h as usize;
+                if scratch.len() < need {
+                    scratch.resize(need, 0);
+                }
+                let n = deflate::inflate_zlib_into(src, &mut scratch[..need])?;
+                &scratch[..n]
             }
             _ => return Err(Error::unsupported_compression("DNG", "float samples with this compression")),
         };
-        let mut tmp = Vec::new();
+        let factor = match (self.payload, self.predictor) {
+            (Payload::Deflate, 3) => cpp,
+            (Payload::Deflate, 34894) => cpp * 2,
+            (Payload::Deflate, 34895) => cpp * 4,
+            _ => 0,
+        };
+        let little = self.order == ByteOrder::Little;
         let mut rowbuf = vec![0u8; row_bytes];
-        let mut vals = vec![0f32; trl];
+        let mut vals = vec![0f32; if sx == 0 && w * cpp == trl { 0 } else { trl }];
         for y in 0..h {
             let off = (sy + y) * row_bytes;
             let Some(rb) = raw.get(off..off + row_bytes) else { break };
             rowbuf.copy_from_slice(rb);
-            match (self.payload, self.predictor) {
-                (Payload::Deflate, 3) => deflate::undo_float_predictor(&mut rowbuf, &mut tmp, trl, bytes_ps, cpp),
-                (Payload::Deflate, 34894) => {
-                    deflate::undo_float_predictor(&mut rowbuf, &mut tmp, trl, bytes_ps, cpp * 2)
-                }
-                (Payload::Deflate, 34895) => {
-                    deflate::undo_float_predictor(&mut rowbuf, &mut tmp, trl, bytes_ps, cpp * 4)
-                }
-                _ => {
-                    // Uncompressed/no predictor: bytes are in file order; normalise to big-endian.
-                    if self.order == ByteOrder::Little {
-                        for c in rowbuf.chunks_exact_mut(bytes_ps) {
-                            c.reverse();
-                        }
-                    }
-                }
+            if vals.is_empty() {
+                deflate::decode_float_row(&mut rowbuf, trl, bytes_ps, factor, little, t.row(y));
+            } else {
+                deflate::decode_float_row(&mut rowbuf, trl, bytes_ps, factor, little, &mut vals);
+                t.row(y).copy_from_slice(&vals[sx..sx + w * cpp]);
             }
-            deflate::float_bytes_to_f32(&rowbuf, bytes_ps, &mut vals);
-            t.row(y).copy_from_slice(&vals[sx..sx + w * cpp]);
         }
+        // Return the per-thread scratch buffer for the next tile.
+        SCRATCH.with(|c| *c.borrow_mut() = scratch);
         Ok(())
     }
 }

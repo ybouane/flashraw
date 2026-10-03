@@ -13,6 +13,17 @@ pub fn inflate_zlib(data: &[u8], max_out: usize) -> Result<Vec<u8>> {
     d.decode_zlib().map_err(|e| Error::corrupt(format!("deflate: {e:?}")))
 }
 
+/// Inflate a zlib stream into `out`, returning the number of bytes produced. Decodes in
+/// place into caller memory (no allocation); errors on corrupt data. Output beyond the
+/// stream's length is left untouched; a stream larger than `out` is an error.
+pub fn inflate_zlib_into(data: &[u8], out: &mut [u8]) -> Result<usize> {
+    let (res, rc) = zlib_rs::decompress_slice(out, data, zlib_rs::InflateConfig::default());
+    match rc {
+        zlib_rs::ReturnCode::Ok => Ok(res.len()),
+        rc => Err(Error::corrupt(format!("deflate: {rc:?}"))),
+    }
+}
+
 /// Undo horizontal integer differencing on u16 samples, in place, for one row
 /// of `width` pixels with `cpp` interleaved samples and difference `factor`
 /// (1 for TIFF predictor 2; 2 or 4 for DNG predictors 34892/34893).
@@ -44,6 +55,72 @@ pub fn undo_float_predictor(row: &mut [u8], tmp: &mut Vec<u8>, width_samples: us
         }
     }
     row.copy_from_slice(tmp);
+}
+
+/// Decode one row of DNG floating-point samples straight into `out`.
+///
+/// `row` holds the row's bytes (modified in place). With `factor > 0` the row uses the
+/// floating-point predictor: bytes are byte-differenced with distance `factor`, then
+/// stored as byte planes (most significant plane first). With `factor == 0` the samples
+/// are stored contiguously in file byte order (`little_endian`). Fuses what
+/// [`undo_float_predictor`] + [`float_bytes_to_f32`] do, without a temporary row.
+pub fn decode_float_row(row: &mut [u8], samples: usize, bps_bytes: usize, factor: usize, little_endian: bool, out: &mut [f32]) {
+    let n = samples * bps_bytes;
+    if row.len() < n || out.len() < samples || !(2..=4).contains(&bps_bytes) {
+        return;
+    }
+    let row = &mut row[..n];
+    let out = &mut out[..samples];
+    if factor == 0 {
+        match (bps_bytes, little_endian) {
+            (4, true) => out.iter_mut().zip(row.chunks_exact(4)).for_each(|(o, c)| *o = f32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            (4, false) => out.iter_mut().zip(row.chunks_exact(4)).for_each(|(o, c)| *o = f32::from_be_bytes([c[0], c[1], c[2], c[3]])),
+            (2, le) => out.iter_mut().zip(row.chunks_exact(2)).for_each(|(o, c)| {
+                *o = f16_to_f32(if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
+            }),
+            (_, le) => out.iter_mut().zip(row.chunks_exact(3)).for_each(|(o, c)| {
+                let (a, b, d) = if le { (c[2], c[1], c[0]) } else { (c[0], c[1], c[2]) };
+                *o = f24_to_f32((a as u32) << 16 | (b as u32) << 8 | d as u32)
+            }),
+        }
+        return;
+    }
+    // Undo byte differencing (sequential prefix sum with distance `factor`).
+    if factor == 1 {
+        let mut acc = row[0];
+        for b in row[1..].iter_mut() {
+            acc = acc.wrapping_add(*b);
+            *b = acc;
+        }
+    } else {
+        for i in factor..n {
+            row[i] = row[i].wrapping_add(row[i - factor]);
+        }
+    }
+    // Assemble samples from the byte planes.
+    match bps_bytes {
+        4 => {
+            let (p0, rest) = row.split_at(samples);
+            let (p1, rest) = rest.split_at(samples);
+            let (p2, p3) = rest.split_at(samples);
+            for ((((o, &a), &b), &c), &d) in out.iter_mut().zip(p0).zip(p1).zip(p2).zip(p3) {
+                *o = f32::from_bits(u32::from_be_bytes([a, b, c, d]));
+            }
+        }
+        3 => {
+            let (p0, rest) = row.split_at(samples);
+            let (p1, p2) = rest.split_at(samples);
+            for (((o, &a), &b), &c) in out.iter_mut().zip(p0).zip(p1).zip(p2) {
+                *o = f24_to_f32((a as u32) << 16 | (b as u32) << 8 | c as u32);
+            }
+        }
+        _ => {
+            let (p0, p1) = row.split_at(samples);
+            for ((o, &a), &b) in out.iter_mut().zip(p0).zip(p1) {
+                *o = f16_to_f32(u16::from_be_bytes([a, b]));
+            }
+        }
+    }
 }
 
 /// Convert half-float bits to f32.
@@ -153,7 +230,51 @@ mod tests {
     }
 
     #[test]
+    fn fused_float_row_matches_reference() {
+        let mut x: u32 = 12345;
+        for bps in [2usize, 3, 4] {
+            for factor in [0usize, 1, 2, 4] {
+                for le in [false, true] {
+                    let samples = 37;
+                    let bytes: Vec<u8> = (0..samples * bps)
+                        .map(|_| {
+                            x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                            (x >> 24) as u8
+                        })
+                        .collect();
+                    // Reference: old two-step path.
+                    let mut r = bytes.clone();
+                    let mut tmp = vec![];
+                    if factor > 0 {
+                        undo_float_predictor(&mut r, &mut tmp, samples, bps, factor);
+                    } else if le {
+                        for c in r.chunks_exact_mut(bps) {
+                            c.reverse();
+                        }
+                    }
+                    let mut want = vec![0f32; samples];
+                    float_bytes_to_f32(&r, bps, &mut want);
+                    let mut got = vec![0f32; samples];
+                    let mut b = bytes.clone();
+                    decode_float_row(&mut b, samples, bps, factor, le, &mut got);
+                    for (g, w) in got.iter().zip(&want) {
+                        assert_eq!(g.to_bits(), w.to_bits(), "bps {bps} factor {factor} le {le}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn inflate_limits() {
         assert!(inflate_zlib(&[0x78, 0x9c, 0xff], 100).is_err());
+        assert!(inflate_zlib_into(&[0x78, 0x9c, 0xff], &mut [0u8; 100]).is_err());
+        // "hello" compressed with zlib.
+        let z = [0x78, 0x9c, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x07, 0x00, 0x06, 0x2c, 0x02, 0x15];
+        let mut out = [0u8; 16];
+        assert_eq!(inflate_zlib_into(&z, &mut out).unwrap(), 5);
+        assert_eq!(&out[..5], b"hello");
+        assert_eq!(inflate_zlib(&z, 16).unwrap(), b"hello");
+        assert!(inflate_zlib_into(&z, &mut [0u8; 3]).is_err());
     }
 }

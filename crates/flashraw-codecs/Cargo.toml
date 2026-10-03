@@ -17,6 +17,7 @@ jpegxl = ["dep:jxl-oxide"]
 flashraw-core.workspace = true
 rayon = { workspace = true, optional = true }
 zune-inflate.workspace = true
+zlib-rs.workspace = true
 zune-jpeg.workspace = true
 jxl-oxide = { workspace = true, optional = true }
 

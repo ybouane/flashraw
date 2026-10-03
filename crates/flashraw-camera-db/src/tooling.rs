@@ -53,9 +53,10 @@ fn format_json(v: &serde_json::Value, indent: usize, out: &mut String) {
         Value::Array(a) if a.is_empty() => out.push_str("[]"),
         Value::Array(a) => {
             let scalars = a.iter().all(|x| !x.is_object() && !x.is_array());
-            let inline = serde_json::to_string(v).unwrap_or_default();
-            if scalars && inline.len() <= 160 {
-                out.push_str(&inline.replace(',', ", "));
+            let items: Vec<String> = a.iter().map(|x| serde_json::to_string(x).unwrap_or_default()).collect();
+            let inline = format!("[{}]", items.join(", "));
+            if scalars && inline.len() <= 162 {
+                out.push_str(&inline);
                 return;
             }
             out.push_str("[\n");
@@ -175,4 +176,21 @@ pub fn compare(a: &DbFile, b: &DbFile) -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_json;
+
+    #[test]
+    fn inline_arrays_keep_string_contents() {
+        let v: serde_json::Value = serde_json::json!({ "aliases": ["C70Z,C7000Z", "X"], "m": [1, -2, 3] });
+        let mut once = String::new();
+        format_json(&v, 0, &mut once);
+        assert!(once.contains(r#"["C70Z,C7000Z", "X"]"#), "{once}");
+        assert!(once.contains("[1, -2, 3]"), "{once}");
+        let mut twice = String::new();
+        format_json(&serde_json::from_str(&once).unwrap(), 0, &mut twice);
+        assert_eq!(once, twice);
+    }
 }

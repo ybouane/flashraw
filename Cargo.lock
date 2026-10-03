@@ -491,6 +491,7 @@ dependencies = [
  "jxl-oxide",
  "proptest",
  "rayon",
+ "zlib-rs",
  "zune-inflate",
  "zune-jpeg",
 ]

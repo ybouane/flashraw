@@ -12,7 +12,7 @@
 //! `clrs = ncomp + sraw` interleaved values per MCU, where luma samples chain-predict
 //! from the previous luma sample (matching Canon's encoder).
 
-use flashraw_core::bits::{BitPumpJpeg, BitRead};
+use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::huffman::HuffTable;
 use flashraw_core::{Error, ReadAt, Result};
 
@@ -212,7 +212,11 @@ where
     let mut cur = vec![0u16; rl];
     let mut prev = vec![0u16; rl];
     let scan = data.get(hdr.scan_offset..).ok_or_else(|| Error::corrupt("lossless JPEG: scan beyond data"))?;
-    let mut bits = BitPumpJpeg::new(scan);
+    // Remove byte stuffing once, up front: the hot loop then runs on a plain MSB pump
+    // whose refill needs no per-byte 0xFF checks.
+    let un = unstuff(scan);
+    let mut segment = 0usize;
+    let mut bits = BitPumpMsb::new(un.segment(0));
     let clrs = hdr.clrs as usize;
     let init = 1u32 << (hdr.bits - 1);
     let mut vpred = [init as u16; 6];
@@ -221,8 +225,12 @@ where
     for jrow in 0..hdr.height as usize {
         if restart != usize::MAX && (jrow * hdr.width as usize) % restart == 0 {
             vpred = [init as u16; 6];
-            if jrow > 0 && !bits.reset_at_restart() {
-                return Err(Error::corrupt("lossless JPEG: missing restart marker"));
+            if jrow > 0 {
+                segment += 1;
+                if segment >= un.segments.len() {
+                    return Err(Error::corrupt("lossless JPEG: missing restart marker"));
+                }
+                bits = BitPumpMsb::new(un.segment(segment));
             }
         }
         if fast {
@@ -242,11 +250,76 @@ where
     Ok(())
 }
 
+/// Entropy-coded data with `FF 00` stuffing removed, split at restart markers.
+pub struct Unstuffed {
+    data: Vec<u8>,
+    /// `(start, end)` of each restart interval within `data`.
+    segments: Vec<(usize, usize)>,
+}
+
+impl Unstuffed {
+    fn segment(&self, i: usize) -> &[u8] {
+        self.segments.get(i).map(|&(a, b)| &self.data[a..b]).unwrap_or(&[])
+    }
+}
+
+/// Index of the first 0xFF byte (word-at-a-time scan).
+#[inline]
+fn find_ff(s: &[u8]) -> Option<usize> {
+    let mut i = 0;
+    while i + 8 <= s.len() {
+        let w = u64::from_le_bytes(s[i..i + 8].try_into().unwrap());
+        let inv = !w;
+        let hit = inv.wrapping_sub(0x0101_0101_0101_0101) & !inv & 0x8080_8080_8080_8080;
+        if hit != 0 {
+            return Some(i + (hit.trailing_zeros() / 8) as usize);
+        }
+        i += 8;
+    }
+    s[i..].iter().position(|&b| b == 0xFF).map(|p| i + p)
+}
+
+/// Strip byte stuffing from a JPEG scan. `FF 00` becomes `FF`; `FF D0..D7` (restart)
+/// starts a new segment; any other marker (or a lone trailing `FF`) ends the scan,
+/// exactly where the byte-wise JPEG pump would stop feeding data.
+pub fn unstuff(scan: &[u8]) -> Unstuffed {
+    let mut data = Vec::with_capacity(scan.len());
+    let mut segments = Vec::new();
+    let mut seg_start = 0usize;
+    let mut i = 0usize;
+    loop {
+        match find_ff(&scan[i..]) {
+            None => {
+                data.extend_from_slice(&scan[i..]);
+                break;
+            }
+            Some(k) => {
+                data.extend_from_slice(&scan[i..i + k]);
+                let p = i + k;
+                match scan.get(p + 1) {
+                    Some(0x00) => {
+                        data.push(0xFF);
+                        i = p + 2;
+                    }
+                    Some(&m) if (0xD0..=0xD7).contains(&m) => {
+                        segments.push((seg_start, data.len()));
+                        seg_start = data.len();
+                        i = p + 2;
+                    }
+                    _ => break,
+                }
+            }
+        }
+    }
+    segments.push((seg_start, data.len()));
+    Unstuffed { data, segments }
+}
+
 /// Predictor 1 (left neighbour), the overwhelmingly common case.
 #[inline]
-fn decode_row_pred1(
+fn decode_row_pred1<B: BitRead>(
     tables: &[HuffTable],
-    bits: &mut BitPumpJpeg,
+    bits: &mut B,
     cur: &mut [u16],
     clrs: usize,
     vpred: &mut [u16; 6],
@@ -266,18 +339,9 @@ fn decode_row_pred1(
                 *v = p as u16;
             }
         }
-        2 => {
-            let (t0, t1) = (&tables[0], &tables[1]);
-            let (mut p0, mut p1) = (cur[0] as i32, cur[1] as i32);
-            for px in cur[2..].chunks_exact_mut(2) {
-                p0 += t0.decode_diff(bits)?;
-                p1 += t1.decode_diff(bits)?;
-                px[0] = p0 as u16;
-                px[1] = p1 as u16;
-                p0 = px[0] as i32;
-                p1 = px[1] as i32;
-            }
-        }
+        2 => decode_interleaved::<B, 2>(tables, bits, cur)?,
+        3 => decode_interleaved::<B, 3>(tables, bits, cur)?,
+        4 => decode_interleaved::<B, 4>(tables, bits, cur)?,
         _ => {
             for i in clrs..cur.len() {
                 let c = i % clrs;
@@ -289,10 +353,32 @@ fn decode_row_pred1(
     Ok(())
 }
 
+/// Predictor-1 decode of `N` interleaved components (CR2 uses 2 or 4): predictors stay in
+/// registers and there is no per-sample component index arithmetic.
+#[inline(always)]
+fn decode_interleaved<B: BitRead, const N: usize>(tables: &[HuffTable], bits: &mut B, cur: &mut [u16]) -> Result<()> {
+    let t: [&HuffTable; N] = std::array::from_fn(|c| &tables[c]);
+    let mut p: [u16; N] = std::array::from_fn(|c| cur[c]);
+    let mut err = false;
+    for px in cur[N..].chunks_exact_mut(N) {
+        // One refill (>= 56 bits for byte pumps) covers two table-hit samples (<= 27 bits
+        // each); the odd-sample check only triggers for pumps with coarser refills.
+        for c in 0..N {
+            bits.fill_to(if c % 2 == 0 { 54 } else { 27 });
+            p[c] = (p[c] as i32 + t[c].decode_diff_buffered(bits, &mut err)) as u16;
+            px[c] = p[c];
+        }
+    }
+    if err {
+        return Err(Error::corrupt("lossless JPEG: invalid Huffman code"));
+    }
+    Ok(())
+}
+
 #[inline(never)]
-fn decode_row_generic(
+fn decode_row_generic<B: BitRead>(
     hdr: &LjpegHeader,
-    bits: &mut BitPumpJpeg,
+    bits: &mut B,
     cur: &mut [u16],
     prev: &[u16],
     jrow: usize,
@@ -544,6 +630,22 @@ pub(crate) mod tests {
                 assert_eq!(out, s, "psv {psv} comps {comps}");
             }
         }
+    }
+
+    #[test]
+    fn unstuffing_and_restart_segments() {
+        let scan = [0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56, 0xFF, 0x00, 0xFF, 0xD1, 0x78, 0xFF, 0xD9, 0x99];
+        let u = unstuff(&scan);
+        assert_eq!(u.segment(0), &[0x12, 0xFF, 0x34]);
+        assert_eq!(u.segment(1), &[0x56, 0xFF]);
+        assert_eq!(u.segment(2), &[0x78]);
+        assert_eq!(u.segments.len(), 3);
+        // Long runs without 0xFF go through the word-at-a-time scanner.
+        let long: Vec<u8> = (0..1000u32).map(|i| (i % 255) as u8).collect();
+        assert_eq!(unstuff(&long).segment(0), &long[..]);
+        assert_eq!(find_ff(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0xFF]), Some(9));
+        assert_eq!(find_ff(&[0xFF]), Some(0));
+        assert_eq!(find_ff(&[1, 2]), None);
     }
 
     #[test]

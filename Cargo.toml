@@ -42,6 +42,7 @@ serde_json = "1"
 clap = { version = "4.6", features = ["derive"] }
 zune-jpeg = "0.4"
 zune-inflate = { version = "0.2", default-features = false, features = ["zlib"] }
+zlib-rs = { version = "0.6", default-features = false, features = ["rust-allocator"] }
 jxl-oxide = "0.12"
 wgpu = "30"
 pollster = "1"

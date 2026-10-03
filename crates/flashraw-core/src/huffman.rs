@@ -15,13 +15,13 @@ use crate::bits::{BitRead, extend_diff};
 /// Sign-extend a JPEG difference without branches (`len` in 0..=15).
 #[inline(always)]
 fn extend_diff_branchless(v: u32, len: u32) -> i32 {
-    if len == 0 {
-        return 0;
-    }
+    // For len == 0, v == 0 and the shifted test bit is 0 → neg mask applies to
+    // (1 - 1) == 0, giving 0 without a branch.
     let v = v as i32;
+    let top = (v >> (len.max(1) - 1)) & 1;
     // All ones when the top bit is clear (negative difference), else zero.
-    let neg = ((v >> (len - 1)) & 1) - 1;
-    v + (neg & (1 - (1 << len)))
+    let neg = top - 1;
+    v + (neg & (1 - (1i32 << len)))
 }
 
 #[cfg(test)]
@@ -39,13 +39,23 @@ const LUT_BITS: u32 = 12;
 const LUT_SIZE: usize = 1 << LUT_BITS;
 
 // Entry layout (u32):
-//   bits 0..5   : total bits consumed (code length, or code+diff length when FULL)
-//   bit  5      : FULL flag (payload is the decoded diff)
-//   bit  6      : VALID flag
-//   bits 8..16  : symbol
-//   bits 16..32 : decoded diff (i16) when FULL
+//   bits 0..5   : bits consumed: the code length, or code + diff length when FULL
+//   bit  5      : FULL flag (bits 16..32 hold the decoded difference)
+//   bit  6      : VALID flag (code fits in LUT_BITS; otherwise use the canonical slow path)
+//   bits 8..16  : symbol (for difference tables: the number of diff bits that follow)
+//   bits 16..32 : decoded difference (i16) when FULL
+//
+// Two decoding strategies, chosen per table from its code lengths:
+// - "full" tables (most of the probability mass decodes in one lookup, e.g. short codes
+//   with small differences): FULL entries carry the finished difference; the FULL
+//   branch is then well predicted and one load decodes a sample.
+// - otherwise entries store only code length + symbol and the difference is extracted
+//   arithmetically (peek code + diff bits at once, mask, branch-free sign extension),
+//   avoiding mispredictions when the FULL case is a coin flip.
 const FLAG_FULL: u32 = 1 << 5;
 const FLAG_VALID: u32 = 1 << 6;
+/// Probability mass of single-lookup samples above which a table uses FULL entries.
+const FULL_MODE_THRESHOLD: f64 = 0.0;
 
 /// A canonical Huffman table with fast lookup.
 #[derive(Clone)]
@@ -60,6 +70,8 @@ pub struct HuffTable {
     pub dng_bug16: bool,
     /// Whether diff bits follow the symbol (false: the symbol value itself is the result).
     pub has_diffs: bool,
+    /// Use precomputed differences (see the entry layout notes).
+    full_mode: bool,
     max_len: u32,
 }
 
@@ -107,6 +119,14 @@ impl HuffTable {
             code <<= 1;
         }
         maxcode[17] = i32::MAX;
+        // Expected share of samples whose code + difference fit one lookup (a code of
+        // length L occurs with probability ~2^-L in a canonical, near-optimal code).
+        let full_mass: f64 = codes
+            .iter()
+            .filter(|&&(_, len, sym)| len <= LUT_BITS && (sym == 0 || (sym < 16 && len + sym as u32 <= LUT_BITS)))
+            .map(|&(_, len, _)| 0.5f64.powi(len as i32))
+            .sum();
+        let full_mode = has_diffs && full_mass >= FULL_MODE_THRESHOLD;
         let mut lut = Box::new([0u32; LUT_SIZE]);
         for &(code, len, sym) in &codes {
             if len > LUT_BITS {
@@ -114,28 +134,26 @@ impl HuffTable {
             }
             let shift = LUT_BITS - len;
             let base = (code << shift) as usize;
+            let plain = len | FLAG_VALID | ((sym as u32) << 8);
+            if !full_mode {
+                lut[base..base + (1usize << shift)].fill(plain);
+                continue;
+            }
             for fill in 0..(1usize << shift) {
                 let idx = base | fill;
-                let mut e = len | FLAG_VALID | ((sym as u32) << 8);
-                if has_diffs {
-                    let dlen = sym as u32;
-                    if dlen == 0 {
-                        e |= FLAG_FULL;
-                    } else if dlen < 16 && len + dlen <= LUT_BITS {
-                        // The remaining LUT bits contain the diff bits.
-                        let dbits = ((idx as u32) >> (LUT_BITS - len - dlen)) & ((1 << dlen) - 1);
-                        let diff = extend_diff(dbits, dlen);
-                        e = (len + dlen)
-                            | FLAG_VALID
-                            | FLAG_FULL
-                            | ((sym as u32) << 8)
-                            | ((diff as i16 as u16 as u32) << 16);
-                    }
-                }
-                lut[idx] = e;
+                let dlen = sym as u32;
+                lut[idx] = if dlen == 0 {
+                    plain | FLAG_FULL
+                } else if dlen < 16 && len + dlen <= LUT_BITS {
+                    let dbits = ((idx as u32) >> (LUT_BITS - len - dlen)) & ((1 << dlen) - 1);
+                    let diff = extend_diff(dbits, dlen);
+                    (len + dlen) | FLAG_VALID | FLAG_FULL | ((sym as u32) << 8) | ((diff as i16 as u16 as u32) << 16)
+                } else {
+                    plain
+                };
             }
         }
-        Ok(HuffTable { lut, maxcode, valptr, mincode, values, dng_bug16: false, has_diffs, max_len })
+        Ok(HuffTable { lut, maxcode, valptr, mincode, values, dng_bug16: false, has_diffs, full_mode, max_len })
     }
 
     /// Build from a list of `(code_length, symbol)` pairs in canonical order
@@ -186,7 +204,7 @@ impl HuffTable {
         let e = self.lut[bits.peek_no_fill(LUT_BITS) as usize];
         if e & FLAG_VALID != 0 {
             let sym = (e >> 8) & 0xFF;
-            // When FULL, the LUT length includes the `sym` diff bits; skip only the code.
+            // FULL entries count code + diff bits; skip only the code here.
             let code_len = if e & FLAG_FULL != 0 { (e & 0x1F) - sym } else { e & 0x1F };
             bits.skip_no_fill(code_len);
             return Ok(sym);
@@ -201,26 +219,56 @@ impl HuffTable {
     pub fn decode_diff<B: BitRead>(&self, bits: &mut B) -> Result<i32> {
         bits.fill();
         let e = self.lut[bits.peek_no_fill(LUT_BITS) as usize];
-        if e & FLAG_FULL != 0 {
+        if self.full_mode && e & FLAG_FULL != 0 {
             bits.skip_no_fill(e & 0x1F);
             return Ok((e >> 16) as u16 as i16 as i32);
         }
-        if e & FLAG_VALID != 0 {
-            let len = e & 0x1F;
-            let sym = (e >> 8) & 0xFF;
-            bits.skip_no_fill(len);
-            if sym < 16 {
-                // After fill() at least 32 bits are buffered: code (<= LUT_BITS) plus
-                // diff (<= 15) always fits, so no second refill is needed.
-                let v = bits.peek_no_fill(sym);
-                bits.skip_no_fill(sym);
-                return Ok(extend_diff_branchless(v, sym));
-            }
-            return Ok(self.read_diff(bits, sym));
+        let dlen = (e >> 8) & 0xFF;
+        if e & FLAG_VALID != 0 && dlen < 16 {
+            // After fill() at least 32 bits are buffered; code (<= LUT_BITS) + diff (<= 15)
+            // always fits, so code and diff are consumed together, without branches.
+            let total = (e & 0x1F) + dlen;
+            let v = bits.peek_no_fill(total) & ((1u32 << dlen) - 1);
+            bits.skip_no_fill(total);
+            return Ok(extend_diff_branchless(v, dlen));
         }
-        let (sym, len) = self.slow_symbol(bits)?;
+        let (sym, len) = if e & FLAG_VALID != 0 { (dlen, e & 0x1F) } else { self.slow_symbol(bits)? };
         bits.skip_no_fill(len);
         Ok(self.read_diff(bits, sym))
+    }
+
+    /// Decode one difference assuming at least 27 bits are buffered (the caller refilled,
+    /// e.g. with [`BitRead::fill_to`]):
+    /// table hits need no refill and no error path. Rare cases (codes longer than the
+    /// lookup table, 16-bit differences, invalid codes) fall back to the general decoder;
+    /// a corrupt code sets `*err` and yields 0 so hot loops avoid per-sample `Result`s.
+    #[inline(always)]
+    pub fn decode_diff_buffered<B: BitRead>(&self, bits: &mut B, err: &mut bool) -> i32 {
+        let e = self.lut[bits.peek_no_fill(LUT_BITS) as usize];
+        if e & FLAG_FULL != 0 {
+            bits.skip_no_fill(e & 0x1F);
+            return (e >> 16) as u16 as i16 as i32;
+        }
+        let dlen = (e >> 8) & 0xFF;
+        if e & FLAG_VALID != 0 && dlen < 16 {
+            let total = (e & 0x1F) + dlen;
+            let v = bits.peek_no_fill(total) & ((1u32 << dlen) - 1);
+            bits.skip_no_fill(total);
+            return extend_diff_branchless(v, dlen);
+        }
+        self.decode_diff_cold(bits, err)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn decode_diff_cold<B: BitRead>(&self, bits: &mut B, err: &mut bool) -> i32 {
+        match self.decode_diff(bits) {
+            Ok(d) => d,
+            Err(_) => {
+                *err = true;
+                0
+            }
+        }
     }
 
     /// Read the diff for a given length symbol (handles the 16-bit special case).

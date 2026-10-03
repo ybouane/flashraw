@@ -241,6 +241,10 @@ impl BitRead for StuffedBits<'_> {
         if self.bits >= 32 {
             return;
         }
+        self.refill_force();
+    }
+    #[inline(always)]
+    fn refill_force(&mut self) {
         if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
             let w = u64::from_be_bytes(chunk.try_into().unwrap_or([0xff; 8]));
             // SWAR: any 0xFF byte needs the stuffing-aware path.

@@ -40,6 +40,16 @@ pub trait BitRead {
         self.overrun().saturating_sub(self.buffered() as usize / 8)
     }
 
+    /// Ensure at least `n` bits (`n <= 56`) are buffered (zero padding past the end).
+    #[inline(always)]
+    fn fill_to(&mut self, n: u32) {
+        if self.buffered() < n {
+            self.refill_force();
+        }
+    }
+    /// Refill to the pump's maximum fill level even if 32 or more bits are buffered.
+    fn refill_force(&mut self);
+
     #[inline(always)]
     fn peek(&mut self, n: u32) -> u32 {
         self.fill();
@@ -142,6 +152,10 @@ impl BitRead for BitPumpMsb<'_> {
         if self.bits >= 32 {
             return;
         }
+        self.refill_force();
+    }
+    #[inline(always)]
+    fn refill_force(&mut self) {
         if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
             let w = u64::from_be_bytes(chunk.try_into().unwrap());
             self.cache |= w >> self.bits;
@@ -209,6 +223,10 @@ impl BitRead for BitPumpLsb<'_> {
         if self.bits >= 32 {
             return;
         }
+        self.refill_force();
+    }
+    #[inline(always)]
+    fn refill_force(&mut self) {
         if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
             let w = u64::from_le_bytes(chunk.try_into().unwrap());
             self.cache |= w << self.bits;
@@ -284,6 +302,10 @@ impl<const W: usize> BitRead for BitPumpMsbWords<'_, W> {
         if self.bits >= 32 {
             return;
         }
+        self.refill_force();
+    }
+    #[inline(always)]
+    fn refill_force(&mut self) {
         if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
             let le = u64::from_le_bytes(chunk.try_into().unwrap());
             // Reorder so the first word occupies the top bits.
@@ -418,6 +440,10 @@ impl BitRead for BitPumpJpeg<'_> {
         if self.bits >= 32 {
             return;
         }
+        self.refill_force();
+    }
+    #[inline(always)]
+    fn refill_force(&mut self) {
         if let Some(chunk) = self.data.get(self.pos..self.pos + 8) {
             let w = u64::from_be_bytes(chunk.try_into().unwrap());
             // SWAR test for any 0xFF byte in the word.
