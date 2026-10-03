@@ -498,6 +498,7 @@ impl DngRaw<'_> {
         let (tx, ty) = (self.tiles_x(), self.height.div_ceil(self.tile_h));
         let n = (tx * ty) as usize;
         let errors = std::sync::Mutex::new(Vec::<Error>::new());
+        let mut float_max = None;
         let simd = ctx.simd;
         // Parallelise across units when there are several; a single unit parallelises inside (uncompressed rows).
         let par_units = ctx.parallel && n > 1;
@@ -538,20 +539,26 @@ impl DngRaw<'_> {
                     self.height,
                 )
                 .ok_or_else(|| Error::corrupt("invalid DNG tile grid"))?;
+                let max = std::sync::atomic::AtomicU32::new(0);
                 par::for_each_index(n, par_units, |i| {
                     let (x, y) = (i as u32 % tx, i as u32 / tx);
                     if let Some(t) = g.claim(x, y) {
-                        if let Err(e) = self.decode_unit_f32(i, t) {
-                            errors.lock().unwrap().push(e);
+                        match self.decode_unit_f32(i, t) {
+                            Ok(m) => {
+                                max.fetch_max(m, std::sync::atomic::Ordering::Relaxed);
+                            }
+                            Err(e) => errors.lock().unwrap().push(e),
                         }
                     }
                 });
+                float_max = Some(f32::from_bits(max.into_inner()));
                 Ok(())
             }
         })?;
         if let Some(e) = errors.into_inner().unwrap().into_iter().next() {
             return Err(e);
         }
+        img.float_max = float_max;
         Ok(img)
     }
 
@@ -781,7 +788,8 @@ impl DngRaw<'_> {
         Ok(())
     }
 
-    fn decode_unit_f32(&self, i: usize, mut t: TileMut<'_, '_, f32>) -> Result<()> {
+    /// Decode one float tile; returns the largest non-negative sample written (as bits).
+    fn decode_unit_f32(&self, i: usize, mut t: TileMut<'_, '_, f32>) -> Result<u32> {
         let src = self.unit_bytes(i)?;
         let (w, h) = t.size();
         let cpp = self.cpp as usize;
@@ -814,6 +822,7 @@ impl DngRaw<'_> {
         let little = self.order == ByteOrder::Little;
         let mut rowbuf = vec![0u8; row_bytes];
         let mut vals = vec![0f32; if sx == 0 && w * cpp == trl { 0 } else { trl }];
+        let mut max = 0u32;
         for y in 0..h {
             let off = (sy + y) * row_bytes;
             let Some(rb) = raw.get(off..off + row_bytes) else { break };
@@ -824,10 +833,12 @@ impl DngRaw<'_> {
                 deflate::decode_float_row(&mut rowbuf, trl, bytes_ps, factor, little, &mut vals);
                 t.row(y).copy_from_slice(&vals[sx..sx + w * cpp]);
             }
+            // While the row is in cache: its maximum for a later float -> integer conversion.
+            max = max.max(max_nonneg_bits(t.row(y)));
         }
         // Return the per-thread scratch buffer for the next tile.
         SCRATCH.with(|c| *c.borrow_mut() = scratch);
-        Ok(())
+        Ok(max)
     }
 }
 

@@ -272,7 +272,7 @@ impl<'a> FlashRaw<'a> {
             OutputFormat::RawU16 => match img.data {
                 PixelData::U16(v) => (img.width, img.height, img.cpp, RawPixelData::U16(v)),
                 PixelData::F32(v) => {
-                    let (v, scale) = float_to_u16(&v, info.white_level.max());
+                    let (v, scale) = float_to_u16(&v, info.white_level.max(), img.float_max);
                     if scale != 1.0 {
                         float_scaled = Some(scale);
                     }
@@ -438,17 +438,24 @@ const FLOAT_TARGET: f32 = 16383.0;
 /// Convert floating-point samples to u16 (for integer output): if the larger of the white level and the data maximum lies
 /// outside [4096, 32767], samples are scaled so that maximum maps to 16383; values
 /// are clamped at 0 and truncated. Returns the samples and the scale applied.
-fn float_to_u16(v: &[f32], white: u32) -> (Vec<u16>, f32) {
+fn float_to_u16(v: &[f32], white: u32, known_max: Option<f32>) -> (Vec<u16>, f32) {
     const CHUNK: usize = 1 << 16;
-    // Parallel maximum (NaN-safe: f32::max ignores NaN).
-    let chunks: Vec<&[f32]> = v.chunks(CHUNK).collect();
-    let data_max = flashraw_core::par::map(chunks, true, |c| c.iter().copied().fold(0f32, f32::max))
-        .into_iter()
-        .fold(0f32, f32::max);
+    // Largest non-negative, non-NaN sample: measured by the decoder when it could, else
+    // one parallel pass.
+    let data_max = match known_max {
+        Some(m) => m,
+        None => {
+            let chunks: Vec<&[f32]> = v.chunks(CHUNK).collect();
+            let bits = flashraw_core::par::map(chunks, true, flashraw_core::max_nonneg_bits).into_iter().max();
+            f32::from_bits(bits.unwrap_or(0))
+        }
+    };
     let tmax = (white.max(1) as f32).max(data_max).max(1.0);
     let scale = if !(4096.0..=32767.0).contains(&tmax) { FLOAT_TARGET / tmax } else { 1.0 };
     let mut out = flashraw_core::alloc_zeroed::<u16>(v.len()).unwrap_or_else(|_| vec![0; v.len()]);
-    flashraw_core::par::for_each_row_chunk(&mut out, CHUNK, 1, true, |first, o| {
+    // Memory-bound: a few workers saturate bandwidth (see par::memory_bound_workers).
+    let workers = flashraw_core::par::memory_bound_workers();
+    flashraw_core::par::for_each_row_chunk_bounded(&mut out, CHUNK, workers, true, |first, o| {
         let src = &v[first * CHUNK..first * CHUNK + o.len()];
         for (d, &x) in o.iter_mut().zip(src) {
             *d = (x.max(0.0) * scale) as u16;

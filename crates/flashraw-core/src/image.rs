@@ -160,6 +160,20 @@ pub struct RawImage {
     /// Components (samples) per pixel: 1 for CFA/mono, 3 for linear RGB / Foveon, 4 for some.
     pub cpp: u32,
     pub data: PixelData,
+    /// Largest non-negative, non-NaN sample of float data, when the decoder measured it
+    /// while decoding (saves a pass over the buffer when converting to integers).
+    pub float_max: Option<f32>,
+}
+
+/// Largest non-negative, non-NaN value of `v` as IEEE bits (0 when there is none). For
+/// such values bit patterns order like integers, so this runs on integer lanes
+/// (vectorisable, unlike `f32::max`); NaN patterns (above +inf) are masked out.
+#[inline]
+pub fn max_nonneg_bits(v: &[f32]) -> u32 {
+    v.iter().fold(0i32, |m, &x| {
+        let b = x.to_bits() as i32;
+        m.max(if b > 0x7f80_0000 { 0 } else { b })
+    }) as u32
 }
 
 impl RawImage {
@@ -167,13 +181,13 @@ impl RawImage {
     pub fn new_u16(width: u32, height: u32, cpp: u32, limits: &Limits) -> Result<Self> {
         limits.check_dims(width, height, cpp)?;
         let n = width as usize * height as usize * cpp as usize;
-        Ok(RawImage { width, height, cpp, data: PixelData::U16(alloc_zeroed(n)?) })
+        Ok(RawImage { width, height, cpp, data: PixelData::U16(alloc_zeroed(n)?), float_max: None })
     }
     /// Allocate a zeroed `f32` image, enforcing `limits`.
     pub fn new_f32(width: u32, height: u32, cpp: u32, limits: &Limits) -> Result<Self> {
         limits.check_dims(width, height, cpp)?;
         let n = width as usize * height as usize * cpp as usize;
-        Ok(RawImage { width, height, cpp, data: PixelData::F32(alloc_zeroed(n)?) })
+        Ok(RawImage { width, height, cpp, data: PixelData::F32(alloc_zeroed(n)?), float_max: None })
     }
     /// Samples per row.
     #[inline]
@@ -217,7 +231,7 @@ impl RawImage {
                 PixelData::F32(out)
             }
         };
-        Ok(RawImage { width: r.width, height: r.height, cpp: self.cpp, data })
+        Ok(RawImage { width: r.width, height: r.height, cpp: self.cpp, data, float_max: None })
     }
     /// Sample at `(x, y, c)` as f32 (convenience for tests/tools; not for hot loops).
     pub fn sample(&self, x: u32, y: u32, c: u32) -> f32 {

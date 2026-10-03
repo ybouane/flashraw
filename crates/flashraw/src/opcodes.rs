@@ -127,6 +127,8 @@ impl Lists {
             // Float samples: tables and constants address the 16-bit range of [0, white].
             PixelData::F32(v) => window(v, 65535.0 / info.white_level.max().max(1) as f32),
         };
+        // The samples changed: a maximum measured during decoding no longer holds.
+        img.float_max = None;
         self.record(0, &skipped);
     }
 
@@ -218,7 +220,13 @@ impl Lists {
                 *v *= 65535.0;
             }
         });
-        let lin = RawImage { width: img.width, height: img.height, cpp: img.cpp, data: PixelData::F32(norm) };
+        let lin = RawImage {
+            width: img.width,
+            height: img.height,
+            cpp: img.cpp,
+            data: PixelData::F32(norm),
+            float_max: None,
+        };
         let mut linfo = info.clone();
         linfo.black_level = BlackLevel::uniform(0.0);
         linfo.black_from_masked = false;

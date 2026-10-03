@@ -29,7 +29,7 @@ pub use decoder::{
     DecodeContext, DecodeUnit, FrameInfo, PackOrder, PackedPayload, RandomAccess, RawDecoder, SampleFormat,
 };
 pub use error::{Error, Result};
-pub use image::{Limits, PixelData, RawImage, alloc_zeroed};
+pub use image::{Limits, PixelData, RawImage, alloc_zeroed, max_nonneg_bits};
 pub use metadata::{ExposureInfo, GpsInfo, LensInfo, PreviewEncoding, PreviewInfo, PreviewKind, RawMetadata};
 pub use profile::{Profiler, Stage};
 pub use types::*;
