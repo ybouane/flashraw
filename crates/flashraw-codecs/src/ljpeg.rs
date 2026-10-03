@@ -400,6 +400,22 @@ fn decode_row_generic<B: BitRead>(
     clrs: usize,
     vpred: &mut [u16; 6],
 ) -> Result<()> {
+    reconstruct_row(hdr, |c| hdr.tables[c].decode_diff(bits), cur, prev, jrow, clrs, vpred)
+}
+
+/// Rebuild one row from its differences (`next(c)` yields the next difference, `c` being
+/// the MCU position): every predictor, sRAW sample layouts, and the vertical chain of
+/// first-column predictors kept in `vpred`.
+#[inline(always)]
+pub(crate) fn reconstruct_row(
+    hdr: &LjpegHeader,
+    mut next: impl FnMut(usize) -> Result<i32>,
+    cur: &mut [u16],
+    prev: &[u16],
+    jrow: usize,
+    clrs: usize,
+    vpred: &mut [u16; 6],
+) -> Result<()> {
     let sraw = hdr.sraw as usize;
     let psv = hdr.predictor;
     let mut spred: i32 = 0;
@@ -407,7 +423,7 @@ fn decode_row_generic<B: BitRead>(
     for col in 0..width {
         for c in 0..clrs {
             let i = col * clrs + c;
-            let diff = hdr.tables[c].decode_diff(bits)?;
+            let diff = next(c)?;
             let mut pred: i32 = if sraw > 0 && c <= sraw && (col | c) != 0 {
                 spred
             } else if col > 0 {
@@ -439,6 +455,39 @@ fn decode_row_generic<B: BitRead>(
         }
     }
     Ok(())
+}
+
+/// [`decode_rows`] that first decodes large restart-free scans on all threads
+/// ([`decode_frame_parallel`]) when `parallel` is set. Rows reach `sink` in order either
+/// way with identical values; corrupt streams always take the sequential path, so errors
+/// are identical too.
+pub fn decode_rows_par<F>(data: &[u8], hdr: &LjpegHeader, parallel: bool, sink: F) -> Result<()>
+where
+    F: FnMut(usize, &[u16]) -> Result<()>,
+{
+    decode_rows_par_limit(data, hdr, parallel, hdr.height as usize, sink)
+}
+
+/// [`decode_rows_par`] for callers that only need the first `rows` rows and ignore what
+/// the stream holds after them (the parallel path then stops there; the sequential one
+/// still delivers every row).
+pub fn decode_rows_par_limit<F>(data: &[u8], hdr: &LjpegHeader, parallel: bool, rows: usize, mut sink: F) -> Result<()>
+where
+    F: FnMut(usize, &[u16]) -> Result<()>,
+{
+    let rl = hdr.row_len();
+    let rows = rows.min(hdr.height as usize);
+    let total = rl * rows;
+    if parallel && total >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES {
+        let mut frame = vec![0u16; total];
+        if crate::ljpeg_par::decode_frame_rows(data, hdr, rows, &mut frame)? {
+            for (jrow, row) in frame.chunks_exact(rl).enumerate() {
+                sink(jrow, row)?;
+            }
+            return Ok(());
+        }
+    }
+    decode_rows(data, hdr, sink)
 }
 
 /// Decode a lossless JPEG tile into a destination buffer.

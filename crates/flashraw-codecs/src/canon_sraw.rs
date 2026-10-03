@@ -54,7 +54,8 @@ impl SrawParams {
 }
 
 /// Decode an sRAW stream into `out` (`width * height * 3` samples, RGB interleaved).
-pub fn decode(data: &[u8], hdr: &LjpegHeader, p: &SrawParams, out: &mut [u16]) -> Result<()> {
+/// `parallel` lets large streams be entropy-decoded on all threads.
+pub fn decode(data: &[u8], hdr: &LjpegHeader, p: &SrawParams, parallel: bool, out: &mut [u16]) -> Result<()> {
     let clrs = hdr.clrs as usize;
     if hdr.sraw == 0 || !(4..=6).contains(&clrs) {
         return Err(Error::corrupt("sRAW: frame is not subsampled YCbCr"));
@@ -73,9 +74,11 @@ pub fn decode(data: &[u8], hdr: &LjpegHeader, p: &SrawParams, out: &mut [u16]) -
     if !(32..=65535).contains(&jwide) {
         return Err(Error::corrupt(format!("sRAW: invalid MCU row length {jwide}")));
     }
-    scatter(data, &jh, p, out)?;
-    interpolate_chroma(out, w, h, hdr.sraw);
-    convert(out, p);
+    if !(parallel && scatter_parallel(data, &jh, p, out)?) {
+        scatter(data, &jh, p, out)?;
+    }
+    interpolate_chroma(out, w, h, hdr.sraw, parallel);
+    convert(out, p, parallel);
     Ok(())
 }
 
@@ -166,6 +169,79 @@ impl Cursor {
     }
 }
 
+/// Vertical slices in stream order: `(first MCU, first column, end column, MCUs per row band)`.
+fn slice_list(p: &SrawParams, clrs: usize) -> Vec<(usize, usize, usize, usize)> {
+    let slice_cols = p.slices[1] as usize * 2 / clrs;
+    let step = (clrs >> 1) - 1;
+    let bands = p.height.div_ceil(step.max(1));
+    let mut out = Vec::new();
+    let (mut first, mut ecol) = (0usize, 0usize);
+    if p.height == 0 {
+        return out;
+    }
+    // Mirrors `Cursor`: slice `i` starts where the previous one ended; the last one (or every
+    // one when unsliced) ends at the even raw width; empty slices are skipped.
+    for _ in 0..=p.slices[0] as usize {
+        let scol = ecol;
+        ecol = scol + slice_cols;
+        if p.slices[0] == 0 || ecol + 1 > p.raw_width {
+            ecol = p.raw_width & !1;
+        }
+        if scol < ecol {
+            let per = (ecol - scol).div_ceil(2);
+            out.push((first, scol, ecol, per));
+            first += per * bands;
+        }
+    }
+    out
+}
+
+/// Parallel entropy decoding plus parallel placement by output row band. Returns
+/// `Ok(false)` when the stream has to go through the sequential path.
+fn scatter_parallel(data: &[u8], jh: &LjpegHeader, p: &SrawParams, out: &mut [u16]) -> Result<bool> {
+    let clrs = jh.clrs as usize;
+    let nluma = clrs - 2;
+    let step = (clrs >> 1) - 1;
+    let w = p.width;
+    let slices = slice_list(p, clrs);
+    let mcus = slices.last().map(|s| s.0 + s.3 * p.height.div_ceil(step.max(1))).unwrap_or(0);
+    let rl = jh.row_len();
+    let rows = (mcus * clrs).div_ceil(rl.max(1));
+    if rows == 0 || rows > jh.height as usize || rows * rl < crate::ljpeg_par::PARALLEL_MIN_SAMPLES {
+        return Ok(false);
+    }
+    let mut frame = vec![0u16; rows * rl];
+    if !crate::ljpeg_par::decode_frame_rows(data, jh, rows, &mut frame)? {
+        return Ok(false);
+    }
+    let band_len = w * 3 * step;
+    flashraw_core::par::for_each_row_chunk(out, band_len, 8, true, |b0, chunk| {
+        for (bi, band) in chunk.chunks_mut(band_len).enumerate() {
+            let b = b0 + bi;
+            for &(first, scol, ecol, per) in &slices {
+                for k in 0..per {
+                    let col = scol + 2 * k;
+                    if col >= ecol || col >= w {
+                        break;
+                    }
+                    let m = first + b * per + k;
+                    let mcu = &frame[m * clrs..m * clrs + clrs];
+                    for (j, &y) in mcu[..nluma].iter().enumerate() {
+                        if let Some(px) = band.get_mut(((j >> 1) * w + col + (j & 1)) * 3) {
+                            *px = y;
+                        }
+                    }
+                    if let Some(px) = band.get_mut(col * 3 + 1..col * 3 + 3) {
+                        px[0] = (mcu[nluma] as i16).wrapping_sub(16384) as u16;
+                        px[1] = (mcu[nluma + 1] as i16).wrapping_sub(16384) as u16;
+                    }
+                }
+            }
+        }
+    });
+    Ok(true)
+}
+
 fn scatter(data: &[u8], jh: &LjpegHeader, p: &SrawParams, out: &mut [u16]) -> Result<()> {
     let clrs = jh.clrs as usize;
     let nluma = clrs - 2;
@@ -207,28 +283,56 @@ fn s(v: u16) -> i32 {
     v as i16 as i32
 }
 
-fn interpolate_chroma(px: &mut [u16], w: usize, h: usize, sraw: u32) {
-    let vertical = sraw >> 1 != 0;
-    for row in 0..h {
-        let base = row * w * 3;
-        if vertical && row & 1 == 1 {
+fn interpolate_chroma(px: &mut [u16], w: usize, h: usize, sraw: u32, parallel: bool) {
+    use flashraw_core::par;
+    let rl = w * 3;
+    if sraw >> 1 != 0 && h > 1 {
+        // Odd rows take even-column chroma from the even rows around them (which this pass
+        // does not modify); computed first, then stored.
+        let src = &*px;
+        let odd: Vec<Vec<u16>> = par::map((1..h).step_by(2).collect(), parallel, |row| {
+            let base = row * rl;
+            let mut v = Vec::with_capacity(w);
             for col in (0..w).step_by(2) {
                 for c in 1..3 {
                     let i = base + col * 3 + c;
-                    let up = s(px[i - w * 3]);
-                    px[i] =
-                        if row == h - 1 { up as i16 as u16 } else { ((up + s(px[i + w * 3]) + 1) >> 1) as i16 as u16 };
+                    let up = s(src[i - rl]);
+                    v.push(if row == h - 1 {
+                        up as i16 as u16
+                    } else {
+                        ((up + s(src[i + rl]) + 1) >> 1) as i16 as u16
+                    });
+                }
+            }
+            v
+        });
+        par::for_each_row_chunk(px, rl * 2, 16, parallel, |p0, chunk| {
+            for (i, pair) in chunk.chunks_mut(rl * 2).enumerate() {
+                let Some(vals) = odd.get(p0 + i) else { continue };
+                if pair.len() < rl * 2 {
+                    continue;
+                }
+                let row = &mut pair[rl..];
+                for (k, col) in (0..w).step_by(2).enumerate() {
+                    row[col * 3 + 1] = vals[2 * k];
+                    row[col * 3 + 2] = vals[2 * k + 1];
+                }
+            }
+        });
+    }
+    // Odd columns from their horizontal neighbours, row by row.
+    par::for_each_row_chunk(px, rl, 32, parallel, |_, chunk| {
+        for row in chunk.chunks_mut(rl) {
+            for col in (1..w).step_by(2) {
+                for c in 1..3 {
+                    let i = col * 3 + c;
+                    let left = s(row[i - 3]);
+                    row[i] =
+                        if col == w - 1 { left as i16 as u16 } else { ((left + s(row[i + 3]) + 1) >> 1) as i16 as u16 };
                 }
             }
         }
-        for col in (1..w).step_by(2) {
-            for c in 1..3 {
-                let i = base + col * 3 + c;
-                let left = s(px[i - 3]);
-                px[i] = if col == w - 1 { left as i16 as u16 } else { ((left + s(px[i + 3]) + 1) >> 1) as i16 as u16 };
-            }
-        }
-    }
+    });
 }
 
 #[inline(always)]
@@ -236,7 +340,11 @@ fn clip15(v: i32) -> u16 {
     v.clamp(0, 32767) as u16
 }
 
-fn convert(px: &mut [u16], p: &SrawParams) {
+fn convert(px: &mut [u16], p: &SrawParams, parallel: bool) {
+    flashraw_core::par::for_each_row_chunk(px, 3 * 4096, 16, parallel, |_, chunk| convert_chunk(chunk, p));
+}
+
+fn convert_chunk(px: &mut [u16], p: &SrawParams) {
     let mul = [p.mul[0] as i32, p.mul[1] as i32, p.mul[2] as i32];
     let scale = |v: i32, m: i32| clip15(v.wrapping_mul(m) >> 10);
     match p.conversion {
@@ -325,7 +433,7 @@ mod tests {
         };
         set(&mut px, 0, 0, 10, -10);
         set(&mut px, 2, 0, 13, -13);
-        interpolate_chroma(&mut px, w, h, 3);
+        interpolate_chroma(&mut px, w, h, 3, false);
         let get = |px: &Vec<u16>, x: usize, y: usize| (px[(y * w + x) * 3 + 1] as i16, px[(y * w + x) * 3 + 2] as i16);
         assert_eq!(get(&px, 1, 0), (12, -11)); // (10 + 13 + 1) >> 1, (-10 - 13 + 1) >> 1
         assert_eq!(get(&px, 3, 0), (13, -13)); // right edge copies
@@ -337,13 +445,13 @@ mod tests {
     fn conversion_matches_reference_formulas() {
         let mut px = vec![4000u16, 100i16 as u16, (-50i16) as u16];
         let p = SrawParams { conversion: SrawConversion::Original { subtract_512: true }, ..params(1, 1, [0; 3]) };
-        convert(&mut px, &p);
+        convert(&mut px, &p, false);
         let y = 4000 - 512;
         assert_eq!(px, vec![(y - 50) as u16, (y + ((-778 * 100 - (-50 << 11)) >> 12)) as u16, (y + 100) as u16]);
         let mut px = vec![4000u16, 100i16 as u16, (-50i16) as u16];
         let p =
             SrawParams { conversion: SrawConversion::Matrix, hue: 6, mul: [2048, 1024, 512], ..params(1, 1, [0; 3]) };
-        convert(&mut px, &p);
+        convert(&mut px, &p, false);
         let (cb, cr) = (406, -194);
         let r = 4000 + ((50 * cb + 22929 * cr) >> 14);
         let g = 4000 + ((-5640 * cb - 11751 * cr) >> 14);
@@ -356,6 +464,6 @@ mod tests {
         let hdr_data = crate::ljpeg::encoder::encode(4, 2, 2, 12, 1, &[0; 16]);
         let hdr = LjpegHeader::parse(&hdr_data, Default::default()).unwrap();
         let mut out = vec![0u16; 4 * 2 * 3];
-        assert!(decode(&hdr_data, &hdr, &params(4, 2, [0; 3]), &mut out).is_err());
+        assert!(decode(&hdr_data, &hdr, &params(4, 2, [0; 3]), false, &mut out).is_err());
     }
 }

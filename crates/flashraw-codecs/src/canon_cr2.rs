@@ -101,9 +101,6 @@ impl Placement {
     }
 }
 
-/// Frames smaller than this decode sequentially (speculation has a fixed cost).
-const PARALLEL_MIN_SAMPLES: usize = 4 << 20;
-
 /// Decode the frame with [`ljpeg::decode_frame_parallel`] and place it. Returns
 /// `Ok(false)` when the stream has to be decoded sequentially.
 fn decode_parallel(
@@ -116,10 +113,10 @@ fn decode_parallel(
     let frame_len = hdr.row_len() * hdr.height as usize;
     if place.widths.len() == 1 && frame_len <= out.len() {
         // Unsliced: the sample stream is the image in raster order.
-        return crate::ljpeg_par::decode_frame_chunked(data, hdr, &mut out[..frame_len], chunk);
+        return crate::ljpeg_par::decode_frame_chunked(data, hdr, hdr.height as usize, &mut out[..frame_len], chunk);
     }
     let mut frame = vec![0u16; frame_len];
-    if !crate::ljpeg_par::decode_frame_chunked(data, hdr, &mut frame, chunk)? {
+    if !crate::ljpeg_par::decode_frame_chunked(data, hdr, hdr.height as usize, &mut frame, chunk)? {
         return Ok(false);
     }
     let (w, h) = (place.raw_width, place.raw_height);
@@ -163,7 +160,7 @@ pub fn decode(
     }
     let out = &mut out[..total];
     let mut place = Placement::new(raw_width, raw_height, slices)?;
-    if parallel && total >= PARALLEL_MIN_SAMPLES && decode_parallel(data, hdr, &place, out, None)? {
+    if parallel && total >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES && decode_parallel(data, hdr, &place, out, None)? {
         if shift_left_2 && total > 2 {
             out.copy_within(2.., 0);
             out[total - 2..].fill(0);

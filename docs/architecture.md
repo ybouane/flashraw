@@ -87,8 +87,9 @@ fully-decoded difference (code + diff bits ≤ 12), so most lossless-JPEG sample
 decode with one lookup and one shift.
 
 **Parallel decoding of one Huffman stream.** Formats whose single lossless-JPEG scan
-has no restart markers (CR2) are still decoded on all threads: the stream is cut into
-chunks that are decoded speculatively (once per table phase), Huffman
+has no restart markers (CR2, sRAW, single-strip DNG, Kodak DCS) are still decoded on all
+threads: the stream is cut into chunks that are decoded speculatively (one full decode
+per chunk; starts in other table phases run only until they join it), Huffman
 self-synchronisation locates where each chunk's speculation joins the true path
 (typically within a few dozen symbols), and rows are rebuilt from the differences by
 a parallel prefix sum. Any case the speculation cannot prove identical — no

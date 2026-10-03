@@ -28,6 +28,8 @@ use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::huffman::HuffTable;
 use flashraw_core::{Error, Result, par};
 
+/// Frames smaller than this decode sequentially (speculation has a fixed cost).
+pub(crate) const PARALLEL_MIN_SAMPLES: usize = 4 << 20;
 /// Smallest chunk worth a task.
 const MIN_CHUNK_BYTES: usize = 128 << 10;
 /// Boundaries recorded per chunk for synchronisation (true paths sync within a few
@@ -43,21 +45,26 @@ const END_SLACK_BITS: u64 = 16;
 /// cannot be decoded speculatively; the caller then uses [`crate::ljpeg::decode_rows`]
 /// (which also produces the exact error for corrupt data).
 pub fn decode_frame_parallel(data: &[u8], hdr: &LjpegHeader, frame: &mut [u16]) -> Result<bool> {
-    decode_frame_chunked(data, hdr, frame, None)
+    decode_frame_chunked(data, hdr, hdr.height as usize, frame, None)
+}
+
+/// [`decode_frame_parallel`] for the first `rows` rows only: data after them is not
+/// required to be valid.
+pub(crate) fn decode_frame_rows(data: &[u8], hdr: &LjpegHeader, rows: usize, frame: &mut [u16]) -> Result<bool> {
+    decode_frame_chunked(data, hdr, rows.min(hdr.height as usize), frame, None)
 }
 
 pub(crate) fn decode_frame_chunked(
     data: &[u8],
     hdr: &LjpegHeader,
+    height: usize,
     frame: &mut [u16],
     chunk_bytes: Option<usize>,
 ) -> Result<bool> {
     let clrs = hdr.clrs as usize;
     let rl = hdr.row_len();
-    let height = hdr.height as usize;
     let total = rl.checked_mul(height).ok_or_else(|| Error::corrupt("lossless JPEG: frame too large"))?;
-    if hdr.predictor != 1 || hdr.sraw != 0 || hdr.restart_interval != 0 || clrs == 0 || clrs > 4 || frame.len() < total
-    {
+    if hdr.restart_interval != 0 || clrs == 0 || clrs > 6 || frame.len() < total {
         return Ok(false);
     }
     let Some(scan) = data.get(hdr.scan_offset..) else { return Ok(false) };
@@ -83,20 +90,87 @@ pub(crate) fn decode_frame_chunked(
     // Pass 1: speculative decoding of every chunk.
     // A start with the wrong table phase rarely locks onto the true path when the
     // components use different tables, so every phase of the period is tried.
-    let jobs: Vec<(usize, usize)> = (0..nchunks).flat_map(|k| (0..period).map(move |g| (k, g))).collect();
-    let flat: Vec<Spec> = par::map(jobs, true, |(k, g)| {
+    // Phase 0 decodes the whole chunk; the other phases usually join its path within a few
+    // hundred symbols and stop there (see `Spec::merge`).
+    let flat: Vec<Vec<Spec>> = par::map((0..nchunks).collect(), true, |k| {
         let start = (k * chunk) as u64 * 8;
         let limit = if k + 1 == nchunks { None } else { Some(((k + 1) * chunk) as u64 * 8) };
-        speculate(stream, &hdr.tables, g, start, limit, total_bits, total)
+        let first = speculate(stream, &hdr.tables, 0, start, limit, total_bits, total, None);
+        let mut all = Vec::with_capacity(period);
+        let rest: Vec<Spec> = (1..period)
+            .map(|g| speculate(stream, &hdr.tables, g, start, limit, total_bits, total, Some((&first.states, period))))
+            .collect();
+        all.push(first);
+        all.extend(rest);
+        all
     });
-    let specs: Vec<&[Spec]> = flat.chunks(period).collect();
+    let specs: Vec<&[Spec]> = flat.iter().map(|v| &v[..]).collect();
 
     // Pass 2: resolve the true start of every chunk.
     let res = resolve(stream, &hdr.tables, &specs, period, total, total_bits);
     let Some(segments) = res else { return Ok(false) };
 
-    // Pass 3: chain the first sample of every row, then fill rows in parallel.
     let diffs = Segmented { segments: &segments };
+    if hdr.predictor == 1 && (hdr.sraw != 0 || clrs > 4) {
+        // Predictor 1 with sRAW layouts: a row depends on the rows above only through the
+        // first-column predictors (`vpred`), updated by the first MCU's differences of
+        // positions not predicted within the row. Chain those, then rebuild rows in parallel.
+        let sraw = hdr.sraw as usize;
+        let init = 1u16 << (hdr.bits - 1);
+        let mut starts = vec![[init; 6]; height];
+        let mut v = [init; 6];
+        for (r, st) in starts.iter_mut().enumerate() {
+            *st = v;
+            for c in (0..clrs).filter(|&c| c == 0 || c > sraw) {
+                v[c] = v[c].wrapping_add(diffs.get(r * rl + c));
+            }
+        }
+        let rows_per_task = height.div_ceil(par::threads().max(1) * 4).max(1);
+        let failed = std::sync::atomic::AtomicBool::new(false);
+        par::for_each_row_chunk(&mut frame[..total], rl, rows_per_task, true, |r0, rows| {
+            let mut buf = vec![0u16; rl];
+            for (i, row) in rows.chunks_exact_mut(rl).enumerate() {
+                let r = r0 + i;
+                diffs.copy_to(r * rl, &mut buf);
+                let mut vpred = starts[r];
+                let mut k = 0usize;
+                let next = |_c: usize| {
+                    let d = buf[k] as i16 as i32;
+                    k += 1;
+                    Ok(d)
+                };
+                // Row 0 semantics: predictor 1 never reads the previous row.
+                if crate::ljpeg::reconstruct_row(hdr, next, row, &[], 0, clrs, &mut vpred).is_err() {
+                    failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        });
+        return Ok(!failed.into_inner());
+    }
+    if hdr.predictor != 1 || hdr.sraw != 0 || clrs > 4 {
+        // Other predictors and sRAW: rows depend on the previous row or on values decoded
+        // earlier in the row, so they are rebuilt in order (entropy decoding, the costly
+        // part, already ran in parallel).
+        let init = 1u16 << (hdr.bits - 1);
+        let mut vpred = [init; 6];
+        let mut buf = vec![0u16; rl];
+        for r in 0..height {
+            diffs.copy_to(r * rl, &mut buf);
+            let (done, rest) = frame.split_at_mut(r * rl);
+            let prev = if r > 0 { &done[(r - 1) * rl..] } else { &[][..] };
+            let mut k = 0usize;
+            let next = |_c: usize| {
+                // Differences are kept modulo 2^16, which is all reconstruction needs.
+                let d = buf[k] as i16 as i32;
+                k += 1;
+                Ok(d)
+            };
+            crate::ljpeg::reconstruct_row(hdr, next, &mut rest[..rl], prev, r, clrs, &mut vpred)?;
+        }
+        return Ok(true);
+    }
+    // Pass 3: chain the first sample of every row, then fill rows in parallel.
+
     let init = 1u16 << (hdr.bits - 1);
     let mut starts = vec![0u16; height * clrs];
     let mut v = [init; 4];
@@ -144,6 +218,10 @@ fn prefix<const N: usize>(row: &mut [u16]) {
 struct Spec {
     /// Table phase of the first symbol.
     phase: usize,
+    /// `(j, j0)`: symbol `j` of this speculation starts where symbol `j0` of the phase-0
+    /// speculation of the same chunk does, in the same table phase, so from there on both
+    /// decode identically and this one stopped (its `states` end at index `j`).
+    merge: Option<(usize, usize)>,
     /// Bit position before symbol `j`, for the first [`SYNC_STATES`] symbols.
     states: Vec<u64>,
     /// Difference of every decoded symbol (as wrapping `u16`).
@@ -157,6 +235,7 @@ struct Spec {
     valid: usize,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn speculate(
     stream: &[u8],
     tables: &[HuffTable],
@@ -165,6 +244,7 @@ fn speculate(
     limit: Option<u64>,
     total_bits: u64,
     cap: usize,
+    mut merge_into: Option<(&[u64], usize)>,
 ) -> Spec {
     let clrs = tables.len();
     let span = limit.unwrap_or(total_bits).saturating_sub(start);
@@ -177,7 +257,20 @@ fn speculate(
     let mut c = phase % clrs;
     let mut err = false;
     // Never decode more symbols than the frame holds (bounds work on garbage input).
+    let mut merge = None;
     while pos < stop && diffs.len() <= cap {
+        if let Some((reference, period)) = merge_into {
+            if let Ok(j0) = reference.binary_search(&pos) {
+                if j0 % period == (phase + diffs.len()) % period {
+                    states.push(pos);
+                    merge = Some((diffs.len(), j0));
+                    break;
+                }
+            }
+            if diffs.len() >= SYNC_STATES {
+                merge_into = None;
+            }
+        }
         if states.len() < SYNC_STATES {
             states.push(pos);
         }
@@ -200,7 +293,7 @@ fn speculate(
     }
     // For the last chunk the loop ran one symbol past the slack (or hit the cap).
     let valid = if limit.is_none() && pos > total_bits + END_SLACK_BITS { diffs.len() - 1 } else { diffs.len() };
-    Spec { phase, states, diffs, errors, end: pos, valid }
+    Spec { phase, merge, states, diffs, errors, end: pos, valid }
 }
 
 /// Absolute index of a run's first symbol, symbols decoded on the true path before
@@ -232,6 +325,18 @@ fn resolve<'a>(
             ((s.phase + j) % period == n % period).then_some((s, j))
         });
         if let Some((s, j)) = hit {
+            if let Some((jm, j0)) = s.merge {
+                // Follow this speculation to where it joins phase 0's path.
+                if s.errors.iter().any(|&e| e >= j && e < jm) {
+                    return None;
+                }
+                let take = (jm - j).min(total - n);
+                bridge.extend_from_slice(&s.diffs[j..j + take]);
+                n += take;
+                pos = if n == total { s.states[j + take] } else { phases[0].states[j0] };
+                bits = None;
+                continue;
+            }
             let avail = if last { s.valid } else { s.diffs.len() };
             let count = avail.checked_sub(j)?.min(total - n);
             if last && count < total - n {
@@ -252,12 +357,16 @@ fn resolve<'a>(
             k += 1;
             continue;
         }
-        if !last && phases.iter().all(|s| pos >= s.end) {
+        if !last && phases.iter().filter(|s| s.merge.is_none()).all(|s| pos >= s.end) {
             // The true path walked past this whole (short) chunk; try the next one.
             k += 1;
             continue;
         }
-        if phases.iter().all(|s| s.states.len() == SYNC_STATES && s.states.last().is_some_and(|&l| pos > l)) {
+        if phases
+            .iter()
+            .filter(|s| s.merge.is_none())
+            .all(|s| s.states.len() == SYNC_STATES && s.states.last().is_some_and(|&l| pos > l))
+        {
             return None; // no synchronisation within the recorded boundaries
         }
         // Advance the true path by one symbol.
@@ -355,18 +464,20 @@ mod tests {
 
     #[test]
     fn matches_sequential_for_many_chunkings() {
-        for (comps, bits) in [(1usize, 12u32), (2, 14), (3, 12), (4, 14)] {
+        let cases = [(1usize, 12u32, 1u32), (2, 14, 1), (3, 12, 1), (4, 14, 1), (2, 14, 6), (1, 12, 7)];
+        let cases = cases.into_iter().chain((2..=5).map(|p| (2, 14, p)));
+        for (comps, bits, psv) in cases {
             let (w, h) = (97usize, 61usize);
-            let samples = pseudo(w * h * comps, bits, comps as u32 * 7 + 1);
-            let enc = encode(w, h, comps, bits, 1, &samples);
+            let samples = pseudo(w * h * comps, bits, comps as u32 * 7 + psv);
+            let enc = encode(w, h, comps, bits, psv, &samples);
             let hdr = LjpegHeader::parse(&enc, LjpegOptions::default()).unwrap();
             let want = sequential(&enc, &hdr);
             assert_eq!(want, samples);
             for chunk in [7usize, 64, 333, 1000, 5000, 1 << 20] {
                 let mut frame = vec![0u16; want.len()];
-                let ok = decode_frame_chunked(&enc, &hdr, &mut frame, Some(chunk)).unwrap();
-                assert!(ok, "comps {comps} chunk {chunk}: no synchronisation");
-                assert_eq!(frame, want, "comps {comps} chunk {chunk}");
+                let ok = decode_frame_chunked(&enc, &hdr, hdr.height as usize, &mut frame, Some(chunk)).unwrap();
+                assert!(ok, "comps {comps} psv {psv} chunk {chunk}: no synchronisation");
+                assert_eq!(frame, want, "comps {comps} psv {psv} chunk {chunk}");
             }
         }
     }
@@ -379,7 +490,7 @@ mod tests {
         let hdr = LjpegHeader::parse(&enc, LjpegOptions::default()).unwrap();
         let cut = &enc[..hdr.scan_offset + (enc.len() - hdr.scan_offset) / 2];
         let mut frame = vec![0u16; w * h * 2];
-        assert!(!decode_frame_chunked(cut, &hdr, &mut frame, Some(100)).unwrap());
+        assert!(!decode_frame_chunked(cut, &hdr, hdr.height as usize, &mut frame, Some(100)).unwrap());
     }
 
     #[test]

@@ -532,7 +532,8 @@ fn open_sraw<'a>(
         info,
         Box::new(move |ctx: &DecodeContext| {
             let mut img = RawImage::new_u16(out_w, out_h, 3, &ctx.limits)?;
-            ctx.profiler.time(Stage::EntropyDecode, || canon_sraw::decode(sdata, &hdr, &params, img.u16_mut()))?;
+            ctx.profiler
+                .time(Stage::EntropyDecode, || canon_sraw::decode(sdata, &hdr, &params, ctx.parallel, img.u16_mut()))?;
             Ok(img)
         }),
     );

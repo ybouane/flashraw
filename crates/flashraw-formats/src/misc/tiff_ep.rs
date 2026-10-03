@@ -68,7 +68,7 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
                     let hdr = ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions::default())?;
                     let base = s * rows_per_strip * wu;
                     let mut pos = 0usize;
-                    ljpeg::decode_rows(src, &hdr, |_, v| {
+                    ljpeg::decode_rows_par(src, &hdr, ctx.parallel, |_, v| {
                         let end = (base + pos + v.len()).min(out.len());
                         if base + pos < end {
                             out[base + pos..end].copy_from_slice(&v[..end - base - pos]);

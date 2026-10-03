@@ -664,7 +664,7 @@ impl DngRaw<'_> {
                 };
                 let (mut row, mut col) = (0usize, 0usize);
                 let (cx0, cx1) = (sx, sx + w * cpp);
-                ljpeg::decode_rows(src, &hdr, |_, mut s| {
+                ljpeg::decode_rows_par(src, &hdr, parallel_rows, |_, mut s| {
                     while !s.is_empty() && row < sy + h {
                         let take = (trl - col).min(s.len());
                         if row >= sy {
