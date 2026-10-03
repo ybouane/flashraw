@@ -602,12 +602,21 @@ impl<'a> RevBits<'a> {
     fn consumed(&self) -> u64 {
         self.pos as u64 * 8 - self.bits as u64
     }
+    /// A reader positioned `bit` bits into `data` (bits are grouped in 32-bit words).
+    fn at_bit(data: &'a [u8], bit: u64) -> Self {
+        let mut r = RevBits { data, pos: (bit / 32) as usize * 4, cache: 0, bits: 0 };
+        r.fill();
+        r.skip((bit % 32) as u32);
+        r
+    }
 }
 
 /// Format-8 decoder: Huffman-coded differences to a running 2×2 prediction.
 pub struct V8Decoder {
     lut: V8Lut,
-    shift_down: [u8; 17],
+    /// Per symbol: magnitude bits stored, left shift of the magnitude, offset added
+    /// for a negative difference, and the rounding offset of shifted magnitudes.
+    sym: [(u32, u32, i32, i32); 17],
     clip: u32,
     gamma: Option<Vec<u16>>,
     initial: [u16; 4],
@@ -620,10 +629,17 @@ impl V8Decoder {
         for (d, &s) in shift_down.iter_mut().zip(p.shift_down.iter()) {
             *d = s.min(31);
         }
+        let sym = std::array::from_fn(|i| {
+            let s = shift_down[i] as u32;
+            let d = (i as u32).saturating_sub(s);
+            let neg = if i > 0 { -(1i32 << i) + if s > 0 { 0 } else { 1 } } else { 0 };
+            let add = if s > 0 { 1i32 << (s - 1) } else { 0 };
+            (d, s, neg, add)
+        });
         // Apply the tag 0x39/0x3A tone curve unless it is the identity.
         let curve: Vec<u16> = (0..0x10000u32).map(|i| gamma_curve(p, i)).collect();
         let gamma = if curve.iter().enumerate().all(|(i, &v)| v as usize == i) { None } else { Some(curve) };
-        Ok(V8Decoder { lut, shift_down, clip: p.clip, gamma, initial: p.initial })
+        Ok(V8Decoder { lut, sym, clip: p.clip, gamma, initial: p.initial })
     }
 
     /// Decode strips into `out` (`raw_width` samples per row). Strips decode in
@@ -678,37 +694,124 @@ impl V8Decoder {
             }
         }
         let jobs: Vec<(usize, Vec<&mut [u16]>)> = segments.into_iter().enumerate().collect();
-        let results = par::map(jobs, parallel, |(i, rows)| self.decode_strip(&strips[i], rows));
+        let results = par::map(jobs, parallel, |(i, rows)| self.decode_strip_with(&strips[i], rows, parallel));
         results.into_iter().collect::<Result<Vec<()>>>().map(|_| ())
     }
 
     /// Decode one strip into `rows` (its `height` row segments of `width` samples).
-    pub fn decode_strip(&self, s: &V8Strip, mut rows: Vec<&mut [u16]>) -> Result<()> {
+    pub fn decode_strip(&self, s: &V8Strip, rows: Vec<&mut [u16]>) -> Result<()> {
+        self.decode_strip_with(s, rows, false)
+    }
+
+    fn decode_strip_with(&self, s: &V8Strip, rows: Vec<&mut [u16]>, parallel: bool) -> Result<()> {
         let (w, h) = (s.width as usize, s.height as usize);
-        let half_w = w / 2;
-        if half_w == 0 || h / 2 == 0 || rows.len() < h || rows.iter().any(|r| r.len() < w) {
+        if w / 2 == 0 || h / 2 == 0 || rows.len() < h || rows.iter().any(|r| r.len() < w) {
             return Err(Error::corrupt("invalid Panasonic v8 strip"));
         }
+        if parallel && w * h >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES / 4 {
+            if let Some(rows) = self.decode_strip_parallel(s, rows, None)? {
+                // Speculation could not prove the result: decode sequentially.
+                return self.decode_strip_seq(s, rows);
+            }
+            return Ok(());
+        }
+        self.decode_strip_seq(s, rows)
+    }
+
+    fn decode_strip_seq(&self, s: &V8Strip, mut rows: Vec<&mut [u16]>) -> Result<()> {
+        match &self.gamma {
+            Some(t) => self.decode_rows_seq::<true>(s, &mut rows, t),
+            None => self.decode_rows_seq::<false>(s, &mut rows, &[]),
+        }
+    }
+
+    fn decode_rows_seq<const GAMMA: bool>(&self, s: &V8Strip, rows: &mut [&mut [u16]], curve: &[u16]) -> Result<()> {
+        let (w, h) = (s.width as usize, s.height as usize);
+        let half_w = w / 2;
         let budget = s.bits.div_ceil(64) * 64;
         let mut bits = RevBits::new(s.data);
         let clip = self.clip as i32;
         let mut line_base = self.initial.map(|v| v as i32);
-        // Values are decoded per 2x2 block in the order TL, BL, TR, BR.
-        const SLOT: [usize; 4] = [0, 2, 1, 3];
+        let mut err = false;
         for pair in 0..h / 2 {
             let mut base = line_base;
             let (top, bottom) = rows[pair * 2..pair * 2 + 2].split_at_mut(1);
             let (r0, r1) = (&mut *top[0], &mut *bottom[0]);
             for bx in 0..half_w {
                 let mut blk = [0i32; 4];
-                for slot in SLOT {
-                    let delta = self.next_diff(&mut bits)?;
+                // Values are decoded per 2x2 block in the order TL, BL, TR, BR.
+                for slot in [0usize, 2, 1, 3] {
+                    let delta = self.diff(&mut bits, &mut err);
                     blk[slot] = (base[slot] + delta).clamp(0, clip);
                 }
                 base = blk;
                 if bx == 0 {
                     line_base = blk;
                 }
+                let g = |v: i32| if GAMMA { curve[v as usize & 0xffff] } else { v as u16 };
+                r0[2 * bx] = g(blk[0]);
+                r0[2 * bx + 1] = g(blk[1]);
+                r1[2 * bx] = g(blk[2]);
+                r1[2 * bx + 1] = g(blk[3]);
+            }
+            if err {
+                return Err(Error::corrupt("invalid Panasonic v8 Huffman code"));
+            }
+            if bits.consumed() > budget {
+                return Err(Error::corrupt("Panasonic v8 strip truncated"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Speculative parallel decode of one strip ([`crate::par_entropy`]): differences
+    /// on all threads, then the first block of every row pair is chained and row pairs
+    /// are rebuilt in parallel. Returns the rows back when the strip has to be decoded
+    /// sequentially (speculation could not prove the result, or it is corrupt).
+    fn decode_strip_parallel<'r>(
+        &self,
+        s: &V8Strip,
+        rows: Vec<&'r mut [u16]>,
+        chunk: Option<usize>,
+    ) -> Result<Option<Vec<&'r mut [u16]>>> {
+        let (w, h) = (s.width as usize, s.height as usize);
+        let (half_w, pairs) = (w / 2, h / 2);
+        let budget = s.bits.div_ceil(64) * 64;
+        let scan = V8Scan { data: s.data, dec: self, budget };
+        let Some(chunk) = chunk.or_else(|| crate::par_entropy::default_chunk(s.data.len())) else {
+            return Ok(Some(rows));
+        };
+        let Some(values) = crate::par_entropy::decode(&scan, pairs * half_w * 4, chunk) else {
+            return Ok(Some(rows));
+        };
+        let delta = |k: usize| -> i32 { (values.get(2 * k) as u32 | (values.get(2 * k + 1) as u32) << 16) as i32 };
+        let clip = self.clip as i32;
+        // Chain the first block of each row pair (its prediction comes from the pair above).
+        let mut starts = Vec::with_capacity(pairs);
+        let mut line_base = self.initial.map(|v| v as i32);
+        for pair in 0..pairs {
+            starts.push(line_base);
+            let k0 = pair * half_w * 4;
+            let mut blk = [0i32; 4];
+            for (j, slot) in [0usize, 2, 1, 3].into_iter().enumerate() {
+                blk[slot] = (line_base[slot] + delta(k0 + j)).clamp(0, clip);
+            }
+            line_base = blk;
+        }
+        let mut it = rows.into_iter();
+        let jobs: Vec<(usize, &mut [u16], &mut [u16])> =
+            (0..pairs).filter_map(|p| Some((p, it.next()?, it.next()?))).collect();
+        par::map(jobs, true, |(pair, r0, r1)| {
+            let mut buf = vec![0u16; half_w * 8];
+            values.copy_to(pair * half_w * 8, &mut buf);
+            let mut base = starts[pair];
+            for (bx, d) in buf.chunks_exact(8).enumerate() {
+                let mut blk = [0i32; 4];
+                for (j, slot) in [0usize, 2, 1, 3].into_iter().enumerate() {
+                    let delta = (d[2 * j] as u32 | (d[2 * j + 1] as u32) << 16) as i32;
+                    blk[slot] = (base[slot] + delta).clamp(0, clip);
+                }
+                base = blk;
                 let g = |v: i32| match &self.gamma {
                     Some(t) => t[v as usize & 0xffff],
                     None => v as u16,
@@ -718,41 +821,72 @@ impl V8Decoder {
                 r1[2 * bx] = g(blk[2]);
                 r1[2 * bx + 1] = g(blk[3]);
             }
-            if bits.consumed() > budget {
-                return Err(Error::corrupt("Panasonic v8 strip truncated"));
-            }
-        }
-        Ok(())
+        });
+        Ok(None)
     }
 
+    /// Next difference. A code of length zero (no table match) sets `err` and consumes
+    /// one bit so callers always progress.
     #[inline(always)]
-    fn next_diff(&self, bits: &mut RevBits) -> Result<i32> {
+    fn diff(&self, bits: &mut RevBits, err: &mut bool) -> i32 {
         // One refill covers the code (<= 16 bits) and its magnitude bits (<= 16).
         bits.fill();
         let window = bits.cache;
-        let (len, sym) = self.lut.entries.get((window >> (64 - self.lut.bits)) as usize).copied().unwrap_or((0, 0));
+        let (len, sym) = self.lut.entries[(window >> (64 - self.lut.bits)) as usize];
         if len == 0 {
-            return Err(Error::corrupt("invalid Panasonic v8 Huffman code"));
+            *err = true;
+            bits.skip(1);
+            return 0;
         }
-        let i = sym as u32;
-        let s = self.shift_down[sym as usize] as u32;
-        let d = i.saturating_sub(s);
+        let (d, s, neg, add) = self.sym[sym as usize];
         let after = window << len;
         bits.skip(len as u32 + d);
         // The bit following the code decides the sign (JPEG-style), even when no
         // magnitude bits are stored (shift-down >= length).
-        let next_bit_set = (after >> 63) == 1;
+        let positive = (after >> 63) == 1;
         let raw = if d > 0 { (after >> (64 - d)) as i32 } else { 0 };
-        let v = raw << s;
-        let delta1 = if next_bit_set {
-            v
-        } else if i > 0 {
-            v - (1 << i) + if s > 0 { 0 } else { 1 }
-        } else {
-            0
-        };
-        let delta2 = if s > 0 { 1 << (s - 1) } else { 0 };
-        Ok(delta1 + delta2)
+        (raw << s) + if positive { 0 } else { neg } + add
+    }
+}
+
+/// A strip's stream as one 32-bit difference per symbol (two values: low, high half).
+struct V8Scan<'a> {
+    data: &'a [u8],
+    dec: &'a V8Decoder,
+    budget: u64,
+}
+
+impl crate::par_entropy::SymbolStream for V8Scan<'_> {
+    type Pump<'p>
+        = RevBits<'p>
+    where
+        Self: 'p;
+    const WIDTH: usize = 2;
+    fn cycle(&self) -> usize {
+        1
+    }
+    fn period(&self) -> usize {
+        1
+    }
+    fn total_bits(&self) -> u64 {
+        self.budget
+    }
+    fn end_check(&self, pos: u64) -> crate::par_entropy::EndCheck {
+        if pos <= self.budget { crate::par_entropy::EndCheck::Valid } else { crate::par_entropy::EndCheck::Invalid }
+    }
+    fn pump_at(&self, bit: u64) -> RevBits<'_> {
+        RevBits::at_bit(self.data, bit)
+    }
+    fn position(p: &RevBits<'_>) -> u64 {
+        p.consumed()
+    }
+    #[inline(always)]
+    fn decode(&self, p: &mut RevBits<'_>, _phase: usize, out: &mut [u16]) -> bool {
+        let mut err = false;
+        let d = self.dec.diff(p, &mut err);
+        out[0] = d as u32 as u16;
+        out[1] = (d as u32 >> 16) as u16;
+        !err
     }
 }
 
@@ -999,5 +1133,12 @@ mod tests {
         // Truncated strip.
         let short = V8Strip { data: &data[..data.len() / 3], bits: (data.len() / 3 * 8) as u64, ..strip };
         assert!(dec.decode(&[short], &mut out, w, h, true).is_err());
+        // Speculative parallel strip decoding gives the same values for any chunking.
+        for chunk in [3usize, 17, 64, 1 << 20] {
+            let mut par = vec![0u16; w * h];
+            let rows: Vec<&mut [u16]> = par.chunks_exact_mut(w).collect();
+            assert!(dec.decode_strip_parallel(&strip, rows, Some(chunk)).unwrap().is_none(), "chunk {chunk}");
+            assert_eq!(par, vals, "chunk {chunk}");
+        }
     }
 }
