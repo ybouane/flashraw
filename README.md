@@ -12,6 +12,7 @@ embedded previews without decoding the sensor at all.
 - **Fast**: 64-bit bit pumps, LUT Huffman decoding, SIMD unpacking (SSE4.1 / NEON /
   WASM SIMD128), tile/strip/slice parallelism, zero-copy parsing, single-pass RGB
   development. See [benchmarks](docs/benchmarks.md).
+  CC0 sample files with full-buffer bit-exact comparisons; see the
 - **Safe**: bounds-checked parsing, limit-checked allocations, fuzzing, a malformed
   file suite, and minimal, documented `unsafe`.
 - **Everywhere**: native library, `flashraw` CLI, WASM + npm (`flashraw`) for
@@ -168,7 +169,7 @@ measured cost model predicts a win. See [docs/gpu.md](docs/gpu.md).
 [Architecture](docs/architecture.md) · [Formats](docs/formats.md) ·
 [GPU](docs/gpu.md) · [WASM](docs/wasm.md) · [Testing](docs/testing.md) ·
 [Benchmarks](docs/benchmarks.md) · [Camera DB](docs/camera-db.md) ·
-[Contributing](docs/contributing.md) · [Reference implementations](docs/reference-implementations.md) ·
+[Contributing](docs/contributing.md) · [References](docs/references.md) ·
 
 ## License
 

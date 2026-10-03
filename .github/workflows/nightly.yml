@@ -19,13 +19,12 @@ jobs:
         with:
           path: corpus
           key: rpu-corpus-${{ hashFiles('tools/corpus/manifest.tsv') }}
-      - name: Cache decoder
-        uses: actions/cache@v4
+      - name: Restore decoder harness
+        uses: actions/cache/restore@v4
         with:
           path: reference
-          key: reference-${{ runner.os }}-${{ hashFiles('tools/reference/*') }}
+          key: reference-harness-${{ runner.os }}
       - run: python3 tools/corpus/fetch.py --jobs 16
-      - run: tools/reference/setup.sh
       - run: cargo test --release -p flashraw --test regression --test malformed
       - uses: actions/upload-artifact@v4
         if: always()

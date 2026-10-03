@@ -21,7 +21,7 @@
 //! horizontal uncompressed bands.
 
 use crate::common::*;
-use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from, read_u16s};
+use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, matrix_from, read_u16s, fallback_table};
 use flashraw_codecs::phaseone::{IiqLParams, decode_l_row, decode_s_row, unscramble_pairs};
 use flashraw_core::bits::{BitPumpMsb, BitPumpMsb32};
 use flashraw_core::tiff::{Tiff, tags};

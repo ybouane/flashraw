@@ -231,7 +231,11 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 
     // CFA (tag 0x09: 1 = RGGB, 2 = GRBG, 3 = GBRG, 4 = BGGR at the buffer origin).
     let mut cfa_code = u16_tag(ifd, 0x09).unwrap_or(1);
-    if base_model(&meta.model).eq_ignore_ascii_case("DC-LX100M2") && raw_w == 4816 && raw_h == 3568 && cfa_code == 3 {
+    if base_model(&meta.model).eq_ignore_ascii_case("DC-LX100M2")
+        && raw_w == 4816
+        && raw_h == 3568
+        && cfa_code == 3
+    {
         cfa_code = 4;
     }
     let cfa = match cfa_code {

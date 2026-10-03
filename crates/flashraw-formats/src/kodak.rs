@@ -8,7 +8,7 @@
 //! in a 4-sample buffer with an always-zero fourth channel.
 
 use crate::common::*;
-use crate::medium::{cfa_at_origin, even_margins, fallback_table, matrix_from};
+use crate::medium::{cfa_at_origin, even_margins, matrix_from, fallback_table};
 use flashraw_codecs::kodak as kc;
 use flashraw_core::tiff::{Entry, Ifd, Tiff, tags};
 use flashraw_core::*;

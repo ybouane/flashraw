@@ -69,6 +69,7 @@ carries enough information; the database refines, it does not gate.
 
 
 1. Corpus: `tools/corpus/fetch.py` downloads the CC0 raw.pixls.us samples to `corpus/`.
+   the repository; see [testing.md](testing.md)).
    matching file (recognition, dimensions, active area, CFA, black, white, WB,
    colour matrix, orientation, full-buffer pixel hash).
    the first differing pixel.

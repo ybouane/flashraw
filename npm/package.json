@@ -21,7 +21,7 @@
     "cr3",
     "nef",
     "arw",
-    "reference"
+    "raw-decoder"
   ],
   "type": "module",
   "sideEffects": [

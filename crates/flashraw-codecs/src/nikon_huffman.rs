@@ -498,7 +498,13 @@ impl<'a> RowBits<'a> {
 }
 
 #[inline(always)]
-fn decode_row_fast<M: Fn(u16) -> u16>(bits: &mut RowBits, t: &DirectHuff, vp: &mut [u16; 2], line: &mut [u16], map: &M) {
+fn decode_row_fast<M: Fn(u16) -> u16>(
+    bits: &mut RowBits,
+    t: &DirectHuff,
+    vp: &mut [u16; 2],
+    line: &mut [u16],
+    map: &M,
+) {
     let d0 = bits.diff(t);
     vp[0] = vp[0].wrapping_add(d0 as u16);
     let d1 = bits.diff(t);
