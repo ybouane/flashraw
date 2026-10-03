@@ -21,15 +21,17 @@ embedded previews without decoding the sensor at all.
 ## Results at a glance
 
 On 2,016 CC0 sample files (every make and model on raw.pixls.us), 1,951 decode
-(AMD Ryzen 7 9700X):
+every metadata check (with documented differences). Against it on 101 representative
+files doing equivalent work (AMD Ryzen 7 9700X, 16 threads):
 
 | | Median | P90 file | Best |
 |---|---:|---:|---:|
-| Full decode | **4.5×** faster | 1.7× | 80× |
-| RAW → display RGB (bilinear) | **9.3×** faster | 4.2× | 14.9× |
+| Full decode | **6.9×** faster | 1.8× | 90× |
+| RAW → display RGB (bilinear) | **9.6×** faster | 5.0× | 14.5× |
 
-median decode is 1.6× faster. Details and the cases where FlashRaw is *not* faster:
-[docs/benchmarks.md](docs/benchmarks.md).
+RAW → RGB uses 45% less peak memory. Single sequential entropy streams (CR2, lossless
+DNG, Hasselblad, Nikon, Pentax) are decoded on all cores by speculation. Details and the
+cases where FlashRaw is *not* faster: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Rust
 
