@@ -8,7 +8,11 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **Instant previews**: embedded JPEG previews/thumbnails as bytes (zero decoding), or as RGBA.
 - **Sensor data**: `raw-u16`, `raw-f32`, `normalized`, `linear-rgb`, or display-ready `rgba8`
   (`ImageData`-compatible), bit-identical to the native FlashRaw decoder.
-- **WASM SIMD128** binary with automatic scalar fallback; ~215 KiB brotli.
+- **WASM SIMD128** binary with automatic scalar fallback; ~500 KiB brotli (all decoders).
+- **Multithreaded**: on cross-origin isolated pages and in Node.js a threaded build decodes one
+  image on all cores (shared memory + Web Workers); single-threaded everywhere else, same API.
+- **WebGPU** (opt-in build): GPU develop/unpack, results read back or left in a `GPUBuffer` /
+  `GPUTexture` for your renderer.
 - **Off the main thread**: built-in Web Worker / `worker_threads` pool (`flashraw/worker`).
 - **TypeScript** types for everything; structured errors (`err.kind`).
 - One package for Vite, webpack 5, Rollup/Rolldown, esbuild, Node.js ≥ 18, Deno.
@@ -150,8 +154,48 @@ pool.terminate();
 ```
 
 In Node.js the same import gives a `worker_threads` pool (paths are opened by the workers).
-Results arrive as transferred buffers (no copy). The WASM module itself is single-threaded;
-a pool decodes several files in parallel (≈2.7× with 4 workers on 8 files; see docs/wasm.md).
+Results arrive as transferred buffers (no copy). Each pool worker runs the single-threaded build
+(pass `init: { threads: n }` to give each its own thread pool); a pool decodes several files in
+parallel (≈2.7× with 4 workers on 8 files), while the multithreaded build (below) makes one
+decode faster.
+
+## Multithreading
+
+`init()` picks the multithreaded build automatically when it can run:
+
+- **Browsers**: the page must be *cross-origin isolated* (`self.crossOriginIsolated === true`),
+  which is what enables `SharedArrayBuffer`. Serve the page with
+
+  ```
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp     (or: credentialless)
+  ```
+
+  Every cross-origin subresource then needs CORS or `Cross-Origin-Resource-Policy`. Without
+  isolation (or without WebAssembly SIMD) the single-threaded build is used, with the reason in
+  `getCapabilities().threads.reason`; nothing else changes.
+- **Node.js**: always (shared memory + `worker_threads`); `FLASHRAW_WASM_THREADS=0` disables it,
+  `FLASHRAW_WASM_THREADS=8` sets the count.
+
+```js
+import { init, initThreads, getCapabilities } from 'flashraw';
+await initThreads(8);              // optional, before any other call: thread count (default: hardware concurrency)
+await init({ threads: false });    // or force the single-threaded build
+(await getCapabilities()).threads; // { wasmThreads, count, reason, crossOriginIsolated, sharedArrayBuffer, ... }
+```
+
+Threads are Web Workers (`dist/thread-worker.browser.js`) sharing one `WebAssembly.Memory`: one
+coordinator runs the decode, the others are rayon workers; the main thread never blocks, so
+`await raw.decode()` keeps the UI responsive. Output is bit-identical to the single-threaded build.
+The thread count is fixed at initialisation. `zeroCopy` views point into a `SharedArrayBuffer`
+(`toImageData()` copies; the default copied output is an ordinary `ArrayBuffer`).
+
+Dev servers: Vite `server: { headers: { 'Cross-Origin-Opener-Policy': 'same-origin',
+'Cross-Origin-Embedder-Policy': 'require-corp' } }` (also `preview`); webpack-dev-server
+`devServer: { headers: { ...same } }`. Both bundle the thread worker and the threaded `.wasm`
+automatically (literal `new Worker(new URL(..., import.meta.url))`); with esbuild copy
+`dist/thread-worker.browser.js`, `threads.js`, `errors.js`, `flashraw_bindgen_threads.js` and
+`flashraw_simd_threads.wasm` next to your bundle, or pass `init({ threadWorkerUrl })`.
 
 ## Metadata only
 
@@ -219,27 +263,48 @@ const jpeg = await extractPreview(fileOrBytes);      // one-shot
 
 ## GPU decoding
 
-```js
-const f = await raw.decode({ backend: 'gpu', fallback: 'cpu' });   // default fallback
-f.backend.kind;            // 'gpu' when the WebGPU backend ran, otherwise 'cpu'
-f.backend.fallbackReason;  // e.g. "this FlashRaw WASM binary was built without the `gpu` feature ..."
+The WebGPU backend ships as a separate, opt-in binary (`flashraw_simd_gpu.wasm`, +51 KiB brotli
+and +52 KiB of JS bindings; single-threaded). Load it before any other call:
 
+```js
+await init({ gpu: true });
+
+// Read back into a typed array (same shape as the CPU result):
+const f = await raw.decode({ backend: 'gpu', output: 'rgba8' });   // fallback: 'cpu' by default
+f.backend.kind;            // 'gpu' when WebGPU ran, otherwise 'cpu'
+f.backend.fallbackReason;  // why not (no WebGPU, no adapter, binary without GPU, ...)
 await raw.decode({ backend: 'gpu', fallback: 'error' });            // throws GpuUnavailableError instead
 
-const caps = await getCapabilities();
-caps.gpu;                  // { compiled, webgpu, available, reason }
+// Keep the result on the GPU: 'gpu-rgba8' | 'gpu-raw-u16' | 'gpu-normalized' | 'gpu-linear-rgb'
+const g = await raw.decode({ output: 'gpu-rgba8' });
+if (g instanceof GpuFrame) {
+  g.buffer;                // GPUBuffer (STORAGE | COPY_SRC), one RGBA8 pixel per u32; g.byteLength bytes
+  const tex = g.createTexture(); // GPUTexture rgba8unorm (TEXTURE_BINDING | STORAGE_BINDING | COPY_SRC), yours
+  const host = await g.download(); // a regular DecodedFrame<'rgba8'>
+  g.free();                // returns the buffer to FlashRaw's pool (or: const buf = g.detachBuffer())
+}
+
+const device = await getGpuDevice(); // the GPUDevice FlashRaw uses (null without WebGPU)
+(await getCapabilities()).gpu;       // { compiled, webgpu, available, reason, adapter }
 ```
 
-The WebGPU backend is under development in the Rust crate; this package's published binaries do
-not include it yet, so `backend: 'gpu'` currently always takes the fallback path with an explicit
-reason. The option, result fields and errors are stable, so code written today picks the GPU up
-automatically once a `gpu`-enabled build ships.
+**Sharing the device.** GPU outputs live on FlashRaw's own `GPUDevice`: build your renderer on
+`getGpuDevice()` to bind `buffer`/`createTexture()` directly (zero copy). Passing in an
+application-created `GPUDevice` is not supported (the underlying wgpu WebGPU backend cannot wrap
+a foreign device). With another device, `download()` and upload, or use `rgba8` output.
+
+Without WebGPU (no `navigator.gpu`, no adapter, Node.js) `gpu-*` outputs fall back to the host
+output (`gpu-rgba8` → a CPU `rgba8` `DecodedFrame`) unless `fallback: 'error'`. Raw outputs of
+entropy-coded files decode on the CPU (that *is* the work); bit-packed files are unpacked on the
+GPU straight from the file bytes. GPU `rgba8` matches the CPU result within ±2 per channel.
 
 ## CPU fallback and SIMD
 
-`init()` runs implicitly on first use. It loads `flashraw_simd.wasm` on engines with WebAssembly
-SIMD (Chrome/Edge ≥ 91, Firefox ≥ 89, Safari ≥ 16.4, Node ≥ 16.4) and `flashraw.wasm` otherwise.
-Both produce identical output.
+`init()` runs implicitly on first use. It loads `flashraw_simd_threads.wasm` when threads are
+available (see Multithreading), else `flashraw_simd.wasm` on engines with WebAssembly SIMD
+(Chrome/Edge ≥ 91, Firefox ≥ 89, Safari ≥ 16.4, Node ≥ 16.4) and `flashraw.wasm` otherwise, or
+`flashraw_simd_gpu.wasm` with `init({ gpu: true })`. Only one binary is downloaded; all produce
+identical CPU output. `getCapabilities().wasm.binary` says which one is in use.
 
 ```js
 import { init, getCapabilities } from 'flashraw';
@@ -272,10 +337,12 @@ Errors survive worker boundaries with the same classes.
 
 | Bundler | Setup |
 |---|---|
-| Vite / Rollup / Rolldown | none (dev server: `optimizeDeps: { exclude: ['flashraw'] }`) |
-| webpack 5 | none (`new URL(..., import.meta.url)` assets and workers are built in) |
-| esbuild | copy `node_modules/flashraw/dist/*.wasm` next to your bundle (or `init({ baseUrl })`); use `createWorkerPool({ workerUrl })` for workers |
+| Vite / Rollup / Rolldown | none (dev server: `optimizeDeps: { exclude: ['flashraw'] }`; COOP/COEP `server.headers` for threads) |
+| webpack 5 | none (`new URL(..., import.meta.url)` assets and workers are built in; COOP/COEP `devServer.headers` for threads) |
+| esbuild | copy `node_modules/flashraw/dist/*.wasm` next to your bundle (or `init({ baseUrl })`); use `createWorkerPool({ workerUrl })` for workers and `init({ threadWorkerUrl })` for threads |
 | Node / Deno | none |
+
+All four `.wasm` files are emitted as assets; a page downloads only the one `init()` selects.
 
 ## TypeScript
 

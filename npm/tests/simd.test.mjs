@@ -9,7 +9,8 @@ const script = fileURLToPath(new URL('./simd-child.mjs', import.meta.url));
 
 function run(env) {
   const out = execFileSync(process.execPath, [script, ...fixtures], {
-    env: { ...process.env, ...env },
+    // Single-threaded binaries (the threaded one is compared in threads.test.mjs).
+    env: { ...process.env, FLASHRAW_WASM_THREADS: '0', ...env },
     encoding: 'utf8',
   });
   return JSON.parse(out);

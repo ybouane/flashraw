@@ -7,7 +7,8 @@
 <body>
 <canvas id="c"></canvas>
 <script type="module">
-  // Driven by tests/browser/run.mjs. Query: ?simd=0 forces the fallback binary.
+  // Driven by tests/browser/run.mjs. Query: ?simd=0 forces the fallback binary, ?threads=0|N
+  // the single-threaded build / N threads, ?gpu=1 loads the WebGPU build and runs GPU checks.
   import * as fr from '/dist/browser.js';
   import { createWorkerPool } from '/dist/worker.browser.js';
 
@@ -24,13 +25,57 @@
     return (hi >>> 0).toString(16).padStart(8, '0') + (lo >>> 0).toString(16).padStart(8, '0');
   }
 
+  function diff(a, b) {
+    if (a.length !== b.length) return { length: [a.length, b.length] };
+    let max = 0, count = 0;
+    for (let i = 0; i < a.length; i++) {
+      const d = Math.abs(a[i] - b[i]);
+      if (d) { count++; if (d > max) max = d; }
+    }
+    return { max, count, fraction: count / a.length };
+  }
+
+  async function gpuChecks(name) {
+    const blob = await (await fetch(`/tests/fixtures/${name}`)).blob();
+    const raw = await fr.FlashRaw.open(blob);
+    const out = { device: !!(await fr.getGpuDevice()) };
+    const cpu = await raw.decode({ output: 'rgba8' });
+    const g = await raw.decode({ backend: 'gpu', output: 'rgba8' });
+    out.rgba = { kind: g.backend.kind, adapter: g.backend.gpuAdapter, fallbackReason: g.backend.fallbackReason, size: [g.width, g.height], diff: diff(cpu.data, g.data) };
+    const r = await raw.decode({ output: 'gpu-rgba8' });
+    if (r instanceof fr.GpuFrame) {
+      const tex = r.createTexture();
+      const d = await r.download();
+      out.resident = {
+        gpu: true, output: r.output, byteLength: r.byteLength, format: r.format, bufferSize: Number(r.buffer.size),
+        sameDevice: r.device === (await fr.getGpuDevice()), texture: [tex.width, tex.height, tex.format],
+        downloaded: d.output, diff: diff(cpu.data, d.data),
+      };
+      tex.destroy();
+      const owned = (await raw.decode({ output: 'gpu-rgba8' })).detachBuffer();
+      out.resident.detached = Number(owned.size) >= r.byteLength;
+      owned.destroy();
+      r.free();
+    } else {
+      out.resident = { gpu: false, kind: r.backend.kind, output: r.output, fallbackReason: r.backend.fallbackReason };
+    }
+    out.error = await raw.decode({ output: 'gpu-rgba8', fallback: 'error' }).then((f) => { f.free?.(); return null; }, (e) => ({ name: e.name, kind: e.kind }));
+    raw.close();
+    return out;
+  }
+
   async function run() {
     const q = new URLSearchParams(location.search);
     const t0 = performance.now();
-    const info = await fr.init(q.get('simd') === '0' ? { simd: false } : {});
+    const opts = {};
+    if (q.get('simd') === '0') opts.simd = false;
+    if (q.has('threads')) opts.threads = q.get('threads') === '0' ? false : Number(q.get('threads'));
+    if (q.get('gpu') === '1') opts.gpu = true;
+    const info = await fr.init(opts);
     const initMs = performance.now() - t0;
     const caps = await fr.getCapabilities();
     const out = { info, initMs, caps, files: {} };
+    if (q.get('gpu') === '1') out.gpu = await gpuChecks((q.get('files') ?? '').split(',')[0]);
     for (const name of (q.get('files') ?? '').split(',').filter(Boolean)) {
       const resp = await fetch(`/tests/fixtures/${name}`);
       // Exercise the Blob streaming path (File from drag & drop behaves the same).
@@ -56,9 +101,11 @@
       c.getContext('2d').putImageData(img, 0, 0);
       const px = c.getContext('2d').getImageData(img.width >> 1, img.height >> 1, 1, 1).data;
       r.rgba = { width: rgba.width, height: rgba.height, bytes: rgba.data.length, isClamped: rgba.data instanceof Uint8ClampedArray, center: [...px], timings: rgba.timings };
-      const gpu = await raw.decode({ backend: 'gpu', output: 'raw-u16' });
-      r.gpu = { kind: gpu.backend.kind, fallbackReason: gpu.backend.fallbackReason };
-      r.gpuError = await raw.decode({ backend: 'gpu', fallback: 'error' }).then(() => null, (e) => ({ name: e.name, kind: e.kind }));
+      if (q.get('gpu') !== '1') {
+        const gpu = await raw.decode({ backend: 'gpu', output: 'raw-u16' });
+        r.gpu = { kind: gpu.backend.kind, fallbackReason: gpu.backend.fallbackReason };
+        r.gpuError = await raw.decode({ backend: 'gpu', fallback: 'error' }).then(() => null, (e) => ({ name: e.name, kind: e.kind }));
+      }
       raw.close();
       out.files[name] = r;
     }

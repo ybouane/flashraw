@@ -28,7 +28,9 @@
     "./dist/browser.js",
     "./dist/node.js",
     "./dist/worker-entry.browser.js",
-    "./dist/worker-entry.node.js"
+    "./dist/worker-entry.node.js",
+    "./dist/thread-worker.browser.js",
+    "./dist/thread-worker.node.js"
   ],
   "engines": {
     "node": ">=18"
@@ -64,6 +66,12 @@
     },
     "./wasm/simd": "./dist/flashraw_simd.wasm",
     "./wasm/fallback": "./dist/flashraw.wasm",
+    "./wasm/threads": "./dist/flashraw_simd_threads.wasm",
+    "./wasm/gpu": "./dist/flashraw_simd_gpu.wasm",
+    "./thread-worker": {
+      "node": "./dist/thread-worker.node.js",
+      "default": "./dist/thread-worker.browser.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

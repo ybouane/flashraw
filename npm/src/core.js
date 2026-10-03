@@ -14,7 +14,8 @@
 //  - Handles are freed deterministically by `close()`/`free()` (and `using` declarations via
 //    `Symbol.dispose`); a FinalizationRegistry (from wasm-bindgen) frees anything left to GC.
 
-import initBindgen, * as wb from './flashraw_bindgen.js';
+import * as baseGlue from './flashraw_bindgen.js';
+import { ThreadPool } from './threads.js';
 import {
   FlashRawError,
   ClosedError,
@@ -29,6 +30,8 @@ import {
 export * from './errors.js';
 
 export const OUTPUTS = Object.freeze(['raw-u16', 'raw-f32', 'normalized', 'linear-rgb', 'rgba8']);
+/** GPU-resident outputs (WebGPU build): the result stays in a `GPUBuffer`. */
+export const GPU_OUTPUTS = Object.freeze(['gpu-raw-u16', 'gpu-normalized', 'gpu-linear-rgb', 'gpu-rgba8']);
 export const BACKENDS = Object.freeze(['auto', 'cpu', 'cpu-simd', 'gpu']);
 
 // (module (func (result v128) i32.const 0 i8x16.splat i8x16.popcnt)) — same probe as
@@ -56,13 +59,22 @@ let platform = {
     throw new InternalError('no flashraw platform registered (import "flashraw", not an internal module)');
   },
 };
+let wb = baseGlue; // wasm-bindgen glue of the loaded binary
 let wasm = null; // wasm-bindgen exports (incl. `memory`)
 let build = null; // { version, simd, simdLevel, gpu, gpuAvailable, threads, maxSamples, variant, initMs, ... }
+let threads = null; // ThreadPool of the multithreaded build
+let gpuState = null; // Promise<{ reason, adapter }> once a WebGPU device was requested
 let initPromise = null;
+const defaults = {};
 
 /** @internal Called once by the platform entry point. */
 export function _setPlatform(p) {
   platform = p;
+}
+
+/** @internal Defaults for the implicit `init()` (the worker pool disables nested threads). */
+export function _setDefaults(d) {
+  Object.assign(defaults, d);
 }
 
 /**
@@ -87,27 +99,149 @@ async function doInit(options) {
   let variant = pref === false || !engineSimd ? 'fallback' : 'simd';
   const reason =
     pref === false ? 'disabled by option' : !engineSimd ? 'engine lacks WebAssembly SIMD' : null;
+
+  // 1. WebGPU build (opt-in: it is single-threaded and larger).
+  let gpuInitReason = null;
+  if (options.gpu === true) {
+    if (variant !== 'simd') gpuInitReason = `the WebGPU build requires WebAssembly SIMD (${reason})`;
+    else {
+      try {
+        const { glue, exports } = await initGpuBinary(options);
+        return finishInit(glue, exports, null, {
+          variant,
+          binary: 'gpu',
+          simdSupported: engineSimd,
+          fallbackReason: null,
+          threadsReason: 'the WebGPU build is single-threaded',
+          gpuReason: null,
+          t0,
+        });
+      } catch (e) {
+        if (options.wasm) throw toError(e, 'failed to load the FlashRaw WebGPU WebAssembly module');
+        gpuInitReason = `the WebGPU build failed to load: ${e?.message ?? e}`;
+      }
+    }
+  }
+
+  // 2. Multithreaded build (default wherever shared memory + workers are available).
+  const tOpt = options.threads ?? platform.defaultThreads?.() ?? defaults.threads ?? 'auto';
+  let threadsReason = null;
+  if (options.gpu === true) threadsReason = 'the WebGPU build was requested';
+  else if (tOpt === false || tOpt === 0) threadsReason = 'disabled by option';
+  else if (variant !== 'simd') threadsReason = `the threaded build requires WebAssembly SIMD (${reason})`;
+  else if (!platform.threadSupport || !platform.spawnThread) threadsReason = 'threads are not supported on this platform';
+  else threadsReason = platform.threadSupport();
+  if (!threadsReason) {
+    const count = threadCount(tOpt === true || tOpt === 'auto' ? undefined : tOpt);
+    try {
+      const { glue, exports, pool } = await initThreaded(options, count);
+      return finishInit(glue, exports, pool, {
+        variant,
+        binary: 'threads',
+        simdSupported: engineSimd,
+        fallbackReason: null,
+        threadsReason: null,
+        gpuReason: gpuInitReason,
+        t0,
+      });
+    } catch (e) {
+      if (options.wasm) throw toError(e, 'failed to start the FlashRaw threaded WebAssembly module');
+      threadsReason = `the threaded build failed to start: ${e?.message ?? e}`;
+    }
+  }
+
+  // 3. Single-threaded SIMD / scalar build.
   let exports;
   try {
     const source = options.wasm ?? (await platform.load(variant, options));
-    exports = await initBindgen({ module_or_path: await source });
+    exports = await baseGlue.default({ module_or_path: await source });
   } catch (e) {
     if (variant !== 'simd' || options.wasm) throw toError(e, 'failed to load the FlashRaw WebAssembly module');
     // A SIMD-capable probe but a failing SIMD binary (exotic engines, broken CDN): retry scalar.
     variant = 'fallback';
-    exports = await initBindgen({ module_or_path: await platform.load(variant, options) }).catch((e2) => {
+    exports = await baseGlue.default({ module_or_path: await platform.load(variant, options) }).catch((e2) => {
       throw toError(e2, 'failed to load the FlashRaw WebAssembly module');
     });
   }
-  wasm = exports;
-  build = {
-    ...JSON.parse(wb.buildInfo()),
+  return finishInit(baseGlue, exports, null, {
     variant,
+    binary: variant,
     simdSupported: engineSimd,
-    fallbackReason: variant === 'fallback' ? reason ?? 'SIMD binary failed to load' : null,
-    initMs: now() - t0,
-  };
+    fallbackReason: variant === 'fallback' ? (reason ?? 'SIMD binary failed to load') : null,
+    threadsReason,
+    gpuReason: gpuInitReason,
+    t0,
+  });
+}
+
+function finishInit(glue, exports, pool, extra) {
+  const { t0, ...rest } = extra;
+  wb = glue;
+  wasm = exports;
+  threads = pool;
+  build = { ...JSON.parse(wb.buildInfo()), ...rest, initMs: now() - t0 };
   return { ...build };
+}
+
+/** Compile a module source (`Response`, bytes, `Module`, URL) without instantiating it. */
+async function compileSource(src) {
+  src = await src;
+  if (src instanceof WebAssembly.Module) return src;
+  if (typeof src === 'string' || src instanceof URL) src = await fetch(src);
+  if (typeof Response === 'function' && src instanceof Response) {
+    if (!src.ok) throw new Error(`failed to fetch the WebAssembly module: ${src.status} ${src.statusText}`);
+    if (typeof WebAssembly.compileStreaming === 'function') {
+      // Streaming compilation needs `application/wasm`; fall back to buffering otherwise.
+      const copy = src.clone();
+      try {
+        return await WebAssembly.compileStreaming(src);
+      } catch {
+        return WebAssembly.compile(await copy.arrayBuffer());
+      }
+    }
+    return WebAssembly.compile(await src.arrayBuffer());
+  }
+  return WebAssembly.compile(src);
+}
+
+/** Load the threaded binary and start its workers; throws when anything is missing. */
+async function initThreaded(options, count) {
+  const glue = await platform.glue('threads');
+  const module = await compileSource(options.wasm ?? platform.load('threads', options));
+  const exports = await glue.default({ module_or_path: module });
+  const pool = await ThreadPool.start({
+    spawn: (name) => platform.spawnThread(name, options),
+    module,
+    memory: exports.memory,
+    count,
+  });
+  return { glue, exports, pool };
+}
+
+/** Load the WebGPU binary (no WebGPU device is requested yet). */
+async function initGpuBinary(options) {
+  const glue = await platform.glue('gpu');
+  const exports = await glue.default({ module_or_path: await (options.wasm ?? platform.load('gpu', options)) });
+  return { glue, exports };
+}
+
+function threadCount(opt) {
+  if (typeof opt === 'number') {
+    if (!Number.isInteger(opt) || opt < 1) throw new InvalidArgumentError('threads must be a positive integer, true, false or "auto"');
+    return Math.min(opt, 256);
+  }
+  const hc = Number(platform.hardwareConcurrency?.() ?? 4);
+  return Math.max(1, Math.min(Number.isFinite(hc) ? hc : 4, 64));
+}
+
+/**
+ * Initialise the multithreaded build with `count` threads (default: hardware concurrency).
+ * Must be the first FlashRaw call to take effect (threads are chosen at `init()`); resolves to
+ * the number of threads in use (0 = single-threaded, see `getCapabilities().threads.reason`).
+ */
+export async function initThreads(count) {
+  const info = await init({ threads: count ?? true });
+  return info.threadCount ?? 0;
 }
 
 function ensureInit() {
@@ -281,7 +415,10 @@ export class DecodedFrame {
   toImageData() {
     if (this.output !== 'rgba8') throw new InvalidArgumentError('toImageData() requires output "rgba8"');
     if (typeof ImageData === 'undefined') throw new NotAvailableError('ImageData is not available in this environment');
-    return new ImageData(this.data, this.width, this.height);
+    const d = this.data;
+    // ImageData rejects views of shared memory (zero-copy frames of the threaded build): copy.
+    const shared = Object.prototype.toString.call(d.buffer) === '[object SharedArrayBuffer]';
+    return new ImageData(shared ? new Uint8ClampedArray(d) : d, this.width, this.height);
   }
   /** Plain, structured-clone friendly object (`data` included). */
   toJSON() {
@@ -312,16 +449,119 @@ function makeFrame(frame, extra) {
   return out;
 }
 
-function gpuUnavailableReason() {
-  if (!build?.gpu) return 'this FlashRaw WASM binary was built without the `gpu` feature (WebGPU backend not compiled in)';
+/** Why the GPU cannot be used without requesting a device, or null if it might be. */
+function gpuStaticReason() {
+  if (!build?.gpu) {
+    return (
+      'this FlashRaw WASM binary was built without the `gpu` feature (WebGPU backend not compiled in); ' +
+      `load the WebGPU build with init({ gpu: true })${build?.gpuReason ? ` (${build.gpuReason})` : ''}`
+    );
+  }
   if (typeof navigator === 'undefined' || !navigator.gpu) {
     return 'WebGPU is not available in this environment (navigator.gpu is undefined)';
   }
-  if (!build.gpuAvailable) return 'no WebGPU adapter is available';
   return null;
 }
 
+/** Request the WebGPU adapter/device once (WebGPU build). Resolves to `{ reason, adapter }`. */
+function gpuStatus() {
+  const why = gpuStaticReason();
+  if (why) return Promise.resolve({ reason: why, adapter: null });
+  gpuState ??= wb.gpuInit().then(
+    (json) => ({ reason: null, adapter: JSON.parse(json) }),
+    (e) => ({ reason: String(e?.message ?? e), adapter: null }),
+  );
+  return gpuState;
+}
+
 const isGpu = (b) => typeof b === 'string' && ['gpu', 'webgpu'].includes(b.toLowerCase());
+const isGpuOutput = (o) => typeof o === 'string' && o.toLowerCase().startsWith('gpu-');
+
+/**
+ * A decoded image that stays on the GPU (`output: 'gpu-*'`, WebGPU build). Plain frame fields
+ * plus WebGPU handles on FlashRaw's device (`getGpuDevice()`): `buffer` (a `GPUBuffer`, usage
+ * `STORAGE | COPY_SRC`), `createTexture()` for `gpu-rgba8`, `download()` to read it back.
+ * The buffer is recycled by FlashRaw after `free()`; `detachBuffer()` hands it over for good.
+ */
+export class GpuFrame {
+  #out;
+  constructor(info, out) {
+    Object.assign(this, info);
+    this.#out = out;
+    live.add(this);
+  }
+  #get() {
+    if (!this.#out) throw new ClosedError('GPU frame has been freed or its buffer detached');
+    return this.#out;
+  }
+  /** Always true: pixels live in `buffer`, not in host memory. */
+  get gpuResident() {
+    return true;
+  }
+  /** The `GPUBuffer` with the pixels (it may be larger than `byteLength`). */
+  get buffer() {
+    return wcall(() => this.#get().buffer);
+  }
+  /** Bytes of pixel data at the start of `buffer`. */
+  get byteLength() {
+    return wcall(() => this.#get().byteLength);
+  }
+  /** `'u16'` (two samples per 32-bit word), `'f32'` or `'rgba8'` (one RGBA pixel per word). */
+  get format() {
+    return wcall(() => this.#get().format);
+  }
+  /** The `GPUDevice` owning `buffer`. */
+  get device() {
+    return wb.gpuDevice();
+  }
+  /** Copy a `gpu-rgba8` frame into a new `rgba8unorm` `GPUTexture` (TEXTURE_BINDING | STORAGE_BINDING | COPY_SRC); the caller owns it. */
+  createTexture() {
+    return wcall(() => this.#get().createTexture());
+  }
+  /** Read back into host memory: a regular `DecodedFrame` with the host output (`rgba8`, ...). */
+  async download() {
+    const t0 = now();
+    const out = this.#get();
+    let f;
+    try {
+      f = await out.download();
+    } catch (e) {
+      throw toError(e);
+    }
+    return makeFrame(f, { requested: this.backend.requested, fallbackReason: null, zeroCopy: false, t0 });
+  }
+  /** Take ownership of `buffer` (FlashRaw will not recycle it; call `destroy()` when done). */
+  detachBuffer() {
+    const out = this.#get();
+    const b = wcall(() => out.detachBuffer());
+    this.free();
+    return b;
+  }
+  /** Return the buffer to FlashRaw's pool (idempotent). */
+  free() {
+    const out = this.#out;
+    this.#out = null;
+    live.delete(this);
+    if (out) {
+      try {
+        out.free();
+      } catch {}
+    }
+  }
+  [dispose]() {
+    this.free();
+  }
+  toJSON() {
+    return { ...this };
+  }
+}
+
+/** The WebGPU device FlashRaw renders into (WebGPU build), or null when WebGPU is unavailable. */
+export async function getGpuDevice() {
+  await init();
+  const s = await gpuStatus();
+  return s.reason ? null : wb.gpuDevice();
+}
 
 // --- the handle ------------------------------------------------------------------------------
 
@@ -344,7 +584,19 @@ export class FlashRaw {
     const opts = checkObject(options, 'options');
     await init(opts.init);
     const buf = await inputBuffer(input);
-    const raw = wcall(() => wb.open(buf, JSON.stringify({ limits: opts.limits ?? null })));
+    const json = JSON.stringify({ limits: opts.limits ?? null });
+    if (threads) {
+      // Parsing may use the thread pool: run it on the coordinator (input ownership moves).
+      const input = wcall(() => buf.intoRaw());
+      let ptr;
+      try {
+        ptr = await threads.call('open', { input, options: json });
+      } catch (e) {
+        throw toError(e);
+      }
+      return new this(TOKEN, wb.rawFileFromRaw(ptr));
+    }
+    const raw = wcall(() => wb.open(buf, json));
     return new this(TOKEN, raw);
   }
 
@@ -368,6 +620,42 @@ export class FlashRaw {
       const err = toError(e);
       if (err.kind === 'Internal') this.#broken = true;
       throw err;
+    }
+  }
+
+  async #callAsync(fn) {
+    if (!this.#raw) throw new ClosedError('this FlashRaw handle is closed');
+    if (this.#broken) throw new InternalError('this FlashRaw handle is unusable after an internal error');
+    try {
+      return await fn(this.#raw);
+    } catch (e) {
+      const err = toError(e);
+      if (err.kind === 'Internal') this.#broken = true;
+      throw err;
+    }
+  }
+
+  /**
+   * Threaded build: run `op` on the coordinator; resolves to the resulting wasm `Frame`. The job
+   * holds its own strong reference to the file, so `close()` during a decode is safe.
+   */
+  async #job(op, args) {
+    if (!this.#raw) throw new ClosedError('this FlashRaw handle is closed');
+    if (this.#broken) throw new InternalError('this FlashRaw handle is unusable after an internal error');
+    const shared = wcall(() => this.#raw.share());
+    let released = false;
+    try {
+      const ptr = await threads.call(op, { ...args, shared });
+      released = true;
+      wb.releaseShared(shared);
+      return wb.frameFromRaw(ptr);
+    } catch (e) {
+      const err = toError(e);
+      if (err.kind === 'Internal') this.#broken = true;
+      throw err;
+    } finally {
+      // After a thread crash the coordinator may still hold it: leak rather than race.
+      if (!released && !threads.broken) wb.releaseShared(shared);
     }
   }
 
@@ -428,14 +716,17 @@ export class FlashRaw {
     const format = o.format ?? 'encoded';
     if (format === 'rgba8') {
       const t0 = now();
-      const f = this.#call((r) => r.decodePreview(sel));
-      try {
-        const info = JSON.parse(f.infoJson());
-        const data = heap(Uint8ClampedArray, f.ptr, f.len).slice();
-        return { ...info, format: 'rgba8', data, decodeMs: now() - t0 };
-      } finally {
-        f.free();
-      }
+      const done = (f) => {
+        try {
+          const info = JSON.parse(f.infoJson());
+          const data = heap(Uint8ClampedArray, f.ptr, f.len).slice();
+          return { ...info, format: 'rgba8', data, decodeMs: now() - t0 };
+        } finally {
+          f.free();
+        }
+      };
+      if (threads) return this.#job('preview', { which: sel }).then(done);
+      return done(this.#call((r) => r.decodePreview(sel)));
     }
     if (format !== 'encoded') throw new InvalidArgumentError(`unknown preview format "${format}" (encoded | rgba8)`);
     const [ptr, len, json] = this.#call((r) => r.previewSpan(sel));
@@ -468,35 +759,49 @@ export class FlashRaw {
     return this.#decode(index, checkObject(options, 'decode options'));
   }
 
-  #decode(tile, options) {
+  async #decode(tile, options) {
     const t0 = now();
     const { backend = 'auto', fallback = 'cpu', zeroCopy = false, init: _init, ...rest } = options;
     if (fallback !== 'cpu' && fallback !== 'error') {
       throw new InvalidArgumentError(`fallback must be "cpu" or "error", got ${JSON.stringify(fallback)}`);
     }
+    const extra = (fallbackReason) => ({ requested: backend, fallbackReason, zeroCopy: !!zeroCopy, t0 });
     let effective = backend;
     let fallbackReason = null;
-    if (isGpu(backend)) {
-      const why = gpuUnavailableReason();
-      if (why) {
-        if (fallback === 'error') throw new GpuUnavailableError(why);
-        effective = 'auto';
-        fallbackReason = why;
+    const toCpu = (why) => {
+      if (fallback === 'error') throw new GpuUnavailableError(why);
+      fallbackReason = why;
+      if (isGpu(backend)) effective = 'auto';
+      // GPU-resident outputs fall back to their host equivalent ('gpu-rgba8' -> 'rgba8').
+      if (isGpuOutput(rest.output)) rest.output = rest.output.slice(4);
+    };
+    if (isGpu(backend) || isGpuOutput(rest.output)) {
+      if (!this.#raw) throw new ClosedError('this FlashRaw handle is closed');
+      const { reason } = await gpuStatus();
+      if (reason) toCpu(reason);
+      else {
+        // WebGPU build: the asynchronous GPU decode (the browser cannot block on the GPU).
+        const json = JSON.stringify({ ...rest, backend: 'gpu' });
+        try {
+          const r = await this.#callAsync((raw) => raw.decodeGpu(tile ?? -1, json));
+          if (r instanceof wb.GpuOutput) {
+            const info = JSON.parse(r.infoJson());
+            info.backend = { ...info.backend, requested: backend, fallbackReason: null };
+            info.timings = { ...info.timings, copyMs: 0, wallMs: now() - t0 };
+            return new GpuFrame(info, r);
+          }
+          return makeFrame(r, extra(null));
+        } catch (e) {
+          if (e.kind !== 'GpuUnavailable') throw e;
+          toCpu(e.message);
+        }
       }
     }
-    const run = (b) => {
-      const json = JSON.stringify({ ...rest, backend: b });
-      return this.#call((r) => (tile === null ? r.decode(json) : r.decodeTile(tile, json)));
-    };
-    let frame;
-    try {
-      frame = run(effective);
-    } catch (e) {
-      if (e.kind !== 'GpuUnavailable' || !isGpu(effective) || fallback !== 'cpu') throw e;
-      fallbackReason = e.message;
-      frame = run('auto');
-    }
-    return makeFrame(frame, { requested: backend, fallbackReason, zeroCopy: !!zeroCopy, t0 });
+    const json = JSON.stringify({ ...rest, backend: effective });
+    const frame = threads
+      ? await this.#job('decode', { tile: tile ?? -1, options: json })
+      : this.#call((r) => (tile === null ? r.decode(json) : r.decodeTile(tile, json)));
+    return makeFrame(frame, extra(fallbackReason));
   }
 
   /** Release the WASM memory held by this handle (idempotent). */
@@ -594,13 +899,14 @@ export async function getCapabilities() {
     initError = e;
   }
   const nav = typeof navigator !== 'undefined' ? navigator : undefined;
-  const gpuReason = build ? gpuUnavailableReason() : 'module not loaded';
+  const gpu = build ? await gpuStatus() : { reason: 'module not loaded', adapter: null };
   return {
     version: build?.version ?? null,
     platform: platform.name,
     wasm: {
       loaded: !!wasm,
       variant: build?.variant ?? null,
+      binary: build?.binary ?? null,
       initMs: build?.initMs ?? null,
       error: initError ? initError.message : null,
     },
@@ -612,6 +918,8 @@ export async function getCapabilities() {
     },
     threads: {
       wasmThreads: build?.threads ?? false,
+      count: threads && !threads.broken ? threads.count : 0,
+      reason: build ? (build.threadsReason ?? (threads?.broken ? threads.broken.message : null)) : 'module not loaded',
       sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
       crossOriginIsolated: globalThis.crossOriginIsolated === true,
       hardwareConcurrency: platform.hardwareConcurrency?.() ?? nav?.hardwareConcurrency ?? 1,
@@ -620,10 +928,11 @@ export async function getCapabilities() {
     gpu: {
       compiled: build?.gpu ?? false,
       webgpu: !!nav?.gpu,
-      available: gpuReason === null,
-      reason: gpuReason,
+      available: gpu.reason === null,
+      reason: gpu.reason,
+      adapter: gpu.adapter,
     },
-    outputs: [...OUTPUTS],
+    outputs: [...OUTPUTS, ...(build?.gpu ? GPU_OUTPUTS : [])],
     backends: [...BACKENDS],
     limits: { maxSamples: build?.maxSamples ?? null },
   };
@@ -632,5 +941,5 @@ export async function getCapabilities() {
 /** @internal Raw module access for tests and benchmarks. */
 export function _internals() {
   ensureInit();
-  return { wasm, build: { ...build }, liveCount: live.size };
+  return { wasm, build: { ...build }, liveCount: live.size, threads: threads?.count ?? 0 };
 }

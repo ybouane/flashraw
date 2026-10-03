@@ -31,6 +31,10 @@ async function main() {
     hash: fnv1a64U16(frame.data),
     rgba: [rgba.width, rgba.height, rgba.data.length],
     simd: caps.simd.active,
+    binary: caps.wasm.binary,
+    threads: caps.threads.count,
+    threadsReason: caps.threads.reason,
+    backend: frame.backend.decode,
   };
   if (globalThis.__withWorker) {
     const { createWorkerPool } = await import('flashraw/worker');

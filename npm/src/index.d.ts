@@ -11,8 +11,20 @@ export interface InitOptions {
   simd?: boolean;
   /** Directory URL holding `flashraw_simd.wasm` / `flashraw.wasm` (e.g. a CDN path). */
   baseUrl?: string | URL;
-  /** Explicit module source: bytes, a compiled `WebAssembly.Module`, a `Response`, or a URL. */
+  /** Explicit module source: bytes, a compiled `WebAssembly.Module`, a `Response`, or a URL.
+   * It must match the selected build (pass `threads: false` for a single-threaded binary,
+   * `gpu: true` for the WebGPU binary). */
   wasm?: BufferSource | WebAssembly.Module | Response | Promise<Response> | URL | string;
+  /**
+   * Multithreaded build: `true`/`'auto'` (default: when cross-origin isolated in browsers, always
+   * in Node.js; falls back to single-threaded otherwise), `false` (single-threaded), or a thread
+   * count. Node.js: `FLASHRAW_WASM_THREADS`.
+   */
+  threads?: boolean | number | 'auto';
+  /** Load the WebGPU build (`flashraw_simd_gpu.wasm`; single-threaded). Default false. */
+  gpu?: boolean;
+  /** Custom URL of `thread-worker.browser.js` / `thread-worker.node.js` (threads). */
+  threadWorkerUrl?: string | URL;
 }
 
 export interface BuildInfo {
@@ -23,13 +35,27 @@ export interface BuildInfo {
   /** Whether the binary includes the WebGPU backend. */
   gpu: boolean;
   gpuAvailable: boolean;
+  /** Whether the loaded binary is the multithreaded build. */
   threads: boolean;
+  /** Worker threads started (0 when single-threaded). */
+  threadCount: number;
   maxSamples: number;
+  /** SIMD128 (`simd`) or scalar (`fallback`) code. */
   variant: 'simd' | 'fallback';
+  /** The binary in use. */
+  binary: WasmBinary;
   simdSupported: boolean;
+  /** Why the scalar binary is used. */
   fallbackReason: string | null;
+  /** Why the multithreaded build is not used (null when it is). */
+  threadsReason: string | null;
+  /** Why the WebGPU build requested with `gpu: true` could not be loaded. */
+  gpuReason: string | null;
   initMs: number;
 }
+
+/** `simd`: flashraw_simd.wasm, `fallback`: flashraw.wasm, `threads`: flashraw_simd_threads.wasm, `gpu`: flashraw_simd_gpu.wasm. */
+export type WasmBinary = 'simd' | 'fallback' | 'threads' | 'gpu';
 
 export interface Limits {
   /** Maximum width*height*channels of a decoded image (default 400M on WASM). */
@@ -256,6 +282,32 @@ export interface TileInfo {
 
 export type OutputFormat = 'raw-u16' | 'raw-f32' | 'normalized' | 'linear-rgb' | 'rgba8';
 
+/** Outputs left on the GPU (WebGPU build, `init({ gpu: true })`): a `GpuFrame`. */
+export type GpuOutputFormat = 'gpu-raw-u16' | 'gpu-normalized' | 'gpu-linear-rgb' | 'gpu-rgba8';
+
+/** Host output with the same content as a GPU output (`'gpu-rgba8'` → `'rgba8'`). */
+export type HostOutput<O extends OutputFormat | GpuOutputFormat> = O extends `gpu-${infer H extends OutputFormat}` ? H : O;
+
+/**
+ * What `decode()` resolves to: a `DecodedFrame`, or for `gpu-*` outputs a `GpuFrame` (or the
+ * host-output `DecodedFrame` when WebGPU was unavailable and `fallback` is `'cpu'`).
+ */
+export type DecodeResult<O extends OutputFormat | GpuOutputFormat> = O extends GpuOutputFormat
+  ? GpuFrame<O> | DecodedFrame<HostOutput<O>>
+  : O extends OutputFormat
+    ? DecodedFrame<O>
+    : never;
+
+// WebGPU types resolve to the real ones when they are in scope (e.g. `@webgpu/types`), else `object`.
+type WebGpuType<K extends string> = K extends keyof typeof globalThis
+  ? (typeof globalThis)[K] extends { prototype: infer P }
+    ? P
+    : object
+  : object;
+export type FlashRawGPUBuffer = WebGpuType<'GPUBuffer'>;
+export type FlashRawGPUTexture = WebGpuType<'GPUTexture'>;
+export type FlashRawGPUDevice = WebGpuType<'GPUDevice'>;
+
 /**
  * - `auto`: fastest available (WASM SIMD when loaded; GPU once available).
  * - `cpu`: portable scalar reference kernels. `cpu-simd`: explicit SIMD kernels.
@@ -265,10 +317,10 @@ export type Backend = 'auto' | 'cpu' | 'scalar' | 'cpu-simd' | 'simd' | 'gpu' | 
 
 export interface DecodeOptions {
   backend?: Backend;
-  /** What to do when `backend: "gpu"` is unavailable: decode on the CPU (default) or throw. */
+  /** What to do when `backend: "gpu"` / a `gpu-*` output is unavailable: decode on the CPU (default) or throw. */
   fallback?: 'cpu' | 'error';
-  /** Default `raw-u16`. */
-  output?: OutputFormat;
+  /** Default `raw-u16`. `gpu-*` outputs stay on the GPU (WebGPU build). */
+  output?: OutputFormat | GpuOutputFormat;
   /** Demosaic for RGB outputs. `half-size` = 2x2 binning (fast). Default `bilinear`. */
   demosaic?: 'bilinear' | 'half-size';
   /** Crop RGB outputs to the default crop (default true; raw outputs are never cropped). */
@@ -387,6 +439,52 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat> {
   toJSON(): FrameFields<O>;
 }
 
+/**
+ * A decoded image resident on the GPU (`output: 'gpu-*'`, WebGPU build). Lives on FlashRaw's
+ * device (`getGpuDevice()`). `free()` returns the buffer to FlashRaw's pool.
+ */
+export declare class GpuFrame<O extends GpuOutputFormat = GpuOutputFormat> {
+  private constructor();
+  readonly width: number;
+  readonly height: number;
+  readonly channels: number;
+  readonly output: O;
+  readonly bitsPerSample: number;
+  readonly cfa: CfaInfo | null;
+  readonly layout: SensorLayout;
+  readonly activeArea: Rect;
+  readonly crop: Rect;
+  readonly origin: { x: number; y: number };
+  readonly maskedAreas: Rect[];
+  readonly blackLevel: BlackLevel;
+  readonly whiteLevel: number[];
+  readonly whiteBalance: [number, number, number, number] | null;
+  readonly colorMatrices: ColorMatrices;
+  readonly orientation: Orientation;
+  readonly backend: BackendReport;
+  readonly timings: Timings;
+  readonly inputBytes: number;
+  readonly outputBytes: number;
+  readonly gpuResident: true;
+  /** Storage buffer (`STORAGE | COPY_SRC`) holding the pixels; may be larger than `byteLength`. */
+  readonly buffer: FlashRawGPUBuffer;
+  /** Bytes of pixel data at the start of `buffer`. */
+  readonly byteLength: number;
+  /** `u16`: two samples per 32-bit word; `f32`; `rgba8`: one `R | G<<8 | B<<16 | A<<24` pixel per word. */
+  readonly format: 'u16' | 'f32' | 'rgba8';
+  /** The device owning `buffer`. */
+  readonly device: FlashRawGPUDevice;
+  /** `gpu-rgba8` only: a new `rgba8unorm` texture (TEXTURE_BINDING | STORAGE_BINDING | COPY_SRC), owned by the caller. */
+  createTexture(): FlashRawGPUTexture;
+  /** Read back into host memory. */
+  download(): Promise<DecodedFrame<HostOutput<O>>>;
+  /** Take ownership of `buffer` (no longer recycled; call `destroy()` on it). Frees this frame. */
+  detachBuffer(): FlashRawGPUBuffer;
+  free(): void;
+  [Symbol.dispose](): void;
+  toJSON(): Omit<FrameFields, 'output' | 'dataType'> & { output: O };
+}
+
 export interface PreviewOptions {
   /** `encoded` (default): the embedded bytes (usually JPEG). `rgba8`: decoded pixels. */
   format?: 'encoded' | 'rgba8';
@@ -436,15 +534,15 @@ export declare class FlashRaw {
   /** Smallest embedded preview, or null if there is none. */
   thumbnail<T extends PreviewOptions | undefined = undefined>(options?: T): Promise<PreviewFor<T> | null>;
 
-  decode<O extends OutputFormat = 'raw-u16'>(options?: DecodeOptions & { output?: O }): Promise<DecodedFrame<O>>;
-  decodeRegion<O extends OutputFormat = 'raw-u16'>(
+  decode<O extends OutputFormat | GpuOutputFormat = 'raw-u16'>(options?: DecodeOptions & { output?: O }): Promise<DecodeResult<O>>;
+  decodeRegion<O extends OutputFormat | GpuOutputFormat = 'raw-u16'>(
     region: Rect,
     options?: Omit<DecodeOptions, 'region'> & { output?: O },
-  ): Promise<DecodedFrame<O>>;
-  decodeTile<O extends OutputFormat = 'raw-u16'>(
+  ): Promise<DecodeResult<O>>;
+  decodeTile<O extends OutputFormat | GpuOutputFormat = 'raw-u16'>(
     index: number,
     options?: Omit<DecodeOptions, 'region'> & { output?: O },
-  ): Promise<DecodedFrame<O>>;
+  ): Promise<DecodeResult<O>>;
 
   /** Free the WASM memory of this file (idempotent). */
   close(): void;
@@ -477,26 +575,66 @@ export function simdSupported(): boolean;
 export interface Capabilities {
   version: string | null;
   platform: 'browser' | 'worker' | 'node' | 'unknown';
-  wasm: { loaded: boolean; variant: 'simd' | 'fallback' | null; initMs: number | null; error: string | null };
+  wasm: {
+    loaded: boolean;
+    variant: 'simd' | 'fallback' | null;
+    binary: WasmBinary | null;
+    initMs: number | null;
+    error: string | null;
+  };
   simd: { supported: boolean; active: boolean; level: string | null; fallbackReason: string | null };
   threads: {
     /** Multithreaded WASM (atomics + SharedArrayBuffer) build in use. */
     wasmThreads: boolean;
+    /** Decoder worker threads in use (0 = single-threaded). */
+    count: number;
+    /** Why the multithreaded build is not in use (null when it is). */
+    reason: string | null;
     sharedArrayBuffer: boolean;
     crossOriginIsolated: boolean;
     hardwareConcurrency: number;
     /** Worker-based parallelism (`flashraw/worker`) available. */
     workers: boolean;
   };
-  gpu: { compiled: boolean; webgpu: boolean; available: boolean; reason: string | null };
-  outputs: OutputFormat[];
+  gpu: {
+    /** The WebGPU build is loaded (`init({ gpu: true })`). */
+    compiled: boolean;
+    webgpu: boolean;
+    /** A WebGPU device was created (requested on first use; this call may request it). */
+    available: boolean;
+    reason: string | null;
+    adapter: GpuAdapterInfo | null;
+  };
+  outputs: (OutputFormat | GpuOutputFormat)[];
   backends: Backend[];
   limits: { maxSamples: number | null };
 }
 
+export interface GpuAdapterInfo {
+  name: string;
+  backend: string;
+  driver: string;
+  class: 'discrete' | 'integrated' | 'virtual' | 'software' | 'unknown';
+  timestamps: boolean;
+  maxBufferSize: number;
+  maxStorageBinding: number;
+  description: string;
+}
+
 export function getCapabilities(): Promise<Capabilities>;
 
+/**
+ * Use the multithreaded build with `count` threads (default: hardware concurrency). Call before
+ * any other FlashRaw call; resolves to the thread count in use (0 = single-threaded; see
+ * `getCapabilities().threads.reason`).
+ */
+export function initThreads(count?: number): Promise<number>;
+
+/** The `GPUDevice` FlashRaw uses (WebGPU build), or null without WebGPU. Requests it if needed. */
+export function getGpuDevice(): Promise<FlashRawGPUDevice | null>;
+
 export const OUTPUTS: readonly OutputFormat[];
+export const GPU_OUTPUTS: readonly GpuOutputFormat[];
 export const BACKENDS: readonly Backend[];
 
 // ---------------------------------------------------------------------------------- errors

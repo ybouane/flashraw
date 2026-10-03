@@ -149,7 +149,10 @@ pub fn parse_open_options(s: &str) -> ApiResult<Limits> {
 /// Parse decode options. Returns the options and the requested backend name.
 pub fn parse_decode_options(s: &str) -> ApiResult<(DecodeOptions, String)> {
     let v = parse_json(s)?;
-    let mut o = DecodeOptions { threads: Some(1), limits: limits_from(v.get("limits"))?, ..Default::default() };
+    // Single-threaded builds decode on the calling thread; the threaded build (feature `threads`)
+    // uses rayon's global pool, which the JS layer starts in workers (`threads: None`).
+    let threads = if cfg!(feature = "threads") { None } else { Some(1) };
+    let mut o = DecodeOptions { threads, limits: limits_from(v.get("limits"))?, ..Default::default() };
     let backend = str_opt(&v, "backend")?.unwrap_or("auto");
     o.backend = Backend::parse(backend).ok_or_else(|| {
         ApiError::invalid(format!("unknown backend `{backend}` (expected auto, cpu, cpu-simd, scalar or gpu)"))
@@ -193,7 +196,10 @@ fn into_decoded(frame: flashraw::RawFrame, backend: &str) -> ApiResult<Decoded> 
         flashraw::RawPixelData::F32(v) => Pixels::F32(v),
         #[allow(unreachable_patterns)]
         _ => {
-            return Err(ApiError { kind: "NotAvailable", message: "GPU-resident frames are not supported yet".into() });
+            return Err(ApiError {
+                kind: "NotAvailable",
+                message: "GPU-resident outputs require the asynchronous GPU decode (WebGPU build)".into(),
+            });
         }
     };
     Ok(Decoded { pixels, info })
@@ -203,6 +209,53 @@ fn into_decoded(frame: flashraw::RawFrame, backend: &str) -> ApiResult<Decoded> 
 pub fn decode(raw: &FlashRaw<'_>, options_json: &str) -> ApiResult<Decoded> {
     let (opts, backend) = parse_decode_options(options_json)?;
     into_decoded(raw.decode(opts)?, &backend)
+}
+
+/// Result of [`decode_gpu`]: host pixels, or an image left on the GPU (`gpu-*` outputs).
+#[cfg(feature = "gpu")]
+#[derive(Debug)]
+pub enum GpuDecoded {
+    Host(Decoded),
+    /// The frame (its data is `RawPixelData::Gpu`), its JSON description and the requested
+    /// backend name (for [`download_gpu`]).
+    Resident {
+        frame: Box<flashraw::RawFrame>,
+        info: String,
+        backend: String,
+    },
+}
+
+/// Read a GPU-resident frame back into WASM memory.
+#[cfg(feature = "gpu")]
+pub async fn download_gpu(frame: &flashraw::RawFrame, backend: &str) -> ApiResult<Decoded> {
+    into_decoded(frame.download_async().await?, backend)
+}
+
+/// Asynchronous GPU decode (the only way to use WebGPU from WASM: the browser cannot block on
+/// the GPU). `tile` selects one decode unit. Raw outputs of entropy-coded files are decoded on
+/// the CPU, exactly like the native `Backend::Gpu` (the CPU decode *is* the result there).
+#[cfg(feature = "gpu")]
+pub async fn decode_gpu(raw: &FlashRaw<'_>, tile: Option<u32>, options_json: &str) -> ApiResult<GpuDecoded> {
+    let (mut opts, backend) = parse_decode_options(options_json)?;
+    if let Some(i) = tile {
+        let units = raw.units();
+        let unit = units
+            .get(i as usize)
+            .ok_or_else(|| ApiError::invalid(format!("tile {i} out of range ({} tiles)", units.len())))?;
+        opts.region = Some(unit.rect);
+    }
+    let base = opts.output.host_equivalent();
+    let resident = opts.output.is_gpu_resident();
+    if !resident && (base == OutputFormat::RawF32 || (base == OutputFormat::RawU16 && !raw.capabilities().gpu_unpack)) {
+        opts.backend = Backend::Auto;
+        return into_decoded(raw.decode(opts)?, &backend).map(GpuDecoded::Host);
+    }
+    let frame = raw.decode_gpu_async(opts).await?;
+    if frame.as_gpu().is_some() {
+        let info = json::frame(&frame, &backend).to_string();
+        return Ok(GpuDecoded::Resident { frame: Box::new(frame), info, backend });
+    }
+    into_decoded(frame, &backend).map(GpuDecoded::Host)
 }
 
 /// Decode one independently decodable tile/strip.

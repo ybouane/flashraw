@@ -11,7 +11,23 @@
 //!   either copies them out (default; then frees the frame) or hands out a view.
 //! - **Errors**: JS `Error` objects with a `kind` property (`flashraw::Error::kind`).
 //!
+//! Binary variants (see `docs/wasm.md`):
+//!
+//! - default: single-threaded (SIMD128 and scalar builds);
+//! - feature `threads`: shared memory + rayon. JS starts the rayon workers in Web Workers /
+//!   `worker_threads` ([`thread_pool_build`] + [`thread_run`]) and runs every call that may use
+//!   the pool on a *coordinator* worker through the pointer-based `job*` exports, because the
+//!   browser main thread is not allowed to block (`memory.atomic.wait` traps there);
+//! - feature `gpu`: WebGPU backend through wgpu, with asynchronous exports (`gpuInit`,
+//!   `RawFile.decodeGpu`) and GPU-resident outputs ([`GpuOutput`]).
+//!
 //! See `docs/wasm.md` for the memory model.
+
+// The WebGPU build stays single-threaded: decoding would run on the coordinator worker, but
+// WebGPU objects cannot move between workers, so GPU-resident outputs would be unusable on the
+// thread that asked for them (and `flashraw`'s pool `install` needs `Send` frames).
+#[cfg(all(feature = "gpu", feature = "threads", target_arch = "wasm32"))]
+compile_error!("the `gpu` and `threads` features are separate WASM variants and cannot be combined");
 
 pub mod api;
 pub mod json;
@@ -21,7 +37,7 @@ mod bindings {
     use crate::api::{self, ApiError, Decoded};
     use crate::json;
     use flashraw::FlashRaw;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
     use wasm_bindgen::prelude::*;
 
     #[wasm_bindgen]
@@ -63,6 +79,19 @@ mod bindings {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
+    /// Number of rayon worker threads started (0 for single-threaded builds or before
+    /// `threadPoolBuild`).
+    fn thread_count() -> usize {
+        #[cfg(feature = "threads")]
+        {
+            threads::THREADS.load(std::sync::atomic::Ordering::Acquire)
+        }
+        #[cfg(not(feature = "threads"))]
+        {
+            0
+        }
+    }
+
     /// Build features of this binary as JSON (`{ simd, gpu, threads }`).
     #[wasm_bindgen(js_name = buildInfo)]
     pub fn build_info() -> String {
@@ -72,7 +101,8 @@ mod bindings {
             "simdLevel": flashraw::low_level::core::simd::detect().name(),
             "gpu": cfg!(feature = "gpu"),
             "gpuAvailable": flashraw::gpu_available(),
-            "threads": false,
+            "threads": cfg!(feature = "threads"),
+            "threadCount": thread_count(),
             "maxSamples": api::DEFAULT_MAX_SAMPLES,
         })
         .to_string()
@@ -121,13 +151,15 @@ mod bindings {
     #[wasm_bindgen]
     pub fn open(input: InputBuffer, options_json: &str) -> Result<RawFile, JsValue> {
         let raw = api::open(input.buf, options_json).map_err(to_js)?;
-        Ok(RawFile { raw })
+        Ok(RawFile { raw: Arc::new(raw) })
     }
 
     /// An opened RAW file. Owns the input bytes; previews are views into them.
     #[wasm_bindgen]
     pub struct RawFile {
-        raw: FlashRaw<'static>,
+        // Shared so that asynchronous (GPU) decodes and coordinator jobs (threads) can hold
+        // the file independently of the JS object's borrow.
+        raw: Arc<FlashRaw<'static>>,
     }
 
     #[wasm_bindgen]
@@ -216,6 +248,295 @@ mod bindings {
         #[wasm_bindgen(js_name = infoJson)]
         pub fn info_json(&self) -> String {
             self.inner.info.clone()
+        }
+    }
+
+    // ---- Threads (feature `threads`) -----------------------------------------------------------
+    //
+    // Protocol (npm/src/threads.js):
+    //  1. main thread: instantiate with a shared `WebAssembly.Memory`, start the coordinator
+    //     worker on the same module + memory;
+    //  2. coordinator: `threadPoolBuild(n, onSpawn)`; rayon hands out one `ThreadBuilder` per
+    //     thread (forwarded to the main thread as a pointer), then blocks until all threads run;
+    //  3. main thread: one worker per pointer, each calling `threadRun(ptr)`, which never
+    //     returns (the worker *is* the rayon thread);
+    //  4. the coordinator then runs the `job*` exports: blocking is allowed there, so rayon's
+    //     `join`/`par_iter` from a non-pool thread works. The main thread only creates/frees
+    //     buffers and reads results (the browser main thread must never block).
+    // Objects cross threads as raw `Box` pointers: the JS layer guarantees each pointer is
+    // consumed exactly once and that shared handles outlive the jobs using them.
+
+    #[cfg(feature = "threads")]
+    mod threads {
+        use super::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        pub(super) static THREADS: AtomicUsize = AtomicUsize::new(0);
+
+        fn internal(message: String) -> JsValue {
+            to_js(ApiError { kind: "Internal", message })
+        }
+
+        /// Configure rayon's global pool with `n` threads. For each thread, `on_spawn(ptr)` is
+        /// called with an opaque pointer that a new worker must pass to [`thread_run`]. Blocks
+        /// until every thread has started (rayon waits for its pool to be primed), so it must
+        /// run on a worker (the coordinator), never on the browser main thread. Once per module.
+        #[wasm_bindgen(js_name = threadPoolBuild)]
+        pub fn thread_pool_build(n: usize, on_spawn: &js_sys::Function) -> Result<usize, JsValue> {
+            if n == 0 {
+                return Err(to_js(ApiError::invalid("thread count must be at least 1")));
+            }
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .spawn_handler(|t| {
+                    let ptr = Box::into_raw(Box::new(t)) as usize as u32;
+                    on_spawn
+                        .call1(&JsValue::NULL, &JsValue::from(ptr))
+                        .map(|_| ())
+                        .map_err(|_| std::io::Error::other("the thread spawn callback failed"))
+                })
+                .build_global()
+                .map_err(|e| internal(format!("cannot start the thread pool: {e}")))?;
+            THREADS.store(n, Ordering::Release);
+            Ok(n)
+        }
+
+        /// Body of a rayon worker thread (never returns while the pool lives).
+        #[wasm_bindgen(js_name = threadRun)]
+        pub fn thread_run(ptr: u32) {
+            // SAFETY: `ptr` was produced by `Box::into_raw` in `thread_pool_build` and the JS
+            // layer hands every pointer to exactly one worker.
+            let t = unsafe { Box::from_raw(ptr as usize as *mut rayon::ThreadBuilder) };
+            t.run();
+        }
+
+        #[wasm_bindgen]
+        impl InputBuffer {
+            /// Give up the JS object; returns a pointer for [`job_open`].
+            #[wasm_bindgen(js_name = intoRaw)]
+            pub fn into_raw(self) -> usize {
+                Box::into_raw(Box::new(self)) as usize
+            }
+        }
+
+        #[wasm_bindgen]
+        impl RawFile {
+            /// A new strong reference to the file for coordinator jobs (release with
+            /// [`release_shared`]).
+            pub fn share(&self) -> usize {
+                Box::into_raw(Box::new(self.raw.clone())) as usize
+            }
+        }
+
+        /// SAFETY contract (all `job*`/`*FromRaw` functions): pointers come from the matching
+        /// `into_raw`/`share`/`job*` call and are used as documented by the JS layer.
+        fn shared<'a>(ptr: usize) -> &'a Arc<FlashRaw<'static>> {
+            // SAFETY: see above; the JS layer keeps the box alive until `releaseShared`.
+            unsafe { &*(ptr as *const Arc<FlashRaw<'static>>) }
+        }
+
+        fn boxed_frame(r: Result<Decoded, ApiError>) -> Result<usize, JsValue> {
+            r.map(|d| Box::into_raw(Box::new(Frame::from(d))) as usize).map_err(to_js)
+        }
+
+        #[wasm_bindgen(js_name = releaseShared)]
+        pub fn release_shared(ptr: usize) {
+            // SAFETY: produced by `RawFile::share`, released exactly once.
+            drop(unsafe { Box::from_raw(ptr as *mut Arc<FlashRaw<'static>>) });
+        }
+
+        /// Coordinator: open (consumes the input pointer); returns a `RawFile` pointer.
+        #[wasm_bindgen(js_name = jobOpen)]
+        pub fn job_open(input: usize, options_json: &str) -> Result<usize, JsValue> {
+            // SAFETY: produced by `InputBuffer::into_raw`, consumed exactly once.
+            let input = unsafe { Box::from_raw(input as *mut InputBuffer) };
+            let f = open(*input, options_json)?;
+            Ok(Box::into_raw(Box::new(f)) as usize)
+        }
+
+        /// Coordinator: decode (`tile < 0` = full frame / options.region); returns a `Frame` pointer.
+        #[wasm_bindgen(js_name = jobDecode)]
+        pub fn job_decode(shared_ptr: usize, tile: i32, options_json: &str) -> Result<usize, JsValue> {
+            let raw = shared(shared_ptr);
+            boxed_frame(if tile < 0 {
+                api::decode(raw, options_json)
+            } else {
+                api::decode_tile(raw, tile as u32, options_json)
+            })
+        }
+
+        /// Coordinator: decode an embedded preview to RGBA8; returns a `Frame` pointer.
+        #[wasm_bindgen(js_name = jobDecodePreview)]
+        pub fn job_decode_preview(shared_ptr: usize, which: &str) -> Result<usize, JsValue> {
+            boxed_frame(api::decode_preview_rgba(shared(shared_ptr), which))
+        }
+
+        /// Main thread: take ownership of a `RawFile` produced by [`job_open`].
+        #[wasm_bindgen(js_name = rawFileFromRaw)]
+        pub fn raw_file_from_raw(ptr: usize) -> RawFile {
+            // SAFETY: produced by `job_open`, consumed exactly once.
+            *unsafe { Box::from_raw(ptr as *mut RawFile) }
+        }
+
+        /// Main thread: take ownership of a `Frame` produced by a `job*` call.
+        #[wasm_bindgen(js_name = frameFromRaw)]
+        pub fn frame_from_raw(ptr: usize) -> Frame {
+            // SAFETY: produced by `boxed_frame`, consumed exactly once.
+            *unsafe { Box::from_raw(ptr as *mut Frame) }
+        }
+    }
+
+    // ---- WebGPU (feature `gpu`) ----------------------------------------------------------------
+
+    #[cfg(feature = "gpu")]
+    mod gpu {
+        use super::*;
+        use flashraw::gpu::{GpuImage, GpuPixelFormat};
+        use std::rc::Rc;
+        use wasm_bindgen_futures::future_to_promise;
+
+        fn adapter_json(info: &flashraw::gpu::GpuAdapterInfo) -> String {
+            serde_json::json!({
+                "name": info.name,
+                "backend": info.backend,
+                "driver": info.driver,
+                "class": info.class.name(),
+                "timestamps": info.timestamps,
+                "maxBufferSize": info.max_buffer_size,
+                "maxStorageBinding": info.max_storage_binding,
+                "description": info.to_string(),
+            })
+            .to_string()
+        }
+
+        /// Request a WebGPU adapter + device (idempotent). Resolves to the adapter JSON;
+        /// rejects with a `GpuUnavailable` error.
+        #[wasm_bindgen(js_name = gpuInit)]
+        pub async fn gpu_init() -> Result<String, JsValue> {
+            let ctx = flashraw::gpu::init().await.map_err(|e| to_js(e.into()))?;
+            Ok(adapter_json(ctx.info()))
+        }
+
+        /// The `GPUDevice` FlashRaw uses (after `gpuInit`), or `undefined`.
+        #[wasm_bindgen(js_name = gpuDevice)]
+        pub fn gpu_device() -> JsValue {
+            flashraw::gpu::try_context()
+                .and_then(|c| c.device().as_webgpu().map(|d| JsValue::from(d.clone())))
+                .unwrap_or(JsValue::UNDEFINED)
+        }
+
+        /// Free FlashRaw's pooled GPU buffers.
+        #[wasm_bindgen(js_name = gpuTrim)]
+        pub fn gpu_trim() {
+            if let Some(c) = flashraw::gpu::try_context() {
+                c.trim();
+            }
+        }
+
+        #[wasm_bindgen]
+        impl RawFile {
+            /// Asynchronous GPU decode (`tile < 0` = full frame / options.region). Resolves to a
+            /// [`Frame`] (host outputs) or a [`GpuOutput`] (`gpu-*` outputs).
+            #[wasm_bindgen(js_name = decodeGpu)]
+            pub fn decode_gpu(&self, tile: i32, options_json: String) -> js_sys::Promise {
+                let raw = self.raw.clone();
+                future_to_promise(async move {
+                    let tile = u32::try_from(tile).ok();
+                    match api::decode_gpu(&raw, tile, &options_json).await.map_err(to_js)? {
+                        api::GpuDecoded::Host(d) => Ok(Frame::from(d).into()),
+                        api::GpuDecoded::Resident { frame, info, backend } => {
+                            Ok(GpuOutput { frame: Some(Rc::from(frame)), info, backend }.into())
+                        }
+                    }
+                })
+            }
+        }
+
+        /// A decoded image resident on the GPU. Its buffer belongs to FlashRaw's pool and is
+        /// recycled by `free()`, unless taken over with `detachBuffer()`.
+        #[wasm_bindgen]
+        pub struct GpuOutput {
+            // `Rc`: WebGPU handles are not `Send`/`Sync` (the WebGPU build is single-threaded).
+            frame: Option<Rc<flashraw::RawFrame>>,
+            info: String,
+            backend: String,
+        }
+
+        fn closed(what: &str) -> JsValue {
+            to_js(ApiError { kind: "Closed", message: format!("the GPU buffer was {what}") })
+        }
+
+        impl GpuOutput {
+            fn image(&self) -> Result<&Arc<GpuImage>, JsValue> {
+                self.frame.as_ref().and_then(|f| f.as_gpu()).ok_or_else(|| closed("detached"))
+            }
+        }
+
+        fn format_name(f: GpuPixelFormat) -> &'static str {
+            match f {
+                GpuPixelFormat::U16 => "u16",
+                GpuPixelFormat::F32 => "f32",
+                GpuPixelFormat::Rgba8 => "rgba8",
+            }
+        }
+
+        fn webgpu_buffer(b: &flashraw::gpu::wgpu::Buffer) -> Result<JsValue, JsValue> {
+            b.as_webgpu()
+                .map(|b| JsValue::from(b.clone()))
+                .ok_or_else(|| to_js(ApiError { kind: "GpuUnavailable", message: "not a WebGPU buffer".into() }))
+        }
+
+        #[wasm_bindgen]
+        impl GpuOutput {
+            #[wasm_bindgen(js_name = infoJson)]
+            pub fn info_json(&self) -> String {
+                self.info.clone()
+            }
+            /// The `GPUBuffer` holding the pixels (may be larger than `byteLength`).
+            #[wasm_bindgen(getter)]
+            pub fn buffer(&self) -> Result<JsValue, JsValue> {
+                webgpu_buffer(self.image()?.buffer())
+            }
+            /// Bytes of pixel data at the start of the buffer.
+            #[wasm_bindgen(getter, js_name = byteLength)]
+            pub fn byte_length(&self) -> Result<usize, JsValue> {
+                Ok(self.image()?.byte_len())
+            }
+            /// `"u16"` (two samples per 32-bit word), `"f32"` or `"rgba8"` (one pixel per word).
+            #[wasm_bindgen(getter)]
+            pub fn format(&self) -> Result<String, JsValue> {
+                Ok(format_name(self.image()?.format()).to_string())
+            }
+            /// Copy an RGBA8 image into a new `rgba8unorm` `GPUTexture` (usage
+            /// `STORAGE_BINDING | TEXTURE_BINDING | COPY_SRC`), owned by the caller.
+            #[wasm_bindgen(js_name = createTexture)]
+            pub fn create_texture(&self) -> Result<JsValue, JsValue> {
+                let tex = self.image()?.to_texture().map_err(|e| to_js(e.into()))?;
+                tex.as_webgpu()
+                    .map(|t| JsValue::from(t.clone()))
+                    .ok_or_else(|| to_js(ApiError { kind: "GpuUnavailable", message: "not a WebGPU texture".into() }))
+            }
+            /// Read the pixels back into WASM memory; resolves to a [`Frame`].
+            pub fn download(&self) -> Result<js_sys::Promise, JsValue> {
+                let frame = self.frame.clone().ok_or_else(|| closed("detached"))?;
+                let backend = self.backend.clone();
+                Ok(future_to_promise(async move {
+                    let d = api::download_gpu(&frame, &backend).await.map_err(to_js)?;
+                    Ok(Frame::from(d).into())
+                }))
+            }
+            /// Take ownership of the `GPUBuffer`: FlashRaw no longer recycles it (call
+            /// `destroy()` on it when done). This object becomes unusable.
+            #[wasm_bindgen(js_name = detachBuffer)]
+            pub fn detach_buffer(&mut self) -> Result<JsValue, JsValue> {
+                let frame = self.frame.take().ok_or_else(|| closed("already detached"))?;
+                let buffer = webgpu_buffer(frame.as_gpu().ok_or_else(|| closed("detached"))?.buffer());
+                // The pool must never recycle this buffer (the caller owns it now), so the Rust
+                // side is leaked: wgpu's WebGPU handles are plain JS references, the leak is a
+                // few bytes, and the GPUBuffer lives until the caller destroys it.
+                std::mem::forget(frame);
+                buffer
+            }
         }
     }
 }

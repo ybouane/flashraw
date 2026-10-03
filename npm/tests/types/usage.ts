@@ -11,6 +11,13 @@ import {
   init,
   FlashRawError,
   GpuUnavailableError,
+  GpuFrame,
+  getGpuDevice,
+  initThreads,
+  GPU_OUTPUTS,
+  type FlashRawGPUBuffer,
+  type GpuOutputFormat,
+  type WasmBinary,
   type RawMetadata,
   type DecodedFrame,
   type DecodeOptions,
@@ -82,7 +89,31 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
       void k;
     }
   }
+  // WebGPU build: GPU-resident outputs (or the host-output fallback).
+  const g = await raw.decode({ output: 'gpu-rgba8' });
+  if (g instanceof GpuFrame) {
+    const out: 'gpu-rgba8' = g.output;
+    const fmtName: 'u16' | 'f32' | 'rgba8' = g.format;
+    const bytes: number = g.byteLength;
+    const buf: FlashRawGPUBuffer = g.buffer;
+    const tex = g.createTexture();
+    const host: DecodedFrame<'rgba8'> = await g.download();
+    g.free();
+    void [out, fmtName, bytes, buf, tex, host];
+  } else {
+    const fallbackRgba: Uint8ClampedArray = g.data;
+    void fallbackRgba;
+  }
+  const device = await getGpuDevice();
+  const outs: readonly GpuOutputFormat[] = GPU_OUTPUTS;
+  void [device, outs];
   raw.close();
+
+  // Threads.
+  const n: number = await initThreads(4);
+  const binary: WasmBinary = (await init({ threads: false, gpu: false })).binary;
+  const tc: number = (await getCapabilities()).threads.count;
+  void [n, binary, tc];
 
   const m: RawMetadata = await readMetadata(file);
   const f: DecodedFrame<'rgba8'> = await decodeRaw(new Uint8Array(buffer), { output: 'rgba8' });

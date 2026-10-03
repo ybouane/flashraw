@@ -3,20 +3,36 @@
 <head><meta charset="utf-8"><title>flashraw bench</title></head>
 <body>
 <script type="module">
-  // Driven by scripts/bench.mjs --browser. ?simd=0 → fallback binary; ?files=url,url
+  // Driven by scripts/bench.mjs --browser. ?simd=0 → fallback binary; ?threads=0|N; ?gpu=1 →
+  // WebGPU build; ?cases=raw-u16,rgba8,...; ?files=url,url
   import * as fr from '/dist/browser.js';
   import { benchFile } from '/scripts/bench-lib.mjs';
   const q = new URLSearchParams(location.search);
   (async () => {
     const t0 = performance.now();
-    const info = await fr.init(q.get('simd') === '0' ? { simd: false } : {});
+    const opts = {};
+    if (q.get('simd') === '0') opts.simd = false;
+    if (q.has('threads')) opts.threads = q.get('threads') === '0' ? false : Number(q.get('threads'));
+    if (q.get('gpu') === '1') opts.gpu = true;
+    const info = await fr.init(opts);
     const initMs = performance.now() - t0;
+    const caps = await fr.getCapabilities();
+    const cases = (q.get('cases') ?? 'raw-u16,rgba8').split(',');
     const results = [];
     for (const url of q.get('files').split(',')) {
       const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
-      results.push(await benchFile(fr, decodeURIComponent(url.split('/').pop()), bytes, { iterations: Number(q.get('n') ?? 7) }));
+      results.push(await benchFile(fr, decodeURIComponent(url.split('/').pop()), bytes, { iterations: Number(q.get('n') ?? 7), cases }));
     }
-    window.__result = { variant: info.variant, initMs, moduleInitMs: info.initMs, results };
+    window.__result = {
+      variant: info.variant,
+      binary: info.binary,
+      threads: caps.threads.count,
+      gpu: caps.gpu,
+      userAgent: navigator.userAgent,
+      initMs,
+      moduleInitMs: info.initMs,
+      results,
+    };
   })().catch((e) => { window.__result = { error: String(e?.stack ?? e) }; });
 </script>
 </body>
