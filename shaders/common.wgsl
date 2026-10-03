@@ -6,8 +6,9 @@
 //
 // Sample addressing:
 //   * frame coordinates (x, y): position inside the decoded frame (0..width, 0..height);
-//   * source raster: frame (x, y) lives at (x + src_x, y + src_y) of the uploaded raster
-//     (non-zero for region decodes straight from a packed payload);
+//   * source raster: frame (x, y) lives at (x + src_x, y - src_y) of the uploaded rows
+//     (src_x: window column for region decodes; src_y: frame row of the first uploaded
+//     row, non-zero when the frame is processed in bands);
 //   * sensor coordinates: (x + origin_x, y + origin_y); CFA and black-level patterns
 //     are anchored there, exactly like the CPU reference (`flashraw::process`).
 
@@ -20,8 +21,8 @@ struct Params {
     src_offset: u32,  // packed: byte offset of the payload inside `src`
     src_len: u32,     // packed: payload length in bytes (bytes beyond read as 0)
     row_bytes: u32,   // packed: bytes of one row (bytes beyond read as 0 for that row)
-    src_x: u32,
-    src_y: u32,
+    src_x: u32,       // raster column of frame column 0
+    src_y: u32,       // frame row of the first uploaded row (band origin)
     origin_x: u32,
     origin_y: u32,
     pat_w: u32,       // calibration pattern (lcm of CFA and black pattern)
@@ -43,7 +44,15 @@ struct Params {
     out_w: u32,       // output size (after orientation)
     out_h: u32,
     orientation: u32, // EXIF orientation 1..8
-    total: u32,       // 1-D kernels: number of output elements
+    total: u32,       // 1-D kernels: number of output elements in this band
+    band_y: u32,      // first row computed by this band (frame row; develop: developed row)
+    band_end: u32,    // develop: end (exclusive) of the band's developed rows
+    dst_x: u32,       // develop: output rectangle bound at `dst` (after orientation)
+    dst_y: u32,
+    dst_stride: u32,  // develop: pixels per row of that rectangle
+    dst_off: u32,     // word offset of the band's first element inside the `dst` binding
+    pad0: u32,
+    pad1: u32,
     wb: vec4<f32>,
     m0: vec4<f32>,    // camera -> linear sRGB matrix rows
     m1: vec4<f32>,
@@ -136,7 +145,7 @@ fn linearize(v: u32) -> u32 {
 
 // Integer sample (u16 or packed input) at frame (x, y), component c.
 fn int_sample(x: u32, y: u32, c: u32) -> u32 {
-    let sy = y + P.src_y;
+    let sy = y - P.src_y;
     let si = (x + P.src_x) * P.cpp + c;
     if (INPUT_MODE == 2u) {
         return linearize(packed_sample(si, sy));
@@ -148,7 +157,7 @@ fn int_sample(x: u32, y: u32, c: u32) -> u32 {
 // Raw sample value (before calibration) at frame (x, y), component c.
 fn raw_value(x: u32, y: u32, c: u32) -> f32 {
     if (INPUT_MODE == 1u) {
-        let idx = (y + P.src_y) * P.src_stride + (x + P.src_x) * P.cpp + c;
+        let idx = (y - P.src_y) * P.src_stride + (x + P.src_x) * P.cpp + c;
         return bitcast<f32>(src[idx]);
     }
     return f32(int_sample(x, y, c));

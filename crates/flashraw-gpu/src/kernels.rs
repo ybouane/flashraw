@@ -22,7 +22,7 @@ pub fn wgsl_sources() -> [(&'static str, &'static str); 4] {
     [("unpack", UNPACK_WGSL), ("normalize", NORMALIZE_WGSL), ("develop", DEVELOP_WGSL), ("to_texture", TO_TEXTURE_WGSL)]
 }
 
-/// Mirrors `struct Params` in `shaders/common.wgsl` (std140-compatible: 32 u32 then 4 vec4).
+/// Mirrors `struct Params` in `shaders/common.wgsl` (std140-compatible: 40 u32 then 4 vec4).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable, Default)]
 pub(crate) struct Params {
@@ -58,6 +58,14 @@ pub(crate) struct Params {
     pub out_h: u32,
     pub orientation: u32,
     pub total: u32,
+    pub band_y: u32,
+    pub band_end: u32,
+    pub dst_x: u32,
+    pub dst_y: u32,
+    pub dst_stride: u32,
+    pub dst_off: u32,
+    pub pad0: u32,
+    pub pad1: u32,
     pub wb: [f32; 4],
     pub m0: [f32; 4],
     pub m1: [f32; 4],
@@ -240,9 +248,9 @@ mod tests {
 
     #[test]
     fn params_layout_matches_wgsl() {
-        // 32 scalars + 4 vec4<f32>: 192 bytes, 16-byte multiple (uniform buffer rules).
-        assert_eq!(std::mem::size_of::<Params>(), 192);
-        assert_eq!(std::mem::offset_of!(Params, wb), 128);
+        // 40 scalars + 4 vec4<f32>: 224 bytes, 16-byte multiple (uniform buffer rules).
+        assert_eq!(std::mem::size_of::<Params>(), 224);
+        assert_eq!(std::mem::offset_of!(Params, wb), 160);
         // Every WGSL field name appears in the host struct in the same order.
         let src = include_str!("../../../shaders/common.wgsl");
         let start = src.find("struct Params {").unwrap();
@@ -286,6 +294,14 @@ mod tests {
             "out_h",
             "orientation",
             "total",
+            "band_y",
+            "band_end",
+            "dst_x",
+            "dst_y",
+            "dst_stride",
+            "dst_off",
+            "pad0",
+            "pad1",
             "wb",
             "m0",
             "m1",

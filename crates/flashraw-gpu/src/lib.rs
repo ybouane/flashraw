@@ -13,6 +13,10 @@
 //! Results are GPU-resident [`GpuImage`]s that can be bound by the application
 //! ([`GpuImage::buffer`], [`GpuImage::to_texture`]) or downloaded.
 //!
+//! Frames of any size are supported: when a frame exceeds the adapter's storage-binding
+//! or buffer limits it is processed in pipelined horizontal bands, and outputs larger
+//! than one buffer become tiled [`GpuImage`]s ([`GpuImage::tiles`]).
+//!
 //! Every kernel has a CPU scalar reference (`flashraw::process`,
 //! `flashraw_codecs::packed`) and equivalence tests (`tests/equivalence.rs`).
 //! WGSL sources live in the repository's `shaders/` directory.
@@ -40,7 +44,7 @@ mod run;
 pub use context::{
     AdapterClass, GpuAdapterInfo, GpuContext, adapter_info, available, context, init, set_context, try_context,
 };
-pub use image::{GpuImage, GpuPixelFormat, HostPixels};
+pub use image::{GpuImage, GpuPixelFormat, GpuTile, HostPixels};
 pub use kernels::{reference, wgsl_sources};
 pub use run::{DevelopOutput, DevelopSpec, GpuFrame, GpuInput, GpuOp, GpuRun, GpuTimings};
 /// Re-export of the wgpu version used, for interop.

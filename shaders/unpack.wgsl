@@ -4,6 +4,8 @@
 // Output: `width * height * cpp` u16 samples, two per u32 word (little-endian halves),
 // i.e. byte-identical to a `Vec<u16>` on the host. One invocation writes one word, so
 // no two invocations touch the same word even when rows have an odd length.
+// A band covers `total` samples starting at frame row `band_y` (an even sample index)
+// and writes them from word `dst_off` of the bound output range.
 
 @compute @workgroup_size(256)
 fn unpack(
@@ -22,12 +24,13 @@ fn unpack(
     for (var j = 0u; j < 2u; j++) {
         let s = s0 + j;
         if (s < n) {
-            let y = s / rl;
-            let r = s - y * rl;
+            let ly = s / rl;
+            let r = s - ly * rl;
+            let y = ly + P.band_y;
             let x = r / P.cpp;
             let c = r - x * P.cpp;
             word |= (int_sample(x, y, c) & 0xffffu) << (16u * j);
         }
     }
-    dst[w] = word;
+    dst[w + P.dst_off] = word;
 }

@@ -20,8 +20,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 pub use flashraw_gpu::policy::GpuCalibration;
 pub use flashraw_gpu::{
-    AdapterClass, GpuAdapterInfo, GpuContext, GpuImage, GpuPixelFormat, adapter_info, init, set_context, try_context,
-    wgpu,
+    AdapterClass, GpuAdapterInfo, GpuContext, GpuImage, GpuPixelFormat, GpuTile, adapter_info, init, set_context,
+    try_context, wgpu,
 };
 
 /// The global GPU context (initialised on first use on native; see [`init`] for the browser).
@@ -40,8 +40,10 @@ pub fn calibrate() -> Result<(GpuCalibration, CpuCosts)> {
 /// What [`Backend::Auto`] would choose for this file and options (`None` when the
 /// decision does not involve the GPU at all, e.g. raw outputs or tiny frames).
 pub fn auto_decision(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Decision> {
-    let w = workload(raw, opts)?;
+    let mut w = workload(raw, opts)?;
     let ctx = flashraw_gpu::context().ok()?;
+    // Frames beyond one storage binding run tiled; the cost model charges the bands.
+    w.bands = ctx.estimate_bands(w.upload_bytes, w.output_bytes());
     #[cfg(not(target_arch = "wasm32"))]
     let g = ctx.calibration_blocking();
     #[cfg(target_arch = "wasm32")]
@@ -86,6 +88,7 @@ fn workload(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Workload> {
         packed: packed.is_some(),
         output,
         resident: opts.output.is_gpu_resident(),
+        bands: 1,
     })
 }
 
@@ -261,6 +264,7 @@ async fn run(
         }
         o => return Err(Error::InvalidArgument(format!("{o:?} is not produced by the GPU backend"))),
     };
+    // Frames beyond the adapter's buffer limits are processed in bands (tiled).
     let r = ctx.run(&frame, &post_info, &op).await?;
     profiler.record(Stage::GpuUpload, r.timings.upload_ms);
     profiler.record(Stage::GpuCompute, r.timings.compute_ms);
@@ -276,6 +280,9 @@ async fn run(
     let mut post = format!("GPU {adapter}");
     if let Some(k) = r.timings.kernel_ms {
         post.push_str(&format!(", kernel {k:.2} ms"));
+    }
+    if r.timings.bands > 1 {
+        post.push_str(&format!(", {} bands", r.timings.bands));
     }
     if let Some(w) = why {
         post.push_str(&format!(" [{w}]"));

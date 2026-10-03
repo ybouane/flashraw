@@ -2,6 +2,11 @@
 // normalisation -> demosaic -> white balance -> clip -> camera->sRGB matrix ->
 // (RGBA8: sRGB transfer + EXIF orientation) -> store. One pass, no full-size
 // intermediates (CPU reference: `flashraw::process::{develop, to_rgba8}`).
+//
+// Bands: a dispatch develops rows [band_y, band_end) of the developed image. Frame
+// coordinates stay global (CFA phase, black pattern and borders are unchanged); only
+// the source fetch is relative to the uploaded rows (`src_y`) and the store relative
+// to the bound output rectangle (`dst_x`, `dst_y`, `dst_stride`, `dst_off`).
 
 // 0 = single-plane without CFA (grey), 1 = CFA mosaic (cpp 1), 2 = RGB(+) planes (cpp >= 3),
 // 3 = Bayer mosaic (as 1, with the CPU Bayer fast-path summation order).
@@ -31,7 +36,7 @@ fn finish(rgb_in: vec3<f32>, dx: u32, dy: u32) {
     let g = P.m1.x * rgb.x + P.m1.y * rgb.y + P.m1.z * rgb.z;
     let b = P.m2.x * rgb.x + P.m2.y * rgb.y + P.m2.z * rgb.z;
     if (OUT_MODE == 1u) {
-        let o = (dy * P.dev_w + dx) * 3u;
+        let o = ((dy - P.dst_y) * P.dst_stride + dx - P.dst_x) * 3u + P.dst_off;
         dst[o] = bitcast<u32>(r);
         dst[o + 1u] = bitcast<u32>(g);
         dst[o + 2u] = bitcast<u32>(b);
@@ -53,7 +58,7 @@ fn finish(rgb_in: vec3<f32>, dx: u32, dy: u32) {
         case 8u: { ox = dy; oy = w - 1u - dx; }
         default: {}
     }
-    dst[oy * P.out_w + ox] = srgb8(r) | (srgb8(g) << 8u) | (srgb8(b) << 16u) | (255u << 24u);
+    dst[(oy - P.dst_y) * P.dst_stride + ox - P.dst_x + P.dst_off] = srgb8(r) | (srgb8(g) << 8u) | (srgb8(b) << 16u) | (255u << 24u);
 }
 
 struct Taps {
@@ -85,7 +90,7 @@ fn develop(
     @builtin(local_invocation_index) li: u32,
 ) {
     let bx = wg.x * TILE;
-    let by = wg.y * TILE;
+    let by = P.band_y + wg.y * TILE;
     if (is_cfa()) {
         // Stage the normalised (TILE + 2)^2 neighbourhood once per workgroup.
         for (var t = li; t < APRON * APRON; t += 256u) {
@@ -103,7 +108,7 @@ fn develop(
     }
     let dx = bx + l.x;
     let dy = by + l.y;
-    if (dx >= P.dev_w || dy >= P.dev_h) {
+    if (dx >= P.dev_w || dy >= P.band_end) {
         return;
     }
     let x = P.crop_x + dx;
@@ -159,8 +164,8 @@ fn develop(
 @compute @workgroup_size(16, 16)
 fn develop_half(@builtin(global_invocation_id) gid: vec3<u32>) {
     let dx = gid.x;
-    let dy = gid.y;
-    if (dx >= P.dev_w || dy >= P.dev_h) {
+    let dy = P.band_y + gid.y;
+    if (dx >= P.dev_w || dy >= P.band_end) {
         return;
     }
     let x0 = P.crop_x + dx * 2u;

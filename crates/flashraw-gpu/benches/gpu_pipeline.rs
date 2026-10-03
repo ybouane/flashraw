@@ -6,6 +6,9 @@
 //! ```
 //! Without arguments, every `*.dng` in `$FLASHRAW_GPU_SAMPLES` (default `<workspace>/samples`).
 //! `FLASHRAW_BENCH_ITERS` sets iterations (default 7, median reported).
+//! `FLASHRAW_BENCH_BAND_MB=N` caps storage bindings at N MB so frames run in bands
+//! (one output buffer bound per band); add `FLASHRAW_BENCH_TILED=1` to also cap buffers,
+//! which makes GPU-resident outputs tiled (one buffer per band).
 //!
 //! Cases per file:
 //! * `unpack`: RAW u16 output. CPU = SIMD unpack (all threads); GPU = upload packed
@@ -37,6 +40,7 @@ fn files() -> Vec<PathBuf> {
 }
 
 struct Sample {
+    bands: u32,
     wall: f64,
     upload: f64,
     compute: f64,
@@ -60,7 +64,12 @@ fn bench(raw: &FlashRaw<'_>, opts: &DecodeOptions, iters: usize) -> Option<Sampl
             let i = p.find("kernel ")?;
             p[i + 7..].split(' ').next()?.parse::<f64>().ok()
         });
+        let bands = f.stats.backend.postprocess.as_deref().and_then(|p| {
+            let i = p.find(" bands")?;
+            p[..i].rsplit(' ').next()?.parse::<u32>().ok()
+        });
         s.push(Sample {
+            bands: bands.unwrap_or(1),
             wall,
             upload: f.stats.stage_ms(Stage::GpuUpload),
             compute: f.stats.stage_ms(Stage::GpuCompute),
@@ -71,6 +80,7 @@ fn bench(raw: &FlashRaw<'_>, opts: &DecodeOptions, iters: usize) -> Option<Sampl
     }
     let m = |f: &dyn Fn(&Sample) -> f64| median(s.iter().map(f).collect());
     Some(Sample {
+        bands: s.iter().map(|x| x.bands).max().unwrap_or(1),
         wall: m(&|x| x.wall),
         upload: m(&|x| x.upload),
         compute: m(&|x| x.compute),
@@ -116,14 +126,28 @@ fn main() {
         eprintln!("no GPU adapter: nothing to benchmark");
         return;
     }
+    if let Ok(ctx) = &ctx {
+        println!(
+            "adapter limits: storage binding {:.2} GB, buffer {:.2} GB",
+            ctx.info().max_storage_binding as f64 / 1e9,
+            ctx.info().max_buffer_size as f64 / 1e9
+        );
+    }
+    if let (Ok(ctx), Some(mb)) =
+        (&ctx, std::env::var("FLASHRAW_BENCH_BAND_MB").ok().and_then(|v| v.parse::<u64>().ok()))
+    {
+        let tiled = std::env::var("FLASHRAW_BENCH_TILED").is_ok_and(|v| v == "1");
+        ctx.override_limits(Some(mb << 20), tiled.then_some(mb << 20));
+        println!("forced bands: storage bindings capped at {mb} MB (tiled outputs: {tiled})");
+    }
     let iters: usize = std::env::var("FLASHRAW_BENCH_ITERS").ok().and_then(|v| v.parse().ok()).unwrap_or(7);
     let info = flashraw_gpu::adapter_info().unwrap();
     println!("GPU: {info}  |  CPU threads: {}  |  median of {iters}", flashraw::low_level::core::par::threads());
     println!();
     println!(
-        "| File | MP | Payload | Case | CPU ms | GPU ms (download) | GPU ms (resident) | Auto ms (choice) | GPU stages up/compute/kernel/down |"
+        "| File | MP | Payload | Case | CPU ms | GPU ms (download) | GPU ms (resident) | Auto ms (choice) | GPU stages up/compute/kernel/down | Bands |"
     );
-    println!("|---|---|---|---|---|---|---|---|---|");
+    println!("|---|---|---|---|---|---|---|---|---|---|");
     for path in files() {
         let Ok(raw) = FlashRaw::open_path(&path) else { continue };
         let fi = raw.frame_info();
@@ -164,11 +188,12 @@ fn main() {
                 })
                 .unwrap_or_default();
             println!(
-                "| {name} | {mp:.1} | {payload} | {case} | {} | {} | {} | {} ({choice}) | {st} |",
+                "| {name} | {mp:.1} | {payload} | {case} | {} | {} | {} | {} ({choice}) | {st} | {} |",
                 f(&cpu),
                 f(&gpu),
                 f(&res),
-                f(&auto)
+                f(&auto),
+                gpu.as_ref().map(|s| s.bands).unwrap_or(0)
             );
         }
     }

@@ -29,6 +29,9 @@ pub struct GpuCalibration {
     pub normalize_px_per_ms: f64,
     /// Fixed cost per run (submissions, synchronisation, allocations), ms.
     pub overhead_ms: f64,
+    /// Extra cost of each additional band when a frame is tiled (submission, bind
+    /// group, halo rows, lost overlap), ms.
+    pub band_overhead_ms: f64,
     /// True when measured; false for the static defaults.
     pub measured: bool,
 }
@@ -50,6 +53,7 @@ impl GpuCalibration {
             unpack_px_per_ms: unp,
             normalize_px_per_ms: unp,
             overhead_ms: ovh,
+            band_overhead_ms: ovh * 0.25,
             measured: false,
         }
     }
@@ -92,6 +96,22 @@ pub struct Workload {
     pub output: WorkOutput,
     /// The result stays on the GPU (no download).
     pub resident: bool,
+    /// Bands the frame is processed in on this device (1 = fits one storage binding;
+    /// see [`GpuContext::estimate_bands`]).
+    pub bands: u32,
+}
+
+impl Workload {
+    /// Bytes of the result.
+    pub fn output_bytes(&self) -> u64 {
+        match self.output {
+            WorkOutput::RawU16 => self.samples * 2,
+            WorkOutput::Normalized => self.samples * 4,
+            WorkOutput::Rgb { bytes_per_px, half_size } => {
+                (if half_size { self.samples / 4 } else { self.samples }) * bytes_per_px as u64
+            }
+        }
+    }
 }
 
 /// Outcome of [`decide`].
@@ -136,7 +156,13 @@ pub fn decide(class: AdapterClass, gpu: &GpuCalibration, cpu: &CpuCosts, w: &Wor
         }
     };
     let download_ms = if w.resident { 0.0 } else { out_bytes as f64 / gpu.download_bytes_per_ms };
-    let gpu_ms = gpu.overhead_ms + w.upload_bytes as f64 / gpu.upload_bytes_per_ms + gpu_kernel_ms + download_ms;
+    // Tiled frames pay a per-band cost; halo rows add ~2 rows of upload per band.
+    let extra_bands = w.bands.max(1) as f64 - 1.0;
+    let gpu_ms = gpu.overhead_ms
+        + extra_bands * gpu.band_overhead_ms
+        + w.upload_bytes as f64 / gpu.upload_bytes_per_ms
+        + gpu_kernel_ms
+        + download_ms;
     let mk = |use_gpu: bool, reason: String| Decision { use_gpu, reason, est_cpu_ms: cpu_ms, est_gpu_ms: gpu_ms };
     if class == AdapterClass::Software {
         return mk(false, "software adapter".into());
@@ -223,16 +249,32 @@ impl GpuContext {
         // Warm-up compiles the pipelines and faults in allocations.
         let warm = self.run(&frame, &info, &dev).await?;
         drop(warm);
-        let mut best = (f64::MAX, f64::MAX, f64::MAX, f64::MAX);
+        // Transfer = host copy + everything in the compute wall that is not kernel time
+        // (device copies on discrete GPUs, synchronisation).
+        let transfer =
+            |t: &crate::run::GpuTimings| t.upload_ms + (t.compute_ms - t.kernel_ms.unwrap_or(t.compute_ms)).max(0.0);
+        let mut best = (f64::MAX, f64::MAX, f64::MAX);
+        let mut wall_1 = f64::MAX;
         for _ in 0..2 {
             let r = self.run(&frame, &info, &dev).await?;
             let (_, dl) = r.image.download_async().await?;
             let k = r.timings.kernel_ms.unwrap_or(r.timings.compute_ms);
-            best.0 = best.0.min(r.timings.upload_ms);
+            best.0 = best.0.min(transfer(&r.timings));
             best.1 = best.1.min(k);
             best.2 = best.2.min(dl);
-            best.3 = best.3.min((r.timings.compute_ms - k).max(0.0));
+            wall_1 = wall_1.min(r.timings.upload_ms + r.timings.compute_ms);
         }
+        // Per-band cost: the same frame in 8 bands (256 developed rows each).
+        let band_budget = Some(W as u64 * 4 * 256 + 4096);
+        let _ = self.run_banded(&frame, &info, &dev, band_budget).await?;
+        let mut wall_8 = f64::MAX;
+        let mut bands = 1;
+        for _ in 0..2 {
+            let r = self.run_banded(&frame, &info, &dev, band_budget).await?;
+            wall_8 = wall_8.min(r.timings.upload_ms + r.timings.compute_ms);
+            bands = r.timings.bands;
+        }
+        let band_overhead = if bands > 1 { ((wall_8 - wall_1) / (bands - 1) as f64).max(0.0) } else { 0.0 };
         let (frame, info) = (&frame, &info);
         let kernel_time = |op: GpuOp| async move {
             let _ = self.run(frame, info, &op).await?; // warm-up
@@ -255,7 +297,7 @@ impl GpuContext {
         let mut up_big = f64::MAX;
         for _ in 0..3 {
             let r = self.run(&big_frame, &big_info, &GpuOp::Unpack).await?;
-            up_big = up_big.min(r.timings.upload_ms);
+            up_big = up_big.min(transfer(&r.timings));
         }
         let upload_bw = (big.len() - data.len()) as f64 / (up_big - best.0).max(1e-2);
         let upload_bw = upload_bw.min(big.len() as f64 / up_big.max(1e-3) * 4.0);
@@ -268,7 +310,8 @@ impl GpuContext {
             develop_half_px_per_ms: px / half.max(1e-3),
             unpack_px_per_ms: px / unpack.max(1e-3),
             normalize_px_per_ms: px / normalize.max(1e-3),
-            overhead_ms: best.3 + upload_fixed + 0.2,
+            overhead_ms: upload_fixed + 0.2,
+            band_overhead_ms: band_overhead,
             measured: true,
         })
     }
@@ -289,7 +332,7 @@ mod tests {
 
     fn work(output: WorkOutput, packed: bool, mp: f64) -> Workload {
         let samples = (mp * 1e6) as u64;
-        Workload { samples, upload_bytes: samples * 14 / 8, packed, output, resident: false }
+        Workload { samples, upload_bytes: samples * 14 / 8, packed, output, resident: false, bands: 1 }
     }
 
     #[test]
@@ -347,6 +390,16 @@ mod tests {
             &work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 45.0),
         );
         assert!(!d.use_gpu, "{d:?}");
+    }
+
+    #[test]
+    fn tiled_frames_cost_more_but_still_use_the_gpu() {
+        let g = GpuCalibration::defaults(AdapterClass::Discrete);
+        let w = work(WorkOutput::Rgb { bytes_per_px: 4, half_size: false }, true, 150.0);
+        let one = decide(AdapterClass::Discrete, &g, &cpu(), &w);
+        let tiled = decide(AdapterClass::Discrete, &g, &cpu(), &Workload { bands: 5, ..w });
+        assert!(tiled.use_gpu, "{tiled:?}");
+        assert!((tiled.est_gpu_ms - one.est_gpu_ms - 4.0 * g.band_overhead_ms).abs() < 1e-9);
     }
 
     #[test]
