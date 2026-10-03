@@ -5,8 +5,15 @@ import { fileURLToPath } from 'node:url';
 
 const need = [
   'flashraw_bindgen.js',
+  'flashraw_bindgen_threads.js',
+  'flashraw_bindgen_gpu.js',
   'flashraw_simd.wasm',
   'flashraw.wasm',
+  'flashraw_simd_threads.wasm',
+  'flashraw_simd_gpu.wasm',
+  'threads.js',
+  'thread-worker.browser.js',
+  'thread-worker.node.js',
   'core.js',
   'browser.js',
   'node.js',

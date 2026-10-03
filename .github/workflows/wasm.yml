@@ -24,9 +24,16 @@ jobs:
         working-directory: npm
     steps:
       - uses: actions/checkout@v4
+      # Nightly + rust-src builds the multithreaded variant (-Z build-std with atomics);
+      # stable (installed last, so it is the default) builds everything else.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+          components: rust-src, clippy
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
@@ -39,11 +46,21 @@ jobs:
       - name: Native CLI (reference hashes for the WASM tests)
         working-directory: .
         run: cargo build --release -p flashraw-cli
+      - name: Clippy (single-threaded, WebGPU and threaded bindings)
+        working-directory: .
+        run: |
+          cargo clippy -p flashraw-wasm --target wasm32-unknown-unknown -- -D warnings
+          cargo clippy -p flashraw-wasm --target wasm32-unknown-unknown --features gpu
+          RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128" \
+            cargo +nightly clippy -Z build-std=panic_abort,std -p flashraw-wasm \
+            --target wasm32-unknown-unknown --features threads -- -D warnings
       - run: npm ci
-      - name: Build (SIMD + fallback, wasm-bindgen, wasm-opt)
+      - name: Build (SIMD, fallback, threaded, WebGPU; wasm-bindgen, wasm-opt)
         run: npm run build
-      - name: Node tests
+      - name: Node tests (threaded build by default)
         run: npm test
+      - name: Node tests (single-threaded build)
+        run: FLASHRAW_WASM_THREADS=0 npm test
       - name: Type tests
         run: npm run test:types
       - name: Chromium tests

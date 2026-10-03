@@ -18,6 +18,7 @@ import {
   FlashRawError,
   GpuUnavailableError,
   OUTPUTS,
+  _internals,
 } from 'flashraw';
 import { fixtures, fixture, fnv1a64U16, nativeVerify, fixturesDir } from './helpers.mjs';
 
@@ -60,7 +61,17 @@ describe('capabilities', () => {
     assert.equal(c.gpu.compiled, false);
     assert.equal(c.gpu.available, false);
     assert.match(c.gpu.reason, /gpu/i);
-    assert.equal(c.threads.wasmThreads, false);
+    // Node: the threaded build is the default (FLASHRAW_WASM_THREADS=0 selects single-threaded).
+    const threaded = !['0', 'false', 'off'].includes(process.env.FLASHRAW_WASM_THREADS) && c.simd.active;
+    assert.equal(c.threads.wasmThreads, threaded);
+    assert.equal(c.wasm.binary, threaded ? 'threads' : c.wasm.variant);
+    if (threaded) {
+      assert.ok(c.threads.count >= 1);
+      assert.equal(c.threads.reason, null);
+    } else {
+      assert.equal(c.threads.count, 0);
+      assert.equal(typeof c.threads.reason, 'string');
+    }
     assert.equal(c.threads.workers, true);
     assert.deepEqual(c.outputs, [...OUTPUTS]);
   });
@@ -119,7 +130,7 @@ for (const file of fixtures) {
       assert.equal(frame.backend.kind, 'cpu');
       assert.equal(frame.backend.requested, 'auto');
       assert.match(frame.backend.decode, /^CPU /);
-      assert.equal(frame.backend.threads, 1);
+      assert.equal(frame.backend.threads, Math.max(1, _internals().threads));
       assert.ok(frame.timings.totalMs > 0, 'performance.now() clock is installed');
       assert.ok(Object.keys(frame.timings.stages).length > 0);
       assert.ok(frame.timings.wallMs >= frame.timings.copyMs);

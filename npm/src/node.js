@@ -1,10 +1,12 @@
 // Node.js entry point: WASM loaded from disk, file paths accepted everywhere an input is.
 //
-// Environment: FLASHRAW_WASM_SIMD=0 forces the scalar fallback binary (benchmarks, debugging).
+// Environment: FLASHRAW_WASM_SIMD=0 forces the scalar fallback binary (benchmarks, debugging);
+// FLASHRAW_WASM_THREADS=0 forces the single-threaded binary, =N sets the thread count.
 
 import { readFile, open } from 'node:fs/promises';
 import { availableParallelism, cpus } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 import { _setPlatform, IoError } from './core.js';
 
 const STAGING = 8 << 20; // chunk size when streaming files into WASM memory
@@ -17,22 +19,84 @@ function toPath(p) {
   return p instanceof URL ? fileURLToPath(p) : p;
 }
 
+const FILES = {
+  simd: 'flashraw_simd.wasm',
+  fallback: 'flashraw.wasm',
+  threads: 'flashraw_simd_threads.wasm',
+  gpu: 'flashraw_simd_gpu.wasm',
+};
+
+function wasmUrl(variant, options) {
+  if (options.baseUrl) return new URL(FILES[variant], options.baseUrl);
+  switch (variant) {
+    case 'simd':
+      return new URL('./flashraw_simd.wasm', import.meta.url);
+    case 'threads':
+      return new URL('./flashraw_simd_threads.wasm', import.meta.url);
+    case 'gpu':
+      return new URL('./flashraw_simd_gpu.wasm', import.meta.url);
+    default:
+      return new URL('./flashraw.wasm', import.meta.url);
+  }
+}
+
+function wrapWorker(w) {
+  // Thread workers never keep the process alive on their own; the coordinator is ref'd while
+  // a job is pending (`idle(false)`) so pending decodes do.
+  // (Adding a 'message' listener re-refs the worker's port, so re-apply the state after it.)
+  let busy = false;
+  const apply = () => (busy ? w.ref() : w.unref());
+  apply();
+  let errorCb = null;
+  return {
+    post: (msg) => w.postMessage(msg),
+    onMessage: (cb) => {
+      w.on('message', cb);
+      apply();
+    },
+    onError: (cb) => {
+      errorCb = cb;
+      w.on('error', cb);
+      w.on('exit', (code) => errorCb?.(new Error(`thread worker exited with code ${code}`)));
+    },
+    idle: (isIdle) => {
+      busy = !isIdle;
+      apply();
+    },
+    terminate: () => {
+      errorCb = null;
+      return w.terminate();
+    },
+  };
+}
+
 _setPlatform({
   name: 'node',
-  load(variant, options) {
-    const file = variant === 'simd' ? 'flashraw_simd.wasm' : 'flashraw.wasm';
-    const url = options.baseUrl
-      ? new URL(file, options.baseUrl)
-      : variant === 'simd'
-        ? new URL('./flashraw_simd.wasm', import.meta.url)
-        : new URL('./flashraw.wasm', import.meta.url);
-    return readFile(url);
-  },
+  load: (variant, options) => readFile(wasmUrl(variant, options)),
+  glue: (variant) => (variant === 'threads' ? import('./flashraw_bindgen_threads.js') : import('./flashraw_bindgen_gpu.js')),
   defaultSimd() {
     const v = process.env.FLASHRAW_WASM_SIMD;
     if (v === '0' || v === 'false') return false;
     return undefined;
   },
+  // FLASHRAW_WASM_THREADS=0 disables the threaded build; =N uses N threads.
+  defaultThreads() {
+    const v = process.env.FLASHRAW_WASM_THREADS;
+    if (v === undefined || v === '' || v === 'auto') return undefined;
+    if (v === '0' || v === 'false' || v === 'off') return false;
+    const n = Number(v);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
+  },
+  threadSupport() {
+    try {
+      new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+      return null;
+    } catch {
+      return 'shared WebAssembly memory is not available';
+    }
+  },
+  spawnThread: (name, options) =>
+    wrapWorker(new Worker(options.threadWorkerUrl ?? new URL('./thread-worker.node.js', import.meta.url), { name })),
   // Files are read in 8 MiB chunks straight into WASM memory: one copy, bounded JS memory,
   // and the event loop stays responsive.
   async fileSource(p) {

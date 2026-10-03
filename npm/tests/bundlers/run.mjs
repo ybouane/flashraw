@@ -53,7 +53,11 @@ const builds = {};
   assert.ok(assets.some((f) => /^flashraw_simd-.*\.wasm$/.test(f)), `vite emitted the SIMD wasm (${assets})`);
   assert.ok(assets.some((f) => /^flashraw-.*\.wasm$/.test(f)), 'vite emitted the fallback wasm');
   assert.ok(assets.some((f) => /worker-entry/.test(f)), 'vite emitted the worker chunk');
-  builds.vite = { dir: join(dir, 'dist'), withWorker: true };
+  assert.ok(assets.some((f) => /^flashraw_simd_threads-.*\.wasm$/.test(f)), 'vite emitted the threaded wasm');
+  assert.ok(assets.some((f) => /^flashraw_simd_gpu-.*\.wasm$/.test(f)), 'vite emitted the WebGPU wasm');
+  assert.ok(assets.some((f) => /thread-worker/.test(f)), 'vite emitted the thread worker chunk');
+  // Served cross-origin isolated: the threaded build must work from the bundle.
+  builds.vite = { dir: join(dir, 'dist'), withWorker: true, isolated: true };
   console.log('ok - vite build');
 }
 
@@ -120,10 +124,10 @@ const builds = {};
   );
   assert.ok(!stats.hasErrors(), stats.toString('errors-only'));
   const files = readdirSync(out);
-  assert.equal(files.filter((f) => f.endsWith('.wasm')).length, 2, `webpack emitted both wasm assets (${files})`);
+  assert.equal(files.filter((f) => f.endsWith('.wasm')).length, 4, `webpack emitted all four wasm assets (${files})`);
   cpSync(join(dir, 'public/fixture.dng'), join(out, 'fixture.dng'));
   writeFileSync(join(out, 'index.html'), html('./app.js', true));
-  builds.webpack = { dir: out, withWorker: true };
+  builds.webpack = { dir: out, withWorker: true, isolated: true };
   console.log('ok - webpack build');
 }
 
@@ -132,7 +136,7 @@ const libs = process.env.FLASHRAW_BROWSER_LIBS ?? join(homedir(), '.cache/flashr
 const browser = await chromium.launch({ env: existsSync(libs) ? { ...process.env, LD_LIBRARY_PATH: libs } : process.env });
 let failed = 0;
 for (const [name, b] of Object.entries(builds)) {
-  const server = await serve({ root: b.dir });
+  const server = await serve({ root: b.dir, isolated: !!b.isolated });
   try {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
@@ -144,8 +148,19 @@ for (const [name, b] of Object.entries(builds)) {
     assert.equal(r.hash, expected.hash_full);
     assert.equal(r.simd, true);
     assert.equal(r.rgba[2], r.rgba[0] * r.rgba[1] * 4);
+    if (b.isolated) {
+      assert.equal(r.binary, 'threads', `threaded build from the bundle (${r.threadsReason})`);
+      assert.ok(r.threads >= 1);
+      assert.match(r.backend, /thread/);
+    } else {
+      assert.equal(r.binary, 'simd');
+      assert.match(r.threadsReason, /cross-origin isolated/);
+    }
     if (b.withWorker) assert.equal(r.workerHash, expected.hash_full);
-    console.log(`ok - ${name} bundle runs in Chromium${b.withWorker ? ' (incl. worker pool)' : ''}`);
+    console.log(
+      `ok - ${name} bundle runs in Chromium${b.withWorker ? ' (incl. worker pool)' : ''}` +
+        `${b.isolated ? `, cross-origin isolated: ${r.threads} threads` : ', not isolated: single-threaded'}`,
+    );
   } catch (e) {
     failed++;
     console.log(`not ok - ${name}: ${e.stack ?? e}`);

@@ -1,9 +1,9 @@
 // Worker pool shared by the browser (Web Worker) and Node.js (worker_threads) helpers.
 //
-// The WASM build is single-threaded (wasm32 threads need nightly Rust + build-std and
-// cross-origin isolation in browsers); parallelism comes from running one FlashRaw instance per
-// worker. Decoding off the main thread keeps UIs responsive, and a pool decodes several files
-// concurrently.
+// Each worker runs its own FlashRaw instance (the single-threaded build unless the pool's
+// `init` options ask for threads; the multithreaded build parallelises *one* decode instead, see
+// threads.js). Decoding off the main thread keeps UIs responsive, and a pool decodes several
+// files concurrently.
 //
 // Data movement: results are copied out of WASM memory inside the worker and their buffers are
 // *transferred* (not cloned) to the caller. Inputs are cloned unless `transfer: true` is given

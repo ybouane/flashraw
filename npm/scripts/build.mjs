@@ -1,11 +1,20 @@
 #!/usr/bin/env node
 // Build the flashraw npm package:
-//   cargo (wasm32, SIMD128 + scalar fallback) -> wasm-bindgen (--target web) -> wasm-opt -O3 -> dist/
+//   cargo (wasm32, 4 variants) -> wasm-bindgen (--target web) -> wasm-opt -O3 -> dist/
 //
-// Usage: node scripts/build.mjs [--no-opt] [--skip-cargo] [--features gpu]
+// Variants (all shipped; the loader downloads exactly one):
+//   simd      flashraw_simd.wasm          stable, +simd128                     (default single-threaded)
+//   fallback  flashraw.wasm               stable, scalar                       (engines without SIMD)
+//   threads   flashraw_simd_threads.wasm  nightly, +atomics,+bulk-memory,+mutable-globals,+simd128,
+//                                         -Z build-std, shared memory, rayon  (default when isolated)
+//   gpu       flashraw_simd_gpu.wasm      stable, +simd128, WebGPU backend      (opt-in: init({ gpu: true }))
+//
+// Usage: node scripts/build.mjs [--no-opt] [--skip-cargo] [--variants simd,fallback,threads,gpu]
 //
 // Environment:
 //   CARGO          cargo binary (default: `cargo` on PATH, then ~/.cargo/bin/cargo)
+//   RUSTUP         rustup binary, used to run the nightly toolchain for the threaded variant
+//   FLASHRAW_NIGHTLY  toolchain name for the threaded variant (default: nightly)
 //   WASM_BINDGEN   wasm-bindgen binary; must match the wasm-bindgen version in Cargo.lock.
 //                  When absent or mismatched, the matching CLI is installed into npm/.tools/.
 //   WASM_OPT       wasm-opt binary (default: binaryen from node_modules, then PATH)
@@ -24,8 +33,8 @@ const dist = join(pkgDir, 'dist');
 const args = process.argv.slice(2);
 const noOpt = args.includes('--no-opt');
 const skipCargo = args.includes('--skip-cargo');
-const featIdx = args.indexOf('--features');
-const features = featIdx >= 0 ? args[featIdx + 1] : '';
+const varIdx = args.indexOf('--variants');
+const only = varIdx >= 0 ? args[varIdx + 1].split(',') : null;
 
 function log(...m) {
   console.log('[flashraw build]', ...m);
@@ -43,6 +52,8 @@ function run(cmd, argv, opts = {}) {
 
 const cargo = process.env.CARGO || which('cargo') || join(homedir(), '.cargo/bin/cargo');
 if (!existsSync(cargo) && !which(cargo)) throw new Error(`cargo not found (set CARGO)`);
+const rustup = process.env.RUSTUP || which('rustup') || join(homedir(), '.cargo/bin/rustup');
+const nightly = process.env.FLASHRAW_NIGHTLY || 'nightly';
 
 // --- wasm-bindgen version must match the crate version in Cargo.lock -----------------------
 function lockedVersion(name) {
@@ -79,10 +90,33 @@ function findWasmOpt() {
 }
 
 // --- build -------------------------------------------------------------------------------
+const THREAD_FLAGS = [
+  '-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128',
+  // Shared, imported memory with a 4 GiB maximum (the default would cap it at 1 GiB), and the
+  // TLS symbols wasm-bindgen needs to give each thread its own thread-local storage.
+  '-C link-arg=--shared-memory',
+  '-C link-arg=--import-memory',
+  '-C link-arg=--max-memory=4294967296',
+  '-C link-arg=--export=__wasm_init_tls',
+  '-C link-arg=--export=__tls_size',
+  '-C link-arg=--export=__tls_align',
+  '-C link-arg=--export=__tls_base',
+].join(' ');
+
 const variants = [
-  { name: 'simd', out: 'flashraw_simd.wasm', rustflags: '-C target-feature=+simd128' },
-  { name: 'fallback', out: 'flashraw.wasm', rustflags: '' },
-];
+  { name: 'simd', out: 'flashraw_simd.wasm', glue: 'flashraw_bindgen.js', rustflags: '-C target-feature=+simd128', features: '' },
+  { name: 'fallback', out: 'flashraw.wasm', glue: 'flashraw_bindgen.js', rustflags: '', features: '' },
+  {
+    name: 'threads',
+    out: 'flashraw_simd_threads.wasm',
+    glue: 'flashraw_bindgen_threads.js',
+    rustflags: THREAD_FLAGS,
+    features: 'threads',
+    nightly: true,
+    opt: ['--enable-threads', '--enable-simd'],
+  },
+  { name: 'gpu', out: 'flashraw_simd_gpu.wasm', glue: 'flashraw_bindgen_gpu.js', rustflags: '-C target-feature=+simd128', features: 'gpu' },
+].filter((v) => !only || only.includes(v.name));
 
 const bindgen = findBindgen(lockedVersion('wasm-bindgen'));
 const wasmOpt = noOpt ? null : findWasmOpt();
@@ -91,7 +125,8 @@ if (!noOpt && !wasmOpt) log('warning: wasm-opt not found; shipping unoptimised w
 const tmp = join(pkgDir, '.build');
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
-rmSync(dist, { recursive: true, force: true });
+// A partial build (--variants) refreshes only its variants and the hand-written files.
+if (!only) rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
 const glue = {};
@@ -99,10 +134,16 @@ for (const v of variants) {
   const targetDir = join(root, 'target', `wasm-${v.name}`);
   if (!skipCargo) {
     const cargoArgs = ['build', '-p', 'flashraw-wasm', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'];
-    if (features) cargoArgs.push('--features', features);
+    if (v.features) cargoArgs.push('--features', v.features);
     cargoArgs.push('--target-dir', targetDir);
     // Each variant has its own target dir so switching RUSTFLAGS does not force full rebuilds.
-    run(cargo, cargoArgs, { env: { ...process.env, RUSTFLAGS: v.rustflags } });
+    const env = { ...process.env, RUSTFLAGS: v.rustflags };
+    if (v.nightly) {
+      // std must be rebuilt with atomics enabled (needs the nightly rust-src component).
+      run(rustup, ['run', nightly, 'cargo', ...cargoArgs, '-Z', 'build-std=panic_abort,std'], { env });
+    } else {
+      run(cargo, cargoArgs, { env });
+    }
   }
   const wasmIn = join(targetDir, 'wasm32-unknown-unknown/wasm-release/flashraw_wasm.wasm');
   const outDir = join(tmp, v.name);
@@ -118,7 +159,7 @@ for (const v of variants) {
   const bg = join(outDir, 'flashraw_bindgen_bg.wasm');
   const dst = join(dist, v.out);
   if (wasmOpt) {
-    const feat = v.name === 'simd' ? ['--enable-simd'] : [];
+    const feat = v.opt ?? (v.rustflags.includes('simd128') ? ['--enable-simd'] : []);
     run(wasmOpt, [
       bg, '-O3', '--enable-bulk-memory', '--enable-nontrapping-float-to-int', '--enable-sign-ext',
       '--enable-mutable-globals', '--enable-reference-types', '--enable-multivalue', ...feat, '-o', dst,
@@ -126,15 +167,15 @@ for (const v of variants) {
   } else {
     copyFileSync(bg, dst);
   }
-  glue[v.name] = readFileSync(join(outDir, 'flashraw_bindgen.js'), 'utf8');
+  const js = readFileSync(join(outDir, 'flashraw_bindgen.js'), 'utf8');
+  // Variants sharing a glue file must export the identical wasm-bindgen ABI; refuse to ship
+  // if they ever diverge.
+  if (glue[v.glue] !== undefined && glue[v.glue] !== js) {
+    throw new Error(`wasm-bindgen glue differs between variants sharing ${v.glue}`);
+  }
+  glue[v.glue] = js;
 }
-
-// Both binaries export the identical wasm-bindgen ABI, so one JS glue serves both; the loader
-// picks which .wasm to instantiate. Refuse to ship if they ever diverge.
-if (glue.simd !== glue.fallback) {
-  throw new Error('wasm-bindgen glue differs between SIMD and fallback builds; cannot share one glue file');
-}
-writeFileSync(join(dist, 'flashraw_bindgen.js'), glue.simd);
+for (const [file, js] of Object.entries(glue)) writeFileSync(join(dist, file), js);
 
 // Hand-written JS + types.
 const src = join(pkgDir, 'src');
@@ -146,23 +187,28 @@ for (const f of readdirSync(src)) {
 const sizes = {};
 for (const v of variants) {
   const b = readFileSync(join(dist, v.out));
+  const g = Buffer.from(glue[v.glue]);
   sizes[v.name] = {
     file: v.out,
     raw: b.length,
     gzip: gzipSync(b, { level: 9 }).length,
     brotli: brotliCompressSync(b, { params: { [zc.BROTLI_PARAM_QUALITY]: 11 } }).length,
+    glue: v.glue,
+    glueRaw: g.length,
+    glueGzip: gzipSync(g, { level: 9 }).length,
   };
 }
 const jsBytes = readdirSync(dist)
   .filter((f) => f.endsWith('.js'))
   .reduce((n, f) => n + statSync(join(dist, f)).size, 0);
-const report = { wasmBindgen: lockedVersion('wasm-bindgen'), optimized: !!wasmOpt, features, sizes, jsBytes };
+const report = { wasmBindgen: lockedVersion('wasm-bindgen'), optimized: !!wasmOpt, sizes, jsBytes };
 writeFileSync(join(tmp, 'sizes.json'), JSON.stringify(report, null, 2));
-rmSync(join(tmp, 'simd'), { recursive: true, force: true });
-rmSync(join(tmp, 'fallback'), { recursive: true, force: true });
+for (const v of variants) rmSync(join(tmp, v.name), { recursive: true, force: true });
 const kb = (n) => `${(n / 1024).toFixed(1)} KiB`;
 for (const [k, s] of Object.entries(sizes)) {
-  log(`${k.padEnd(8)} ${s.file.padEnd(20)} raw ${kb(s.raw).padStart(11)}  gzip ${kb(s.gzip).padStart(10)}  brotli ${kb(s.brotli).padStart(10)}`);
+  log(
+    `${k.padEnd(8)} ${s.file.padEnd(28)} raw ${kb(s.raw).padStart(11)}  gzip ${kb(s.gzip).padStart(10)}  brotli ${kb(s.brotli).padStart(10)}  (glue ${kb(s.glueRaw)})`,
+  );
 }
 log(`JS (glue + wrappers, unminified): ${kb(jsBytes)}`);
 log('done ->', dist);
