@@ -9,7 +9,7 @@
 //! predictors row by row. Whenever speculation cannot prove the result identical to the
 //! sequential decoder, the caller is told to decode sequentially.
 
-use crate::ljpeg::{LjpegHeader, unstuff};
+use crate::ljpeg::LjpegHeader;
 use crate::par_entropy::{self, EndCheck, SymbolStream};
 use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::huffman::HuffTable;
@@ -96,7 +96,7 @@ pub(crate) fn decode_frame_chunked(
         return Ok(false);
     }
     let Some(scan) = data.get(hdr.scan_offset..) else { return Ok(false) };
-    let un = unstuff(scan);
+    let un = crate::ljpeg::unstuff_scan(scan, false);
     if un.segments.len() != 1 {
         return Ok(false);
     }

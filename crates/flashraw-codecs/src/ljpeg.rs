@@ -229,7 +229,7 @@ where
     let scan = data.get(hdr.scan_offset..).ok_or_else(|| Error::corrupt("lossless JPEG: scan beyond data"))?;
     // Remove byte stuffing once, up front: the hot loop then runs on a plain MSB pump
     // whose refill needs no per-byte 0xFF checks.
-    let un = unstuff(scan);
+    let un = unstuff_scan(scan, hdr.restart_interval != 0);
     let mut segment = 0usize;
     let mut bits = BitPumpMsb::new(un.segment(0));
     let clrs = hdr.clrs as usize;
@@ -298,6 +298,12 @@ fn find_ff(s: &[u8]) -> Option<usize> {
 /// starts a new segment; any other marker (or a lone trailing `FF`) ends the scan,
 /// exactly where the byte-wise JPEG pump would stop feeding data.
 pub fn unstuff(scan: &[u8]) -> Unstuffed {
+    unstuff_scan(scan, true)
+}
+
+/// [`unstuff`]; without `restarts` a restart marker ends the scan like any other marker
+/// (a decoder reading one restart interval must not pull in the rest of the stream).
+pub fn unstuff_scan(scan: &[u8], restarts: bool) -> Unstuffed {
     let mut data = Vec::with_capacity(scan.len());
     let mut segments = Vec::new();
     let mut seg_start = 0usize;
@@ -316,7 +322,7 @@ pub fn unstuff(scan: &[u8]) -> Unstuffed {
                         data.push(0xFF);
                         i = p + 2;
                     }
-                    Some(&m) if (0xD0..=0xD7).contains(&m) => {
+                    Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
                         segments.push((seg_start, data.len()));
                         seg_start = data.len();
                         i = p + 2;
@@ -694,6 +700,16 @@ pub(crate) mod tests {
                 assert_eq!(out, s, "psv {psv} comps {comps}");
             }
         }
+    }
+
+    #[test]
+    fn unstuffing_stops_at_restart_without_restarts() {
+        // One restart interval read on its own must not pull in the following ones.
+        let scan = [1u8, 0xFF, 0x00, 2, 0xFF, 0xD0, 3, 4, 0xFF, 0xD1, 5];
+        let un = unstuff_scan(&scan, false);
+        assert_eq!(un.segments.len(), 1);
+        assert_eq!(un.segment(0), &[1, 0xFF, 2]);
+        assert_eq!(unstuff_scan(&scan, true).segments.len(), 3);
     }
 
     #[test]
