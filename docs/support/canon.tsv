@@ -1,7 +1,14 @@
 FORMAT	MODE	COMPRESSION	STATUS	NOTES
-TIF	EOS-1D/1Ds raw	lossless-jpeg	verified	Raw located via maker note 0x0081; bit-exact on 2 files
-TIF	EOS D2000C	lossless-jpeg	verified	Kodak-built: linearisation curve, Kodak-IFD black/WB; 1 file bit-exact
-CR3	craw	canon-crx	verified	C-RAW wavelet (CMP1 0x100 per-line QP, 0x200 QP maps), multi-tile; bit-exact on 51 files
-CRW	packed-10bit	uncompressed	verified	PowerShot Pro70 bit-exact (CMYG 8x2 CFA); A5/A50 share the path but are untested
+CR2	raw	lossless-jpeg	verified	All CR2 generations (20D..5DS/1D X II/M100/G1 X III), sliced and unsliced; 108 corpus files decode, regression-hashed; corruption tests
+CR2	sRaw1/sRaw2 (sRAW/mRAW)	canon-sraw	verified	YCbCr 4:2:0/4:2:2 -> linear RGB (cpp=3), both colour-conversion generations; 31 corpus files decode, regression-hashed
+TIF	EOS-1D/1Ds raw	lossless-jpeg	verified	Raw located via maker note 0x0081; 2 files decode
+TIF	EOS D2000C	lossless-jpeg	verified	Kodak-built: linearisation curve, Kodak-IFD black/WB; 1 file decodes
+CR3	raw	canon-crx	verified	Lossless CRX; 59 corpus files decode incl. dual-pixel/crop, regression-hashed
+CR3	craw	canon-crx	verified	C-RAW wavelet (CMP1 0x100 per-line QP, 0x200 QP maps), multi-tile; 51 files decode
+CR3	enc3	canon-crx	experimental	Encoding type 3 colour planes / rounded near-lossless lines: implemented from the format structure, no samples
+CR3	burst/dual-pixel	canon-crx	partial	First frame / first image only
+CRW	compressed-10bit	canon-crw	verified	G1, G2, S30, S40; regression-hashed
+CRW	compressed-12bit	canon-crw	verified	EOS D30/D60/10D/300D, G3/G5/G6, Pro1, S45-S70 (low-bit plane); regression-hashed
+CRW	packed-10bit	uncompressed	verified	PowerShot Pro70 decodes (CMYG 8x2 CFA); A5/A50 share the path but are untested
 CRW	canon600-10bit	uncompressed	experimental	PowerShot 600; no sample
 CRW/CR2	CHDK headerless	uncompressed	unsupported	Headerless CHDK dumps go through the generic file-size path (misc), not the Canon decoders

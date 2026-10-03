@@ -65,6 +65,7 @@ pub fn open<'a>(
     db_lookup(&mut meta, "srf");
     let mut info = FrameInfo::new(width, height, 14);
     info.compression = Compression::Uncompressed;
+    // The image starts on an odd column; keep the visible
     // window on an even CFA phase by dropping its first column.
     let left = (m.left + (m.left & 1)).min(width);
     let vis_w = (m.width - (m.left & 1)).min(width - left);

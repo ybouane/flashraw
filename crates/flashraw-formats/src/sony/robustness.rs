@@ -196,6 +196,7 @@ fn region_decode_matches_full_decode() {
 }
 
 /// The Hasselblad Lunar is a rebadged NEX-7 writing ordinary ARW2 files: the Sony
+/// decoder reproduces the expected hash when called directly.
 #[test]
 fn hasselblad_lunar_is_an_arw() {
     let Some(d) = corpus("HASSELBLAD/Lunar/DSC00343.ARW") else { return };
@@ -210,5 +211,6 @@ fn hasselblad_lunar_is_an_arw() {
         }
     }
     assert_eq!((img.width, img.height), (6048, 4024));
+    // Expected full-buffer FNV-1a for this file (regression guard).
     assert_eq!(format!("{h:016x}"), "82eb880e868b36ea");
 }

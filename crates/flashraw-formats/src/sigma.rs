@@ -17,13 +17,20 @@
 //!
 //! ## Output representation
 //! The buffer is `raw_width x raw_height x 3` (top/middle/bottom layer samples per
+//! pixel, [`SensorLayout::Foveon`]):
 //! - Older/Merrill bodies: the three full-resolution layers interleaved.
 //! - Quattro ("1:1:4") bodies store the bottom and middle layers at half resolution
+//!   and the top layer at full resolution. The top layer fills channel 2
 //!   at full resolution and the lower layers are placed on the even 2x2 sites of
+//!   channels 0/1, then (a) the phase-detect AF pixel rows are repaired by
 //!   neighbour interpolation and (b) the lower layers are replicated over each 2x2
+//!   block (except for a 2-sample border).
 //! - Polaroid x530 stores channels in reverse order; they are swapped to R,G,B order.
 //!
 //! Geometry (margins), black and white levels come from the camera database (they
+//! are not stored in the file in a usable form); the colour matrix comes from
+//! the database's fallback colour table. X3F has no usable as-shot white balance,
+//! so none is reported.
 
 use crate::common::*;
 use flashraw_codecs::x3f;
@@ -44,6 +51,7 @@ const RAW_SDQH2: u32 = 0x0001_0029;
 const THUMB_PLAIN: u32 = 0x0002_0003;
 const THUMB_JPEG: u32 = 0x0002_0012;
 
+/// Raw image types in order of preference.
 const RAW_TYPES: [u32; 8] =
     [RAW_X530, RAW_HUFFMAN_10BIT, RAW_TRUE, RAW_MERRILL, RAW_QUATTRO, RAW_SDQ, RAW_SDQH, RAW_SDQH2];
 
@@ -207,6 +215,7 @@ fn apply_properties(props: &[(String, String)], meta: &mut RawMetadata) {
     }
 }
 
+/// Quattro files carry no property list; the model is derived from the image
 /// size and strings in the first 2 KiB of the file.
 fn quattro_model(data: &[u8], w: u32, h: u32) -> Option<String> {
     if ![5888, 2944, 6656, 3328, 5504, 2752].contains(&w) {
@@ -245,6 +254,7 @@ struct X3fRaw<'a> {
     height: u32,
     row_stride: u32,
     swap_rb: bool,
+    /// Black level used by the Quattro AF-pixel repair.
     black: u32,
     active: Rect,
 }
@@ -325,6 +335,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     } else {
         1.0
     };
+    // Defaults when no camera-database entry matches: maximum 0x3fff (or the colour
     // table's white), black from the colour table.
     let fallback = flashraw_camera_db::find_matrix(&meta.canonical_make, &meta.canonical_model);
     info.black_level = BlackLevel::uniform(fallback.map(|m| m.black).unwrap_or(0).max(0) as f32);
@@ -493,7 +504,8 @@ impl X3fRaw<'_> {
     }
 }
 
-/// in its X3F loader). Only the bottom/middle channels of the AF sites are modified.
+/// Repair of the phase-detect AF pixels of Quattro sensors (always applied). Only the
+/// bottom/middle channels of the AF sites are modified.
 fn quattro_af_repair(img: &mut [u16], w: usize, h: usize, active: Rect, black: u32) {
     match (w, h) {
         (5888, 3672) => af_dp(img, w, h, active, black, 32, 8, 2),
@@ -628,7 +640,8 @@ fn af_sd(
     }
 }
 
-/// Spread each half-resolution bottom/middle sample over its 2x2 block. Mirrors
+/// Spread each half-resolution bottom/middle sample over its 2x2 block. Block rows
+/// `2..h/2-2` and block columns `0..w/2-4` are filled.
 fn replicate_lower_layers(img: &mut [u16], w: usize, h: usize, parallel: bool) {
     let (bw, bh) = (w / 2, h / 2);
     if bw < 5 || bh < 5 {

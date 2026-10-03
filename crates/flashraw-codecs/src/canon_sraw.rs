@@ -13,6 +13,7 @@
 //!    sRAW white-balance multipliers stored in the maker note, clipped to 15 bits.
 //!
 //! The arithmetic (16-bit storage of intermediate chroma, integer rounding, the
+//! model-dependent "hue" offset) is exact, so the output is fully deterministic.
 
 use crate::ljpeg::{self, LjpegHeader};
 use flashraw_core::{Error, Result};
@@ -272,6 +273,7 @@ fn scatter(data: &[u8], jh: &LjpegHeader, p: &SrawParams, out: &mut [u16]) -> Re
         Ok(())
     });
     match res {
+        // Decoding stops pulling JPEG rows once every slice is filled; trailing
         // garbage or a truncated tail beyond that point is irrelevant.
         Err(_) if cur.done => Ok(()),
         r => r,
@@ -352,6 +354,7 @@ fn convert_chunk(px: &mut [u16], p: &SrawParams) {
             let hue = p.hue;
             for t in px.chunks_exact_mut(3) {
                 let y = s(t[0]);
+                // Chroma is stored back into 16 bits after scaling (wrapping on overflow).
                 let cb = ((s(t[1]) << 2) + hue) as i16 as i32;
                 let cr = ((s(t[2]) << 2) + hue) as i16 as i32;
                 let r = y + ((50 * cb + 22929 * cr) >> 14);

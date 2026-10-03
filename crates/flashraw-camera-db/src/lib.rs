@@ -70,7 +70,7 @@ pub struct FallbackMatrix {
     pub color_matrix: &'static [i32],
 }
 
-/// Rebadged / regional model names sharing a reference model's data.
+/// Rebadged / regional model names sharing a canonical model's data.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AliasGroup {
     pub canonical_make: &'static str,
@@ -92,7 +92,7 @@ pub struct SizeRule {
 
 include!(concat!(env!("OUT_DIR"), "/cameras.rs"));
 
-/// Map a rebadged / regional model name to its reference model (case-insensitive);
+/// Map a rebadged / regional model name to its canonical model (case-insensitive);
 /// returns `model` unchanged when it is not an alias.
 pub fn base_model<'a>(canonical_make: &str, model: &'a str) -> &'a str
 where

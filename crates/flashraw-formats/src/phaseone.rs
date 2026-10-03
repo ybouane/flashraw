@@ -11,9 +11,11 @@
 //! Payload formats: 0/1/2 uncompressed 16-bit (1/2 scrambled with a key pair), 3/5/8
 //! "IIQ L" (see [`flashraw_codecs::phaseone`]), 6 "IIQ S".
 //!
-//! samples scaled by four, no black subtraction, no sensor calibration. The vendor
-//! to the raw buffer. FlashRaw reports the true sensor black (`t_black` plus the
-//! reports 0 / `0xfffc - t_black` for its black-subtracted buffer.
+//! **Output contract.** The decoded buffer holds the 14-bit samples scaled by four, with no
+//! black subtraction and no sensor calibration. The vendor calibration (defect
+//! columns/pixels, flat fields, quadrant linearisation) belongs to post-processing and is not
+//! applied to the raw buffer. FlashRaw reports the true sensor black (`t_black` plus the
+//! per-row / per-column references as deltas) and white (`0xfffc`).
 //!
 //! ## Leaf MOS
 //! TIFF with a `PKTS` packet tree (tag 0x8606) holding the back type, neutrals and
@@ -21,7 +23,7 @@
 //! horizontal uncompressed bands.
 
 use crate::common::*;
-use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, matrix_from, read_u16s, fallback_table};
+use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from, read_u16s};
 use flashraw_codecs::phaseone::{IiqLParams, decode_l_row, decode_s_row, unscramble_pairs};
 use flashraw_core::bits::{BitPumpMsb, BitPumpMsb32};
 use flashraw_core::tiff::{Tiff, tags};
@@ -203,6 +205,7 @@ impl IiqRaw<'_> {
                     par::for_each_row_chunk(out, w, 4, ctx.parallel, |first, chunk| {
                         for (i, row) in chunk.chunks_mut(w).enumerate() {
                             let y = y0 as usize + first + i;
+                            // IIQ S words are always little-endian, whatever the TIFF byte order.
                             if let Err(e) =
                                 self.row_bytes(y).and_then(|src| decode_s_row(&mut BitPumpMsb32::new(src), row))
                             {
@@ -345,6 +348,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         None => (0, 0),
     };
 
+    // Geometry. The vendor margins may be odd; FlashRaw rounds them to even values (stable CFA phase).
     let (lm, tm) = (dir.val(0x010a).unwrap_or(0), dir.val(0x010b).unwrap_or(0));
     let (vw, vh) = (dir.val(0x010c).unwrap_or(w), dir.val(0x010d).unwrap_or(h));
     let visible = Rect::new(lm, tm, vw, vh).clamp_to(w, h);
@@ -417,6 +421,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         meta.set_extra("calibration_bytes", m);
     }
     meta.set_extra("iiq_format", format);
+    // Colour: the fallback colour table (first case-insensitive model-prefix match).
     if let Some(t) = fallback_table(&meta.canonical_make, &meta.canonical_model) {
         info.color_matrices = matrix_from(t);
     }
@@ -493,6 +498,7 @@ struct LeafPackets {
     mosaic: Option<u32>,
     /// Number of planes (last value seen).
     planes: i32,
+    /// Flip accumulator (starts "unknown" = -1).
     flip: i32,
     preview: Option<(usize, usize)>,
     /// "Rows_data" flags; bit 0: JPEG rows are interleaved (even rows top-down, odd rows bottom-up).
@@ -560,7 +566,8 @@ fn parse_pkts(data: &[u8], mut pos: usize, depth: u32, out: &mut LeafPackets, bu
     if depth > 8 {
         return;
     }
-    // CFA at the end of the level that describes it, with the rotation known *then*.
+    // Plane count and mosaic rotation are per packet level: the CFA is evaluated
+    // at the end of the level that describes it, with the rotation known *then*.
     let (mut planes, mut frot) = (0i32, 0u32);
     // Packets: "PKTS" u32(version) name[40] u32(size) payload; payloads may nest packets.
     while *budget > 0 {
@@ -633,6 +640,7 @@ fn parse_pkts(data: &[u8], mut pos: usize, depth: u32, out: &mut LeafPackets, bu
     }
 }
 
+/// Flip code from a rotation in degrees (or a raw code), as EXIF orientation.
 fn leaf_orientation(flip: i32) -> Option<Orientation> {
     let code = if !(-89..=89).contains(&flip) {
         match (flip + 3600).rem_euclid(360) {
@@ -747,6 +755,7 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
             info.white_balance = WhiteBalance::from_multipliers(m[0], m[1], m[2], m[1]);
         }
     }
+    // Back-specific geometry.
     let full = Rect::full(w, h);
     let aa = if w == 2116 {
         Rect::new(55, 30, w - 110, h - 60)

@@ -18,6 +18,7 @@
 //! sensors missing from it, from the maker note SensorInfo. The black level is
 //! measured from the left/right optical-black columns (per CFA position); when the
 //! layout is unknown the maker-note per-channel black levels are used instead. The
+//! white level is the per-model saturation from the camera database, falling
 //! back to the full bit depth. As-shot white balance comes from ColorData.
 
 use super::geometry::{self, Geometry};
@@ -63,6 +64,7 @@ pub(super) fn makernote_ifd<'a>(tiff: &Tiff<'a>) -> Option<Ifd<'a>> {
     tiff.sub_ifd_at(e.value_field).ok()
 }
 
+/// Frame dimensions derived from a lossless-JPEG header:
 /// interleaved components widen the frame, and frames more than 4x wider than tall
 /// carry two sensor rows per JPEG row.
 fn jpeg_raw_dims(h: &LjpegHeader) -> (u32, u32) {
@@ -176,11 +178,13 @@ fn kodak_calibration(tiff: &Tiff) -> (Option<f32>, Option<[f32; 4]>) {
     (black.map(|b| b as f32), wb)
 }
 
+/// Model name without the "Canon " prefix (the normalised model used for table lookups).
 fn short_model(model: &str) -> &str {
     let m = model.trim();
     m.strip_prefix("Canon ").unwrap_or(m)
 }
 
+/// 2x2 CFA descriptor byte (two bits per position) → CFA pattern at the visible origin.
 fn cfa_from_filters(f: u8) -> CfaPattern {
     let c = |i: u8| CfaColor::from_index((f >> (2 * i)) & 3);
     let colors = [c(0), c(1), c(2), c(3)].map(|x| if x as u8 == 3 { CfaColor::Green } else { x });
@@ -249,6 +253,7 @@ fn orientation(tiff: &Tiff, _mn: &CanonMakernote) -> Orientation {
         .unwrap_or(Orientation::Normal)
 }
 
+/// Saturation level: the per-model value from the camera database, else the full bit depth.
 fn white_level(meta: &RawMetadata, cam: Option<&'static flashraw_camera_db::Camera>, bits: u32) -> u32 {
     let model = cam.map(|c| c.canonical_model).unwrap_or(meta.canonical_model.as_str());
     flashraw_camera_db::find_matrix("Canon", model)
@@ -327,6 +332,7 @@ fn open_bayer<'a>(
     let vis = stream.cfa.unwrap_or_else(|| cfa_from_filters(filters));
     let (sx, sy) = ((2 - g.left as usize % 2) % 2, (2 - g.top as usize % 2) % 2);
     let buf_cfa = vis.shifted(sx, sy);
+    // The visible area is kept on even coordinates (so the CFA phase of the
     // visible image is stable): odd margins grow by one pixel.
     if g.top % 2 == 1 {
         g.top += 1;
@@ -391,6 +397,7 @@ fn open_bayer<'a>(
         Black::Uniform(v) => info.black_level = BlackLevel::uniform(v),
     }
     info.white_level = WhiteLevel::uniform(match &stream.curve {
+        // The saturation is the curve entry of the 12-bit maximum.
         Some(c) => c[(c.len() - 1).min(0xfff)] as u32,
         None => white_level(&meta, cam, bits),
     });
@@ -427,6 +434,7 @@ fn open_bayer<'a>(
                 )
             })?;
             if let Some(c) = &curve {
+                // Extend the table with its last value so out-of-range codes saturate.
                 let mut full = c.clone();
                 let last = *full.last().unwrap_or(&0);
                 full.resize(0x10000, last);
@@ -581,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn jpeg_dims_follow_reference_rules() {
+    fn jpeg_dims_follow_frame_rules() {
         // 2 components: the frame covers twice its width.
         assert_eq!(jpeg_raw_dims(&header(2960, 3950, &[(1, 1), (1, 1)])), (5920, 3950));
         // 4 components and very wide: two sensor rows per JPEG row.

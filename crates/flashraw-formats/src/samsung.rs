@@ -144,7 +144,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         32773 => Payload::V2,
         c @ (32769 | 32770 | 1) => {
             if b64 == w64 * h64 * 2 || bps > 12 {
-                // one-bit shift (EX2F); 14-bit data does not.
+                // 12-bit data in 16-bit words (compression 32769) is stored shifted left
+                // by one bit (EX2F); 14-bit data is not.
                 Payload::Words(tiff.order, if c == 32769 && bps == 12 { 1 } else { 0 })
             } else if bps == 12 {
                 packed12(if c == 32769 { 1 } else { 0 })
@@ -155,7 +156,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         c => return Err(Error::unsupported_compression("SRW", format!("TIFF compression {c}"))),
     };
 
-    // --- Visible area and quirks (reference conventions by model/buffer size) ---
+    // --- Visible area and quirks (per-camera conventions by model/buffer size) ---
     let mut area = Rect::full(w, h);
     let mut cfa_visible: Option<CfaPattern> = None;
     if w == 4704 {
@@ -264,6 +265,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     info.black_level = conventions::black_for_cfa(&cfa, base_black, cblack);
     if w == 4704 && matches!(info_payload_kind, PayloadKind::Packed) {
         // NX5/10/11/100: the black level is measured on the optical-black columns left
+        // and right of the visible area (integer means).
         // The columns are read straight from the packed rows: 16 samples per row.
         let right = area.x + area.width;
         info.masked_areas = vec![
@@ -318,6 +320,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 
 /// Per-CFA-position integer mean of the masked areas of an MSB-first 12-bit packed
 /// image (rows of `width * 3 / 2` bytes). Returns `None` when the areas are mostly
+/// zero (the makernote black is then kept).
 fn masked_black_msb12(src: &[u8], width: usize, areas: &[Rect]) -> Option<BlackLevel> {
     let stride = width * 3 / 2;
     let mut sum = [0u64; 4];

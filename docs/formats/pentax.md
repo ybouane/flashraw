@@ -17,6 +17,8 @@ the Samsung module. Pentax/Ricoh/Samsung DNGs are handled by the DNG decoder.
 | 16-bit words | `w*h*2` byte strips (*ist D) or 14/16 bps | `packed` |
 
 Pixel-shift files (K-1, K-1 II, K-3 II, K-3 III, KP, K-70) store four frames; the first
+frame is decoded, which is a complete single exposure (merging the four frames is a
+processing step, not part of decoding).
 K-3 Mark III Monochrome files (LinearRaw photometric) decode as monochrome.
 
 ## Metadata
@@ -24,10 +26,13 @@ K-3 Mark III Monochrome files (LinearRaw photometric) decode as monochrome.
 | item | source |
 |---|---|
 | makernote | `AOC\0` + order + IFD (offsets relative to the file) or `PENTAX \0` + order + IFD (relative to the makernote) |
-| black level | `0x0200` (RGGB per channel); reference colour-table black when present |
-| white level | `(1 << bps) - 1`, reference colour-table maximum (645D: 15872) |
+| black level | `0x0200` (RGGB per channel); camera-database colour-table black when present |
+| white level | `(1 << bps) - 1`, camera-database colour-table maximum (645D: 15872) |
 | white balance | `0x0201` (RGGB) |
-| colour matrix | camera-database colour table (K2000 uses its K-m twin's entry), camera database otherwise |
+| visible area / CFA | per-model and per-size rules (K10D-class 3936×2624, K20D, K-r/K-x, K-5 family, K-7, K-70, KF, K-3/K-3 II, K-3 III, KP, 645D, K-1/K-1 II, *ist DS); CFA overrides re-anchored at the buffer origin |
+| colour matrix | camera-database colour table (K2000 uses its K-m twin's entry), other camera-database entries otherwise |
 
 ## Verification
 
+All 42 PEF files in the corpus decode and are covered by regression hashes
+(`tests/regression/pentax.tsv`).

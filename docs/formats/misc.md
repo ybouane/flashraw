@@ -10,22 +10,37 @@ without a TIFF header (Raspberry Pi JPEG+BRCM first, then the file-size table).
 
 ## Headerless ("naked") dumps — `naked.rs`
 
+Identified only by exact file size, after every signature-based format declined the file. Two kinds
+of camera-database entries carry a `filesize` hint:
 
-   layouts are omitted). Hints: `full_width`/`full_height` (stored raster), `offset` (or `reversed`
-   `flip`, `zero_is_bad`, `monochrome`, `right_mask_trim`. The bit depth is computed from the size and
+1. **File-size table** — `camera-db/cameras.json`, `mode = "naked-<size>"` (138 sizes; the
+   Nikon/Olympus "diag raw" dumps with CMYG-type layouts are omitted). Hints:
+   `full_width`/`full_height` (stored raster), `offset` (or `reversed` for bottom-up rows),
+   `load_flags` (packing flags), `max_shift` (white = 2^bits − 2^max_shift), `flip`, `zero_is_bad`,
+   `monochrome`, `right_mask_trim`. The bit depth is computed from the size and picks the loader:
 
    | bits | loader |
    |---|---|
    | 6 | Minolta RD-175 three-CCD interleave (1534x986 GRBG) |
+   | 8 | bytes through a tone curve (identity, Kodak's curve, or the fixed `gamma_curve(0, 3.875, 255)`) |
+   | 10 | Android "loose" (6 samples / 64-bit word), MIPI "tight" (load flag 1), else generic packed |
+   | 12 | generic packed: MSB-first in 8/16/24/32-bit LE words (`flags & 24`), even row padding, pad byte per 10 samples (`& 1`), pair swap (`& 64`), interlaced fields (`& 2`, `& 4`) |
    | 16 | 16-bit words, big-endian if `flags & 1`, right shift `(flags >> 1) & 7` |
 
-   entry is anchored at the (unadjusted) visible origin and re-anchored at the buffer origin; CHDK
-   dumps (`flags & 32`) and 8-bit dumps measure black from the left/right optical-black columns
-   test says so; Samsung WB550 words are little-endian; Kodak C330/C603/"12MP" YCbCr dumps decode to a
+   Geometry and level rules: odd Bayer margins are moved to the next even position; the CFA of a
+   table entry is anchored at the (unadjusted) visible origin and re-anchored at the buffer origin;
+   CHDK dumps (`flags & 32`) and 8-bit dumps measure black from the left/right optical-black columns
+   (SX220 HS: last 4 columns excluded); the PowerShot A610 size is renamed S2 IS when a data test on
+   the file says so; Samsung WB550 words are little-endian; Kodak C330/C603/"12MP" YCbCr dumps decode
+   to a 3-sample RGB image (cpp 3).
+2. **CHDK entries** (`mode = "chdk*"`, all vendor files): `full_width`, `full_height`,
    `offset`, `bits`, `order` (`plain` = LSB, `jpeg` = MSB, `jpeg16`/default = MSB in 16-bit words,
+   `jpeg32`), crop/black/white/CFA from the entry. Used when no file-size table entry has the size.
 
+Additional curated entries (in `generic.toml`): Xiro Xplorer V (LSB-packed 10-bit) and
 PowerShot G7 X CHDK (experimental).
 
+The generic packed decoder has a parallel fast path (rows starting on word boundaries, unpacked with
 the SIMD kernels in `packed.rs`) and a bit-exact sequential reference used for the other flag
 combinations; tests check both agree.
 
@@ -33,12 +48,15 @@ combinations; tests check both agree.
 
 `raspistill --raw` / picamera captures: JPEG + `BRCM` block at a mode-specific distance from the end
 of the file (32 KiB header, then rows padded to 32 bytes). Header at `BRCM+0xB0`: width, height,
+right padding, Bayer order, packing (8/10/12/14/16 bits). Names and black levels:
 `RPi IMX219` (66), `RPi OV5647 v.1/v.2` (16), `RP_imx477` (256, 64 in 10-bit mode). White balance
-wide, reading past the stride into the start of the row) is reproduced.
+from the maker-note text (`gain_r=…`, `gain_b=…`). OV5647 rows are decoded 2611 samples
+wide, reading past the stride into the start of the row.
 
 ## ARRI — `arri.rs`
 
 `ARRI\x12\x34\x56\x78`, payload offset (8), width (20), height (24), WB multipliers (100..112, f32),
+model (668). 12-bit samples MSB-first in 32-bit LE words with pairs swapped,
 GRBG, white 4095.
 
 ## TIFF/EP fallback — `tiff_ep.rs`
@@ -60,34 +78,17 @@ per channel (prescale, 14-bit clamp at the finest level) and recombines G-sum / 
 into the Bayer mosaic through the inverse-log curve scaled to the DNG white level.
 
 API: `vc5::decode(data, width, height, white_level, phase, out, parallel)` with
-`vc5::CfaPhase::from_pattern(&CfaPattern)` for the phase. All 17 corpus GPR files are
+`vc5::CfaPhase::from_pattern(&CfaPattern)` for the phase. The DNG decoder (`dng.rs`) dispatches
+compression 9 to it and decodes the bitstream as one whole image (regions are cropped from it).
 
-**Integration hook for `dng.rs`** (owned by the DNG module; verified locally, not committed here):
+## Verification
 
-```rust
-enum Payload { /* … */ Vc5 }
-struct DngRaw<'a> { /* … */ vc5_white: u32, vc5_phase: Option<flashraw_codecs::vc5::CfaPhase> }
-// parse_raw(): compression match
-9 => (Payload::Vc5, Compression::Other),
-// DngRaw construction
-vc5_white: info.white_level.max(),
-vc5_phase: info.cfa.as_ref().and_then(flashraw_codecs::vc5::CfaPhase::from_pattern),
-// decode_region(), before the tile loop: one bitstream covers the whole image
-if self.payload == Payload::Vc5 {
-    let mut img = RawImage::new_u16(self.width, self.height, 1, &ctx.limits)?;
-    let phase = self.vc5_phase.ok_or_else(|| Error::unsupported_compression("DNG", "VC-5 without a Bayer CFA"))?;
-    ctx.profiler.time(Stage::EntropyDecode, || flashraw_codecs::vc5::decode(self.unit_bytes(0)?,
-        self.width as usize, self.height as usize, self.vc5_white, phase, img.u16_mut(), ctx.parallel))?;
-    return if region == full { Ok(img) } else { img.crop(region) };
-}
-// decode_unit_u16(): Payload::Vc5 => Err(Error::corrupt("VC-5 is decoded as a whole image")),
-```
-
-
-|---|---|
+All corpus files listed in `docs/support/misc.tsv` as verified decode and are covered by regression
+hashes in `tests/regression/misc.tsv` (GoPro GPR: `tests/regression/gpr.tsv`).
 
 ## Unsupported (corpus)
 
 - **Light L16 `.lri`**: multi-module container (16 camera modules, protobuf metadata, per-module
-- **Casio QV-11 / QV-5000SX `.cam`**: Casio's processed CAM image format (not sensor data); no
+  proprietary packing). Reported as unsupported.
+- **Casio QV-11 / QV-5000SX `.cam`**: Casio's processed CAM image format (not sensor data).
 - **Canon A620 `Portulaca_1216.CRW`**: the file is a bzip2 archive (`BZh9`), not a raw.

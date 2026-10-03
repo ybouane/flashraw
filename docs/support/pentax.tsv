@@ -1,1 +1,4 @@
 # FORMAT	MODE	COMPRESSION	STATUS	NOTES
+PEF	compressed	pentax-huffman (makernote 0x220 table / default table)	verified	34/34 corpus files decode (K10D..K-3 III, 645D/645Z, K-1, monochrome)
+PEF	uncompressed	12-bit packed (32773/1), 16-bit words	verified	8/8 decode (*ist D family, K100D, K110D, Samsung GX-1L)
+PEF	pixel-shift	pentax-huffman, first frame	partial	first of the four frames is decoded; frame merging is not provided

@@ -21,7 +21,9 @@
 //!   vertical stripes by [`flashraw_codecs::fuji_compressed`];
 //! - the tiled layout of the DBP for GX680 back and the dual-frame F700/S20Pro layout.
 //!
-//! bit-for-bit. SuperCCD bodies (0x130 "fuji_width") deliver the unrotated sensor
+//! Geometry (buffer size, active area) is derived per body from the TIFF and RAF headers.
+//! SuperCCD bodies (0x130 "fuji_width") deliver the unrotated sensor buffer; their active
+//! area is defined in the 45°-rotated frame of the final image (see
 //! `docs/formats/fuji.md`).
 
 use crate::common::*;
@@ -137,6 +139,7 @@ fn parse_meta(data: &[u8], off: usize, model: &str) -> RafMeta {
     if n > 255 {
         return m;
     }
+    // Some early bodies need a fixed correction of the stored WB.
     let wb_corr = if ["S2Pro", "S20Pro", "F700", "S5000", "S7000"].iter().any(|k| model.contains(k)) {
         Some((10.0 / 17.0 / 0.652941, 2.0 / 3.0 / (3.0 / 4.0 + 1.0 / 300.0)))
     } else if model.contains("DBP") || model.contains("DX-2000") {
@@ -282,6 +285,7 @@ fn parse_exif(data: &[u8], jpeg_off: usize, jpeg_len: usize, meta: &mut RawMetad
     ex
 }
 
+/// Geometry: `(left, top, width, height)` of the active area plus
 /// any CFA override for Bayer bodies (`Some(true)` = BGGR at the visible origin).
 #[allow(clippy::too_many_arguments)]
 fn active_area(
@@ -465,6 +469,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if meta.model.is_empty() {
         meta.model = header_model.clone();
     }
+    // Normalised model name ("FinePix " stripped) for vendor quirks.
     let model = {
         let m = meta.model.trim().to_string();
         let m = m.strip_prefix("FUJIFILM").map(|s| s.trim().to_string()).unwrap_or(m);
@@ -535,6 +540,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     }
     let compressed = layout == Layout::Compressed;
     let fc = if compressed { Some(FujiCompressed::new(payload)?) } else { None };
+    // Margins are computed from the TIFF size; the compressed header then
     // replaces the buffer size.
     let (geo_w, geo_h) = (raw_w, raw_h);
     if let Some(f) = &fc {
@@ -558,6 +564,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
 
     let (mut left, mut top, mut width, mut height, bggr, x3e00) =
         active_area(&model, geo_w, geo_h, &rmeta, exif.crop_mode, xtrans, packed_flag, fuji_layout);
+    // X-Trans margins are aligned to the 6x6 pattern and Bayer margins to 2.
     let align = if xtrans {
         6
     } else if fuji_width {
@@ -573,6 +580,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         top = nt;
         left = nl;
     }
+    // SuperCCD: the active area is defined in a 45°-rotated frame. In the stored buffer the
     // used area spans `fuji_width` (doubled for layout 0) columns from the left margin.
     let superccd = fuji_width && raw_w != 5504;
     let fw = if superccd { width >> if fuji_layout { 0 } else { 1 } } else { 0 };
@@ -611,6 +619,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         info.layout = SensorLayout::OtherCfa;
         colors = std::array::from_fn(|r| std::array::from_fn(|c| p.color_at(c, r) as u8));
     } else {
+        // Pattern at the visible origin: RGGB unless the body is known to be BGGR.
         let visible = if bggr { CfaPattern::BGGR } else { CfaPattern::RGGB };
         let a = info.active_area;
         let p = visible.shifted(2 - a.x as usize % 2, 2 - a.y as usize % 2);
@@ -661,6 +670,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         info.white_level = WhiteLevel::uniform(65535);
     }
     known.white = true;
+    // The fallback colour table refines black/white for some bodies.
     let table = fallback_table("Fujifilm", &model);
     if let Some(t) = table {
         if t.black > 0 {
@@ -673,6 +683,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         }
     }
 
+    // Bodies without a CFA TIFF do not state their bit depth (12 is assumed); their
     // samples span 14 bits whenever the white level says so.
     if ctiff.is_none() && info.white_level.max() > 4095 {
         info.bits_per_sample = 14;
@@ -683,6 +694,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if let Some([r, g, b]) = wb {
         info.white_balance = WhiteBalance::from_multipliers(r, g, b, g);
     }
+    // Colour: the fallback colour table first, then the camera database entry.
     if let Some(cm) = table.and_then(|t| {
         ColorMatrix::new(Illuminant::D65, 3, t.color_matrix.iter().take(9).map(|&v| v as f32 / 10000.0).collect())
     }) {
@@ -785,6 +797,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
 
 /// CFA of the stored (unrotated) SuperCCD buffer, anchored at the buffer origin.
 ///
+/// Stored sample `(row, col)` (relative to the margins) maps to the rotated
 /// image position `r = fw - 1 - col + row/2, c = col + (row + 1)/2` (layout 1) or
 /// `r = fw - 1 + row - col/2, c = row + (col + 1)/2` (layout 0), where the rotated
 /// image carries a 2x2 Bayer pattern (RGGB for odd `fw`, GBRG for even). That makes
@@ -810,6 +823,8 @@ fn superccd_cfa(layout1: bool, fw: i64, left: i64, top: i64) -> Option<CfaPatter
     CfaPattern::new(pw, ph, &colors)
 }
 
+/// Fallback colour-table entry (matrix plus black/white hints) for the normalised `model`: the
+/// first entry, in table order, whose prefix starts the model name — a prefix rule, which e.g.
 /// gives the X-T20 the X-T2 entry and the S200EXR the "S20" entry.
 fn fallback_table(make: &str, model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
     let m = model.to_ascii_uppercase();

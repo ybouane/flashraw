@@ -26,8 +26,9 @@
 //! The entropy-coded samples are 10 bits. Most later cameras additionally store the
 //! two least significant bits of every sample uncompressed (one byte per 4 samples,
 //! LSB pair first) *before* the compressed stream, giving 12-bit output. The 2672-wide
-//! decoders reproduce.
+//! sensors (G5/S50/S60) add 2 to every resulting value below 512.
 //!
+//! Decoding is bit-exact, including the handling of
 //! out-of-range predictions (samples wrap to 16 bits) and of incomplete Huffman code
 //! spaces (an unassigned code consumes no bits and decodes as "end of block").
 
@@ -107,6 +108,7 @@ const RESOLVED: u32 = 1 << 5;
 const VALID: u32 = 1 << 6;
 
 /// A CRW Huffman table: a `FAST_BITS` lookup with fused difference decoding, plus a
+/// complete `MAX_BITS` table (entries `code_len << 8 | leaf`) for long codes.
 struct CrwHuff {
     fast: Box<[u32; 1 << FAST_BITS]>,
     /// Indexed by the next 16 bits; entries `len << 8 | leaf`, 0 for unassigned codes.
@@ -114,6 +116,7 @@ struct CrwHuff {
 }
 
 impl CrwHuff {
+    /// Build from a `counts[16] ++ leaves` specification.
     fn new(spec: &[u8]) -> Self {
         let (counts, leaves) = spec.split_at(16);
         let mut full = vec![0u16; 1 << MAX_BITS];
@@ -296,6 +299,7 @@ pub struct CrwParams<'a> {
     pub table: u32,
     /// The uncompressed low-bit plane (`width * height / 4` bytes, 4 samples per byte,
     /// LSB pair first), when the file stores one. Missing bytes read as `0xFF`
+    /// (all-ones padding past end of file).
     pub lowbits: Option<&'a [u8]>,
     /// G5/S50/S60 quirk: add 2 to 12-bit values below 512.
     pub low_offset_quirk: bool,
@@ -304,7 +308,7 @@ pub struct CrwParams<'a> {
 /// Decode a CRW compressed payload into `out` (`width * height` samples, row-major).
 ///
 /// `stream` starts at the first entropy-coded byte. Samples not covered by whole
-/// 64-sample blocks are left as they are in `out` (normally zero), as in the
+/// 64-sample blocks are left as they are in `out` (normally zero). Returns an error if the bit stream ends prematurely.
 pub fn decode(stream: &[u8], p: &CrwParams, out: &mut [u16]) -> Result<()> {
     let (w, h) = (p.width, p.height);
     let total = w.checked_mul(h).ok_or_else(|| Error::corrupt("CRW dimensions overflow"))?;
@@ -412,6 +416,7 @@ fn merge_lowbits(out: &mut [u16], total: usize, stripe_start: usize, w: usize, l
     }
 }
 
+/// Whether the payload carries a separate low-bit plane, using a heuristic over
 /// the first 16 KiB of the file: scanning from offset 540, an `FF` byte followed by a
 /// non-zero byte cannot occur in the byte-stuffed compressed stream, so it indicates
 /// the (unstuffed) low-bit plane; `FF 00` pairs indicate a stream starting right there.
@@ -574,6 +579,7 @@ mod tests {
             // First tables are complete: every 16-bit pattern decodes.
             assert!(f.full.iter().all(|&e| e != 0));
             let s = CrwHuff::new(&SECOND_TREE[t]);
+            // Second tables leave a few all-ones 16-bit codes unassigned (0-length leaf 0).
             let unassigned = s.full.iter().filter(|&&e| e == 0).count();
             assert!(unassigned > 0 && unassigned <= 32, "table {t}: {unassigned}");
             assert_eq!(s.full[0xffff], 0);

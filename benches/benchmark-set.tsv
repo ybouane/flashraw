@@ -1,4 +1,5 @@
 # Representative benchmark set: largest and median file of every (format, compression) pair
+# in the CC0 corpus.
 Hasselblad/H3D/A9391120.3FR	3FR	hasselblad
 Hasselblad/Hasselblad H4D/A0000902.3FR	3FR	hasselblad
 Hasselblad/CFV 100CElectronic Shutter/B0003499.3FR	3FR	uncompressed

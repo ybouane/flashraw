@@ -18,6 +18,7 @@ header:
 * Unpacked storage: 16-bit big-endian words with 12 active bits.
 * Black is 0; white from the colour table (DiMAGE 7 0xF7D, A1 0xF8B, 5D/7D
   0xFFB, ...) or `2^active_bits - 1`.
+* Model aliases (`DYNAX 5D`/`MAXXUM 5D`/`ALPHA SWEET DIGITAL` →
   `DG-5D`, `DYNAX 7D`/`MAXXUM 7D`/`ALPHA-7 DIGITAL` → `DG-7D`) for colour lookup.
 
 The same block structure is embedded in Sony DSLR-A100 ARW files; `parse_blocks`
@@ -46,6 +47,7 @@ supported.
 ## Verification
 
 All 15 corpus files (14 MRW in packed and unpacked storage across 12 bodies, the
-passing (`tests/regression/minolta.tsv`). Unit tests: synthetic MRW round trips
+Z2 dump and the RD-175 file) decode and are covered by regression hashes
+(`tests/regression/minolta.tsv`). Unit tests: synthetic MRW round trips
 (packed/unpacked, both Bayer orders), garbage headers; corpus malformed-input
 tests in `sony::robustness`.

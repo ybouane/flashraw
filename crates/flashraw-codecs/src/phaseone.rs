@@ -33,8 +33,8 @@ pub struct IiqLParams {
     pub low_curve: bool,
 }
 
-/// Format-5 low-range curve: `round(i^2 / 3.969)` (as single-precision floats, matching
-/// the reference implementation bit for bit).
+/// Format-5 low-range curve: `round(i^2 / 3.969)` (evaluated in single precision, which
+/// the stored values depend on bit for bit).
 fn low_curve_table() -> [u16; 256] {
     let mut t = [0u16; 256];
     for (i, v) in t.iter_mut().enumerate() {
@@ -45,6 +45,7 @@ fn low_curve_table() -> [u16; 256] {
 
 /// Decode one IIQ L row of `out.len()` samples from a bit pump positioned at the row start.
 ///
+/// Exact semantics: the predictor is a 32-bit accumulator
 /// (out-of-range sums wrap when stored), and blocks whose prefix is a single `1` bit
 /// keep the previous width.
 // Inlined into the per-row caller: as an out-of-line function the bit-pump calls lose
@@ -112,8 +113,9 @@ const S_BIT_INDICATOR: [u32; 32] =
 const S_SKIP_BITS: [u32; 32] =
     [5, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2];
 
-/// this for out-of-range levels in malformed blocks; emulating it keeps output
-/// identical without undefined behaviour.
+/// Shift with x86 semantics (count taken modulo 32), applied to out-of-range levels in
+/// malformed blocks; masking the count keeps output well defined without undefined
+/// behaviour.
 #[inline(always)]
 fn shl32(v: u32, s: u32) -> u32 {
     v.wrapping_shl(s)
@@ -132,6 +134,7 @@ fn s_level<B: BitRead>(bits: &mut B, level: &mut u32) {
     }
 }
 
+/// Decode one IIQ S row (output already scaled to 16 bits).
 pub fn decode_s_row<B: BitRead>(bits: &mut B, out: &mut [u16]) -> Result<()> {
     let width = out.len();
     let init_bits = bits.get(16) & 7;

@@ -121,6 +121,7 @@ pub fn scan_65000_rows(data: &[u8], start: usize, width: usize, height: usize) -
 }
 
 /// Decode one CFA row of 65000 data starting at `data[pos..]`, mapping values through
+/// `curve` (out-of-range predictions leave the sample at zero).
 pub fn decode_65000_row(data: &[u8], mut pos: usize, out: &mut [u16], curve: &[u16]) -> Result<()> {
     let width = out.len();
     let mut buf = [0i16; 272];
@@ -194,7 +195,8 @@ pub fn c603_row(pixel: &[u8], width: usize, odd: bool, curve: &[u16], out: &mut 
     }
 }
 
-/// compact cameras without a stored curve (inverse BT.709-style transfer).
+/// Inverse transfer table (power `pwr` with a linear toe of slope `ts`, BT.709-style)
+/// over `0..=imax`, used for Kodak compact cameras without a stored curve.
 pub fn gamma_curve(pwr: f64, ts: f64, imax: u32) -> Vec<u16> {
     let mut g = [pwr, ts, 0.0, 0.0, 0.0, 0.0];
     let mut bnd = [0.0f64, 0.0];

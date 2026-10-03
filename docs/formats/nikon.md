@@ -1,7 +1,7 @@
 # Nikon NEF / NRW
 
 Module: `crates/flashraw-formats/src/nikon/` (container, makernote, decryption, shared
-reference conventions), codecs `flashraw_codecs::{nikon_huffman, nikon_packed, packed}`.
+conventions in `conventions.rs`), codecs `flashraw_codecs::{nikon_huffman, nikon_packed, packed}`.
 
 NEF and NRW are TIFF files with make `NIKON` / `NIKON CORPORATION`. The raw image is the
 largest non-JPEG IFD (usually SubIFD 1). Coolpix models write NRW (and early E-series
@@ -10,13 +10,15 @@ Coolpix wrote NEF); Nikon Scan writes Coolscan NEFs (RGB scans).
 ## Payload variants
 
 The payload is chosen from the raw IFD compression, its byte count and the makernote,
-camera firmware decode identically.
+not from the compression tag alone, so files that are mislabelled by the camera firmware
+still decode correctly.
 
 | variant | detection | storage | codec |
 |---|---|---|---|
 | Huffman, lossy/lossless, 12/14-bit | compression 34713, no other rule matches | single sequential bit stream | `nikon_huffman` |
 | 12-bit packed, MSB first | compression 1, 12 bps (D1..D4 era, multi-strip) | rows of `w*12/8` bytes | `packed` (SIMD) |
 | 12-bit packed, LSB first | compression 34713 with `w*h*3/2` bytes and a `NIKON …` model (D4S, D810, D500, D850, Z 7 12-bit uncompressed) | | `packed` (SIMD) |
+| 12-bit packed + pad byte every 10 samples | compression 34713 with `ceil(w/10)*16*h` bytes (D100 "compressed") | buffer widened to 3040 | `nikon_packed` |
 | interlaced fields | Coolpix E-series NEF (even rows, then odd rows) | | `nikon_packed` (exact) |
 | 12-bit packed in LE 32-bit words | Coolpix P (non-4032 wide) and B700 NRW | | `packed` Msb32 |
 | 16-bit words | compression 1 with 14/16 bps, A1000, or `w*h*2` bytes (P7700/P7800/P330 NRW; P330 is shifted right by 4) | file byte order | `packed` |
@@ -38,14 +40,17 @@ direct table). Sample values are `curve[clamp(pred as i16, 0, 0x3fff)]`.
 Decoding is inherently sequential. The hot loop (shared with Pentax and Samsung V1)
 keeps a 64-bit bit cache with branchless refills and resolves code + difference with
 one 13-bit table lookup for most samples. Rows close to the end of the data use an
-reads, then frozen predictors), so truncated files decode to the same pixels.
+exact slow path with defined end-of-file behaviour (zero-padded
+reads, then frozen predictors), so truncated files decode deterministically.
 
 Rows beyond the visible height (two rows on Nikon 1 bodies, three on the D40X/D60/D80/
+D3000) are not decoded and stay zero.
 
 ### sNEF representation
 
-interpolation and a tone curve (14-bit output, black 0, white 16383). FlashRaw outputs
-are bit-identical (verified on the D4S and D810 samples).
+FlashRaw converts sNEF YCbCr to RGB with a fixed matrix, horizontal chroma
+interpolation and a tone curve (14-bit output, black 0, white 16383), and outputs
+the result as a 3-sample `Linear` image (verified on the D4S and D810 samples).
 
 ### High efficiency (TicoRAW)
 
@@ -60,13 +65,16 @@ licensed open implementation. FlashRaw recognises the payload and returns
 |---|---|
 | makernote layout | type 2 (`Nikon\0\2` + embedded TIFF header, offsets relative to it), type 3 (D1: plain IFD), type 1 ignored |
 | black level | `0x003D` (RGGB, 14-bit units; divided by 4 for 12-bit Huffman/packed data except Coolpix), Coolpix NRW block `0x0014`, camera-database colour table, P7000/P7100 255 rule |
-| white level | `(1 << bps) - 1`, reference colour-table maximum when present, 4095 for 12-bit Huffman/packed DSLR data, 65504 for P7700/P7800, 16383 for sNEF |
+| white level | `(1 << bps) - 1`, camera-database colour-table maximum when present, 4095 for 12-bit Huffman/packed DSLR data, 65504 for P7700/P7800, 16383 for sNEF |
 | white balance | `0x000C` WB_RBLevels; `0x0097` colour balance 0100 (D100), 0102 (D2H), 0103 (D70); versions 200–217 decrypted with the serial (`0x001D`) and shutter count (`0x00A7`) keystream; NRW `0x0014`; E-series `0x0014`. D1 multipliers are analog balance (reported as 1) |
 | CFA | raw IFD CFA pattern (TIFF-EP); D200 and Coolpix P overrides; camera database for interlaced E-series (the file pattern describes field order) |
 | visible area | per-model trims (D1X, D3/D3S/D700, D40X…, D3100, D5000/D90, D5100/D7000/Coolpix A, D3200/D600/D610/D800, D4/Df, D2H, D2X, D300, D200, Nikon 1), then odd origins moved to even |
-| colour matrix | camera-database colour table (`find_matrix`), camera database otherwise |
+| colour matrix | camera-database colour table (`find_matrix`), other camera-database entries otherwise |
 | previews | TIFF thumbnails, JpgFromRaw SubIFD, makernote preview IFD `0x0011` |
 
 ## Verification
 
-lossless Huffman across D1X…Z 9, all uncompressed variants, NRW). Remaining
+The CC0 corpus holds 289 NEF/NRW files. Every file with plain sensor data decodes and is
+covered by regression hashes in `tests/regression/nikon.tsv` (12/14-bit lossy and
+lossless Huffman across D1X…Z 9, all uncompressed variants, NRW, sNEF, Coolscan);
+High Efficiency files are reported as unsupported.

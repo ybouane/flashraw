@@ -16,7 +16,7 @@
 //!
 //! Black levels and white balance come from the raw IFD (`0x7310`/`0x7313`/`0xC61D`
 //! on recent bodies) or from the encrypted SR2Private sub-IFD reached through
-//! rules so full-buffer pixels and margins compare 1:1.
+//! `DNGPrivateData` (0xC634). Geometry follows per-model visible-area rules.
 
 pub mod crypt;
 #[cfg(test)]
@@ -91,6 +91,7 @@ enum Payload {
     },
 }
 
+/// Levels/WB gathered from the raw IFD and the SR2 private directory, in
 /// (R, G, B, G2) channel order.
 #[derive(Debug, Default, Clone)]
 struct Levels {
@@ -146,6 +147,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     // The DSC-R1 writes big-endian samples into a little-endian container.
     let big_endian = raw_w == 3984;
 
+    // Select the payload decoder by compression and size.
     let (payload, tiff_bps, compression, mode) = match comp {
         32767 if bytes == area => {
             let knots: Vec<u16> =
@@ -188,7 +190,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let cpp = if matches!(payload, Payload::Arq | Payload::Ycbcr { .. }) { 4 } else { 1 };
     opts.limits.check_dims(raw_w, buf_h, cpp)?;
 
-    // parses it last, so it wins).
+    // Levels: raw IFD tags first, then the SR2 private directory (parsed last, so
+    // it wins).
     let mut lv = Levels::default();
     for tag in [stag::WB_GRBG, stag::BLACK_RGGB, stag::WB_RGGB] {
         if let Some(e) = raw.get(tag) {
@@ -238,6 +241,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let vis = visible_area(&model, raw_w, buf_h, &payload);
     let mut payload = payload;
     if let Payload::Arw1 { stored_rows, .. } = &mut payload {
+        // Rows below the visible height are decoded but not stored.
         *stored_rows = vis.bottom() as usize;
     }
     let mut info = FrameInfo::new(raw_w, buf_h, tiff_bps.min(16) as u8);
@@ -259,7 +263,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     info.white_level = WhiteLevel::uniform(white);
     if let Payload::Ycbcr { .. } = payload {
-        // Converted to RGB with the chroma offset removed; levels as estimated by
+        // Converted to RGB with the chroma offset removed; fixed estimated levels
+        // for this mode.
         info.black_level = BlackLevel::uniform(1024.0);
         info.white_level = WhiteLevel::uniform(17536);
     }
@@ -403,6 +408,7 @@ fn decode_region(
             unpack_rows(src, w, height as usize, 12, w * 3 / 2, order, region, 1, ctx)
         }
         Payload::Arq => {
+            // Stored R, G, G2, B per pixel; the output order is R, G, B, G2.
             check_rows(src, w * 8, height as usize, "ARQ")?;
             let mut img = RawImage::new_u16(region.width, region.height, 4, &ctx.limits)?;
             let rl = region.width as usize * 4;
@@ -453,6 +459,7 @@ fn decode_region(
             ctx.profiler.time(Stage::EntropyDecode, || {
                 decode_ycc_tiles(data, tiles, *tile_w, *tile_h, width, height, region, img.u16_mut(), ctx)
             })?;
+            // The tile decoder writes R, G, B, 0 (a 4-component layout); keep the 3 real channels.
             let mut rgb = RawImage::new_u16(region.width, region.height, 3, &ctx.limits)?;
             for (o, i) in rgb.u16_mut().chunks_exact_mut(3).zip(img.u16().chunks_exact(4)) {
                 o.copy_from_slice(&i[..3]);
@@ -463,6 +470,7 @@ fn decode_region(
 }
 
 /// Require at least one full row of payload for every buffer row (truncated files
+/// are corrupt).
 fn check_rows(src: &[u8], row_bytes: usize, rows: usize, what: &str) -> Result<()> {
     if src.len() < row_bytes * rows {
         return Err(Error::corrupt(format!("{what}: payload truncated ({} of {} bytes)", src.len(), row_bytes * rows)));
@@ -548,7 +556,8 @@ fn decode_ljpeg_tiles(
             }
             let (tw, th) = t.size();
             let (sx, sy) = (t.skip_x as usize, t.skip_y as usize);
-            // for odd sizes): limits in tile-local coordinates.
+            // Quads are written only while they fit the image (the bound for odd
+            // sizes): limits in tile-local coordinates.
             let ty0 = (i as u32 / tx * tile_h) as usize;
             let tx0 = (i as u32 % tx * tile_w) as usize;
             let max_rows = (height as usize - 1).saturating_sub(ty0).div_ceil(2) * 2;
@@ -698,6 +707,7 @@ fn file_orientation(tiff: &Tiff) -> Orientation {
         .unwrap_or(Orientation::Normal)
 }
 
+/// White balance in (R, G, B, G2) order, rejected when any
 /// multiplier is zero or the spread is implausible.
 fn sane_wb(m: &[f32; 4]) -> Option<WhiteBalance> {
     if m[..3].iter().any(|&v| v <= 0.001) {
@@ -745,6 +755,7 @@ fn table_model(model: &str) -> &str {
     }
 }
 
+/// Visible area (margins and size) for a raw buffer of a given model.
 fn visible_area(model: &str, raw_w: u32, raw_h: u32, payload: &Payload) -> Rect {
     let (mut w, mut h) = (raw_w, raw_h);
     let is = |m: &[&str]| m.contains(&model);
@@ -943,6 +954,7 @@ fn open_a100<'a>(
     }
     info.color_matrices = table::color(entry, &meta);
     meta.previews = tiff_previews(data, 0, tiff, info.orientation);
+    // Only rows below `height - 1` are stored.
     let coded_rows = raw_h as usize;
     let dec = SimpleDecoder::new(
         RawFormat::Arw,

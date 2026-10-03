@@ -1,5 +1,6 @@
 //! ARRI ALEXA `.ari` frames: a 4 KiB little-endian header followed by 12-bit
 //! samples packed MSB-first into 32-bit little-endian words, sample pairs stored
+//! swapped, GRBG mosaic.
 //!
 //! Header fields used: payload offset (8), width (20), height (24), as-shot white
 //! balance multipliers (100..112, f32 R/G/B) and the camera model string (668).

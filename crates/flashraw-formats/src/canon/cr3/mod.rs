@@ -1,6 +1,7 @@
 //! Canon CR3: ISO BMFF container ([`container`]) with CRX-coded raw tracks
 //! ([`flashraw_codecs::canon_crx`]).
 //!
+//! The decoded track is the primary image: the first raw track with the largest
 //! `bits * width * height` (the first image of dual-pixel files), first sample (the
 //! first frame of raw bursts / roll files).
 
@@ -112,6 +113,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     Ok(Box::new(SimpleDecoder::new(RawFormat::Cr3, meta, info, Box::new(decode))))
 }
 
+/// Visible area, CFA and black level for CRX files: the
 /// sensor table by raw size, else (with a maker-note black level) the maker-note
 /// crop when it describes this buffer. Black is measured from the optical-black
 /// columns when the table geometry applies, else taken from the maker note.
@@ -152,8 +154,8 @@ fn apply_geometry(info: &mut FrameInfo, mn: Option<&CanonMakernote>) -> Known {
             };
         }
     }
-    // The CFA (`vis`, from the codec header) is relative to the visible origin; the
-    // reference then evens out odd margins.
+    // The CFA (`vis`, from the codec header) is relative to the visible origin;
+    // odd margins are then evened out.
     let (sx, sy) = ((2 - g.left as usize % 2) % 2, (2 - g.top as usize % 2) % 2);
     let buf_cfa = vis.shifted(sx, sy);
     if g.top % 2 == 1 {

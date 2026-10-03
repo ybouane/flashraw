@@ -100,7 +100,8 @@ impl LjpegHeader {
             let seg = flashraw_core::bytes::slice_at(data, pos + 2, len - 2)?;
             match marker {
                 0xC3 | 0xC0 | 0xC1 => {
-                    // Some encoders (e.g. Blackmagic) label lossless streams SOF0/SOF1; like
+                    // Some encoders (e.g. Blackmagic) label lossless streams SOF0/SOF1; they are
+                    // accepted and the scan's predictor is verified at SOS.
                     sof_marker = marker;
                     if seg.len() < 6 {
                         return Err(Error::corrupt("lossless JPEG: short SOF"));

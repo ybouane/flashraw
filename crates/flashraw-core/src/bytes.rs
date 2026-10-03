@@ -48,6 +48,7 @@ pub fn slice_at(data: &[u8], offset: usize, len: usize) -> Result<&[u8]> {
 
 /// Return `data[offset..]` clamped to at most `len` bytes. Used for payloads where
 /// vendors routinely declare slightly more bytes than the file contains (truncated
+/// final strips are a common real-world quirk).
 #[inline]
 pub fn slice_at_lenient(data: &[u8], offset: usize, len: usize) -> Result<&[u8]> {
     if offset >= data.len() {

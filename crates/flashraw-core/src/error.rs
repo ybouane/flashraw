@@ -84,7 +84,7 @@ impl Error {
         Error::UnsupportedCompression { format, compression: compression.to_string() }
     }
 
-    /// Short machine-friendly classification, used by the compatibility tooling and JS bindings.
+    /// Short machine-friendly classification, used by the CLI's JSON output and the JS bindings.
     pub fn kind(&self) -> &'static str {
         match self {
             Error::UnsupportedFormat(_) => "UnsupportedFormat",

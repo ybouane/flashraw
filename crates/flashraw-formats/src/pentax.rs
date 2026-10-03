@@ -11,6 +11,7 @@
 //! 0x0200 black level (RGGB), 0x0201 as-shot WB (RGGB), 0x0220 Huffman table.
 //!
 //! Pixel-shift files (K-1, K-1 II, K-3 II, K-3 III, KP, K-70) store four frames; the
+//! first frame is decoded (a complete, ordinary exposure on its own).
 
 use crate::common::*;
 use crate::nikon::conventions::{self, file_orientation, select_raw_ifd, wb_from_cam_mul};
@@ -156,7 +157,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         c => return Err(Error::unsupported_compression("PEF", format!("TIFF compression {c} ({bps} bps)"))),
     };
 
-    // --- Visible area (reference conventions, by model and buffer size) ---
+    // --- Visible area (per-camera conventions, by model and buffer size) ---
     let mut area = Rect::full(w, h);
     let mut cfa_visible: Option<CfaPattern> = None; // pattern at the visible origin
     let is_m = |m: &str| model_uc == m;
@@ -221,6 +222,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         _ => "",
     };
     let cam = db_lookup(&mut meta, mode);
+    // The fallback colour table names the K2000 by its twin, the K-m.
     let table_model = if model_uc == "K2000" { "K-m".to_string() } else { meta.canonical_model.clone() };
     let table = flashraw_camera_db::find_matrix("Pentax", &table_model)
         .or_else(|| flashraw_camera_db::find_matrix("Pentax", &model));

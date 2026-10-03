@@ -18,6 +18,7 @@
 //! | `0x00e0` | SensorInfo      | sensor size, default crop, left optical black             |
 //! | `0x4001` | ColorData       | as-shot WB, sRAW WB, per-channel black, white levels      |
 //!
+//! ColorData has many layouts, identified by the number of
 //! 16-bit words in the tag; see [`ColorData::parse`].
 
 use flashraw_core::ByteOrder;
@@ -59,11 +60,14 @@ pub struct SensorInfo {
 pub struct ColorData {
     /// Number of 16-bit words (selects the layout).
     pub len: usize,
+    /// Layout family (1..=12; 0 = unknown).
     pub version: u8,
-    /// First word of the tag (a reference tool "ColorDataVersion", e.g. 10 for 5D Mark III, -3/-4 for PowerShots).
+    /// First word of the tag (the ColorData version, e.g. 10 for 5D Mark III, -3/-4 for PowerShots).
     pub sub_version: u16,
     /// As-shot WB multipliers in file order `R, G1, G2, B` (1024 ≈ unity for EOS).
     pub as_shot: Option<[u16; 4]>,
+    /// sRAW white-balance multipliers in `R, G, B, G2` order, already scaled for the sRAW
+    /// decoder (`v * mul >> 10`).
     pub sraw_mul: Option<[u16; 4]>,
     /// Per-channel black level in file order `R, G1, G2, B`.
     pub black: Option<[u16; 4]>,
@@ -201,6 +205,7 @@ impl ColorData {
             cd.as_shot = words::<4>(w, o);
         }
         if let Some(o) = sraw {
+            // The sRAW multipliers are scaled by max/1024 (in single precision) and
             // truncates back to u16; the sRAW decoder then applies `v * mul >> 10`.
             if let Some(m) = words::<4>(w, o) {
                 let rgbg = [m[0], m[1], m[3], m[2]];
@@ -216,6 +221,7 @@ impl ColorData {
             }
         }
         if let Some(o) = white {
+            // The two white levels are read right after the black levels when they are
             // adjacent, which is the same position.
             if let Some([n, s]) = words::<2>(w, o) {
                 cd.normal_white = Some(n);
@@ -230,6 +236,7 @@ impl ColorData {
         Some(cd)
     }
 
+    /// Average of the per-channel black levels.
     pub fn average_black(&self) -> u32 {
         self.black.map(|b| b.iter().map(|&v| v as u32).sum::<u32>() / 4).unwrap_or(0)
     }
@@ -295,6 +302,7 @@ impl CanonMakernote {
         }
     }
 
+    /// As-shot white balance multipliers `(R, G, B, G2)`, in order of precedence:
     /// ColorData first, then the EOS-1D table, then the PowerShot G9 table.
     pub fn as_shot_wb(&self) -> Option<[f32; 4]> {
         if self.multishot {
@@ -347,6 +355,7 @@ fn parse_g9_wb(e: &Entry, wbi: u16) -> Option<[u32; 4]> {
     let line = |n: usize| -> Option<[u32; 4]> {
         let base = 2 + n * 8; // in u32 units
         let g = [get(base)?, get(base + 1)?, get(base + 2)?, get(base + 3)?];
+        // GRBG file order → R, G, B, G2.
         Some([g[1], g[0], g[2], g[3]])
     };
     // Canon wbi → G9 line (Auto, Daylight, Cloudy, Tungsten, Fluorescent, FluorescentHigh,

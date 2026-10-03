@@ -147,6 +147,7 @@ impl RawFrame {
         self.cfa.map(|p| p.color_at((x + self.origin.0) as usize, (y + self.origin.1) as usize))
     }
     /// FNV-1a 64 hash over the little-endian bytes of u16 samples in `rect` (all
+    /// components). Reported by `flashraw verify` for regression testing.
     pub fn hash_u16(&self, rect: Rect) -> Option<u64> {
         let d = self.as_u16()?;
         let cpp = self.cpp as usize;

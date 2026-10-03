@@ -1,1 +1,5 @@
 # FORMAT	MODE	COMPRESSION	STATUS	NOTES
+SRW	compressed	samsung-v0 (32770 + row offsets)	verified	5/5 corpus files decode (NX300/NX300M/NX30/NX2000/EK-GN120)
+SRW	compressed	samsung-v1 (32772)	verified	3/3 decode (NX mini, NX3000, NX3300)
+SRW	compressed	samsung-v2 (32773)	verified	5/5 decode (NX1, NX500 12/14-bit)
+SRW	uncompressed	12-bit packed MSB/LSB (32770), 16-bit words (32769)	verified	14/14 decode (NX5/10/11/100/20/200/210/1000/1100, EX1, EX2F, WB2000)

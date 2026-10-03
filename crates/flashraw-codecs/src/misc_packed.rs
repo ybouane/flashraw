@@ -1,6 +1,7 @@
 //! Packings used by headerless sensor dumps (CHDK, phone/action-camera dumps,
+//! Raspberry Pi, old compacts).
 //!
-//!   flags: samples of `bits` bits read MSB-first from little-endian words of 8, 16,
+//! - [`packed_rows`]: the "packed" layout family, parameterised by load flags: samples of `bits` bits read MSB-first from little-endian words of 8, 16,
 //!   24 or 32 bits (`flags & 24`), rows padded to an even byte count (`flags & 128`),
 //!   a pad byte after every 10 samples (`flags & 1`), sample pairs swapped
 //!   (`flags & 64`) and two interlaced fields (`flags & 2`, second field located at
@@ -14,15 +15,18 @@
 use crate::packed::unpack_row;
 use flashraw_core::{Error, PackOrder, Result, par};
 
+/// Geometry of a "packed" payload.
 #[derive(Debug, Clone, Copy)]
 pub struct PackedParams {
     pub width: usize,
     pub height: usize,
     pub bits: u32,
+    /// Load flags (see the module docs).
     pub flags: u32,
 }
 
 impl PackedParams {
+    /// Bytes per row (before the 10-sample padding expansion).
     pub fn row_bytes(&self) -> usize {
         let mut b = self.width * self.bits as usize / 8;
         if self.flags & 128 != 0 {
@@ -35,6 +39,7 @@ impl PackedParams {
     }
 }
 
+/// Decode a "packed" payload. `file` is the whole file (the interlaced layout
 /// addresses its second field relative to the file size), `offset` the payload start.
 /// Rows past the end of the data are zero-filled.
 pub fn packed_rows(file: &[u8], offset: usize, p: PackedParams, out: &mut [u16], parallel: bool) -> Result<()> {
@@ -79,6 +84,8 @@ pub fn packed_rows(file: &[u8], offset: usize, p: PackedParams, out: &mut [u16],
     Ok(())
 }
 
+/// Bit-exact sequential decode of any packed layout (reference implementation for the
+/// parallel path).
 pub fn packed_rows_reference(file: &[u8], offset: usize, p: PackedParams, out: &mut [u16]) {
     let (w, h, bits) = (p.width, p.height, p.bits as i64);
     let bwide = p.row_bytes();

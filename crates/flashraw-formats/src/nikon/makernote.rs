@@ -22,7 +22,8 @@ use flashraw_core::tiff::{Entry, TiffOptions, parse_ifd_at, types};
 pub struct MakerNote {
     pub order: Option<ByteOrder>,
     pub iso: Option<u32>,
-    /// any camera-specific rewriting); zero when unknown.
+    /// As-shot multipliers in R, G, B, G2 order (before any camera-specific
+    /// rewriting); zero when unknown.
     pub cam_mul: [f32; 4],
     /// Black level from tag 0x003D in R, G1, G2, B order.
     pub black: Option<[u16; 4]>,
@@ -155,6 +156,7 @@ pub fn parse(data: &[u8], entry: &Entry, file_order: ByteOrder, model: &str) -> 
                 if cb_version >= 200 {
                     let start = if cb_version != 205 { 4 + 0x118 } else { 4 };
                     // Some cameras (D50) declare a shorter tag than the 324-byte block
+                    // the layout needs; read from the file, not the tag.
                     let p = e.value_pos + start;
                     cb_data = slice.get(p..p + 324).map(|s| s.to_vec());
                 }

@@ -2,13 +2,20 @@
 //!
 //! Two families of camera-database entries carry a `filesize` hint:
 //!
+//! - **size table** (`mode = "naked-<size>"`, `camera-db/cameras.json`):
+//!   raster size, margins, CFA, packing flags (`load_flags`) and white-level shift. The bit depth
+//!   is derived from the file size and selects the unpacker:
 //!   6 bits → Minolta RD-175 interleave, 8 → bytes (through a tone curve), 10 → MIPI
+//!   "tight", Android "loose" or generic packed rows, 12 → generic packed rows, 16 → 16-bit words
 //!   (byte order and right shift from the flags). Canon CHDK `.CRW` dumps measure
 //!   their black level from the left/right optical-black columns.
 //!   Kodak C330/C603/"12MP" dumps are either 8-bit CFA data or YCbCr; the latter
-//!   unused fourth channel).
+//!   decode to a 3-sample-per-pixel RGB image.
+//! - **CHDK entries** (`mode = "chdk*"`): `full_width`/`full_height`/
 //!   `offset`/`bits`/`order` hints, uniformly packed rows.
 //!
+//! The size table wins when both describe the same size (its entries carry the full geometry).
+//! Size identification can only be trusted because this
 //! path runs after every signature-based format has declined the file.
 
 use crate::common::*;
@@ -36,6 +43,7 @@ fn hint_u(c: &Camera, k: &str) -> Option<u64> {
 
 #[derive(Debug, Clone)]
 enum Loader {
+    /// Generic packed rows ([`PackedParams`]).
     Packed(PackedParams),
     /// 16-bit words.
     Words {
@@ -59,6 +67,7 @@ enum Loader {
 struct Naked<'a> {
     data: &'a [u8],
     offset: usize,
+    /// Stored raster, including masked borders.
     raw_w: usize,
     raw_h: usize,
     /// Output buffer geometry.
@@ -68,7 +77,8 @@ struct Naked<'a> {
     loader: Loader,
 }
 
-/// (linearising) curve.
+/// Inverse (linearising) gamma curve with power `pwr` and toe slope `ts` (a linear segment near
+/// black), inputs scaled by `imax`, for the first 256 entries.
 fn gamma_curve(pwr: f64, ts: f64, imax: u32) -> Vec<u16> {
     let mut g = [pwr, ts, 0.0, 0.0, 0.0, 0.0];
     let mut bnd = [0.0f64, 0.0];
@@ -171,6 +181,7 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
         cfa = Some(CfaPattern::GRBG);
     }
 
+    // The PowerShot A610 CHDK size is shared with the S2 IS, told apart from
     // the data: the S2 IS has non-black samples in this column band.
     let model =
         if make == "Canon" && model == "PowerShot A610" && is_canon_s2is(data) { "PowerShot S2 IS" } else { model };
@@ -184,6 +195,7 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
     let (mut lm, mut tm, mut w, mut h) =
         (crop[0].max(0) as u32, crop[1].max(0) as u32, crop[2].max(0) as u32, crop[3].max(0) as u32);
     if cfa.is_some() && !matches!(loader, Loader::KodakYcc { .. }) {
+        // Odd Bayer margins move to the next even position (stable CFA phase).
         if lm % 2 == 1 {
             lm += 1;
             w = w.saturating_sub(1);
@@ -208,6 +220,7 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
     if cpp == 1 {
         info.active_area = Rect::new(lm, tm, w, h);
         if let Some(p) = cfa {
+            // The table gives the pattern at the (unadjusted) visible origin;
             // re-anchor it at the buffer origin.
             let (pw, ph) = (p.width(), p.height());
             let p = p.shifted(pw - crop[0].max(0) as usize % pw, ph - crop[1].max(0) as usize % ph);
@@ -220,11 +233,14 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
         info.layout = SensorLayout::Linear;
     }
     info.crop = info.active_area;
+    // Black: the fallback colour-table value, replaced by the optical-black measurement
+    // where the dump has masked columns (left/right).
     let fallback = flashraw_camera_db::find_matrix(&meta.canonical_make, &meta.canonical_model);
     info.black_level = BlackLevel::uniform(fallback.map(|m| m.black.max(0)).unwrap_or(0) as f32);
     if let Some(m) = fallback.filter(|m| m.white > 0) {
         white = m.white as u32;
     }
+    // Curated camera-database entries may state their levels explicitly.
     if let Some(sensor) = cam.sensor(meta.exposure.iso.unwrap_or(0)) {
         if sensor.black >= 0 {
             info.black_level = BlackLevel::uniform(sensor.black as f32);
@@ -242,6 +258,7 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
     if sides && cpp == 1 {
         let a = info.active_area;
         let left = Rect::new(0, a.y, a.x, a.height);
+        // A few CHDK dumps carry garbage in the last columns; they are trimmed.
         let trim = hint_u(cam, "right_mask_trim").unwrap_or(0) as u32;
         let right = Rect::new(a.right(), a.y, (rw as u32).saturating_sub(a.right() + trim), a.height);
         info.masked_areas = [left, right].into_iter().filter(|r| !r.is_empty()).collect();
@@ -294,11 +311,13 @@ impl Naked<'_> {
     }
 }
 
+/// Tells a PowerShot S2 IS CHDK dump from an A610 one (same size).
 fn is_canon_s2is(data: &[u8]) -> bool {
     (0..100usize).any(|row| data.get(row * 3340 + 3284).is_some_and(|&b| b > 15))
 }
 
 /// Minolta RD-175: three CCDs' worth of half-width lines interleaved into a
+/// 1534x986 GRBG mosaic.
 fn rd175(src: &[u8], out: &mut [u16]) {
     const W: usize = 1534;
     let mut put = |row: usize, col: usize, v: u16| {
@@ -342,7 +361,7 @@ fn rd175(src: &[u8], out: &mut [u16]) {
 }
 
 /// Kodak C330 (4:2:2 YCbYCr pairs, optional 32-row gaps) and C603/12MP (two Y rows
-/// kodak c330 loader / kodak c603 loader).
+/// followed by a CbCr row) dumps, converted to RGB through `curve`.
 #[allow(clippy::too_many_arguments)]
 fn kodak_ycc(src: &[u8], raw_w: usize, w: usize, h: usize, c330: bool, skip_32: bool, curve: &[u16], out: &mut [u16]) {
     let lut = |v: i32| curve.get(v.clamp(0, 255) as usize).copied().unwrap_or(0);
@@ -394,6 +413,7 @@ fn ycc_px(px: &mut [u16], y: i32, cb: i32, cr: i32, lut: &impl Fn(i32) -> u16) {
     px[2] = lut(g + cb);
 }
 
+/// CHDK entry: uniformly packed rows described by hints.
 fn open_size_matched<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
     let w = hint_u(cam, "full_width").unwrap_or(0) as u32;
     let h = hint_u(cam, "full_height").unwrap_or(0) as u32;

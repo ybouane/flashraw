@@ -321,7 +321,8 @@ fn predictive_symbol(
 }
 
 /// Subsequent line of a predictive band (hot loop of lossless planes): the
-/// cursors only diverge after the last sample).
+/// previous-line context is walked with a single index (separate cursors for the
+/// two neighbours would only diverge after the last sample).
 fn line_predictive(b: &mut CrxBits, k: &mut u32, s: &mut u32, p: &[i32], c: &mut [i32], w: usize) -> Result<()> {
     let p = &p[..w + 2];
     let c = &mut c[..w + 2];

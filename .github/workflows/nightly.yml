@@ -1,5 +1,6 @@
-# artifact, and a longer fuzzing campaign.
-name: Nightly compatibility
+# Extended nightly run: full CC0 corpus (cached), regression hashes and the malformed-input
+# suite over every corpus file, and a longer fuzzing campaign.
+name: Nightly corpus
 
 on:
   schedule:
@@ -7,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  compatibility:
+  corpus:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -19,17 +20,18 @@ jobs:
         with:
           path: corpus
           key: rpu-corpus-${{ hashFiles('tools/corpus/manifest.tsv') }}
-      - name: Restore decoder harness
-        uses: actions/cache/restore@v4
-        with:
-          path: reference
-          key: reference-harness-${{ runner.os }}
       - run: python3 tools/corpus/fetch.py --jobs 16
+      - run: cargo build --release -p flashraw-cli --features jpegxl
+      # Every file must decode or fail with a clean error (a few formats are deliberately
+      # unsupported); correctness is enforced by the regression test below.
+      - name: Decode every corpus file
+        run: find corpus -type f -print0 | xargs -0 -n 50 ./target/release/flashraw verify --json > verify.jsonl || true
       - run: cargo test --release -p flashraw --test regression --test malformed
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          path: |
+          name: corpus-verify
+          path: verify.jsonl
 
   fuzz-extended:
     runs-on: ubuntu-latest

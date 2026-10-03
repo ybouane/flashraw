@@ -1,3 +1,4 @@
+//! The "load flags" family of bit-packed layouts.
 //!
 //! Many Nikon, Pentax and Samsung uncompressed raws are described by a handful of
 //! "load flags" rather than by standard TIFF packing:
@@ -13,23 +14,26 @@
 //!
 //! [`PackedSpec::fast_layout`] maps the common combinations onto
 //! [`crate::packed`] (parallel, SIMD); everything else uses the exact sequential
-//! emulation in [`decode`], which is the specification.
+//! path in [`decode`], which is the specification.
 
 use crate::packed::{self, PackedLayout};
 use flashraw_core::{Error, PackOrder, Result};
 
+/// A load-flags packed raster description.
 #[derive(Debug, Clone, Copy)]
 pub struct PackedSpec {
     pub width: usize,
     pub height: usize,
     /// Bits per sample (1..=16).
     pub bits: u32,
+    /// Load flags (see the module docs).
     pub flags: u32,
     /// Byte offset (relative to the start of `src`) of the second field when `flags & 4`.
     pub field2_offset: Option<usize>,
 }
 
 impl PackedSpec {
+    /// Bytes per row before the 10-sample padding.
     fn bwide(&self) -> usize {
         let b = self.width * self.bits as usize / 8;
         b + (b & ((self.flags as usize >> 7) & 1))
@@ -89,7 +93,8 @@ impl PackedSpec {
     }
 }
 
-/// Decode `src` into `out` (rows of `stride` samples). Truncated input is an error,
+/// Decode `src` into `out` (rows of `stride` samples). Truncated input is an error
+/// (decoding aborts at the first row that starts past EOF).
 pub fn decode(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize, parallel: bool, simd: bool) -> Result<()> {
     if spec.bits == 0 || spec.bits > 16 || spec.width == 0 {
         return Err(Error::corrupt(format!("unsupported packed layout ({} bits)", spec.bits)));
@@ -103,6 +108,7 @@ pub fn decode(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize, par
     decode_exact(src, spec, out, stride)
 }
 
+/// Exact sequential decode of any load-flags layout (the specification).
 pub fn decode_exact(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize) -> Result<()> {
     let (w, h, bits) = (spec.width, spec.height, spec.bits as i32);
     let bite = spec.bite() as i32;

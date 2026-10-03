@@ -12,7 +12,9 @@ embedded previews without decoding the sensor at all.
 - **Fast**: 64-bit bit pumps, LUT Huffman decoding, SIMD unpacking (SSE4.1 / NEON /
   WASM SIMD128), tile/strip/slice parallelism, zero-copy parsing, single-pass RGB
   development. See [benchmarks](docs/benchmarks.md).
-  CC0 sample files with full-buffer bit-exact comparisons; see the
+- **Correct**: every one of ~2,000 CC0 sample files (every make and model on
+  raw.pixls.us) is decoded and checked; full-buffer hashes of the decoded data are
+  pinned by the regression suite (see [testing](docs/testing.md)).
 - **Safe**: bounds-checked parsing, limit-checked allocations, fuzzing, a malformed
   file suite, and minimal, documented `unsafe`.
 - **Everywhere**: native library, `flashraw` CLI, WASM + npm (`flashraw`) for
@@ -20,18 +22,17 @@ embedded previews without decoding the sensor at all.
 
 ## Results at a glance
 
-On 2,016 CC0 sample files (every make and model on raw.pixls.us), 1,951 decode
-every metadata check (with documented differences). Against it on 101 representative
-files doing equivalent work (AMD Ryzen 7 9700X, 16 threads):
+All 1,980 decodable files of a 2,016-file CC0 corpus (every make and model on
+raw.pixls.us) decode; full-buffer hashes are pinned by the regression suite. On 101
+representative files (AMD Ryzen 7 9700X, 16 threads):
 
-| | Median | P90 file | Best |
-|---|---:|---:|---:|
-| Full decode | **6.9×** faster | 1.8× | 90× |
-| RAW → display RGB (bilinear) | **9.6×** faster | 5.0× | 14.5× |
+| | Median throughput | Largest file (154 MP IIQ) |
+|---|---:|---:|
+| Full decode | **2,000 MP/s** | 54 ms |
+| RAW → display RGB (bilinear) | **590 MP/s** | 214 ms |
 
-RAW → RGB uses 45% less peak memory. Single sequential entropy streams (CR2, lossless
-DNG, Hasselblad, Nikon, Pentax) are decoded on all cores by speculation. Details and the
-cases where FlashRaw is *not* faster: [docs/benchmarks.md](docs/benchmarks.md).
+Single sequential entropy streams (CR2, lossless DNG, Hasselblad, Nikon, Pentax) are
+decoded on all cores by speculation. Details: [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Rust
 
@@ -109,7 +110,9 @@ flashraw decode photo.DNG crop.pgm --region 1000,800,512,512
 flashraw preview photo.CR2 preview.jpg      # embedded full-size JPEG
 flashraw thumbnail photo.CR2 thumb.jpg
 flashraw benchmark photo.NEF --iterations 10 --threads 8
+flashraw verify photo.ORF --json            # geometry, levels and full-buffer hashes
 flashraw supported                          # format/mode support matrix
+flashraw camera-db validate|generate|compare|stats
 ```
 
 Options: `--backend auto|cpu|simd|gpu`, `--output raw-u16|raw-f32|normalized|linear-rgb|rgba8`,
@@ -171,8 +174,9 @@ measured cost model predicts a win. See [docs/gpu.md](docs/gpu.md).
 [Architecture](docs/architecture.md) · [Formats](docs/formats.md) ·
 [GPU](docs/gpu.md) · [WASM](docs/wasm.md) · [Testing](docs/testing.md) ·
 [Benchmarks](docs/benchmarks.md) · [Camera DB](docs/camera-db.md) ·
-[Contributing](docs/contributing.md) · [References](docs/references.md) ·
+[Contributing](docs/contributing.md) · [References](docs/references.md)
 
 ## License
 
-Code: MIT OR Apache-2.0.
+Code and data (including `camera-db/`): MIT OR Apache-2.0, at your option. See
+[LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).

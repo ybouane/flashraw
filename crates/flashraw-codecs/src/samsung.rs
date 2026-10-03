@@ -13,7 +13,8 @@
 use crate::nikon_huffman::{DirectHuff, PredictiveParams, decode_predictive};
 use flashraw_core::{Error, Result};
 
-/// MSB-first reader over little-endian 32-bit words with lazy word fetches
+/// MSB-first reader over little-endian 32-bit words with lazy word fetches.
+/// Reading past the end yields all-ones words and is flagged.
 #[derive(Clone)]
 pub struct Ph1Bits<'a> {
     data: &'a [u8],
@@ -193,6 +194,7 @@ fn parse_v0_row(src: &[u8], offset: usize, row: usize, width: usize, max_index: 
         }
         for c in (0..16).step_by(2).chain((1..16).step_by(2)) {
             let i = len[((c & 1) << 1) | (c >> 3)];
+            // Skip rules depend only on geometry:
             // a skipped sample consumes no residual bits.
             let dest = row * width + col + c;
             let src_idx: Option<usize> = if dir != 0 {

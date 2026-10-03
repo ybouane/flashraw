@@ -1,6 +1,7 @@
 //! Nikon NEF / NRW.
 //!
 //! Payload variants (selected from the raw IFD's compression, size and makernote,
+//! with fixed precedence rules so ambiguous files always decode the same way):
 //!
 //! | variant | detection | codec |
 //! |---|---|---|
@@ -16,19 +17,20 @@
 //! | small/medium sNEF (YCbCr 4:2:2, 12-bit) | `w*h*3` bytes | YCbCr → RGB (3 samples/pixel) |
 //! | high efficiency (TicoRAW / JPEG XS) | JPEG XS SOC marker at the payload start | unsupported |
 //!
+//! Geometry, black and white levels follow per-camera conventions (camera-specific
 //! visible-area trims, makernote black in 14-bit units scaled to 12-bit files).
 
+pub(crate) mod conventions;
 mod crypt;
 mod makernote;
-pub(crate) mod conventions;
 
 use crate::common::*;
+use conventions::{file_orientation, select_raw_ifd, wb_from_cam_mul};
 use flashraw_codecs::nikon_huffman::{self, NikonMeta};
 use flashraw_codecs::nikon_packed::{self, PackedSpec};
 use flashraw_codecs::packed::{self, PackedLayout};
 use flashraw_core::tiff::{Tiff, tags};
 use flashraw_core::*;
-use conventions::{file_orientation, select_raw_ifd, wb_from_cam_mul};
 use std::sync::Arc;
 
 /// Magic-signature probe (NEF/NRW are TIFF-based and dispatched by make).
@@ -43,7 +45,9 @@ pub fn open<'a>(_data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecod
 /// How the payload is stored.
 #[derive(Debug, Clone)]
 enum Payload {
+    /// Nikon Huffman (lossy or lossless); `rows` limits decoding to the visible rows.
     Huffman { meta: Arc<NikonMeta>, rows: usize },
+    /// Packed samples.
     Packed(PackedSpec),
     /// 16-bit words shifted right by `shift`.
     Words { order: ByteOrder, shift: u32 },
@@ -58,7 +62,8 @@ enum Payload {
 }
 
 struct NefRaw<'a> {
-    /// past the declared strip length).
+    /// Payload bytes from the data offset to the end of the file (some files' data
+    /// runs past the declared strip length).
     src: &'a [u8],
     /// Payload length the strip declares.
     declared: usize,
@@ -78,6 +83,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     if meta.model.is_empty() {
         meta.model = tiff.all_ifds().into_iter().find_map(|i| i.string(tags::MODEL)).unwrap_or_default();
     }
+    // Model without the "NIKON " prefix.
     let model = strip_make_prefix(&meta.model, "NIKON");
     let model_uc = model.to_ascii_uppercase();
     let mn =
@@ -112,6 +118,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let software = meta.software.clone().unwrap_or_default();
     let samples = raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
 
+    // --- Payload selection (heuristics on compression, size and makernote) ---
     let (w64, h64, b64) = (raw_w as u64, raw_h as u64, bytes as u64);
     let is_coolscan = software.starts_with("Nikon Scan")
         || model_uc.contains("COOLSCAN")
@@ -174,6 +181,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         huffman = false;
     }
 
+    // --- Camera-specific geometry (visible area) ---
     let mut geo = Geometry { left: 0, top: 0, width: raw_w, height: raw_h, raw_width: raw_w };
     let iso = meta.exposure.iso.unwrap_or(0);
     let mut black_override: Option<u32> = None;
@@ -256,6 +264,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             s.flags |= 2;
         }
     }
+    // Bayer visible areas are kept on even coordinates (stable CFA phase).
     if geo.left % 2 == 1 {
         geo.left = geo.left.saturating_add(1);
         geo.width = geo.width.saturating_sub(1);
@@ -274,6 +283,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         let lin = mn.lin_offset.ok_or_else(|| Error::invalid_metadata("compressed NEF without linearization table"))?;
         let order = mn.order.unwrap_or(tiff.order);
         let nm = NikonMeta::parse(data.get(lin..).unwrap_or(&[]), order, bps)?;
+        // Only the visible rows are decoded (trailing rows stay zero).
         let rows = geo.height.min(raw_h) as usize;
         payload = Payload::Huffman { meta: Arc::new(nm), rows };
     }
@@ -368,6 +378,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         info.layout = layout_for(&cfa);
         info.black_level = conventions::black_for_cfa(&cfa, base_black, black);
     }
+    // White balance: the makernote's as-shot multipliers.
     let mut mul = mn.cam_mul;
     if wb_is_analog {
         mul = [1.0; 4];
@@ -412,6 +423,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     Ok(Box::new(dec))
 }
 
+/// Visible area plus the (possibly widened) buffer width.
 struct Geometry {
     left: u32,
     top: u32,
@@ -420,7 +432,7 @@ struct Geometry {
     raw_width: u32,
 }
 
-/// reference-normalised model name ("NIKON D850" → "D850", "COOLPIX P7700" → "Coolpix P7700").
+/// Normalised model name ("NIKON D850" → "D850", "COOLPIX P7700" → "Coolpix P7700").
 fn table_model_name(model: &str) -> String {
     let m = model.trim();
     if m.len() > 8 && m[..8].eq_ignore_ascii_case("COOLPIX ") { format!("Coolpix {}", &m[8..]) } else { m.to_string() }
@@ -527,6 +539,7 @@ impl<'a> NefRaw<'a> {
 
     /// Small/medium NEF: pairs of pixels share Cb/Cr (12-bit, little-endian packed
     /// as Y0 Y1 Cb Cr). Chroma is interpolated horizontally and converted to RGB with
+    /// a fixed matrix and tone curve, giving 3 samples per pixel.
     fn decode_ycbcr(&self, ctx: &DecodeContext) -> Result<RawImage> {
         let (w, h) = (self.width, self.height);
         if w < 2 {
@@ -589,7 +602,8 @@ impl<'a> NefRaw<'a> {
         let n = w * h * cpp as usize;
         let out = img.u16_mut();
         if bits <= 8 {
-            // "gamma 1.0" transfer curve: v * 65536 / 255, saturating at 255).
+            // 8-bit scans are expanded to the 16-bit range (a linear transfer
+            // curve: v * 65536 / 255, saturating at 255).
             let s = self.src.get(..n).ok_or_else(|| Error::corrupt("Coolscan data truncated"))?;
             let lut: Vec<u16> =
                 (0..256u32).map(|i| if i < 255 { (65536.0 * (i as f64 / 255.0)) as u16 } else { 0xffff }).collect();
@@ -606,7 +620,7 @@ impl<'a> NefRaw<'a> {
     }
 }
 
-/// Reference YCbCr → RGB conversion of one sNEF pixel (values in 0..=1).
+/// YCbCr → RGB conversion of one sNEF pixel (values in 0..=1).
 #[inline]
 fn ycc_to_rgb(p: [u16; 3]) -> [f32; 3] {
     let mut y = p[0] as f32 / 2549.0;

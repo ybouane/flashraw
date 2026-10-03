@@ -1,3 +1,4 @@
+//! Nikon NEF Huffman compression, plus the predictive Huffman engine
 //! it shares with Pentax PEF and Samsung SRW (compression 32772).
 //!
 //! # Bitstream model
@@ -8,15 +9,18 @@
 //! (`hpred[col & 1]`), and the first two samples of a row predict from the first two
 //! samples two rows above (`vpred[row & 1][col]`).
 //!
+//! Symbols are stored in byte form: low nibble = total difference length
 //! `len`, high nibble = `shl`, the number of low-order difference bits that are *not*
 //! transmitted (Nikon's lossy "after split" tables). For `shl == 0` the difference is
 //! the usual JPEG sign-extended value.
 //!
 //! # Truncated streams
 //!
-//! rest of the file and, at end of file, keep decoding with a zero-padded bit buffer
+//! Decoding reads past the end of the strip into the rest of the file and, at end
+//! of file, keeps decoding with a zero-padded bit buffer
 //! until the first read that crosses EOF; every later read returns zero (so the
-//! predictors freeze). [`ExactBits`] reproduces that so truncated files decode to the
+//! predictors freeze). [`ExactBits`] implements these semantics so truncated files
+//! decode deterministically.
 //!
 //! # Performance
 //!
@@ -36,7 +40,9 @@ const FLAG_FULL: u32 = 1 << 5;
 /// Fast-table entry whose code is longer than `FAST_BITS` (resolve via the direct table).
 const SLOW_MARK: u32 = 0x8000_0000;
 
+/// A Huffman table in "direct lookup" form: `peek_bits` bits index a table of
 /// `code_len << 8 | symbol` entries (zero for unused codes, which consume no bits and
+/// decode to symbol 0, which is how incomplete tables behave).
 #[derive(Clone)]
 pub struct DirectHuff {
     peek_bits: u32,
@@ -65,6 +71,7 @@ pub fn symbol_diff(bits: u32, sym: u32) -> i32 {
 }
 
 impl DirectHuff {
+    /// Build from a table source: 16 code-length counts followed by the
     /// symbols in code order.
     pub fn from_counts(source: &[u8]) -> Result<Self> {
         if source.len() < 16 {
@@ -142,6 +149,7 @@ impl DirectHuff {
     }
 }
 
+/// MSB-first bit reader with exact end-of-data semantics (see module docs).
 #[derive(Clone)]
 pub struct ExactBits<'a> {
     data: &'a [u8],
@@ -197,6 +205,7 @@ impl<'a> ExactBits<'a> {
         }
     }
 
+    /// Read `n <= 25` bits.
     #[inline]
     pub fn get(&mut self, n: u32) -> u32 {
         if n == 0 || self.dead {
@@ -207,6 +216,7 @@ impl<'a> ExactBits<'a> {
         v
     }
 
+    /// Decode one symbol.
     #[inline]
     pub fn huff(&mut self, t: &DirectHuff) -> u32 {
         if self.dead {
@@ -218,6 +228,7 @@ impl<'a> ExactBits<'a> {
         (e & 0xFF) as u32
     }
 
+    /// Decode one symbol + difference (exact slow path).
     #[inline]
     pub fn diff(&mut self, t: &DirectHuff) -> i32 {
         let sym = self.huff(t);
@@ -547,8 +558,10 @@ fn decode_row_exact<M: Fn(u16) -> u16>(
     }
 }
 
+/// Nikon Huffman trees (16 counts, then symbols).
 pub const NIKON_TREES: [&[u8]; 6] = [
     // 12-bit lossy
+    // (the 14th code maps to symbol 0: the table is zero padded)
     &[0, 1, 5, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 5, 4, 3, 6, 2, 7, 1, 0, 8, 9, 11, 10, 12, 0],
     // 12-bit lossy after split
     &[0, 1, 5, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0x39, 0x5a, 0x38, 0x27, 0x16, 5, 4, 3, 2, 1, 0, 11, 12, 12],
@@ -578,6 +591,7 @@ pub struct NikonMeta {
 
 impl NikonMeta {
     /// Parse the blob at makernote tag 0x96 (or 0x8C). `meta` starts at the tag's value
+    /// and may extend to the end of the file (parsing may read beyond the tag).
     pub fn parse(meta: &[u8], order: ByteOrder, bits: u32) -> Result<Self> {
         if bits != 12 && bits != 14 {
             return Err(Error::unsupported_compression("NEF", format!("{bits}-bit Nikon Huffman")));
@@ -651,6 +665,7 @@ impl NikonMeta {
 }
 
 /// Decode a Nikon Huffman NEF payload. `src` should extend to the end of the file
+/// (decoding reads past the declared strip length).
 #[allow(clippy::too_many_arguments)]
 pub fn decode_nikon(
     src: &[u8],
@@ -678,6 +693,7 @@ pub fn decode_nikon(
         out,
         stride,
         |h| {
+            // Clamp the signed predictor into the curve's index range.
             let i = (h as i16).clamp(0, 0x3fff) as usize;
             curve[i]
         },
@@ -719,6 +735,7 @@ mod tests {
         }
     }
 
+    /// Canonical codes for a counts+symbols source table: (symbol, code, length).
     fn codes(src: &[u8]) -> Vec<(u8, u32, u32)> {
         let mut out = vec![];
         let mut code = 0u32;

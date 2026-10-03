@@ -14,7 +14,7 @@ pub struct DbFile {
     /// Fallback colour data matched by canonical make + model prefix (table order).
     #[serde(default)]
     pub matrices: Vec<DbMatrix>,
-    /// Model-name aliases: rebadged / regional names that map to a reference model.
+    /// Model-name aliases: rebadged / regional names that map to a canonical model.
     #[serde(default)]
     pub model_aliases: Vec<DbAliasGroup>,
     /// Sensor geometry selected by raw buffer size (older bodies without margin metadata).
@@ -22,14 +22,14 @@ pub struct DbFile {
     pub size_rules: Vec<DbSizeRule>,
 }
 
-/// Rebadged or regional model names that share a reference model's data.
+/// Rebadged or regional model names that share a canonical model's data.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DbAliasGroup {
     pub canonical_make: String,
-    /// The reference model name.
+    /// The canonical model name.
     pub model: String,
-    /// Other names written by cameras sharing the reference model's data.
+    /// Other names written by cameras sharing the canonical model's data.
     pub aliases: Vec<String>,
 }
 
@@ -51,6 +51,7 @@ pub struct DbSizeRule {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DbVerification {
+    /// Corpus files of this camera/mode.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub corpus_files: u32,
     /// Largest sample value actually present in the decoded corpus files.
@@ -114,6 +115,8 @@ pub struct DbCamera {
     /// Decoder quirks / hints (key → value).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub hints: std::collections::BTreeMap<String, String>,
+    /// Excluded from identification by raw buffer size (the size is not a reliable
+    /// signature for this entry).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_size_match: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

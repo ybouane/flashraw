@@ -116,6 +116,7 @@ pub fn apply_db(info: &mut FrameInfo, meta: &RawMetadata, cam: Option<&'static C
     }
 }
 
+/// Colour matrix from the database (exact entry first, fallback colour table second).
 pub fn db_color(meta: &RawMetadata, cam: Option<&'static Camera>) -> ColorMatrices {
     let m: Option<&[i32]> = cam.map(|c| c.color_matrix).filter(|m| !m.is_empty()).or_else(|| {
         flashraw_camera_db::find_matrix(&meta.canonical_make, &meta.canonical_model).map(|m| m.color_matrix)

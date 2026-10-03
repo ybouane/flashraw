@@ -348,6 +348,7 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
     Ok(())
 }
 
+/// Hashes and geometry of the decoded data, for regression testing.
 pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Value {
     let t0 = std::time::Instant::now();
     let raw = match FlashRaw::open_path(path) {
@@ -358,7 +359,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Valu
     let m = raw.metadata().clone();
     let info = raw.frame_info().clone();
     let t1 = std::time::Instant::now();
-    // do not apply DNG opcode lists.
+    // By default sensor data as stored, without DNG opcode lists applied, so the hashes
+    // describe the payload decode alone.
     let frame = match raw.decode(DecodeOptions { apply_opcodes, ..Default::default() }) {
         Ok(f) => f,
         Err(e) => {
@@ -477,7 +479,7 @@ pub fn supported(as_json: bool) {
         );
     }
     println!(
-        "\n{} camera database entries. See docs/formats.md for the full compatibility matrix.",
+        "\n{} camera database entries. See docs/formats.md for the full support matrix.",
         flashraw_camera_db::all().len()
     );
 }

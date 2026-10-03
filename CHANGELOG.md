@@ -14,7 +14,8 @@ First complete release of FlashRaw.
   variants, high-res), PEF, SRW (V0/V1/V2), MRW, IIQ (formats 0/3/5/6/8), MOS,
   3FR/FFF, KDC/DCR/DCS/Kodak RAW, ERF, MEF, Sinar, X3F (TRUE I/II/III, Quattro, old
   Huffman), headerless/CHDK raws identified by size, ARRI ARI.
-  metadata check (with documented differences).
+- All 1,980 decodable files of the 2,016-file CC0 corpus (every make and model on
+  raw.pixls.us) decode; full-buffer hashes of 1,965 are pinned by the regression suite.
 - Region and tile decoding for tiled/row-addressable formats; honest
   `RandomAccess` reporting.
 - Zero-copy embedded preview/thumbnail access.
@@ -29,7 +30,7 @@ First complete release of FlashRaw.
   (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed
   output buffers, fused single-pass RGB development with orientation.
 - Speculative parallel decoding of single sequential entropy streams (Huffman
-  self-synchronisation; any case it cannot prove identical falls back to the
+  self-synchronisation; anything speculation cannot prove exact falls back to the
   sequential decoder): CR2 lossless JPEG and sRAW, single-strip lossless DNG, Kodak
   DCS, Hasselblad 3FR/FFF, Nikon and Pentax predictive Huffman.
 - Floating-point DNG: fused predictor and float assembly, zlib-rs inflate,
@@ -38,7 +39,8 @@ First complete release of FlashRaw.
 ### Camera database
 - Single JSON database (`camera-db/cameras.json`): 1,624 camera entries, 814 fallback
   matrices, 71 model-alias groups, 25 size rules.
-- Entries are checked against FlashRaw's decodes of the corpus; 24 cameras come from corpus files.
+- Entries checked against FlashRaw's decodes of the corpus; 44 colour-matrix and 13
+  white-level corrections, 24 cameras added from the corpus.
 
 ### Platforms
 - `flashraw` CLI: info, decode, preview, thumbnail, benchmark, verify,
@@ -51,5 +53,5 @@ First complete release of FlashRaw.
   opt-in WebGPU build with GPU-resident frames.
 
 ### Quality
-  malformed-input suite, 10 fuzz targets, criterion benchmarks, comparative
+- Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
   benchmark runner with regression detection, CI for Linux/macOS/Windows/ARM64.

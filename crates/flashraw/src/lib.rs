@@ -435,7 +435,7 @@ impl FlashRaw<'static> {
 
 const FLOAT_TARGET: f32 = 16383.0;
 
-/// integer output): if the larger of the white level and the data maximum lies
+/// Convert floating-point samples to u16 (for integer output): if the larger of the white level and the data maximum lies
 /// outside [4096, 32767], samples are scaled so that maximum maps to 16383; values
 /// are clamped at 0 and truncated. Returns the samples and the scale applied.
 fn float_to_u16(v: &[f32], white: u32) -> (Vec<u16>, f32) {

@@ -63,7 +63,7 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
     let mut sum: i32 = 0;
     let mut bad = 0usize;
     // Row visiting order within a column: even rows, then odd rows (only when the
-    // row count is even, matching the reference loop).
+    // row count is even).
     let order: Vec<usize> = {
         let mut v: Vec<usize> = (0..coded_rows).step_by(2).collect();
         if coded_rows % 2 == 0 {

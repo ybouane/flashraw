@@ -29,29 +29,33 @@ largest non-preview IFD (a SubIFD of IFD0 for ARW/SR2, IFD0 itself for SRF).
   then the colour-table black (`black > 0` overrides, `< 0` applies only without
   file black). 12-bit packed bodies store levels in 14-bit units (divided by 4).
   ARW6 uses fixed levels (black 1024, white 39002); YCbCr output black 1024,
+  white 17536 (nominal levels for that mode).
 * **White level**: `WhiteLevel` (0xC61D) in the raw IFD, else `2^bits - 1`, then the
   colour-table maximum.
 * **White balance**: `0x7303` (GRBG) / `0x7313` (RGGB) from the raw IFD or the SR2
   private directory (the latter wins); A100 from the MRW `WBG` block. Rejected when a
+  multiplier is zero or the spread exceeds 100x.
 * **SR2 private data**: IFD0 `DNGPrivateData` (0xC634) points to an IFD with
   `0x7200` (offset), `0x7201` (length) and `0x7221` (key, 4 UNDEFINED bytes). The
   block is decrypted with the key stream (`sony::crypt`) and parsed as an IFD whose
   value offsets are absolute file offsets.
 * **Geometry**: the full IFD size is the buffer (`+8` rows for ARW1, `+1` column for
+  the A100). The visible area follows per-body rules (`visible_area`):
   fixed trims by raw width (e.g. 6048 → `-24`, 8000/9600 → `-32`), per-model tables
   for the lossless/S/M sizes of the ILCE-1/1M2, 7M4/7CM2/FX2/7M5, 7RM5/7CR/LR1,
   9M3, ZV-E1, 6700/ZV-E10M2/FX30, and APS-C crop modes of full-frame bodies.
   The recommended crop comes from `0x74C7/0x74C8` (or DNG `DefaultCrop*`).
 * **CFA**: TIFF-EP `CFAPattern` of the raw IFD (GRBG for the A100, RGBE for the
   F828, measured black from the optical-black columns for SRF).
+* **Colour matrix**: the camera-db colour table in table order (first matching
   model prefix), with a few model aliases (UMC-R10C → ILCE-QX1, ...).
 * **Previews**: JPEGs referenced from IFD0/IFD1 (`JPEGInterchangeFormat`).
 * **Orientation**: first non-default `Orientation` tag.
 
 ## Verification
 
-buffer, with active area, CFA, black, white, WB, colour matrix and orientation
-matching (`tests/regression/sony.tsv`). Malformed-input tests truncate and corrupt
+208 corpus files (108 body folders) decode and their full buffers are covered by
+regression hashes (`tests/regression/sony.tsv`). Malformed-input tests truncate and corrupt
 samples of every mode (`sony::robustness`). Codec unit tests: ARW2 block
 round-trip and row interleave, ARW1 encoder round-trip, YCbCr 4:2:0 synthetic
 stream, ARW6 bit reader against a bit-at-a-time reference and inverse lifting
@@ -63,6 +67,7 @@ multi-tile ARW6 strips (supported by the stream table, untested).
 
 ## Quirks
 
-  leaves them zero as well so full-buffer hashes compare.
+* The last row/column of lossless tiled frames is not written by the tile decoder and
+  stays zero.
 * The Hasselblad Lunar (rebadged NEX-7, make `HASSELBLAD`) is dispatched to the
   Hasselblad module; it is an ordinary ARW2 file (`sony::open_tiff` handles it).

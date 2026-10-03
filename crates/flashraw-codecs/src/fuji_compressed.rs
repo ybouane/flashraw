@@ -22,8 +22,8 @@
 //! quantise residuals with a per-line step `2 * q_base + 1`. X-Trans streams leave
 //! some positions to pure interpolation (no bits are spent on them).
 //!
-//! (verified on the raw.pixls.us corpus), including its tolerance of a one-byte
-//! over-read at the end of a stripe.
+//! Decoding is bit-exact, including tolerance of a one-byte over-read at the end of
+//! a stripe.
 
 use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::par::{self, GridWriter};
@@ -49,6 +49,7 @@ pub struct FujiHeader {
 }
 
 impl FujiHeader {
+    /// Parse and validate the 16-byte header.
     pub fn parse(d: &[u8]) -> Result<Self> {
         let h = d.get(..HEADER_SIZE).ok_or_else(|| Error::corrupt("Fuji compressed header truncated"))?;
         let be16 = |i: usize| u16::from_be_bytes([h[i], h[i + 1]]) as u32;
@@ -136,6 +137,7 @@ impl<'a> FujiCompressed<'a> {
             for b in 0..nb {
                 let start = pos + b * step;
                 let q = body.get(start..start + header.lines as usize);
+                // A short table means missing data.
                 q_bases.push(q.ok_or_else(|| Error::corrupt("Fuji lossy quantisation table truncated"))?);
             }
             pos += nb * step;
@@ -562,6 +564,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
             self.extend(G2, G7);
             self.extend(B2, B4);
         }
+        // A stripe is padded with a single zero byte and any further read fails:
         // consuming more than that means the stripe is truncated or corrupt.
         if self.overrun || self.bits_consumed() > 8 * self.data_len + 7 {
             return Err(Error::corrupt("Fuji compressed block truncated"));
@@ -735,6 +738,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
                 self.bits.get(qt.raw_bits) as i32 + 1
             }
         };
+        // Out-of-range codes are tolerated rather than treated as fatal.
         // Zig-zag decode (odd codes are negative): branch-free `code & 1 ? -1 - code/2 : code/2`.
         let code = (code >> 1) ^ -(code & 1);
         let (mut sum, mut n) = (sum + code.abs(), n);
@@ -786,7 +790,7 @@ mod tests {
     fn rice_parameter_matches_reference_loop() {
         for v1 in [0, 1, 2, 3, 5, 64, 100, 1000, 65535, 1 << 20, i32::MAX / 4] {
             for v2 in 1..=130 {
-                // Reference: while (d <= 14 && (v2 << ++d) < v1);
+                // Loop form: while (d <= 14 && (v2 << ++d) < v1);
                 let mut d = 0u32;
                 if v2 < v1 {
                     loop {

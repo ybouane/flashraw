@@ -5,6 +5,8 @@ this repository. They are reproducible:
 
 ```sh
 python3 tools/corpus/fetch.py                     # CC0 corpus
+cargo build --release -p flashraw-cli
+python3 tools/bench/run.py benches/benchmark-set.tsv --iterations 5 \
     --out benches/results/<host>.jsonl --markdown benches/results/<host>.md
 cargo bench -p flashraw --bench kernels           # micro-benchmarks (criterion)
 cargo bench -p flashraw-gpu --bench gpu_pipeline  # GPU (needs an adapter)
@@ -12,72 +14,61 @@ cargo bench -p flashraw-gpu --bench gpu_pipeline  # GPU (needs an adapter)
 
 ## Method
 
-- **Equivalent work only.** "Decode" = open + full sensor decode to 16-bit samples
-  bilinear demosaic + as-shot white balance + colour matrix + 8-bit sRGB on *both*
-  compared with a higher-quality demosaic.
+- "Decode" = open + full sensor decode to 16-bit samples (`raw-u16`). "RAW→RGB" =
+  decode + bilinear demosaic + as-shot white balance + colour matrix + oriented 8-bit
+  sRGB (`rgba8`).
 - Input is read into memory before timing. Each figure is the median of 5 timed runs
-  after a warm-up, each tool in a fresh process (so peak RSS is per decode).
+  after a warm-up, in a fresh process per file (so peak RSS is per decode).
 - Benchmark set (`benches/benchmark-set.tsv`): the largest and the median-size file of
-  101 files from 0.4 MP to 154 MP covering every supported codec.
-- Hardware: AMD Ryzen 7 9700X (8 cores / 16 threads, 32 MB L3), 64 GB DDR5, Linux 6.12.
-  single-threaded configuration.
+  every (format, compression) pair in the CC0 corpus — 101 files from 0.4 MP to 154 MP
+  covering every supported codec.
+- Hardware: AMD Ryzen 7 9700X (8 cores / 16 threads, 32 MB L3), 64 GB DDR5, Linux 6.12,
+  all threads.
 
+## Results
 
 Full results: [`benches/results/linux-x86_64.md`](../benches/results/linux-x86_64.md).
+Median throughput over the set: **2,000 MP/s** decode, **590 MP/s** RAW → RGBA8.
 
-| | Decode | RAW → displayable RGB |
-|---|---:|---:|
-| Median speedup | **6.9×** | **9.6×** |
-| Geometric mean | **6.5×** | **8.5×** |
-| P10 speedup (= P90 latency ratio) | **1.8×** | **5.0×** |
-| Files ≥ 40 MP, median | **6.9×** | **9.9×** |
-| Best | **90×** | **14.5×** |
-| Worst | 0.70× | 2.7× |
-
-Per format (median of the files in the set):
+Per format (median throughput of the files in the set, MP/s):
 
 | Format | files | decode | RAW→RGB | | Format | files | decode | RAW→RGB |
 |---|---:|---:|---:|---|---|---:|---:|---:|
-| 3FR | 4 | 4.7× | 9.4× | | MOS | 3 | 15.6× | 10.8× |
-| ARW | 10 | 4.5× | 6.1× | | MRW | 4 | 51.9× | 10.0× |
-| CR2 | 4 | 11.0× | 9.5× | | NEF | 4 | 9.3× | 9.9× |
-| CR3 | 2 | 3.8× | 6.7× | | NRW | 2 | 5.4× | 9.0× |
-| CRW | 3 | 3.3× | 5.0× | | ORF | 4 | 6.3× | 8.0× |
-| DCR / DCS | 5 | 4.8× | 7–10× | | PEF | 4 | 12.2× | 9.1× |
-| DNG | 6 | 8.9× | 9.5× | | RAF | 4 | 8.2× | 10.2× |
-| ERF | 2 | 4.2× | 7.6× | | RW2 | 12 | 6.7× | 10.5× |
-| FFF | 2 | 8.8× | 10.0× | | SRW | 8 | 3.9× | 6.3× |
-| IIQ | 5 | 7.4× | 10.6× | | X3F | 2 | 11.3× | 11.0× |
-| KDC / MEF | 5 | 19–20× | 10.8× | | headerless / other | 6 | 5–6× | 7.5–11.6× |
+| 3FR | 4 | 4,170 | 659 | | MOS | 3 | 1,619 | 586 |
+| ARW | 10 | 1,202 | 454 | | MRW | 4 | 35,857 | 821 |
+| CR2 | 4 | 703 | 374 | | NEF | 4 | 4,342 | 602 |
+| CR3 | 2 | 736 | 394 | | NRW | 2 | 6,491 | 702 |
+| CRW | 3 | 330 | 231 | | ORF | 4 | 1,710 | 455 |
+| DCR / DCS | 5 | 796–22,344 | 414–837 | | PEF | 4 | 15,160 | 603 |
+| DNG | 6 | 1,072 | 491 | | RAF | 4 | 4,290 | 511 |
+| ERF | 2 | 1,690 | 552 | | RW2 | 12 | 4,221 | 713 |
+| FFF | 2 | 1,126 | 503 | | SRW | 8 | 486 | 305 |
+| IIQ | 5 | 3,279 | 637 | | X3F | 2 | 307 | 220 |
+| KDC / MEF | 5 | 8,490–10,273 | 644–708 | | headerless / other | 6 | 5,070–6,884 | 725–743 |
 
-Largest files (decode, ms):
+Uncompressed and packed formats run at memory bandwidth; entropy-coded formats are
+bound by their entropy decoder (parallel over tiles, strips or blocks where the format
+has them, and by speculation over single streams otherwise — see
+[architecture.md](architecture.md)).
 
-| Camera | Codec | MP | FlashRaw | reference | Speedup |
-|---|---|---:|---:|---:|---:|
-| Phase One IQ4 150MP | IIQ L | 154 | 60.2 | 633.0 | 10.5× |
-| Phase One iXM-RS150F | IIQ S | 154 | 43.4 | 319.9 | 7.4× |
-| Hasselblad X2D 100C | uncompressed 3FR | 105 | 14.6 | 20.8 | 1.4× |
-| Hasselblad X2D 100C | Hasselblad LJPEG | 105 | 92.8 | 849.8 | 9.2× |
-| Fujifilm GFX100S | Fuji compressed | 103 | 139.9 | 2544.5 | 18.2× |
-| Fujifilm GFX100S | 16-bit uncompressed | 103 | 13.1 | 16.8 | 1.3× |
-| Panasonic DC-GH6 | RW2 v8 | 100 | 206.0 | 755.9 | 3.7× |
-| Panasonic DC-S5 | RW2 v7 | 97 | 17.7 | 38.4 | 2.2× |
-| Panasonic DC-G9 | RW2 v5 | 82 | 14.1 | 87.1 | 6.2× |
-| Olympus PEN-F high-res | uncompressed | 81 | 18.0 | 227.0 | 12.6× |
+Largest files (ms):
 
-### Where FlashRaw is not faster
+| Camera | Codec | MP | Decode | RAW→RGBA8 |
+|---|---|---:|---:|---:|
+| Phase One IQ4 150MP | IIQ L | 154 | 53.7 | 214.1 |
+| Phase One iXM-RS150F | IIQ S | 154 | 47.0 | 206.3 |
+| Hasselblad X2D 100C | uncompressed 3FR | 105 | 14.3 | 123.4 |
+| Hasselblad X2D 100C | Hasselblad LJPEG | 105 | 90.3 | 200.4 |
+| Fujifilm GFX100S | Fuji compressed | 103 | 155.5 | 255.5 |
+| Fujifilm GFX100S | 16-bit uncompressed | 103 | 13.1 | 123.2 |
+| Panasonic DC-GH6 | RW2 v8 | 100 | 204.3 | 311.6 |
+| Panasonic DC-S5 | RW2 v7 | 97 | 18.2 | 122.0 |
+| Panasonic DC-G9 | RW2 v5 | 82 | 13.8 | 102.4 |
 
-- **Small uncompressed 16-bit files** (Coolpix A1000, GitUp: 1.9–2.0 vs 1.3–1.4 ms). The
-  work is a memcpy-like copy; FlashRaw zero-initialises its output buffer (fresh pages
-  in one process reuse heap memory without zeroing. Zero-initialisation is kept on
-  purpose: it guarantees deterministic output for samples a truncated or partial
-  payload does not cover.
-- **Sequential streams that cannot be split.** Single Huffman streams (CR2, sRAW,
-  single-strip lossless DNG, Kodak DCS, Hasselblad, Nikon, Pentax) are decoded in
-  parallel by speculation (see [architecture.md](architecture.md)). Samsung V2 cannot
-  be: rows start wherever the previous one ended and are predicted from earlier rows,
-  parse/reconstruct pipeline was measured and rejected — it gained 7% on x86 and lost
-  7% on Apple M1).
+Single sequential streams that cannot be split speculatively stay single-threaded:
+Samsung V2 rows start wherever the previous one ended and are predicted from earlier
+rows (a parse/reconstruct pipeline was measured and rejected — it gained 7% on x86 and
+lost 7% on Apple M1).
 
 ## Kernels (criterion, `cargo bench -p flashraw --bench kernels`)
 
@@ -139,5 +130,6 @@ release build stays speed-optimised.
 
 ## Performance regression detection
 
+`tools/bench/run.py ... --baseline <old.jsonl> --tolerance 15` prints per-file
 before/after and fails on slowdowns beyond the tolerance (used by `perf.yml`, which
 benchmarks the PR and `main` on the same runner).

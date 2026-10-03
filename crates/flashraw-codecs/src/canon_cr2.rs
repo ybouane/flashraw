@@ -74,7 +74,8 @@ impl Placement {
     fn put(&mut self, mut src: &[u16], out: &mut [u16]) -> Result<()> {
         while !src.is_empty() {
             // Samples past the end keep following the last slice's geometry below the
-            // the bottom.
+            // image; the stream is rejected once they run more than a row past the
+            // bottom.
             if self.row > self.raw_height {
                 return Err(Error::corrupt("CR2: more samples than the slice layout holds"));
             }
@@ -174,6 +175,7 @@ pub fn decode(
         }
         if place.put(row, out).is_err() {
             // Extra rows beyond the layout are ignored as long as they would land
+            // below the image (only rows far past the end are rejected).
             overflow = true;
         }
         Ok(())
@@ -190,6 +192,7 @@ mod tests {
     use super::*;
     use crate::ljpeg::encoder::encode;
 
+    /// Reference placement: the straightforward per-sample slice formula.
     fn reference(stream: &[u16], w: usize, h: usize, s: Slices) -> Vec<u16> {
         let mut out = vec![0u16; w * h];
         let (mut row, mut col) = (0usize, 0usize);
@@ -229,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn slices_match_reference_formula() {
+    fn slices_match_layout_formula() {
         // 14 x 6 image, JPEG frame of 2 components x 7 wide x 6 high; slices 2 x 5 + 4.
         let (w, h) = (14usize, 6usize);
         let samples = pseudo(w * h);

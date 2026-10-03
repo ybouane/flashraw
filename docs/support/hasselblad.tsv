@@ -1,4 +1,7 @@
 FORMAT	MODE	COMPRESSION	STATUS	NOTES
+3FR	Hasselblad lossless JPEG	hasselblad	verified	H3D, H4D-60, CFV-16, CF-22, CFV-50c: decode
+3FR	uncompressed 16-bit	uncompressed	verified	X1D, X1D II, CFV II 50C, X2D, CFV 100C: decode; masked-area black
+FFF	Hasselblad lossless JPEG	hasselblad	verified	H4D-40/50, H5D-40/50c, H6D-100c MS (1-shot), CFV-50/50c, X1D II, X2D: decode
 FFF	multi-shot (4/6-shot)	-	unsupported	several samples per pixel; no sample
 FFF	Imacon/Flexcolor (Imacon tags 0xB4C3)	-	unsupported	Ixpress Imacon-tag container; no sample
 ARW	Hasselblad Lunar/Stellar/HV	sony	partial	delegated to the Sony decoder

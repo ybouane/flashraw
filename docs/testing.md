@@ -1,6 +1,6 @@
 # Testing FlashRaw
 
-FlashRaw processes untrusted binary input and claims bit-exact compatibility, so the
+FlashRaw processes untrusted binary input and promises exact, stable output, so the
 test strategy has four layers.
 
 ## 1. Unit and property tests (`cargo test --workspace`)
@@ -16,32 +16,27 @@ test strategy has four layers.
   black-level patterns), develop kernel vs. a naive bilinear reference for Bayer and
   X-Trans at several origins, fused RGBA8 vs. two-pass for all 8 orientations.
 
+## 2. The CC0 corpus
 
 ```sh
 python3 tools/corpus/fetch.py            # CC0 raw.pixls.us corpus → corpus/ (~60 GB, resumable)
+cargo build --release -p flashraw-cli
+find corpus -type f -print0 | xargs -0 -n 50 target/release/flashraw verify --json > verify.jsonl
 ```
 
-run out-of-process so crashes are isolated), then compares:
-
-| check | rule |
-|---|---|
-| active_area | `(left_margin, top_margin, width, height)` |
-| cfa | pattern at the visible origin (2x2, 8x2 or X-Trans 6x6) |
-| black | per 2x2 position: `black + cblack[colour] + cblack[6 + pattern]`, ±1 |
-| white | `maximum`, ±0.2% |
-| wb | as-shot multipliers normalised to green, ±1% |
-| pixels | FNV-1a 64 hash of the full u16 buffer, exact |
-
-`diff` re-decodes with both and prints the first differing pixel, the count of
-differing samples and the maximum difference.
-
-and reported as `KNOWN` rather than silently passing.
+`tools/corpus/manifest.tsv` lists the 2,016 files (every make and model available).
+`flashraw verify --json` decodes each file out of process and records geometry, CFA,
+black/white levels, white balance, colour matrix, orientation, the active-area maximum
+and 99.99th percentile, and an FNV-1a 64 hash of the full sensor buffer. New decoders
+and changes are checked against these records, the format documentation and the
+camera database; all 1,980 decodable files must decode, and the remaining 36 must fail
+with a clear error (unsupported codecs, mislabelled files).
 
 ## 3. Regression corpus (`cargo test --release -p flashraw --test regression`)
 
-`tests/regression/*.tsv` lists corpus files with the hash of their full decoded
-(`tools/compat/regression_rows.py`). The test decodes each listed file and fails on
-any change. It is skipped when the corpus is absent.
+`tests/regression/*.tsv` lists 1,965 corpus files with the hash of their full decoded
+buffer (sensor data as stored, without DNG opcode lists). The test decodes each listed
+file and fails on any change. It is skipped when the corpus is absent.
 
 ## 4. Robustness
 
@@ -69,6 +64,7 @@ cargo +nightly fuzz run -O open_decode fuzz/corpus/open_decode -- -max_total_tim
   regression + malformed tests; camera-db validation; WASM builds (SIMD and not);
   GPU feature build; fuzz smoke (30 s per target + regression replay); bench
   compilation.
-  check against the committed baseline; 15-minute fuzzing per target.
+- `nightly.yml`: decodes the full corpus (verify records as artifact), regression and
+  malformed suites over every file; 15-minute fuzzing per target.
 - `perf.yml`: benchmark set on PR vs. main on the same runner; fails beyond the
   tolerance (see [benchmarks.md](benchmarks.md)).

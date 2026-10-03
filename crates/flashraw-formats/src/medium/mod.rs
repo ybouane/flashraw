@@ -1,7 +1,8 @@
 //! Medium-format and small-vendor TIFF raws that share infrastructure with the
 //! Phase One / Hasselblad / Kodak decoders: Epson ERF, Mamiya MEF, Sinar STI/IA.
 //!
-//! geometry conventions, raw 16-bit row readers).
+//! Also hosts helpers shared by the medium-format modules (geometry conventions,
+//! raw 16-bit row readers).
 
 pub mod epson;
 pub mod mamiya;
@@ -9,8 +10,10 @@ pub mod sinar;
 
 use flashraw_core::*;
 
+/// Margin convention for Bayer data: odd top/left margins are rounded up to
 /// even (shrinking the visible size by one), so the visible area always starts on a
-/// vendor geometry has odd margins apply this.
+/// 2x2 CFA boundary and the visible CFA phase is stable. Decoders whose vendor
+/// geometry has odd margins apply this.
 pub fn even_margins(r: Rect) -> Rect {
     let mut r = r;
     if r.y % 2 == 1 && r.height > 0 {
@@ -31,6 +34,7 @@ pub fn cfa_at_origin(p: CfaPattern, vx: u32, vy: u32) -> CfaPattern {
     p.shifted((w - vx as usize % w) % w, (h - vy as usize % h) % h)
 }
 
+/// Fallback colour-table lookup: first entry (table order) whose model prefix
 /// matches case-insensitively. Returns (black hint, white hint, matrix).
 pub fn fallback_table(make: &str, model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
     let m = model.to_ascii_lowercase();
@@ -71,7 +75,8 @@ pub fn read_u16s(src: &[u8], order: ByteOrder, out: &mut [u16]) -> usize {
 }
 
 /// Fill a full `width x height` buffer from uncompressed 16-bit samples in parallel.
-/// strips); an error is returned only when not even one row is present.
+/// Rows past the end of `src` stay zero (short final strips are common in the wild);
+/// an error is returned only when not even one row is present.
 pub fn unpack_u16_rows(
     src: &[u8],
     order: ByteOrder,

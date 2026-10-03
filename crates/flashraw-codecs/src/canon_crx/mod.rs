@@ -193,6 +193,7 @@ impl Converter {
             }
         } else if self.enc_type == 3 && self.planes == 4 {
             // Decorrelated planes are combined after all four are decoded; keep the
+            // 16-bit values (truncated to int16, the plane buffer's sample type).
             for (o, &v) in out.iter_mut().zip(row) {
                 *o = v as i16 as u16;
             }

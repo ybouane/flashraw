@@ -6,8 +6,8 @@ use super::layout::{QStep, Subband, Tile};
 use super::wavelet::{self, Sides};
 use flashraw_core::{Error, Result};
 
-/// Quantisation step for parameter `q` (6 steps per octave). Shift amounts follow the
-/// parameters, which valid files never use.
+/// Quantisation step for parameter `q` (6 steps per octave). Shift amounts follow x86
+/// semantics (masked to 5 bits) for out-of-range parameters, which valid files never use.
 pub(crate) fn q_step(q: i32) -> u32 {
     const TBL: [u32; 8] = [0x28, 0x2D, 0x33, 0x39, 0x40, 0x48, 0, 0];
     let (div, rem) = (q / 6, q % 6);
@@ -90,7 +90,8 @@ impl<'a> BandSource<'a> {
 /// Per-position dequantisation of C-RAW v2 (quantisation map from the tile header).
 fn dequant_v2(line: &mut [i32], b: &Subband, q: &QStep, row: usize) {
     let row = row as i32;
-    // the *end* add-on in the middle range; reproduced as is.)
+    // Row of the quantisation map covering this band line. (The middle range
+    // deliberately subtracts the *end* add-on.)
     let qrow = if row < b.row_start {
         0
     } else if row < b.height as i32 - b.row_end {
@@ -248,6 +249,7 @@ pub(crate) fn decode_plane(
     if levels == 0 {
         let band = bands.first().ok_or_else(|| Error::corrupt("CRX: missing subband"))?;
         if band.data_size == 0 {
+            // An empty band carries no data: the tile stays zero.
             return Ok(());
         }
         let mode =

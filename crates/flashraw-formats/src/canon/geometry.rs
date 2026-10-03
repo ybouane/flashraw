@@ -1,7 +1,8 @@
 //! Canon sensor geometry knowledge keyed by the raw buffer size.
 //!
 //! Canon CR2/CRW files do not reliably describe their optical-black borders, so
-//! buffer dimensions. FlashRaw reproduces that interpretation so that the active
+//! FlashRaw keeps a table of sensor layouts indexed by the raw buffer dimensions. It
+//! gives the active area and the masked areas used for black-level measurement.
 
 /// One sensor layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +19,7 @@ pub struct SensorLayout {
     pub mask_left_end_inset: u32,
     pub mask_right_start: u32,
     pub mask_right_end_inset: u32,
+    /// CFA override as a 2x2 descriptor byte, two bits per position (0 = default RGGB).
     pub filters: u8,
 }
 
@@ -111,6 +113,7 @@ pub static LAYOUTS: &[SensorLayout] = &[
 ];
 
 /// Look up a layout by raw dimensions. When several entries share the dimensions the
+/// last one wins.
 pub fn find(raw_width: u32, raw_height: u32) -> Option<&'static SensorLayout> {
     LAYOUTS.iter().rev().find(|l| l.raw_width == raw_width && l.raw_height == raw_height)
 }
@@ -135,11 +138,13 @@ impl SensorLayout {
     }
 }
 
-/// measures the black level from for Canon decoders: the left border minus a 2-pixel
+/// Optical-black column bands `[x0, x1)` (rows `top..top+height`) the black level is
+/// measured from for Canon files: the left border minus a 2-pixel
 /// guard band on each side, and the right border after a 2-pixel guard band.
 ///
 /// `insets` are the per-layout adjustments (`mask_left_start`, `mask_left_end_inset`,
-/// band's start offset for the left band's start (an upstream quirk reproduced here).
+/// `mask_right_start`, `mask_right_end_inset`). Note the left band's start uses the right
+/// band's start offset (`insets[2]`), not `insets[0]`: the table values are tuned for that.
 pub fn masked_columns(g: &Geometry, raw_width: u32, insets: [u32; 4]) -> [(u32, u32); 2] {
     let left_start = insets[2] + 2;
     let left_end = g.left.saturating_sub(insets[1] + 2);

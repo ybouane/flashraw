@@ -34,18 +34,24 @@ Payload formats:
 Every row starts at an offset from the row table and is an independent bit stream
 (MSB-first in 32-bit little-endian words), so rows decode **in parallel**, and region
 decodes touch only the rows they need (`RandomAccess::Rows`, one `DecodeUnit` per row).
+On a 16-core machine a 150 MP IQ4 IIQ L file decodes in ~90 ms.
 
 ### What FlashRaw reports
 
+* Buffer: the stored sensor data, uncalibrated (regression-hashed for every corpus file).
+* Active area: odd vendor margins are rounded up to even and the size
   shrinks by one. The CFA (RGGB at the vendor's visible origin) is re-anchored at the
   buffer origin, so e.g. P25/P45 report GBRG/GRBG at (0, 0) of the visible area.
 * Black: `t_black` plus the row/column black references as `BlackLevel` row/column deltas
   (each reference has two halves split at 0x222/0x224; FlashRaw uses their sample-weighted
   mean). White: 0xfffc for 14-bit L/S data, 0xffff for 16-bit L and uncompressed data.
+  Black is reported, not subtracted, so the buffer keeps the values as stored and the
+  white level stays the coding maximum.
+* Colour: the camera database's matrix table (first model-prefix match); WB from tag 0x107.
 * Achromatic backs (firmware string contains "Achromatic") are reported as monochrome.
 * **Not applied:** the vendor calibration in the 0x110 block (defect columns/pixels, flat
-  only in `raw2image`/post-processing (`phase_one_correct`), not to `raw_image`; FlashRaw
-  exposes the uncorrected sensor data and the calibration size in metadata
+  fields, quadrant linearisation and multipliers, polynomial curves). These are processing steps, not
+  part of decoding; FlashRaw exposes the uncorrected sensor data and the calibration size in metadata
   (`calibration_bytes`).
 
 ## Leaf MOS
@@ -54,6 +60,7 @@ TIFF without a Make tag, identified by the `PKTS` metadata tag 0x8606 (dispatch 
 `flashraw-formats/src/lib.rs`). The packet tree supplies the back model
 (`ShootObj_back_type`), neutrals (WB), plane count, mosaic pattern and rotation. The CFA is
 evaluated at the end of the packet level that describes the mosaic, with the rotation known
+at that point, which gives e.g. GBRG for Aptus 75 files.
 
 Payloads: one lossless-JPEG tile (compression 99/7), uncompressed big-endian 16-bit (single
 strip/tile or horizontal bands). Leaf JPEG streams carry a DRI interval of whole rows; the
@@ -63,7 +70,8 @@ are scattered back to sensor order. White is 0x3fff (0x1fff for 15-bit streams).
 
 ## Unsupported
 
-  a 4-channel image from the shots; no corpus sample to validate — returns
+* Multi-shot captures (Sinar/Leaf 4-shot, MOS with several samples per pixel, which would be combined
+  into a 4-channel image): no corpus sample to validate — returns
   `UnsupportedCompression`.
 * IIQ payload formats other than 0/1/2/3/5/6/8 (none known).
 * Leaf tiles narrower than the image.

@@ -1,5 +1,7 @@
 //! Micro-benchmarks of hot kernels: bit pumps, Huffman/lossless JPEG decode, packed
 //! unpack (scalar reference vs SIMD), and the develop pass. Synthetic inputs keep the
+//! numbers reproducible without the corpus; end-to-end results are in
+//! docs/benchmarks.md.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use flashraw::low_level::codecs::{ljpeg, packed};

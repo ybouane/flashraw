@@ -1,6 +1,8 @@
 # Epson ERF, Mamiya MEF, Sinar
 
 Modules: `crates/flashraw-formats/src/medium/{epson,mamiya,sinar}.rs` (shared helpers in
+`medium/mod.rs`: margin rounding, CFA re-anchoring, parallel 16-bit unpacking,
+colour-table lookup).
 
 ## Epson ERF (R-D1, R-D1s, R-D1x)
 
@@ -24,4 +26,5 @@ these files, so a 4-byte pattern is read as 2×2. Dispatched for Make "Sinar".
 
 ## Unsupported
 
-* Sinar IA (`parse_sinar_ia`, non-TIFF container with META/RAW0 records): no sample.
+* Sinar four-shot captures (4 tile offsets): no sample.
+* Sinar IA (non-TIFF container with META/RAW0 records): no sample.

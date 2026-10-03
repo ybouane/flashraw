@@ -11,7 +11,7 @@ high-resolution composite) are ordinary ORFs. Makes: `OLYMPUS OPTICAL CO.,LTD`,
 ## Payloads
 
 The sensor image is the largest uncompressed-TIFF IFD (IFD0). Its layout is
-does:
+inferred from bits per sample and the size of the first strip:
 
 | Mode | Detection | Layout |
 |---|---|---|
@@ -23,6 +23,7 @@ does:
 | `uncompressed` | 16 bps, multi-strip (E-1, E-10/20, E-400) | 16-bit words in file byte order, data in the top bits (`>> 4`, `>> 6` for 10-bit bodies) |
 
 Frames with an odd height get one more buffer row, read from the bytes that follow
+the strip.
 
 ### Olympus lossless compression
 
@@ -36,7 +37,7 @@ codes; the code is combined with a smoothed residual (`3 * diff + carry >> 5`).
 The makernote ImageProcessing tags 0x640–0x653 describe the coder parameters;
 every body uses the same values, which FlashRaw folds into a specialised decoder
 (any other parameter set takes a generic path; both are tested against a
-bit-at-a-time reference). 14-bit OM System files use the same coder.
+bit-at-a-time scalar reference). 14-bit OM System files use the same coder.
 
 Performance: the bit stream parse never depends on reconstructed values, so the
 entropy decoding of a band of rows (position-addressed 64-bit window, one load per
@@ -56,14 +57,17 @@ embedded blobs.
 * Valid bits: 0x611 (old: 0x102C) → white level `2^bits - 1`; colour-table and
   per-body maxima (E-300/E-500 unpacked 0xFC3, E-330 unpacked 0xF79, Stylus 1 0xFFF).
 * Crop: 0x612–0x615 → `FrameInfo::crop`.
+* Visible area: trims by raw width (4100 → -4, 4080 → -24,
   10400 → -12, 8200 → -30, 8180 → -10, 9280 → -6 x -6) and by body (E-300/E-500
   -20, E-330 -30, TG-4 -16, TG-5/6/7 -26, Stylus 1 -16).
 * CFA from the EXIF `CFAPattern`; colour matrix from the colour table with
+  model aliases (`E-M1MarkIII` → `E-M1 Mark III`, `SP350` → `SP-350`, ...).
 
 ## Verification
 
 All 112 corpus ORF/ORI files (71 body folders, 2002–2025, incl. 50/80 MP high-res
-all metadata checks passing (`tests/regression/olympus.tsv`). Malformed-input
+composites and 14-bit OM-1 Mark II/OM-3 files) decode and are covered by regression
+hashes (`tests/regression/olympus.tsv`). Malformed-input
 tests cover every layout (`sony::robustness::olympus_*`).
 
 Not covered by samples: C-740UZ/C-770UZ headerless variants and ORFs with

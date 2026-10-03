@@ -32,8 +32,8 @@ pub fn table_from_makernote(meta: &[u8], order: ByteOrder) -> Result<DirectHuff>
     for c in 0..dep {
         let code = rd16(codes_at + 2 * c)? as usize;
         let len = *meta.get(lens_at + c).ok_or_else(|| Error::corrupt("Pentax huffman table truncated"))? as usize;
-        // Fill every 12-bit index that starts with this code (reference semantics,
-        // including its wrap-around and overwrite behaviour for odd tables).
+        // Fill every 12-bit index that starts with this code, including
+        // wrap-around and overwrite behaviour for odd tables.
         let span = if len >= 13 { 0 } else { 4096 >> len };
         let end = (code + span).wrapping_sub(1) & 4095;
         let mut i = code;

@@ -1,10 +1,14 @@
 FORMAT	MODE	COMPRESSION	STATUS	NOTES
+DCR	65000 CFA	kodak-65000	verified	DCS Pro 14N/14nx/SLR/c/SLR/n, DCS760C: decode; linearisation curve applied; parallel rows
 DCR	65000 RGB / YCbCr	kodak-rgb, kodak-ycbcr	experimental	decoded to 3-sample RGB; no corpus sample
 DCR	compression 262	-	unsupported	no sample
 DCS	lossless JPEG + curve	lossless-jpeg	verified	DCS520C, DCS560C
 DCS	8-bit + curve	uncompressed	verified	DCS460D, EOS DCS 1, EOS DCS 3
 KDC	12-bit packed	uncompressed	verified	EasyShare Z981/Z990/Z1015, P712, P880
 KDC	DC120	kodak-dc120	verified	2 samples
+KDC	DC120 JPEG raw	-	unsupported	JPEG-compressed raw data not decoded
+KDC	RADC (DC40/DC50)	other	verified	DC50 sample decodes
 RAW	C330/C603 CFA dumps	uncompressed	verified	8-bit through stored or gamma curve
+RAW	C330/C603 YRGB dumps	kodak-ycbcr	verified	YCbCr converted to RGB (cpp 3)
 RAW	12MP / KAI-0340 dumps	uncompressed	experimental	size-identified; no sample
 RAW	DC20/DC25/DCS200 dumps	-	unsupported	no sample

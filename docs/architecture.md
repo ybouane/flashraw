@@ -46,10 +46,14 @@ nearly all infrastructure.
 **Sensor-domain output.** `RawFrame` holds samples exactly as decoded (u16, or f32
 for floating-point DNG), the full buffer including masked borders, plus everything
 needed to interpret them. Development (demosaic, colour) is optional and lives
+outside the decoders. This keeps decoding exact and lets tests pin full buffers
+bit-for-bit (regression hashes).
 
 **One coordinate system.** CFA patterns, black-level patterns, active area, crop and
 masked areas are all expressed in full-buffer coordinates anchored at `(0, 0)`.
-visible origin) are converted at parse time, so consumers never deal with offsets.
+Formats that anchor elsewhere (DNG anchors at ActiveArea; many maker notes describe the
+CFA at the visible origin) are converted at parse time, so consumers never deal with
+offsets.
 
 **Borrowing and zero-copy.** Decoders borrow `&'a [u8]` from the input. `FlashRaw`
 can own its input (`Vec`, `Arc<[u8]>`, mmap) and still hand the decoder a borrow via

@@ -38,7 +38,7 @@ fn mat_inv(m: &[[f32; 3]; 3]) -> Option<[[f32; 3]; 3]> {
     ])
 }
 
-/// rows of camera←sRGB are normalised to 1 so white balance maps white to white).
+/// Camera RGB → linear sRGB matrix from an XYZ→camera matrix (rows of camera←sRGB are normalised to 1 so white balance maps white to white).
 pub fn camera_to_srgb(cm: &ColorMatrices) -> [[f32; 3]; 3] {
     let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
     let Some(m) = cm.preferred() else { return identity };

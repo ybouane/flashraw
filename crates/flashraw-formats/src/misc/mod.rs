@@ -58,6 +58,7 @@ pub fn open_headerless<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn
     Err(Error::UnsupportedFormat("no recognisable header".into()))
 }
 
+/// Flip code (bit 0: horizontal, bit 1: vertical, bit 2: transpose) → orientation.
 pub(crate) fn orientation_from_flip(flip: u32) -> Orientation {
     match flip {
         3 => Orientation::Rotate180,

@@ -2,7 +2,8 @@
 //!
 //! TIFF containers whose CFA image (SubIFD, photometric 32803) is either Hasselblad's
 //! lossless-JPEG variant ([`flashraw_codecs::hasselblad`], TIFF compression 7) or
-//! plain little-endian 16-bit samples (newer X1D/X2D/CFV 3FR). Metadata follows
+//! plain little-endian 16-bit samples (newer X1D/X2D/CFV 3FR). Metadata: the maker
+//! note gives the sensor and coating codes (0x0011/0x0016), which
 //! select the sensor geometry of uncropped files and the colour-matrix family
 //! ("50-15-Coated5-3FR"...); white balance is the DNG-style AsShotNeutral; black is
 //! the BlackLevel tag (or measured from DNG-style MaskedAreas when present).
@@ -45,6 +46,7 @@ fn parse_makernote(data: &[u8], tiff: &Tiff) -> Maker {
     m
 }
 
+/// Sensor family, derived from the normalised model and the maker-note sensor codes.
 #[derive(Debug, Clone)]
 struct Sensor {
     code: u32,
@@ -159,6 +161,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         return Err(Error::unsupported_compression("Hasselblad", "multi-shot capture"));
     }
     let mn = parse_makernote(data, &tiff);
+    // Strip the make prefix and the "/initiator" suffix of the model tag.
     let model = meta.model.trim().trim_start_matches("Hasselblad").trim().to_string();
     let csi = model.split('/').next().unwrap_or("").to_string();
     let sensor = classify(&mn, w, h, &csi);
@@ -182,6 +185,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         (c, b) => return Err(Error::unsupported_compression("Hasselblad", format!("compression {c}, {b} bits"))),
     };
 
+    // Geometry: full readouts of known sensors carry fixed borders.
     let mut vis = Rect::full(w, h);
     let mut cfa_vis = CfaPattern::RGGB;
     if sensor.uncropped {
@@ -250,6 +254,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     if let Some(n) = tiff.find_entry(tags::AS_SHOT_NEUTRAL) {
         info.white_balance = WhiteBalance::from_neutral(&n.f32s());
     }
+    // Colour: the per-sensor-family fallback table, then the file's ColorMatrix1.
     let key = sensor.family.as_ref().map(|f| format!("{f}-{}", if is_3fr { "3FR" } else { "FFF" }));
     if let Some(k) = &key {
         meta.set_extra("hasselblad_sensor", k.clone());

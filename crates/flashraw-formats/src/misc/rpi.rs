@@ -4,7 +4,8 @@
 //! The block sits at a sensor/mode-specific distance from the end of the file; the
 //! header at `BRCM + 0xB0` gives width, height, right padding, Bayer order and the
 //! packing (8/10/12/14/16 bits). Rows are padded to 32 bytes. IMX219 files decode
-//! 12-bit IMX477).
+//! as "Broadcom RPi IMX219" with black 66; the other sensors use black 16 (OV5647) or 256
+//! (12-bit IMX477).
 
 use crate::common::*;
 use flashraw_codecs::misc_packed;
@@ -13,7 +14,7 @@ use flashraw_core::*;
 
 /// Distances of the `BRCM` block from the end of the file for known sensor modes.
 const TRAILERS: &[usize] = &[
-    0x9cb600, 0x61b800, // the decoder default build: IMX219 8 MP, OV5647 5 MP
+    0x9cb600, 0x61b800, // IMX219 8 MP, OV5647 5 MP
     10_270_208, 2_678_784, 2_628_608, 1_963_008, 1_233_920, 445_440, // IMX219 modes
     3_375_104, 4_751_360, 18_711_040, 1_015_808, // IMX477 modes
     6_404_096, 2_717_696, 1_625_600, // OV5647 modes
@@ -21,6 +22,7 @@ const TRAILERS: &[usize] = &[
 
 #[derive(Debug, Clone, Copy)]
 struct Brcm {
+    /// Samples decoded per row (the visible width, except for the wider 5 MP OV5647 layout).
     raw_width: usize,
     width: usize,
     height: usize,
@@ -97,6 +99,7 @@ fn open_brcm<'a>(data: &'a [u8], mut b: Brcm, opts: &OpenOptions) -> Result<Box<
     }
     let exif_model = meta.model.trim().to_string();
     let lower = exif_model.to_ascii_lowercase();
+    // Model names and black levels per sensor.
     let (model, black) = if lower.starts_with("rp_imx219") || lower.starts_with("rp_imx") && b.bits == 10 {
         ("RPi IMX219", 66.0)
     } else if lower.starts_with("ov5647") {
@@ -118,6 +121,7 @@ fn open_brcm<'a>(data: &'a [u8], mut b: Brcm, opts: &OpenOptions) -> Result<Box<
     classify_previews(&mut meta.previews);
 
     if model.starts_with("RPi OV5647") && b.bits == 10 && b.width == 2592 {
+        // The 5 MP OV5647 frame is decoded 2611 samples wide (into the row padding).
         b.raw_width = 2611.min(b.stride * 4 / 5);
     }
     let mut info = FrameInfo::new(b.raw_width as u32, b.height as u32, b.bits as u8);
@@ -170,6 +174,7 @@ fn decode_rows(src: &[u8], b: Brcm, out: &mut [u16], parallel: bool) {
         return misc_packed::mipi10_rows(src, w, h, stride, out, parallel);
     }
     par::for_each_row_chunk_bounded(&mut out[..w * h], w, par::memory_bound_workers(), parallel, |first, chunk| {
+        // The row buffer holds the row twice; groups reading past the stride
         // (OV5647's 2611-sample rows) pick up the start of the row again.
         let mut tmp = vec![0u8; 2 * stride + 8];
         for (i, row) in chunk.chunks_exact_mut(w).enumerate() {
@@ -195,6 +200,7 @@ fn decode_rows(src: &[u8], b: Brcm, out: &mut [u16], parallel: bool) {
                     }
                 }
                 14 => {
+                    // Raspberry Pi RAW14 bit layout: 4 samples in 7 bytes.
                     for (px, d) in row.chunks_mut(4).zip(tmp.chunks_exact(7)) {
                         let v = [
                             ((d[0] as u16) << 6) | (d[4] >> 2) as u16,

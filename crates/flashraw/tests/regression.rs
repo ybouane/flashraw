@@ -1,5 +1,6 @@
 //! Corpus regression test: every row of `tests/regression/*.tsv` names a corpus file
-//! and the FNV-1a hash of its full decoded sensor buffer (verified pixel-equivalent
+//! and the FNV-1a hash of its full decoded sensor buffer (the decode was validated
+//! when the row was added).
 //!
 //! Runs when the corpus is present (`$FLASHRAW_CORPUS` or `<repo>/corpus`); fetch it with
 //! `tools/corpus/fetch.py`. Set `FLASHRAW_REGRESSION_FILTER=substring` to narrow.

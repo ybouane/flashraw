@@ -2,13 +2,14 @@
 //! linearisation curve, lossless JPEG), KDC (EasyShare / P-series 12-bit packed,
 //! DC120 rotated rows, DC40/DC50 RADC) and the header-less C330/C603 dumps.
 //!
+//! Output is the linearised raw buffer: stored linearisation curves (TIFF tag 0x0123 /
 //! DNG LinearizationTable / Kodak IFD tag 0x090D) are applied by the loaders, white
 //! is the curve's value at 12 bits (or per-camera table values), and white balance
 //! comes from the Kodak IFD (tag 0x8290) as-shot multipliers. The YCbCr compact
-//! in a 4-sample buffer with an always-zero fourth channel.
+//! cameras (C330/C603 "YRGB") decode to 3-sample RGB (there is no fourth channel to carry).
 
 use crate::common::*;
-use crate::medium::{cfa_at_origin, even_margins, matrix_from, fallback_table};
+use crate::medium::{cfa_at_origin, even_margins, fallback_table, matrix_from};
 use flashraw_codecs::kodak as kc;
 use flashraw_core::tiff::{Entry, Ifd, Tiff, tags};
 use flashraw_core::*;
@@ -24,6 +25,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     open_headerless(data, opts).unwrap_or_else(|| Err(Error::UnsupportedFormat("unknown Kodak dump size".into())))
 }
 
+/// Short Kodak model name ("KODAK EasyShare Z981 Digital Camera" -> "EasyShare Z981").
 fn kodak_model(raw: &str) -> String {
     let mut m = raw.trim().to_string();
     let lower = m.to_ascii_lowercase();
@@ -48,6 +50,7 @@ fn kodak_model(raw: &str) -> String {
     m
 }
 
+/// Normalised Kodak model (drives table lookups): drop "EasyShare"/"ZOOM".
 fn normalized_model(model: &str) -> String {
     model
         .split_whitespace()
@@ -130,6 +133,7 @@ fn parse_kodak_ifd(data: &[u8], tiff: &Tiff) -> KodakIfd {
     k
 }
 
+/// Linearisation table: the stored curve extended to 16 bits, and its white value.
 fn linear_curve(v: &[u16]) -> (Vec<u16>, u32) {
     let mut c = v.to_vec();
     let last = *c.last().unwrap_or(&0);
@@ -417,6 +421,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     flashraw_core::exif::read_ifd0(ifd0, &mut meta);
     let model = kodak_model(&meta.model);
     let norm = normalized_model(&model);
+    // The database is keyed on the EXIF strings; report the short model names otherwise.
     let cam = db_lookup(&mut meta, "");
     meta.make = "Kodak".into();
     meta.model = model.clone();

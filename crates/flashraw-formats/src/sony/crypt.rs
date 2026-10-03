@@ -40,6 +40,7 @@ impl SonyCipher {
     }
 
     /// XOR the key stream into `data`, one word per complete 4-byte group (a trailing
+    /// partial group is left untouched, as the format only encrypts whole words).
     pub fn apply(&mut self, data: &mut [u8]) {
         for chunk in data.chunks_exact_mut(4) {
             let k = self.next_word().to_be_bytes();

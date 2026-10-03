@@ -25,6 +25,7 @@ pub const CANON_UUID: [u8; 16] =
 pub const PREVIEW_UUID: [u8; 16] =
     [0xea, 0xf4, 0x2b, 0x5e, 0x1c, 0x98, 0x4b, 0x88, 0xb9, 0xfb, 0xb7, 0xdc, 0x40, 0x6e, 0x4d, 0x16];
 
+/// Upper bound on table entries accepted from a track (guards against corrupt sample tables).
 const MAX_ENTRIES: u32 = 1_000_000;
 
 /// What a track carries.
@@ -166,6 +167,7 @@ impl<'a> Cr3<'a> {
         }
     }
 
+    /// The raw track to decode (the primary image): the first of the tracks with
     /// the largest `bits * width * height`.
     pub fn main_raw(&self) -> Option<(usize, &Track, &CrxHeader)> {
         let mut best: Option<(usize, &Track, &CrxHeader, u64)> = None;
@@ -180,6 +182,7 @@ impl<'a> Cr3<'a> {
         best.map(|(i, t, h, _)| (i, t, h))
     }
 
+    /// Number of raw images in the file (dual-pixel / burst).
     pub fn raw_count(&self) -> usize {
         let Some((_, t, h)) = self.main_raw() else { return 0 };
         let bc = h.bits as u64 * h.width as u64 * h.height as u64;

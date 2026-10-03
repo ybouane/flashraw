@@ -1,3 +1,6 @@
 FORMAT	MODE	COMPRESSION	STATUS	NOTES
+ERF	12-bit padded packed (32769)	uncompressed	verified	R-D1, R-D1s, R-D1x: decode; maker-note black and WB
+MEF	12-bit packed	uncompressed	verified	Mamiya ZD sample decodes
+STI	Sinar 16-bit	uncompressed	verified	Sinarback eVolution 75 sample decodes
 STI	Sinar four-shot	-	unsupported	no sample
 IA	Sinar IA container	-	unsupported	no sample

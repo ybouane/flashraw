@@ -1,4 +1,27 @@
 # format	mode	compression	status	notes
+RAW	Canon CHDK headerless CRW (file-size table sizes)	packed 10/12-bit	verified	26 corpus files decode; black from optical-black columns
+RAW	Canon CHDK headerless CRW (CHDK sizes, e.g. IXY 220F)	uncompressed packed	verified	decodes
+RAW	Canon PowerShot G7 X CHDK	packed 12-bit	experimental	no verified sample; geometry/black from the camera's CHDK DNG
+RAW	GITUP GIT2/GIT2P, SJCAM M20/SJ6, Xiaomi Yi (16-bit)	uncompressed 16-bit	verified	decodes
+RAW	Gitup G3 Duo 24000000 bytes (same size as a Samsung WB550 entry)	uncompressed 16-bit	verified	decodes
+RAW	SJCAM SJ6 LEGEND 12-bit (18325296 / 15972480 bytes)	uncompressed LSB packed	verified	decodes
+RAW	SJCam 5000X Elite ("Kodak 12MP" size)	kodak-ycbcr	verified	YCbCr 4:2:0 → RGB (cpp 3)
+RAW	Kodak C330 YRGB (4:2:2, optional 32-row gaps)	kodak-ycbcr	verified	decodes
+RAW	Kodak C603/C643 YRGB	kodak-ycbcr	verified	decodes
+RAW	Kodak C603/C643 CFAI/CCDI 8-bit	uncompressed 8-bit + curve	verified	file curve or a fixed gamma curve
+RAW	Pentax Optio S4	packed 12-bit	verified	decodes
+MDC	Minolta RD-175	rd175 interleave	verified	decodes
+RAW	ImBack ImB35mm	uncompressed 8-bit	verified	decodes
+RAW	Paralenz Dive Camera / +	uncompressed 16-bit	verified	decodes
+RAW	Xiro Xplorer V	uncompressed LSB packed 10-bit	verified	decodes
+RAW	other file-size table entries (AVT, Agfa, Android dumps, Casio, Nikon, Sony, ...)	per table	experimental	same loaders; no corpus sample
+JPEG+BRCM	Raspberry Pi IMX219 (RAW10)	mipi raw10	verified	decodes; WB from maker note
+JPEG+BRCM	Raspberry Pi IMX477 (RAW12)	raw12	verified	decodes
+JPEG+BRCM	Raspberry Pi OV5647 (RAW10)	mipi raw10	verified	decodes (2611-sample rows)
 JPEG+BRCM	Raspberry Pi RAW8/RAW14/RAW16 modes	raw8/14/16	experimental	no corpus sample
+ARI	ARRI ALEXA (Mini)	12-bit msb32 packed	verified	decodes
 TIFF	TIFF/EP CFA from unknown makes	uncompressed / lossless JPEG	experimental	standards-based fallback; no corpus sample reaches it with a CFA pattern
+GPR	GoPro HERO5-HERO11, FUSION (DNG compression 9)	vc5	verified	17/17 corpus files decode
+LRI	Light L16	-	unsupported	multi-module container with proprietary packing
+CAM	Casio QV-11 / QV-5000SX	-	unsupported	processed CAM image format, not sensor data
 CRW	Canon A620 Portulaca_1216.CRW	-	unsupported	file is a bzip2 archive, not a raw

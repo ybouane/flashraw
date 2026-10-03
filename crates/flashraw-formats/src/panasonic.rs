@@ -7,6 +7,7 @@
 //! format-8 coding parameters (0x39–0x48) and the payload offset (0x118).
 //!
 //! Payload codecs live in [`flashraw_codecs::panasonic`]. Geometry and calibration
+//! follow fixed conventions: the active area is
 //! `(0, 0, left_border + right_border, bottom_border + 12)` clipped to the buffer (plus
 //! a small per-size table); the sensor borders themselves become [`FrameInfo::crop`].
 
@@ -26,10 +27,12 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     open_tiff(data, tiff, opts)
 }
 
+/// Normalised (Panasonic) model name.
 fn base_model(model: &str) -> &str {
     flashraw_camera_db::base_model("Panasonic", model)
 }
 
+/// Fallback colour-table entry: first entry in table order whose prefix starts the model.
 fn fallback_table(model: &str) -> Option<&'static flashraw_camera_db::FallbackMatrix> {
     let m = model.to_ascii_uppercase();
     flashraw_camera_db::MATRICES.iter().find(|t| {
@@ -154,6 +157,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             .get(off as usize..)
             .filter(|b| !b.is_empty())
             .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
+        // Block split used by all RW2 files carrying tag 0x118.
         let split = 0x2008;
         match version.unwrap_or(4) {
             4 => (Payload::V4(BlockedStream::new(body, split)?), Compression::Panasonic, "v4"),
@@ -169,11 +173,13 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             .get(off as usize..)
             .filter(|b| !b.is_empty())
             .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
+        // Packed when the remaining size matches 8/7 bytes per pixel.
         if raw_w >= 7 && (body.len() / (raw_w as usize * 8 / 7)) == raw_h as usize {
             (Payload::V4(BlockedStream::new(body, 0)?), Compression::Panasonic, "v4")
         } else if (u16_tag(ifd, 0x0a).unwrap_or(0) == 12 || ifd.bps() == 12)
             && body.len() < raw_w as usize * raw_h as usize * 2
         {
+            // TIFF BitsPerSample 12 selects the 12-bit packed reader.
             (Payload::Packed12(body), Compression::Uncompressed, "packed12")
         } else {
             (Payload::Unpacked(body), Compression::Uncompressed, "unpacked")
@@ -186,6 +192,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     meta.set_extra("panasonic_raw_format", version);
     meta.set_extra("encoding", mode_name);
 
+    // Geometry (active area).
     let (top_b, left_b, bottom_b, right_b) =
         (u16_tag(ifd, 0x04), u16_tag(ifd, 0x05), u16_tag(ifd, 0x06), u16_tag(ifd, 0x07));
     let mut width = match (left_b, right_b) {
@@ -231,11 +238,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 
     // CFA (tag 0x09: 1 = RGGB, 2 = GRBG, 3 = GBRG, 4 = BGGR at the buffer origin).
     let mut cfa_code = u16_tag(ifd, 0x09).unwrap_or(1);
-    if base_model(&meta.model).eq_ignore_ascii_case("DC-LX100M2")
-        && raw_w == 4816
-        && raw_h == 3568
-        && cfa_code == 3
-    {
+    if base_model(&meta.model).eq_ignore_ascii_case("DC-LX100M2") && raw_w == 4816 && raw_h == 3568 && cfa_code == 3 {
         cfa_code = 4;
     }
     let cfa = match cfa_code {
@@ -307,6 +310,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     };
     info.white_balance = wb;
 
+    // Colour: the fallback colour table first, camera database second.
     if let Some(cm) = table.and_then(|t| {
         ColorMatrix::new(Illuminant::D65, 3, t.color_matrix.iter().take(9).map(|&v| v as f32 / 10000.0).collect())
     }) {
@@ -359,6 +363,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     Ok(Box::new(dec))
 }
 
+/// Aspect-ratio mode guessed from the buffer size (camera-database vocabulary).
 fn guess_mode(w: u32, h: u32) -> &'static str {
     let ratio = w as f32 / h.max(1) as f32;
     let mut best = ("16:9", (ratio - 16.0 / 9.0).abs());
@@ -428,7 +433,7 @@ impl Rw2<'_> {
 }
 
 /// Early 12-bit bodies (FZ8/FZ18): LSB-first (little-endian) packed rows, either tight or with one
-/// `load_flags & 1` expects. The layout is chosen from the payload size.
+/// padding byte after every 15 data bytes (10 pixels). The layout is chosen from the payload size.
 #[allow(clippy::too_many_arguments)]
 fn unpack_packed12(
     d: &[u8],
@@ -542,6 +547,7 @@ mod tests {
         assert_eq!(info.cfa, Some(CfaPattern::GRBG));
         assert_eq!(info.white_level.max(), 16383 - 64);
         assert_eq!(info.orientation, Orientation::Rotate90);
+        // Sensor borders become the crop; the border-sum convention gives the active area.
         assert_eq!(info.crop, Rect::new(4, 2, 64, 28));
         assert_eq!(info.active_area, Rect::new(0, 0, 72, 32));
         // Black per colour on a GRBG pattern.

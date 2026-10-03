@@ -146,6 +146,7 @@ fn decode_422(
 }
 
 /// Convert one YCbCr sample (chroma centred on 16383) to clamped 16-bit RGB, using
+/// single-precision arithmetic in a fixed evaluation order (results are bit-exact).
 #[inline]
 pub fn to_rgb(y: u16, cb: u16, cr: u16) -> [u16; 3] {
     const CDELTA: i32 = 16383;

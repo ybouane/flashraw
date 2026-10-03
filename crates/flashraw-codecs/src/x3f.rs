@@ -13,6 +13,7 @@
 //!   difference codes per row (independent rows via a row-offset table), each
 //!   symbol mapped through a 1024-entry difference table. Running sums are 16-bit
 //!   signed; if any sum goes negative the whole image is offset so the minimum is
+//!   zero.
 //! - **Uncompressed "simple"** variant of the above: one 32-bit word per pixel
 //!   holding three 10-bit mapping-table indices.
 //!

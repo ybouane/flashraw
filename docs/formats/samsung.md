@@ -24,7 +24,12 @@ are handled by the DNG decoder.
 |---|---|
 | makernote | plain IFD, offsets relative to the makernote |
 | white balance | `0xA021` (RGGB) minus the per-file keys of `0xA020` |
-| colour matrix | camera-database colour table, camera database otherwise |
+| black level | `0xA028` (RGGB) minus keys; NX5/NX10/NX11/NX100 measure the optical-black columns left and right of the visible area (integer per-colour means); NX1/NX500 default to `1 << (bps - 7)` |
+| white level | `(1 << bps) - 1` or the camera-database colour-table maximum (EX1 15872, EX2F 2047) |
+| visible area / CFA | per-model/size rules; CFA overrides re-anchored at the buffer origin |
+| colour matrix | camera-database colour table, other camera-database entries otherwise |
 
 ## Verification
 
+All 27 SRW files in the corpus (every compression above) decode and are covered by
+regression hashes (`tests/regression/samsung.tsv`).

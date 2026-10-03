@@ -43,7 +43,7 @@ jobs:
       - name: Native unit tests of the bindings
         working-directory: .
         run: cargo test -p flashraw-wasm
-      - name: Native CLI (reference hashes for the WASM tests)
+      - name: Native CLI (expected hashes for the WASM tests)
         working-directory: .
         run: cargo build --release -p flashraw-cli
       - name: Clippy (single-threaded, WebGPU and threaded bindings)

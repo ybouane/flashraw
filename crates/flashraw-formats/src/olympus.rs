@@ -92,7 +92,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let model = meta.model.trim().to_string();
     let valid_bits = mn.valid_bits.filter(|b| (8..=16).contains(b));
 
-    // of the first strip).
+    // Payload selection by bits per sample and the size of the first strip.
     let payload = if bytes * 5 == area * 8 {
         Payload::Packed12Padded
     } else {
@@ -188,6 +188,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     classify_previews(&mut meta.previews);
 
+    // Read from the first strip to the end of the file (the extra
     // row of odd-height frames comes from the bytes after the strip).
     let src = data.get(offset..).ok_or_else(|| Error::corrupt("ORF: strip offset beyond file"))?;
     let (w, h) = (raw_w as usize, buf_h as usize);
@@ -318,6 +319,7 @@ fn require(src: &[u8], n: usize) -> Result<()> {
     Ok(())
 }
 
+/// Visible size: fixed trims of the sensor readout per body.
 fn visible_size(model: &str, raw_w: u32, h: u32, payload: &Payload) -> (u32, u32) {
     let (mut w, mut h) = (raw_w, h);
     match raw_w {
@@ -344,7 +346,7 @@ fn visible_size(model: &str, raw_w: u32, h: u32, payload: &Payload) -> (u32, u32
     (w.min(raw_w), h)
 }
 
-/// Reference model for Olympus EXIF names that differ from marketing names (camera database aliases).
+/// Canonical model for Olympus EXIF names that differ from marketing names (camera database aliases).
 fn normalized_model(model: &str) -> &str {
     flashraw_camera_db::base_model("Olympus", model)
 }

@@ -14,6 +14,7 @@
 //! - **Compressed** (all cameras since the PowerShot G1/Pro90 and EOS D30): Canon's
 //!   block Huffman coder (`flashraw_codecs::canon_crw`), 10-bit samples, optionally
 //!   with an uncompressed plane of the 2 low bits giving 12-bit samples. The plane's
+//!   presence is detected with a byte-stuffing heuristic; the compressed stream
 //!   starts 514 bytes after the raw record (plus the low-bit plane when present).
 //! - **Packed 10-bit** (PowerShot A5, A50, Pro70): 16-bit little-endian words,
 //!   MSB-first, CMYG sensors.
@@ -23,8 +24,11 @@
 //! ## Geometry, levels, colour
 //!
 //! Buffer dimensions come from the sensor-info record (0x1031) and the visible
+//! geometry from a table keyed by the raw size (the files do not describe their borders). The
+//! black level is measured from the left/right optical-black columns after decoding; the white
 //! level is 1023 for 10-bit files, 4095 for 12-bit files unless the camera's table
-//! per-generation sources: ColorInfo2 (0x102c; G1/Pro90, G2/S30/S40), ColorBalance
+//! value is lower (EOS D60/10D/300D: 4000). As-shot white balance comes from per-generation
+//! sources: ColorInfo2 (0x102c; G1/Pro90, G2/S30/S40), ColorBalance
 //! (0x10a9; EOS D60/10D/300D) and the ColorInfo1 white-balance tables (0x0032),
 //! selected by the white-balance index of the shot-info record (0x102a).
 
@@ -44,6 +48,7 @@ pub fn probe(data: &[u8]) -> bool {
     data.len() >= 26 && (data.starts_with(b"II") || data.starts_with(b"MM")) && &data[6..14] == SIGNATURE
 }
 
+// Standard white-balance indices used by Canon's tables.
 const WBI_UNKNOWN: u8 = 0;
 const WBI_DAYLIGHT: u8 = 1;
 const WBI_FLUORESCENT: u8 = 2;
@@ -97,6 +102,7 @@ const CANON_WBI2STD: [u8; 24] = [
     WBI_AUTO1,
 ];
 
+/// Out-of-range indices (including "no shot info seen", -1) map to Auto.
 fn wbi2std(wbi: i32) -> u8 {
     usize::try_from(wbi).ok().and_then(|i| CANON_WBI2STD.get(i).copied()).unwrap_or(WBI_AUTO)
 }
@@ -172,6 +178,7 @@ struct Ciff {
     shot_order: Option<u32>,
     unique_id: Option<u32>,
     color_space: Option<&'static str>,
+    /// As-shot multipliers `[R, G, B, G2]` (`[0] <= 0` = unknown).
     cam_mul: [f32; 4],
     /// White-balance presets by standard index.
     presets: Vec<(u8, [f32; 4])>,
@@ -180,6 +187,7 @@ struct Ciff {
     heaps: u32,
 }
 
+/// Per-heap white-balance parsing state (local to each heap: a sub-heap does not inherit it).
 struct HeapWb {
     wbi: i32,
     appendix_a: bool,
@@ -249,6 +257,7 @@ impl Ciff {
         let table = off.saturating_add(self.cursor(data, end - 4).u32()? as usize);
         let mut c = self.cursor(data, table);
         let nrecs = c.u16()? as usize;
+        // Plausibility limits: reject absurd record counts, nesting depth and overruns.
         if nrecs == 0 || (nrecs as u32 | depth) > 127 || off + nrecs * 10 > data.len() {
             return Ok(());
         }
@@ -456,6 +465,7 @@ impl Ciff {
                 self.cam_mul[rggb(i)] = 1024.0 / c.u16()?.max(1) as f32;
             }
             if wb.wbi == 0 {
+                // Camera was on auto WB: the table holds no usable as-shot value, so report none.
                 self.cam_mul[0] = -1.0;
             }
             return Ok(());
@@ -539,7 +549,7 @@ fn leading_float(s: &str) -> f32 {
     s[..end].trim_end_matches('.').parse().unwrap_or(0.0)
 }
 
-/// decoders' Canon table): `raw_w, raw_h, left, top, right trim, bottom trim, and the
+/// Geometry of the CRW-era sensors, keyed by the full sensor size: `raw_w, raw_h, left, top, right trim, bottom trim, and the
 /// left/right masked-column adjustments`.
 struct SensorGeom {
     raw: (u32, u32),
@@ -580,6 +590,8 @@ enum Payload {
     Canon600,
 }
 
+/// 32-bit CFA descriptor (`filters`, two bits per cell over 8 rows x 2 columns) + colour letters (at the
+/// visible-area origin) → a pattern
 /// anchored at the buffer origin.
 fn cfa_from_filters(filters: u32, desc: [CfaColor; 4], left: u32, top: u32) -> Option<CfaPattern> {
     let fc = |row: usize, col: usize| (filters >> ((((row << 1) & 14) | (col & 1)) << 1)) & 3;
@@ -633,7 +645,7 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
     let short_model = strip_make_prefix(&ciff.model, "Canon");
     let model_is = |names: &[&str]| names.iter().any(|n| short_model.eq_ignore_ascii_case(n));
 
-    // ---- Geometry (reference-decoder compatible) ----
+    // ---- Geometry ----
     let (mut raw_w, mut raw_h) = ciff.sensor.unwrap_or((0, 0));
     let (mut width, mut height) = ciff.image_size;
     let (mut left, mut top) = (0u32, 0u32);
@@ -711,7 +723,7 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
     let bits: u8 = if payload == (Payload::Compressed { lowbits: true }) { 12 } else { 10 };
 
     // ---- Levels ----
-    // Reference-decoder colour/level table, by canonical model; regional aliases (e.g.
+    // Colour/level table, by canonical model; regional aliases (e.g.
     // "EOS Digital Rebel") fall back to the base model's entry ("EOS 300D").
     let matrix = flashraw_camera_db::find_matrix(&meta.canonical_make, &meta.canonical_model)
         .or_else(|| cam.and_then(|c| flashraw_camera_db::find_matrix(c.canonical_make, c.canonical_model)));
@@ -758,6 +770,8 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
                 info.black_level = BlackLevel::pattern2x2([at(0, 0), at(1, 0), at(0, 1), at(1, 1)]);
             } else {
                 // Optical-black columns left and right of the image, two columns in from
+                // each edge.
+                // The table's first mask value is superseded by the second.
                 let (_, m03, m11, m13) = mask;
                 let start = m11 + 2;
                 masked(start, left.saturating_sub(m03 + 2));
@@ -775,6 +789,7 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
         }
     }
 
+    // ---- White balance (`cam_mul[0] <= 0` = unknown) ----
     let colors = if desc == cmyg { 4 } else { 3 };
     let m = ciff.cam_mul;
     let wb_ok = m[..colors].iter().all(|&v| v > 0.001) && {
@@ -962,7 +977,8 @@ fn canon600_unpack(src: &[u8], w: usize, rows: usize, out: &mut [u16]) -> Result
     Ok(())
 }
 
-/// PowerShot 600 black: mean of the masked columns right of the image, minus 4 (the
+/// PowerShot 600 black: mean of the masked columns right of the image, minus 4 (a fixed
+/// calibration offset for this sensor).
 fn canon600_black(data: &[u8], raw_off: usize, raw_w: u32, rows: u32, width: u32) -> Option<u32> {
     let (w, rows) = (raw_w as usize, rows as usize);
     let src = data.get(raw_off..raw_off.checked_add(rows * CANON600_ROW_BYTES)?)?;

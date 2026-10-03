@@ -1,3 +1,4 @@
+//! Conventions shared by the Nikon, Pentax and Samsung
 //! decoders: raw IFD selection, white-balance plausibility, colour-table lookup,
 //! orientation and visible-area normalisation.
 
@@ -86,6 +87,7 @@ pub(crate) fn file_orientation(tiff: &Tiff) -> Orientation {
 }
 
 /// As-shot multipliers (R, G, B, G2) → normalised white balance, rejecting the values
+/// that are implausible (non-positive, or a > 100:1 spread).
 pub(crate) fn wb_from_cam_mul(m: [f32; 4]) -> Option<WhiteBalance> {
     if m[..3].iter().any(|&v| v.is_nan() || v <= 0.001) {
         return None;
@@ -98,6 +100,7 @@ pub(crate) fn wb_from_cam_mul(m: [f32; 4]) -> Option<WhiteBalance> {
     WhiteBalance::from_multipliers(m[0], m[1], m[2], if m[3] > 0.0 { m[3] } else { m[1] })
 }
 
+/// Colour matrices: the fallback colour table first, then the
 /// camera database entry.
 pub(crate) fn color_from_table(
     table: Option<&'static FallbackMatrix>,
@@ -117,6 +120,7 @@ pub(crate) fn color_from_table(
     db_color(meta, cam)
 }
 
+/// Apply a colour-table black/white entry: a positive
 /// black overrides the file, a negative one is used only when the file has none; a
 /// non-zero white overrides the default.
 pub(crate) fn apply_table_levels(

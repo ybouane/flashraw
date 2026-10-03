@@ -129,6 +129,7 @@ fn is_z2(data: &[u8]) -> bool {
         && data[data.len() - 424..].iter().filter(|&&b| b != 0).count() > 20
 }
 
+/// Normalised model names (several regional names share one body).
 fn normalized_model(model: &str) -> &str {
     const ALIASES: [(&str, &[&str]); 2] = [
         ("DG-5D", &["DYNAX 5D", "MAXXUM 5D", "ALPHA-5 DIGITAL", "ALPHA SWEET DIGITAL"]),

@@ -5,13 +5,15 @@
 //! Huffman table, AC coefficients use the class-1 table with JPEG run/size symbols,
 //! quantisation tables carry 16-bit entries, and the inverse transform is the direct
 //! separable cosine sum. The arithmetic below (f32 accumulation order, √½ scaling of
-//! the first row/column, +0.5 then truncation, clamp to u16) reproduces the de-facto
+//! the first row/column, +0.5 then truncation, clamp to u16) is fixed so that the
+//! output is bit-exact and deterministic across platforms.
 
 use flashraw_core::bits::{BitPumpJpeg, BitRead, extend_diff};
 use flashraw_core::huffman::HuffTable;
 use flashraw_core::{Error, ReadAt, Result};
 
 /// Zigzag order, padded so that run-lengths overshooting the block clamp to the last
+/// coefficient instead of reading out of bounds.
 const ZIGZAG: [u8; 80] = [
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21,
     28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54,

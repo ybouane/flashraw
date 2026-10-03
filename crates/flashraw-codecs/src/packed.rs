@@ -131,6 +131,7 @@ fn unpack_u8(src: &[u8], dst: &mut [u16]) {
     for (d, &s) in dst[..n].iter_mut().zip(src) {
         *d = s as u16;
     }
+    // Samples beyond the data read as zero, as with the bit pump.
     dst[n..].iter_mut().for_each(|d| *d = 0);
 }
 
@@ -372,6 +373,7 @@ mod tests {
 
     #[test]
     fn short_sources_match_reference() {
+        // Regression (fuzzing): partial final samples must be zero-padded like the scalar reference.
         for bits in 1..=16u32 {
             for order in [PackOrder::MsbBytes, PackOrder::LsbBytes, PackOrder::Msb16, PackOrder::Msb32] {
                 for len in 0..12usize {

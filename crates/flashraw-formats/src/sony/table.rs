@@ -1,4 +1,4 @@
-//! Reference colour-table lookup shared by the Sony, Olympus and Minolta decoders.
+//! Fallback colour-table lookup shared by the Sony, Olympus and Minolta decoders.
 //!
 //! The camera database's fallback table (`[[matrix]]` entries, in table order) is matched
 //! by prefix: the first entry of

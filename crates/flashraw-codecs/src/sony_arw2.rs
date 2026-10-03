@@ -70,6 +70,7 @@ fn decode_block(blk: &[u8; 18], pix: &mut [u16; 16]) {
         }
     } else {
         // Degenerate block: 15 deltas, the last one straddles the next block's bytes
+        // (they are read as part of this block).
         for (i, p) in pix.iter_mut().enumerate() {
             *p = if i == imax {
                 max as u16

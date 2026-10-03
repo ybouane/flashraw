@@ -4,7 +4,8 @@
 //! Leaf streams carry a DRI marker whose interval is a whole number of JPEG rows, so
 //! each restart interval is an independently decodable band (predictors reset at a
 //! restart). The scan is split at `RSTn` markers and the bands decode in parallel
-//! straight into the output, which is filled as one linear sample stream (the
+//! straight into the output, which is filled as one linear sample stream mapped onto
+//! raw rows in order.
 
 use crate::ljpeg::{LjpegHeader, decode_rows};
 use flashraw_core::{Error, Result, par};

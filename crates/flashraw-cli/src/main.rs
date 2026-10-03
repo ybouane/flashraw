@@ -77,6 +77,7 @@ enum Cmd {
         #[command(flatten)]
         args: DecodeArgs,
     },
+    /// Decode and print hashes and geometry of the decoded data (for regression testing).
     Verify {
         files: Vec<PathBuf>,
         #[arg(long)]
@@ -85,7 +86,7 @@ enum Cmd {
         #[arg(long)]
         dump_dir: Option<PathBuf>,
         /// Hash the samples with DNG opcode lists applied (the default decode). Without
-        /// it, samples are hashed as stored, for comparison with other decoders.
+        /// it, samples are hashed as stored (the payload decode alone).
         #[arg(long)]
         apply_opcodes: bool,
     },

@@ -1,5 +1,10 @@
 FORMAT	MODE	COMPRESSION	STATUS	NOTES
+IIQ	IIQ L (formats 3, 5)	phaseone	verified	14-bit; 33 corpus files (P20+..IQ4, Leaf Credo) decode; parallel rows
+IIQ	IIQ L 16-bit (format 8)	phaseone	verified	IQ3/IQ4 16-bit captures decode
+IIQ	IIQ S (format 6)	phaseone-s	verified	9 corpus files decode; parallel rows
+IIQ	uncompressed (format 0)	uncompressed	verified	H 25 TIFF sample decodes
 IIQ	uncompressed scrambled (formats 1, 2)	uncompressed	experimental	key unscrambling implemented; no corpus sample
+IIQ	all	-	partial	vendor sensor calibration (tag 0x110 block) not applied to the buffer; black reported as row/column deltas, not subtracted
 IIQ	achromatic backs	phaseone	experimental	monochrome layout from firmware string; no corpus sample
 MOS	Leaf lossless JPEG	leaf	verified	Aptus 22/75, AFi-II 12 (incl. interleaved rows); restart intervals decoded in parallel
 MOS	Leaf uncompressed 16-bit	uncompressed	verified	Aptus 22

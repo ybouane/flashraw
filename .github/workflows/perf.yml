@@ -24,8 +24,12 @@ jobs:
       - name: Baseline (main)
         run: |
           git worktree add ../base origin/main
+          (cd ../base && cargo build --release -p flashraw-cli)
+          python3 tools/bench/run.py benches/benchmark-set.tsv --flashraw ../base/target/release/flashraw --iterations 7 --out baseline.jsonl --markdown baseline.md
       - name: PR
         run: |
+          cargo build --release -p flashraw-cli
+          python3 tools/bench/run.py benches/benchmark-set.tsv --iterations 7 --out benches/results/pr.jsonl --markdown benches/results/pr.md --baseline baseline.jsonl --tolerance 15
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: benchmarks, path: "benches/results/" }

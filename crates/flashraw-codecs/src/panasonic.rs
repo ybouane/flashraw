@@ -12,9 +12,10 @@
 //! come first on disk ([`BlockedStream`]). Format 4 reads every 16-byte packet as a
 //! 128-bit little-endian integer from its most significant bit down, and each packet
 //! carries exactly 128 bits for its 14 pixels; that makes every packet independent
+//! even though the format is defined as one sequential stream.
 //!
-//! bit for bit, including how a short final block is padded with the previous
-//! block's bytes.
+//! All decoders are bit-exact, including how a short final block is padded with the
+//! previous block's bytes.
 
 use flashraw_core::par;
 use flashraw_core::{Error, Result};
@@ -38,6 +39,7 @@ impl<'a> BlockedStream<'a> {
         Ok(BlockedStream { data, split })
     }
 
+    /// Stream bytes available (a short final block is padded with stale data).
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -52,6 +54,7 @@ impl<'a> BlockedStream<'a> {
         b * BLOCK + (i + BLOCK - self.split) % BLOCK
     }
 
+    /// Stream byte `i` of block `b`, with these semantics for a truncated final
     /// block: bytes that were not read keep the value of the previous block's buffer.
     fn byte(&self, mut b: usize, i: usize) -> u8 {
         loop {
@@ -135,6 +138,7 @@ pub fn v4_packet(packet: &[u8; 16], out: &mut [u16]) {
 
 /// Decode a format-4 image (`width * height` samples into `out`). Rows are
 /// independent when `width` is a multiple of 14 (always the case in practice);
+/// otherwise the stream is decoded sequentially.
 pub fn decode_v4(s: &BlockedStream, width: usize, height: usize, out: &mut [u16], parallel: bool) -> Result<()> {
     check_out(out, width, height)?;
     if width % V4_PIXELS != 0 {
@@ -177,6 +181,7 @@ pub fn decode_v4_rows(
     Ok(())
 }
 
+/// Bit-exact sequential reader for Panasonic packets (any width).
 pub fn decode_v4_sequential(s: &BlockedStream, width: usize, height: usize, out: &mut [u16]) -> Result<()> {
     check_out(out, width, height)?;
     let mut buf = vec![0u8; BLOCK + 2];
@@ -303,6 +308,7 @@ pub fn decode_v5_rows(
 }
 
 /// Format 7: rows of `width / ppp` packets stored back to back (no block rotation).
+/// Only whole 16-row bands are decoded and trailing columns that do
 /// not fill a packet stay zero.
 pub fn decode_v7(data: &[u8], bits: u32, width: usize, height: usize, out: &mut [u16], parallel: bool) -> Result<()> {
     check_out(out, width, height)?;
@@ -349,7 +355,7 @@ pub fn decode_v7_rows(
 // Format 6
 
 /// Decode a format-6 image: per row `width / ppb` packets of 16 bytes, each holding
-/// 11 (14-bit) or 14 (12-bit) delta-coded pixels. Only whole 16-row bands are decoded
+/// 11 (14-bit) or 14 (12-bit) delta-coded pixels. Only whole 16-row bands are decoded.
 pub fn decode_v6(data: &[u8], bits: u32, width: usize, height: usize, out: &mut [u16], parallel: bool) -> Result<()> {
     check_out(out, width, height)?;
     decode_v6_rows(data, bits, width, height, 0, &mut out[..width * height], parallel)
@@ -519,6 +525,7 @@ pub struct V8Strip<'a> {
     pub bits: u64,
     pub left: u32,
     /// Vertical position; tiles below the first row of strips exist on high-resolution
+    /// (pixel-shift) bodies.
     pub top: u32,
     pub width: u32,
     pub height: u32,
@@ -613,6 +620,7 @@ impl V8Decoder {
         for (d, &s) in shift_down.iter_mut().zip(p.shift_down.iter()) {
             *d = s.min(31);
         }
+        // Apply the tag 0x39/0x3A tone curve unless it is the identity.
         let curve: Vec<u16> = (0..0x10000u32).map(|i| gamma_curve(p, i)).collect();
         let gamma = if curve.iter().enumerate().all(|(i, &v)| v as usize == i) { None } else { Some(curve) };
         Ok(V8Decoder { lut, shift_down, clip: p.clip, gamma, initial: p.initial })
@@ -732,6 +740,7 @@ impl V8Decoder {
         let after = window << len;
         bits.skip(len as u32 + d);
         // The bit following the code decides the sign (JPEG-style), even when no
+        // magnitude bits are stored (shift-down >= length).
         let next_bit_set = (after >> 63) == 1;
         let raw = if d > 0 { (after >> (64 - d)) as i32 } else { 0 };
         let v = raw << s;
@@ -747,6 +756,7 @@ impl V8Decoder {
     }
 }
 
+/// The format-8 tone curve from tags 0x39/0x3A (identity for every known file).
 fn gamma_curve(p: &V8Params, idx: u32) -> u16 {
     let t3a = &p.gamma_points;
     let t39 = &p.gamma_slopes;

@@ -1,10 +1,14 @@
 FORMAT	MODE	COMPRESSION	STATUS	NOTES
-RAF	X-Trans lossy compressed	fuji-compressed	verified	Per-line quantiser + flat-area tables; 13 files bit-exact
-RAF	Bayer lossless compressed (GFX)	fuji-compressed	verified	14/16-bit GFX 50/100 series; 13 files bit-exact
-RAF	Bayer lossy compressed (GFX)	fuji-compressed	verified	14/16-bit; 9 files bit-exact
+RAF	X-Trans lossless compressed	fuji-compressed	verified	14-bit X-Trans III-V; 25 corpus files decode, regression-hashed; stripes decoded in parallel; truncation/corruption tests
+RAF	X-Trans lossy compressed	fuji-compressed	verified	Per-line quantiser + flat-area tables; 13 files decode
+RAF	Bayer lossless compressed (GFX)	fuji-compressed	verified	14/16-bit GFX 50/100 series; 13 files decode
+RAF	Bayer lossy compressed (GFX)	fuji-compressed	verified	14/16-bit; 9 files decode
 RAF	12-bit compressed	fuji-compressed	experimental	Same code path as 14/16-bit; no corpus sample
-RAF	uncompressed 16-bit words	uncompressed	verified	X-Trans/GFX uncompressed and older Bayer bodies; 44 files bit-exact
-RAF	SuperCCD SR dual frame (F700/S20Pro)	uncompressed	partial	Main frame bit-exact (1 file); second (dark) frame not exposed
-RAF	12-bit packed LSB	uncompressed	verified	EXR bodies, X10/X-S1/XF1, X100, X-Pro1/X-E1/X-M1/X-A1/X-A2, X20/X30/XQ1/XQ2; bit-exact
-RAF	12-bit packed MSB32	uncompressed	verified	HS10, S1, SL1000; bit-exact
-RAF	14-bit packed MSB32	uncompressed	verified	X-A3/A5/A7/A10, X-T100/T200, XF10; 6 files bit-exact
+RAF	uncompressed 16-bit words	uncompressed	verified	X-Trans/GFX uncompressed and older Bayer bodies; 44 files decode
+RAF	SuperCCD 16-bit words	uncompressed	partial	S2/S3/S5 Pro, S5000-S9600, S6000/S6500fd, S100FS, E550/E900: 14 files decode; stored (unrotated) buffer with true 2x4/4x2 CFA; no 45-degree rotation applied
+RAF	SuperCCD SR dual frame (F700/S20Pro)	uncompressed	partial	Main frame decoded (1 file); second (dark) frame not exposed
+RAF	12-bit packed LSB	uncompressed	verified	EXR bodies, X10/X-S1/XF1, X100, X-Pro1/X-E1/X-M1/X-A1/X-A2, X20/X30/XQ1/XQ2; corpus files decode
+RAF	12-bit packed MSB32	uncompressed	verified	HS10, S1, SL1000; corpus files decode
+RAF	14-bit packed MSB32	uncompressed	verified	X-A3/A5/A7/A10, X-T100/T200, XF10; 6 files decode
+RAF	DBP for GX680 tiled	uncompressed	verified	8 vertical big-endian tiles; 1 file decodes; reported unrotated as Bayer BGGR
+RAF	second frame	uncompressed	unsupported	Dual-exposure SuperCCD SR second frame not exposed; the main frame is decoded
