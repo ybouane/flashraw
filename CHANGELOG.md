@@ -24,6 +24,11 @@ First complete release of FlashRaw.
   (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed
   output buffers, fused single-pass RGB development with orientation.
 
+### Camera database
+- Single JSON database (`camera-db/cameras.json`): 1,624 camera entries, 814 fallback
+  matrices, 71 model-alias groups, 25 size rules.
+- Entries are checked against FlashRaw's decodes of the corpus; 24 cameras come from corpus files.
+
 ### Platforms
 - `flashraw` CLI: info, decode, preview, thumbnail, benchmark, verify,
   dump-metadata, supported, camera-db tooling.
