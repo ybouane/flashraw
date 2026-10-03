@@ -436,8 +436,9 @@ fn decode_region(
         }
         Payload::Arw1 { coded_rows, stored_rows } => {
             let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
-            ctx.profiler
-                .time(Stage::EntropyDecode, || sony_arw1::decode(src, img.u16_mut(), w, *coded_rows, *stored_rows))?;
+            ctx.profiler.time(Stage::EntropyDecode, || {
+                sony_arw1::decode_par(src, img.u16_mut(), w, *coded_rows, *stored_rows, ctx.parallel)
+            })?;
             if region == full { Ok(img) } else { img.crop(region) }
         }
         Payload::LjpegTiles { tiles, tile_w, tile_h } => {
@@ -963,7 +964,7 @@ fn open_a100<'a>(
         Box::new(move |ctx| {
             let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
             ctx.profiler.time(Stage::EntropyDecode, || {
-                sony_arw1::decode(src, img.u16_mut(), width as usize, coded_rows, height as usize - 1)
+                sony_arw1::decode_par(src, img.u16_mut(), width as usize, coded_rows, height as usize - 1, ctx.parallel)
             })?;
             Ok(img)
         }),

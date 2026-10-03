@@ -26,6 +26,210 @@ fn lut() -> Vec<u16> {
     t
 }
 
+/// [`decode`] that decodes large streams on all threads when `parallel` is set: the
+/// difference codes are decoded speculatively ([`crate::par_entropy`]), the running sum
+/// becomes per-column prefixes (column totals, then an exclusive scan) and columns are
+/// rebuilt in parallel. Output and errors are identical to [`decode`].
+pub fn decode_par(
+    src: &[u8],
+    out: &mut [u16],
+    width: usize,
+    coded_rows: usize,
+    stored_rows: usize,
+    parallel: bool,
+) -> Result<()> {
+    if parallel
+        && out.len() >= width * stored_rows
+        && width * coded_rows >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES
+        && decode_parallel(src, out, width, coded_rows, stored_rows, None)?
+    {
+        return Ok(());
+    }
+    decode(src, out, width, coded_rows, stored_rows)
+}
+
+/// Difference decoding from a bit position (the stream has no other state).
+struct Scan<'a> {
+    src: &'a [u8],
+    lut: Vec<u16>,
+    short: Vec<u16>,
+}
+
+#[inline(always)]
+fn window(src: &[u8], pos: u64) -> u64 {
+    let byte = (pos >> 3) as usize;
+    let w = match src.get(byte..byte + 8) {
+        Some(b) => u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
+        None => {
+            let mut b = [0u8; 8];
+            if let Some(t) = src.get(byte..) {
+                b[..t.len().min(8)].copy_from_slice(&t[..t.len().min(8)]);
+            }
+            u64::from_be_bytes(b)
+        }
+    };
+    w << (pos & 7)
+}
+
+/// One difference at bit position `pos`: `(difference, bits used)`.
+#[inline(always)]
+fn diff_at(src: &[u8], short: &[u16], lut: &[u16], pos: u64) -> (i32, u32) {
+    let w = window(src, pos);
+    // Codes of up to 8 bits resolve from the top byte (L1-resident table); longer
+    // codes are the rare "all leading zeros" region.
+    let e = match short[(w >> 56) as usize] {
+        0 => lut[(w >> 49) as usize],
+        e => e,
+    };
+    let clen = (e >> 8) as u32;
+    let len = (e & 0xff) as u32;
+    // Branch-free JPEG-style difference: `len` bits, negative when the top bit is
+    // clear; length 16 means -32768 with no difference bits.
+    let v = (((w << clen) >> 1) >> (63 - len)) as i32;
+    let half = (1i32 << len) >> 1;
+    let d = if v < half { v - ((1 << len) - 1) } else { v };
+    if len == 16 { (-32768, clen) } else { (d, clen + len) }
+}
+
+impl crate::par_entropy::SymbolStream for Scan<'_> {
+    type Pump<'p>
+        = u64
+    where
+        Self: 'p;
+    const WIDTH: usize = 2;
+    fn cycle(&self) -> usize {
+        1
+    }
+    fn period(&self) -> usize {
+        1
+    }
+    fn total_bits(&self) -> u64 {
+        self.src.len() as u64 * 8
+    }
+    fn end_check(&self, pos: u64) -> crate::par_entropy::EndCheck {
+        // Truncation is reported per column by the sequential decoder.
+        if pos <= (self.src.len() as u64 + 8) * 8 {
+            crate::par_entropy::EndCheck::Valid
+        } else {
+            crate::par_entropy::EndCheck::Unknown
+        }
+    }
+    fn pump_at(&self, bit: u64) -> u64 {
+        bit
+    }
+    fn position(p: &u64) -> u64 {
+        *p
+    }
+    #[inline(always)]
+    fn decode(&self, p: &mut u64, _phase: usize, out: &mut [u16]) -> bool {
+        let (d, used) = diff_at(self.src, &self.short, &self.lut, *p);
+        *p += used as u64;
+        out[0] = d as u32 as u16;
+        out[1] = (d as u32 >> 16) as u16;
+        true
+    }
+}
+
+fn short_table(lut: &[u16]) -> Vec<u16> {
+    (0..256usize)
+        .map(|b| {
+            let e = lut[b << 7];
+            if (e >> 8) <= 8 { e } else { 0 }
+        })
+        .collect()
+}
+
+fn decode_parallel(
+    src: &[u8],
+    out: &mut [u16],
+    width: usize,
+    coded_rows: usize,
+    stored_rows: usize,
+    chunk: Option<usize>,
+) -> Result<bool> {
+    use flashraw_core::par;
+    let lut = lut();
+    let short = short_table(&lut);
+    let scan = Scan { src, lut, short };
+    let Some(chunk) = chunk.or_else(|| crate::par_entropy::default_chunk(src.len())) else { return Ok(false) };
+    let Some(values) = crate::par_entropy::decode(&scan, width * coded_rows, chunk) else { return Ok(false) };
+    let column = |ci: usize, buf: &mut Vec<i32>| {
+        let mut raw = vec![0u16; 2 * coded_rows];
+        values.copy_to(2 * ci * coded_rows, &mut raw);
+        buf.clear();
+        buf.extend(raw.chunks_exact(2).map(|d| (d[0] as u32 | (d[1] as u32) << 16) as i32));
+    };
+    // Running-sum prefix of every column (columns are coded right to left).
+    let totals: Vec<i32> = par::map((0..width).collect(), true, |ci| {
+        let mut buf = Vec::new();
+        column(ci, &mut buf);
+        buf.iter().fold(0i32, |a, &d| a.wrapping_add(d))
+    });
+    let mut starts = Vec::with_capacity(width);
+    let mut acc = 0i32;
+    for t in &totals {
+        starts.push(acc);
+        acc = acc.wrapping_add(*t);
+    }
+    let order: Vec<usize> = {
+        let mut v: Vec<usize> = (0..coded_rows).step_by(2).collect();
+        if coded_rows % 2 == 0 {
+            v.extend((1..coded_rows).step_by(2));
+        }
+        v
+    };
+    const BLOCK: usize = 32;
+    let rows_out = stored_rows.min(coded_rows);
+    if rows_out == 0 {
+        return Ok(false);
+    }
+    let grid = par::GridWriter::new(
+        &mut out[..width * rows_out],
+        width as u32,
+        rows_out as u32,
+        1,
+        (0, 0),
+        BLOCK as u32,
+        rows_out as u32,
+        width as u32,
+        rows_out as u32,
+    )
+    .ok_or_else(|| Error::InvalidArgument("ARW1 output buffer too small".into()))?;
+    let bad = std::sync::atomic::AtomicUsize::new(0);
+    par::for_each_index(grid.tiles_x() as usize, true, |tx| {
+        let Some(mut tile) = grid.claim(tx as u32, 0) else { return };
+        let x0 = tx * BLOCK;
+        let n = tile.size().0;
+        let mut block = vec![0u16; n * rows_out];
+        let mut buf = Vec::new();
+        let mut local_bad = 0usize;
+        for k in 0..n {
+            let ci = width - 1 - (x0 + k);
+            column(ci, &mut buf);
+            let mut sum = starts[ci];
+            for (&d, &row) in buf.iter().zip(&order) {
+                sum = sum.wrapping_add(d);
+                local_bad += (sum >> 12 != 0) as usize;
+                if row < rows_out {
+                    block[k * rows_out + row] = sum as u16;
+                }
+            }
+        }
+        for y in 0..rows_out {
+            let r = tile.row(y);
+            for (k, d) in r.iter_mut().enumerate().take(n) {
+                *d = block[k * rows_out + y];
+            }
+        }
+        bad.fetch_add(local_bad, std::sync::atomic::Ordering::Relaxed);
+    });
+    // Real files never leave the 12-bit range; garbage input does so constantly.
+    if bad.into_inner() > width * coded_rows / 64 {
+        return Err(Error::corrupt("ARW1 data out of range (corrupt stream)"));
+    }
+    Ok(true)
+}
+
 /// Decode an ARW1 stream into `out` (`width * stored_rows` samples, row-major).
 ///
 /// `coded_rows` rows are present in the stream per column; only rows below
@@ -37,29 +241,10 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
     }
     let lut = lut();
     // 8-bit prefix table: entry for codes of length <= 8, 0 when the code is longer.
-    let short: Vec<u16> = (0..256usize)
-        .map(|b| {
-            let e = lut[b << 7];
-            if (e >> 8) <= 8 { e } else { 0 }
-        })
-        .collect();
+    let short = short_table(&lut);
     // Bit position into `src`; each sample peeks a 64-bit big-endian window (at
     // least 57 valid bits: 15 code bits + up to 17 difference bits fit).
     let mut pos = 0usize;
-    let peek = |pos: usize| -> u64 {
-        let byte = pos >> 3;
-        let w = match src.get(byte..byte + 8) {
-            Some(b) => u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]),
-            None => {
-                let mut b = [0u8; 8];
-                if let Some(t) = src.get(byte..) {
-                    b[..t.len().min(8)].copy_from_slice(&t[..t.len().min(8)]);
-                }
-                u64::from_be_bytes(b)
-            }
-        };
-        w << (pos & 7)
-    };
     let mut sum: i32 = 0;
     let mut bad = 0usize;
     // Row visiting order within a column: even rows, then odd rows (only when the
@@ -84,23 +269,8 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
         for col in (col_start..col_end).rev() {
             let column = &mut block[(col - col_start) * rows_out..(col - col_start + 1) * rows_out];
             for &row in &order {
-                let w = peek(pos);
-                // Codes of up to 8 bits resolve from the top byte (L1-resident table);
-                // longer codes are the rare "all leading zeros" region.
-                let e = match short[(w >> 56) as usize] {
-                    0 => lut[(w >> 49) as usize],
-                    e => e,
-                };
-                let clen = (e >> 8) as u32;
-                let len = (e & 0xff) as u32;
-                // Branch-free JPEG-style difference: `len` bits, negative when the top
-                // bit is clear; length 16 means -32768 with no difference bits.
-                let v = (((w << clen) >> 1) >> (63 - len)) as i32;
-                let half = (1i32 << len) >> 1;
-                let d = if v < half { v - ((1 << len) - 1) } else { v };
-                let is16 = len == 16;
-                let diff = if is16 { -32768 } else { d };
-                pos += (clen + if is16 { 0 } else { len }) as usize;
+                let (diff, used) = diff_at(src, &short, &lut, pos as u64);
+                pos += used as usize;
                 sum = sum.wrapping_add(diff);
                 bad += (sum >> 12 != 0) as usize;
                 if row < rows_out {
@@ -206,5 +376,25 @@ mod tests {
         let data = encode(&img, w, h);
         let mut out = vec![0u16; w * h];
         assert!(decode(&data[..data.len() / 3], &mut out, w, h, h).is_err());
+    }
+
+    #[test]
+    fn parallel_matches_sequential() {
+        let (w, rows) = (40usize, 30usize);
+        let mut x = 5u32;
+        let img: Vec<u16> = (0..w * rows)
+            .map(|_| {
+                x = x.wrapping_mul(1103515245).wrapping_add(12345);
+                ((x >> 16) & 0xfff) as u16
+            })
+            .collect();
+        let src = encode(&img, w, rows);
+        let mut seq = vec![0u16; w * rows];
+        decode(&src, &mut seq, w, rows, rows).unwrap();
+        for chunk in [7usize, 50, 1 << 20] {
+            let mut par = vec![0u16; w * rows];
+            assert!(decode_parallel(&src, &mut par, w, rows, rows, Some(chunk)).unwrap(), "{chunk}");
+            assert_eq!(par, seq, "chunk {chunk}");
+        }
     }
 }
