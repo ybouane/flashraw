@@ -15,7 +15,11 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # WebGPU backend (forwards to flashraw/gpu). The JS layer reports `capabilities.gpu.compiled`
 # and falls back to the CPU (or errors, per `fallback`) when it is absent.
-gpu = ["flashraw/gpu"]
+gpu = ["flashraw/gpu", "dep:wasm-bindgen-futures"]
+# Multithreaded build (nightly, `+atomics,+bulk-memory` + `-Z build-std`, shared memory): enables
+# rayon in every decoder; the JS layer starts the thread pool in Web Workers / worker_threads
+# (`threadPoolBuild` + `threadRun`) and runs heavy calls on a coordinator worker (`job*`).
+threads = ["flashraw/rayon", "dep:rayon"]
 
 [dependencies]
 flashraw = { workspace = true, features = ["simd"] }
@@ -26,6 +30,8 @@ serde_json.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.129"
 js-sys = "0.3.106"
+wasm-bindgen-futures = { version = "0.4.79", optional = true }
+rayon = { workspace = true, optional = true }
 
 [lints]
 workspace = true
