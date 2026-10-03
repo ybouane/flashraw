@@ -341,5 +341,6 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
         "timings": { "totalMs": num(s.total_ms), "stages": stages },
         "inputBytes": s.input_bytes,
         "outputBytes": s.output_bytes,
+        "opcodes": s.opcodes,
     })
 }

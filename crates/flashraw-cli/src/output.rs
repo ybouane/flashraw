@@ -348,7 +348,7 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
     Ok(())
 }
 
-pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
+pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Value {
     let t0 = std::time::Instant::now();
     let raw = match FlashRaw::open_path(path) {
         Ok(r) => r,
@@ -358,8 +358,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
     let m = raw.metadata().clone();
     let info = raw.frame_info().clone();
     let t1 = std::time::Instant::now();
-    // apply DNG opcode lists.
-    let frame = match raw.decode(DecodeOptions { apply_opcodes: false, ..Default::default() }) {
+    // do not apply DNG opcode lists.
+    let frame = match raw.decode(DecodeOptions { apply_opcodes, ..Default::default() }) {
         Ok(f) => f,
         Err(e) => {
             return json!({"file": path, "error": e.to_string(), "error_kind": e.kind(), "format": raw.format().name(),

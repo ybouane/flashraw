@@ -65,12 +65,13 @@ export function nativeVerify(file) {
   const bin = cliBinary();
   if (bin) {
     // Exits non-zero for files it cannot decode, but still prints a JSON record with `error_kind`.
-    const r = spawnSync(bin, ['verify', '--json', file], { encoding: 'utf8' });
+    // `--apply-opcodes`: hash what a default decode returns (DNG opcode lists applied).
+    const r = spawnSync(bin, ['verify', '--json', '--apply-opcodes', file], { encoding: 'utf8' });
     return JSON.parse(r.stdout);
   }
   if (process.env.FLASHRAW_NO_CARGO) return null;
   const cargo = process.env.CARGO ?? join(homedir(), '.cargo/bin/cargo');
-  const r = spawnSync(cargo, ['run', '-q', '--release', '-p', 'flashraw-cli', '--', 'verify', '--json', file], {
+  const r = spawnSync(cargo, ['run', '-q', '--release', '-p', 'flashraw-cli', '--', 'verify', '--json', '--apply-opcodes', file], {
     cwd: repoRoot,
     encoding: 'utf8',
   });

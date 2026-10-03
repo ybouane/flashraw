@@ -84,6 +84,10 @@ enum Cmd {
         /// Also write raw u16 samples to <file>.flashraw.u16 next to the output dir.
         #[arg(long)]
         dump_dir: Option<PathBuf>,
+        /// Hash the samples with DNG opcode lists applied (the default decode). Without
+        /// it, samples are hashed as stored, for comparison with other decoders.
+        #[arg(long)]
+        apply_opcodes: bool,
     },
     /// List supported formats and compression modes.
     Supported {
@@ -238,10 +242,10 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Cmd::Verify { files, json, dump_dir } => {
+        Cmd::Verify { files, json, dump_dir, apply_opcodes } => {
             let mut failed = false;
             for f in &files {
-                let r = output::verify(f, dump_dir.as_deref());
+                let r = output::verify(f, dump_dir.as_deref(), apply_opcodes);
                 if r.get("error").is_some() {
                     failed = true;
                 }

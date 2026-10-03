@@ -480,7 +480,15 @@ mod bindings {
             }
         }
 
-        fn webgpu_buffer(b: &flashraw::gpu::wgpu::Buffer) -> Result<JsValue, JsValue> {
+        /// The single buffer of an untiled image. Frames larger than the adapter's binding
+        /// limits are stored as bands; those are read with `download()` / `createTexture()`.
+        fn webgpu_buffer(b: Option<&flashraw::gpu::wgpu::Buffer>) -> Result<JsValue, JsValue> {
+            let b = b.ok_or_else(|| {
+                to_js(ApiError {
+                    kind: "NotAvailable",
+                    message: "the frame exceeds the adapter's buffer limits and is stored in bands; use download() or createTexture()".into(),
+                })
+            })?;
             b.as_webgpu()
                 .map(|b| JsValue::from(b.clone()))
                 .ok_or_else(|| to_js(ApiError { kind: "GpuUnavailable", message: "not a WebGPU buffer".into() }))

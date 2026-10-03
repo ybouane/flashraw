@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Regenerate tests/fixtures/expected.json from the native CLI (`flashraw verify --json`).
+// Regenerate tests/fixtures/expected.json from the native CLI (`flashraw verify --json
+// --apply-opcodes`: hashes of the default decode, DNG opcode lists applied).
 // The Node tests compare against the live CLI when it is available and fall back to this file.
 import { writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';

@@ -176,6 +176,11 @@ pub fn parse_decode_options(s: &str) -> ApiResult<(DecodeOptions, String)> {
         Some(Value::Bool(b)) => o.crop = *b,
         Some(_) => return Err(ApiError::invalid("option `crop` must be a boolean")),
     }
+    match v.get("applyOpcodes") {
+        None | Some(Value::Null) => {}
+        Some(Value::Bool(b)) => o.apply_opcodes = *b,
+        Some(_) => return Err(ApiError::invalid("option `applyOpcodes` must be a boolean")),
+    }
     if let Some(r) = v.get("region").filter(|r| !r.is_null()) {
         o.region = Some(parse_rect(r)?);
     }

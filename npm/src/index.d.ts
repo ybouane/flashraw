@@ -325,6 +325,11 @@ export interface DecodeOptions {
   demosaic?: 'bilinear' | 'half-size';
   /** Crop RGB outputs to the default crop (default true; raw outputs are never cropped). */
   crop?: boolean;
+  /**
+   * Apply DNG opcode lists (bad pixels, lens-shading gain maps, vignetting) in their
+   * specified stages. Geometric opcodes are never applied. Default true.
+   */
+  applyOpcodes?: boolean;
   /** Decode only this region (sensor-buffer coordinates). */
   region?: Rect;
   limits?: Limits;
@@ -399,6 +404,8 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   timings: Timings;
   inputBytes: number;
   outputBytes: number;
+  /** DNG opcode lists: what was applied and what was not (empty without lists). */
+  opcodes: string[];
 }
 
 /** A decoded frame as returned by `FlashRaw#decode`. */
@@ -425,6 +432,8 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat> {
   readonly timings: Timings;
   readonly inputBytes: number;
   readonly outputBytes: number;
+  /** DNG opcode lists: what was applied and what was not (empty without lists). */
+  readonly opcodes: string[];
   /** Pixels, row-major, `channels` interleaved samples per pixel. */
   readonly data: FrameData[O];
   /** True while `data` is a view into WASM memory (`zeroCopy: true`). */
@@ -465,8 +474,14 @@ export declare class GpuFrame<O extends GpuOutputFormat = GpuOutputFormat> {
   readonly timings: Timings;
   readonly inputBytes: number;
   readonly outputBytes: number;
+  /** DNG opcode lists: what was applied and what was not (empty without lists). */
+  readonly opcodes: string[];
   readonly gpuResident: true;
-  /** Storage buffer (`STORAGE | COPY_SRC`) holding the pixels; may be larger than `byteLength`. */
+  /**
+   * Storage buffer (`STORAGE | COPY_SRC`) holding the pixels; may be larger than `byteLength`.
+   * Throws for frames beyond the adapter's buffer limits, which are stored in bands (use
+   * `download()` or `createTexture()`).
+   */
   readonly buffer: FlashRawGPUBuffer;
   /** Bytes of pixel data at the start of `buffer`. */
   readonly byteLength: number;

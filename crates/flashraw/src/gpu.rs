@@ -285,6 +285,9 @@ async fn run(
     profiler.record(Stage::GpuUpload, r.timings.upload_ms);
     profiler.record(Stage::GpuCompute, r.timings.compute_ms);
     let (width, height, cpp) = (r.image.width(), r.image.height(), r.image.channels());
+    // The Arc only makes frames cheap to clone. On wasm32 WebGPU handles are not Send, but
+    // the GPU build is single-threaded there, so nothing crosses threads.
+    #[allow(clippy::arc_with_non_send_sync)]
     let data = if resident {
         RawPixelData::Gpu(Arc::new(r.image))
     } else {
