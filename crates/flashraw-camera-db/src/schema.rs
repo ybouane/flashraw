@@ -53,6 +53,13 @@ pub struct DbSizeRule {
 pub struct DbVerification {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub corpus_files: u32,
+    /// Largest sample value actually present in the decoded corpus files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_data_max: Option<u32>,
+    /// Real files contain samples more than 5% above the entry's white level (beyond any
+    /// deliberate conservative clip point): the value needs attention.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub white_below_data: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }

@@ -348,10 +348,32 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
     let decode_ms = t1.elapsed().as_secs_f64() * 1000.0;
     let full = Rect::full(frame.width, frame.height);
     let (mut mn, mut mx) = (u16::MAX, 0u16);
+    // Active-area sample statistics: maximum and 99.99th percentile (robust to hot pixels),
+    // used to cross-check white levels against real data.
+    let (mut active_max, mut active_p9999) = (0u16, 0u16);
     if let Some(d) = frame.as_u16() {
         for &v in d {
             mn = mn.min(v);
             mx = mx.max(v);
+        }
+        let mut hist = vec![0u64; 65536];
+        let a = info.active_area.clamp_to(frame.width, frame.height);
+        let (w, cpp) = (frame.width as usize, frame.cpp as usize);
+        for y in a.y as usize..a.bottom() as usize {
+            for &v in &d[(y * w + a.x as usize) * cpp..(y * w + a.right() as usize) * cpp] {
+                hist[v as usize] += 1;
+            }
+        }
+        let total: u64 = hist.iter().sum();
+        let mut acc = 0u64;
+        for (v, &n) in hist.iter().enumerate() {
+            if n > 0 {
+                active_max = v as u16;
+            }
+            acc += n;
+            if active_p9999 == 0 && total > 0 && acc * 10000 >= total * 9999 {
+                active_p9999 = v as u16;
+            }
         }
         if let Some(dir) = dump_dir {
             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -410,7 +432,7 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>) -> Value {
         "bits": info.bits_per_sample,
         "iso": m.exposure.iso,
         "previews": m.previews.len(),
-        "min": mn, "max": mx,
+        "min": mn, "max": mx, "active_max": active_max, "active_p9999": active_p9999,
         "hash_full": frame.hash_u16(full).map(|h| format!("{h:016x}")),
         "hash_active": frame.hash_u16(info.active_area).map(|h| format!("{h:016x}")),
         "open_ms": open_ms, "decode_ms": decode_ms,

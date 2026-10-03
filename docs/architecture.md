@@ -28,7 +28,7 @@ RawFrame  (+ optional fused post-processing: normalise / demosaic / WB / colour 
 |---|---|---|
 | `flashraw-core` | errors, byte/bit readers, Huffman, TIFF/BMFF, EXIF, value types, `RawDecoder` contract, parallel helpers, profiling | — |
 | `flashraw-codecs` | compression codecs (lossless JPEG, packed + SIMD, deflate/float, DCT-12, lossy JPEG, JPEG XL, vendor codecs) | core |
-| `flashraw-camera-db` | camera database compiled from `camera-db/*.toml` at build time | — |
+| `flashraw-camera-db` | camera database compiled from `camera-db/cameras.json` at build time | — |
 | `flashraw-formats` | container parsers + per-vendor decoders | core, codecs, camera-db |
 | `flashraw` | public API, backend selection, post-processing | all of the above |
 | `flashraw-gpu` | optional wgpu/WebGPU compute backend (WGSL in `shaders/`) | core |
@@ -86,9 +86,11 @@ precisely without per-symbol checks.
 fully-decoded difference (code + diff bits ≤ 12), so most lossless-JPEG samples
 decode with one lookup and one shift.
 
-**Camera knowledge as data.** `camera-db/` holds TOML entries (aliases, modes,
-crops, masked areas, per-ISO levels, CFA, colour matrices, hints). `build.rs`
-compiles them into static arrays plus a sorted key index — no parsing at runtime.
+**Camera knowledge as data.** `camera-db/cameras.json` — one database for the whole
+library — holds camera entries (aliases, modes, crops, masked areas, per-ISO levels,
+CFA, colour matrices, decoder hints, verification records), fallback colour tables,
+model-alias groups and size-based geometry rules. `build.rs` compiles it into static
+arrays plus a sorted key index — no parsing at runtime.
 Decoders use file metadata first and the database only to fill gaps, so unknown
 cameras still decode when the file is self-describing (DNG always is).
 
