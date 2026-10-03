@@ -584,25 +584,29 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     #[inline(never)]
     fn pass(&mut self, a: usize, b: usize, g: usize, rule_a: impl Fn(usize) -> Even, rule_b: impl Fn(usize) -> Even) {
         let lw = self.c.line_width;
+        // The line buffers are moved out for the pass so each sample's neighbourhood is
+        // borrowed once, alongside the mutable decoder state.
+        let mut lines = std::mem::take(&mut self.lines);
         let (mut ep, mut op) = (0usize, 1usize);
         while ep < lw || op < lw {
             if ep < lw {
                 match rule_a(ep) {
-                    Even::Decode => self.decode_even(a, ep, g),
-                    Even::Interp => self.interp_even(a, ep),
+                    Even::Decode => self.decode_even(&mut lines, a, ep, g),
+                    Even::Interp => self.interp_even(&mut lines, a, ep),
                 }
                 match rule_b(ep) {
-                    Even::Decode => self.decode_even(b, ep, g),
-                    Even::Interp => self.interp_even(b, ep),
+                    Even::Decode => self.decode_even(&mut lines, b, ep, g),
+                    Even::Interp => self.interp_even(&mut lines, b, ep),
                 }
                 ep += 2;
             }
             if ep > 8 {
-                self.decode_odd(a, op, g);
-                self.decode_odd(b, op, g);
+                self.decode_odd(&mut lines, a, op, g);
+                self.decode_odd(&mut lines, b, op, g);
                 op += 2;
             }
         }
+        self.lines = lines;
     }
 
     /// Copy edge samples from the previous line into the guard positions.
@@ -632,43 +636,43 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     /// Neighbourhood of `(line, pos)` as one slice starting two lines up at `pos`:
     /// `rf = w[0]`, `rc/rb/rd = w[s-1..=s+1]`, `ra/cur/rg = w[2s-1..=2s+1]`.
     #[inline(always)]
-    fn window(&mut self, line: usize, pos: usize) -> &mut [u16] {
-        let s = self.stride;
+    fn window(lines: &mut [u16], s: usize, line: usize, pos: usize) -> &mut [u16] {
         let start = (line - 2) * s + 1 + pos;
-        &mut self.lines[start..start + 2 * s + 2]
+        &mut lines[start..start + 2 * s + 2]
     }
 
     #[inline(always)]
-    fn interp_even(&mut self, line: usize, pos: usize) {
+    fn interp_even(&mut self, lines: &mut [u16], line: usize, pos: usize) {
         let s = self.stride;
-        let w = self.window(line, pos);
+        let w = Self::window(lines, s, line, pos);
         let (rf, rc, rb, rd) = (w[0] as i32, w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
         w[2 * s] = (even_prediction(rf, rc, rb, rd) >> 2) as u16;
     }
 
     #[inline(always)]
-    fn decode_even(&mut self, line: usize, pos: usize, g: usize) {
+    fn decode_even(&mut self, lines: &mut [u16], line: usize, pos: usize, g: usize) {
         let s = self.stride;
-        let w = self.window(line, pos);
+        let w = Self::window(lines, s, line, pos);
         let (rf, rc, rb, rd) = (w[0] as i32, w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
         let interp = even_prediction(rf, rc, rb, rd) >> 2;
         let flat = (rf - rb).abs() + (rc - rb).abs();
-        let v = self.decode_residual::<0>(g, flat, rb - rf, rc - rb, interp);
-        self.window(line, pos)[2 * s] = v;
+        w[2 * s] = self.decode_residual::<0>(g, flat, rb - rf, rc - rb, interp);
     }
 
     #[inline(always)]
-    fn decode_odd(&mut self, line: usize, pos: usize, g: usize) {
+    fn decode_odd(&mut self, lines: &mut [u16], line: usize, pos: usize, g: usize) {
         let s = self.stride;
-        let w = self.window(line, pos);
+        let w = Self::window(lines, s, line, pos);
         let (rc, rb, rd) = (w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
         let (ra, rg) = (w[2 * s - 1] as i32, w[2 * s + 1] as i32);
-        // `rb` is a local extremum among (rc, rb, rd) exactly when both differences share a sign.
-        let extremum = ((rb - rc) as i64 * (rb - rd) as i64) > 0;
-        let interp = if extremum { (rg + ra + 2 * rb) >> 2 } else { (ra + rg) >> 1 };
+        // `rb` is a local extremum among (rc, rb, rd) exactly when both differences share a
+        // sign (and neither is zero); then the prediction also weighs `rb`.
+        let (x, y) = (rb - rc, rb - rd);
+        let extremum = ((x ^ y) >= 0) & (x != 0) & (y != 0);
+        let e = -(extremum as i32);
+        let interp = (((rg + ra + 2 * rb) >> 2) & e) | (((ra + rg) >> 1) & !e);
         let flat = (rb - rc).abs() + (rc - ra).abs();
-        let v = self.decode_residual::<1>(g, flat, rb - rc, rc - ra, interp);
-        self.window(line, pos)[2 * s] = v;
+        w[2 * s] = self.decode_residual::<1>(g, flat, rb - rc, rc - ra, interp);
     }
 
     /// Count zero bits up to (and consuming) the next one bit.
@@ -752,12 +756,13 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
             &mut self.grads[SIDE][g].main[gi.min(40)]
         };
         *stat = (sum, n + 1);
-        let step = 2 * qt.q_base + 1;
+        // Lossless streams always quantise with base 0 (step 1).
+        let (q_base, step) = if LOSSY { (qt.q_base, 2 * qt.q_base + 1) } else { (0, 1) };
         // The residual's sign follows the gradient's (branch-free: (grad >> 31) | 1 is ±1).
         let mut v = interp + ((grad >> 31) | 1) * code * step;
-        if v < -qt.q_base {
+        if v < -q_base {
             v += qt.total_values * step;
-        } else if v > qt.q_base + max {
+        } else if v > q_base + max {
             v -= qt.total_values * step;
         }
         v.clamp(0, max) as u16
@@ -768,18 +773,13 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
 #[inline(always)]
 fn even_prediction(rf: i32, rc: i32, rb: i32, rd: i32) -> i32 {
     let (d_cb, d_fb, d_db) = ((rc - rb).abs(), (rf - rb).abs(), (rd - rb).abs());
-    // Drop the neighbour that deviates most from `rb` (written as selects so the
-    // compiler can avoid unpredictable branches).
-    let drop_c = (d_cb > d_fb) & (d_cb > d_db);
-    let drop_d = (d_db > d_cb) & (d_db > d_fb);
-    let pair = if drop_c {
-        rf + rd
-    } else if drop_d {
-        rf + rc
-    } else {
-        rd + rc
-    };
-    pair + 2 * rb
+    // Drop the neighbour that deviates most from `rb`. Masks instead of selects: the
+    // choice is data-dependent and unpredictable, and branch-free arithmetic keeps
+    // compilers from turning it into branches.
+    let mc = -(((d_cb > d_fb) & (d_cb > d_db)) as i32);
+    let md = -(((d_db > d_cb) & (d_db > d_fb)) as i32) & !mc;
+    let dropped = (rc & mc) | (rd & md) | (rf & !(mc | md));
+    rf + rc + rd - dropped + 2 * rb
 }
 
 #[cfg(test)]
