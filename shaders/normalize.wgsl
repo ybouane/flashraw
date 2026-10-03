@@ -1,5 +1,6 @@
 // Black subtraction + white normalisation to f32, keeping the sensor layout
 // (CPU reference: `flashraw::process::normalize`). Output: `width * height * cpp` f32.
+// A band covers `total` samples from frame row `band_y`, written from word `dst_off`.
 
 @compute @workgroup_size(256)
 fn normalize(
@@ -12,9 +13,10 @@ fn normalize(
         return;
     }
     let rl = P.width * P.cpp;
-    let y = i / rl;
-    let r = i - y * rl;
+    let ly = i / rl;
+    let r = i - ly * rl;
+    let y = ly + P.band_y;
     let x = r / P.cpp;
     let c = r - x * P.cpp;
-    dst[i] = bitcast<u32>(max(sample_norm(x, y, c), 0.0));
+    dst[i + P.dst_off] = bitcast<u32>(max(sample_norm(x, y, c), 0.0));
 }

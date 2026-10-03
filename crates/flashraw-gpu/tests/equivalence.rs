@@ -419,3 +419,244 @@ fn gpu_image_to_texture() {
         assert_eq!(&view[y * bpr as usize..y * bpr as usize + 120], &px[y * 120..(y + 1) * 120]);
     }
 }
+
+// ---- Tiling ---------------------------------------------------------------------
+//
+// A second context with tiny limit overrides forces every frame through many bands
+// (row bands bound as sub-ranges of one output buffer, or one buffer per band). The
+// banded result must be bit-identical to the untiled run, and match the CPU.
+
+/// (label, max binding, max buffer): sub-range output bands, and tiled outputs.
+const TILE_LIMITS: [(&str, u64, Option<u64>); 2] = [("subrange", 4096, None), ("tiled", 4096, Some(4096))];
+
+fn tiny_context() -> Option<Arc<flashraw_gpu::GpuContext>> {
+    gpu()?;
+    match flashraw_gpu::block_on(flashraw_gpu::GpuContext::new()) {
+        Ok(c) => Some(Arc::new(c)),
+        Err(e) => {
+            eprintln!("skipped: {e}");
+            None
+        }
+    }
+}
+
+fn download(run: &flashraw_gpu::GpuRun) -> HostPixels {
+    run.image.download().unwrap().0
+}
+
+#[test]
+fn gpu_tiled_develop_matches_untiled_and_cpu() {
+    let Some(ctx) = gpu() else { return };
+    let Some(tiny) = tiny_context() else { return };
+    let cases = [
+        DevCase { name: "bayer", cfa: Some(CfaPattern::RGGB), cpp: 1 },
+        DevCase { name: "xtrans", cfa: Some(xtrans()), cpp: 1 },
+        DevCase { name: "rgb", cfa: None, cpp: 3 },
+        DevCase { name: "mono", cfa: None, cpp: 1 },
+    ];
+    let (w, h) = (157u32, 93u32);
+    let orientations = [
+        Orientation::Normal,
+        Orientation::FlipH,
+        Orientation::Rotate180,
+        Orientation::FlipV,
+        Orientation::Transpose,
+        Orientation::Rotate90,
+        Orientation::Transverse,
+        Orientation::Rotate270,
+    ];
+    let mut runs = 0;
+    for case in &cases {
+        let info = calibrated_info(w, h, case.cfa, case.cpp);
+        let img = synthetic_u16(w, h, case.cpp, 23);
+        let origin = (3, 1);
+        for half in [false, true] {
+            if half && case.name == "mono" {
+                continue; // see gpu_develop_matches_cpu
+            }
+            // Odd crop origin: the band origin must keep the CFA phase.
+            let crop = Rect::new(3, 5, w - 8, h - 9);
+            let demosaic = if half { flashraw::Demosaic::HalfSize } else { flashraw::Demosaic::Bilinear };
+            for (oi, &orientation) in orientations.iter().enumerate() {
+                let mut params = DevelopParams::new(&info, demosaic, crop);
+                params.orientation = orientation;
+                let frame = GpuFrame::from_u16(img.u16(), w, h, case.cpp).with_origin(origin);
+                let mut outputs = vec![DevelopOutput::Rgba8];
+                if oi == 0 {
+                    outputs.push(DevelopOutput::LinearRgbF32);
+                }
+                for output in outputs {
+                    let op = GpuOp::Develop(DevelopSpec {
+                        crop,
+                        half_size: half,
+                        wb: params.wb,
+                        cam_to_rgb: params.cam_to_rgb,
+                        orientation,
+                        output,
+                    });
+                    let base = ctx.run_blocking(&frame, &info, &op).unwrap();
+                    assert_eq!(base.timings.bands, 1);
+                    let want = download(&base);
+                    for (label, binding, buffer) in TILE_LIMITS {
+                        tiny.override_limits(Some(binding), buffer);
+                        let run = tiny.run_blocking(&frame, &info, &op).unwrap();
+                        let what = format!("{} half={half} {orientation:?} {output:?} {label}", case.name);
+                        assert!(run.timings.bands > 4, "{what}: {} bands", run.timings.bands);
+                        let rotated = orientation.swaps_dimensions() && output == DevelopOutput::Rgba8;
+                        assert_eq!(run.image.is_tiled(), label == "tiled" || rotated, "{what}");
+                        assert_eq!((run.image.width(), run.image.height()), (base.image.width(), base.image.height()));
+                        let got = download(&run);
+                        assert!(got == want, "{what}: banded result differs from untiled");
+                        if let HostPixels::U8(got) = got {
+                            let (_, _, cpu) = process::develop_rgba8(&img, &info, origin, &params, false).unwrap();
+                            cmp_rgba(&got, &cpu, &what);
+                        } else if let HostPixels::F32(got) = got {
+                            let cpu = process::develop(&img, &info, origin, &params, false).unwrap();
+                            assert!(max_abs_diff(&got, &cpu.rgb) <= 1e-4, "{what}");
+                        }
+                        runs += 1;
+                    }
+                }
+            }
+        }
+    }
+    tiny.override_limits(None, None);
+    eprintln!("{runs} banded develop runs identical to untiled");
+}
+
+#[test]
+fn gpu_tiled_unpack_and_normalize() {
+    let Some(ctx) = gpu() else { return };
+    let Some(tiny) = tiny_context() else { return };
+    // Odd row length (bands must start on whole u16 pairs), padded unaligned stride,
+    // truncated payload, window with odd origin, linearisation LUT.
+    let (w, h, bits) = (301usize, 97usize, 14u32);
+    let stride = (w * bits as usize).div_ceil(8) + 5;
+    let lut: Vec<u16> = (0..12000u32).map(|v| (v * 3 / 2 + 7) as u16).collect();
+    let mut info = calibrated_info(w as u32, h as u32, Some(CfaPattern::RGGB), 1);
+    info.white_level = WhiteLevel::uniform(16383);
+    for (oi, order) in ORDERS.into_iter().enumerate() {
+        let src = pseudo(stride * h - 9, 7 + oi as u64);
+        let full = GpuFrame {
+            input: GpuInput::Packed { data: &src, bits, order, row_stride: stride },
+            raster_width: w as u32,
+            raster_height: h as u32,
+            cpp: 1,
+            window: Rect::full(w as u32, h as u32),
+            origin: (0, 0),
+            linearization: None,
+        };
+        let want = expected_unpack(&src, w, h, bits, order, stride);
+        let windowed = full.with_window(Rect::new(13, 9, 201, 81)).with_linearization(Some(&lut));
+        for (frame, lut) in [(full, None), (windowed, Some(&lut))] {
+            for op in [GpuOp::Unpack, GpuOp::Normalize] {
+                let base = download(&ctx.run_blocking(&frame, &info, &op).unwrap());
+                if let (GpuOp::Unpack, HostPixels::U16(got)) = (&op, &base) {
+                    let win = frame.window;
+                    for y in 0..win.height as usize {
+                        for x in 0..win.width as usize {
+                            let v = want[(y + win.y as usize) * w + x + win.x as usize];
+                            let v = lut.map(|l| l.get(v as usize).copied().unwrap_or(*l.last().unwrap())).unwrap_or(v);
+                            assert_eq!(got[y * win.width as usize + x], v);
+                        }
+                    }
+                }
+                for (label, binding, buffer) in TILE_LIMITS {
+                    tiny.override_limits(Some(binding), buffer);
+                    let run = tiny.run_blocking(&frame, &info, &op).unwrap();
+                    assert!(run.timings.bands > 4, "{op:?} {label}: {} bands", run.timings.bands);
+                    assert_eq!(run.image.is_tiled(), label == "tiled");
+                    assert!(download(&run) == base, "{order:?} {op:?} {label}: banded differs");
+                }
+            }
+        }
+    }
+    tiny.override_limits(None, None);
+}
+
+#[test]
+fn gpu_tiled_packed_develop_and_texture() {
+    let Some(ctx) = gpu() else { return };
+    let Some(tiny) = tiny_context() else { return };
+    let (w, h, bits) = (211u32, 130u32, 12u32);
+    let stride = (w * bits).div_ceil(8) as usize + 2;
+    let src = pseudo(stride * h as usize, 5);
+    let mut info = calibrated_info(w, h, Some(CfaPattern::RGGB), 1);
+    info.white_level = WhiteLevel::uniform(4095);
+    info.black_level = BlackLevel::uniform(64.0);
+    for order in ORDERS {
+        let frame = GpuFrame {
+            input: GpuInput::Packed { data: &src, bits, order, row_stride: stride },
+            raster_width: w,
+            raster_height: h,
+            cpp: 1,
+            window: Rect::full(w, h),
+            origin: (0, 0),
+            linearization: None,
+        }
+        .with_window(Rect::new(1, 3, w - 2, h - 5));
+        for orientation in [Orientation::Normal, Orientation::Rotate90] {
+            let op = GpuOp::Develop(DevelopSpec {
+                crop: Rect::new(1, 1, w - 6, h - 9),
+                half_size: false,
+                wb: [2.0, 1.0, 1.5, 1.0],
+                cam_to_rgb: [[1.6, -0.4, -0.2], [-0.2, 1.4, -0.2], [0.0, -0.5, 1.5]],
+                orientation,
+                output: DevelopOutput::Rgba8,
+            });
+            let base = ctx.run_blocking(&frame, &info, &op).unwrap();
+            let want = download(&base);
+            for (label, binding, buffer) in TILE_LIMITS {
+                tiny.override_limits(Some(binding), buffer);
+                let run = tiny.run_blocking(&frame, &info, &op).unwrap();
+                assert!(run.timings.bands > 4);
+                assert!(download(&run) == want, "{order:?} {orientation:?} {label}");
+                // The texture assembled from the bands equals the untiled texture.
+                let a = read_texture(&tiny, &run.image.to_texture().unwrap());
+                let b = read_texture(&ctx, &base.image.to_texture().unwrap());
+                assert!(a == b, "{order:?} {orientation:?} {label}: texture");
+                if run.image.is_tiled() {
+                    let t = run.image.tiles();
+                    let area: u64 = t.iter().map(|t| t.rect.width as u64 * t.rect.height as u64).sum();
+                    assert_eq!(area, run.image.width() as u64 * run.image.height() as u64);
+                    assert!(run.image.buffer().is_none());
+                }
+            }
+        }
+    }
+    tiny.override_limits(None, None);
+}
+
+/// Texture contents as tightly packed RGBA8 rows.
+fn read_texture(ctx: &flashraw_gpu::GpuContext, tex: &flashraw_gpu::wgpu::Texture) -> Vec<u8> {
+    use flashraw_gpu::wgpu;
+    let (tw, th) = (tex.width(), tex.height());
+    let bpr = (tw * 4).div_ceil(256) * 256;
+    let dev = ctx.device();
+    let rb = dev.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (bpr * th) as u64,
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut enc = dev.create_command_encoder(&Default::default());
+    enc.copy_texture_to_buffer(
+        tex.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &rb,
+            layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bpr), rows_per_image: None },
+        },
+        tex.size(),
+    );
+    ctx.queue().submit([enc.finish()]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    rb.map_async(wgpu::MapMode::Read, .., move |r| tx.send(r).unwrap());
+    dev.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    rx.recv().unwrap().unwrap();
+    let view = rb.get_mapped_range(..).unwrap();
+    let mut out = Vec::with_capacity((tw * th * 4) as usize);
+    for y in 0..th as usize {
+        out.extend_from_slice(&view[y * bpr as usize..y * bpr as usize + tw as usize * 4]);
+    }
+    out
+}

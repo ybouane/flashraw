@@ -49,6 +49,12 @@ impl<T> Receiver<T> {
     pub(crate) fn try_take(&self) -> Option<T> {
         self.0.lock().ok()?.value.take()
     }
+
+    /// The value has been sent (or the sender dropped).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(crate) fn is_ready(&self) -> bool {
+        self.0.lock().map(|s| s.value.is_some() || s.closed).unwrap_or(true)
+    }
 }
 
 impl<T> Future for Receiver<T> {

@@ -1,19 +1,19 @@
 //! End-to-end: `FlashRaw::decode` with `Backend::Gpu` vs `Backend::Cpu` on real files.
 //!
-//! Files: every `*.dng` in `$FLASHRAW_GPU_SAMPLES` (default: `<workspace>/samples`).
-//! Skipped when there is no GPU adapter or no sample directory.
+//! Files: every file in `$FLASHRAW_GPU_SAMPLES`, or every `*.dng` in
+//! `<workspace>/samples` by default. Skipped when there is no GPU adapter or no samples.
 
 use flashraw::{Backend, DecodeOptions, Demosaic, FlashRaw, OutputFormat, RawPixelData, Rect, Stage};
 use std::path::PathBuf;
 
 fn samples() -> Vec<PathBuf> {
-    let dir = std::env::var_os("FLASHRAW_GPU_SAMPLES")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples"));
+    let env = std::env::var_os("FLASHRAW_GPU_SAMPLES").map(PathBuf::from);
+    let all = env.is_some();
+    let dir = env.unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../samples"));
     let mut v: Vec<PathBuf> = std::fs::read_dir(&dir)
         .map(|d| {
             d.filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dng")))
+                .filter(|p| p.is_file() && (all || p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dng"))))
                 .collect()
         })
         .unwrap_or_default();
@@ -69,7 +69,10 @@ fn gpu_backend_matches_cpu_on_files() {
         if caps.gpu_unpack {
             let cpu = raw.decode(opts(Backend::Cpu, OutputFormat::RawU16)).unwrap();
             let gpu = raw.decode(opts(Backend::Gpu, OutputFormat::RawU16)).unwrap();
-            assert!(gpu.stats.backend.decode.starts_with("GPU"), "{}", gpu.stats.backend.decode);
+            // Frames whose black level is measured from masked pixels are decoded on the CPU.
+            if !raw.frame_info().black_from_masked {
+                assert!(gpu.stats.backend.decode.starts_with("GPU"), "{}", gpu.stats.backend.decode);
+            }
             assert_eq!(cpu.as_u16().unwrap(), gpu.as_u16().unwrap(), "raw u16");
             let reg = Rect::new(333, 211, 1001, 517);
             let cpu = raw.decode_region(reg, opts(Backend::Cpu, OutputFormat::RawU16)).unwrap();
@@ -114,6 +117,36 @@ fn gpu_backend_matches_cpu_on_files() {
         if let Some(d) = flashraw::gpu::auto_decision(&raw, &opts(Backend::Auto, OutputFormat::Rgba8)) {
             eprintln!("  auto (rgba8): gpu={} ({})", d.use_gpu, d.reason);
         }
+
+        // Forced tiling (16 MB bindings): row bands into one output buffer, then one
+        // buffer per band. Bit-identical to the untiled GPU result.
+        if direct.data.byte_len() <= 32 << 20 {
+            continue;
+        }
+        let ctx = flashraw::gpu::context().unwrap();
+        let half =
+            raw.decode(DecodeOptions { demosaic: Demosaic::HalfSize, ..opts(Backend::Gpu, OutputFormat::Rgba8) });
+        let half = half.unwrap();
+        let unpacked = caps.gpu_unpack.then(|| raw.decode(opts(Backend::Gpu, OutputFormat::RawU16)).unwrap());
+        for (label, buffer) in [("subrange", None), ("tiled", Some(16u64 << 20))] {
+            ctx.override_limits(Some(16 << 20), buffer);
+            let t = raw.decode(opts(Backend::Gpu, OutputFormat::Rgba8)).unwrap();
+            let post = t.stats.backend.postprocess.clone().unwrap_or_default();
+            eprintln!("  {label}: {post}");
+            assert!(post.contains("bands"), "{post}");
+            assert!(t.as_u8() == direct.as_u8(), "{label}: tiled rgba8 differs");
+            let r = raw.decode(opts(Backend::Gpu, OutputFormat::GpuRgba8)).unwrap();
+            let g = r.as_gpu().unwrap();
+            assert_eq!(g.is_tiled(), buffer.is_some() || raw.frame_info().orientation.swaps_dimensions());
+            assert!(r.download().unwrap().as_u8() == direct.as_u8(), "{label}: tiled resident differs");
+            let o = DecodeOptions { demosaic: Demosaic::HalfSize, ..opts(Backend::Gpu, OutputFormat::Rgba8) };
+            assert!(raw.decode(o).unwrap().as_u8() == half.as_u8(), "{label}: tiled half-size differs");
+            if let Some(u) = &unpacked {
+                let t = raw.decode(opts(Backend::Gpu, OutputFormat::RawU16)).unwrap();
+                assert!(t.as_u16() == u.as_u16(), "{label}: tiled unpack differs");
+            }
+        }
+        ctx.override_limits(None, None);
     }
 }
 

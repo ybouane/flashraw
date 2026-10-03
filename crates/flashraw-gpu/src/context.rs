@@ -6,6 +6,7 @@ use crate::kernels;
 use crate::oneshot;
 use flashraw_core::{Error, Result};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// Coarse adapter class used by backend selection.
@@ -96,6 +97,9 @@ pub struct GpuContext {
     pub(crate) uma: bool,
     /// Recycled buffers (large allocations are expensive: page mapping + zero-fill).
     pool: Mutex<Vec<wgpu::Buffer>>,
+    /// Caps below the adapter limits (0 = none), see [`GpuContext::override_limits`].
+    binding_cap: AtomicU64,
+    buffer_cap: AtomicU64,
 }
 
 /// Upper bound of memory kept in the buffer pool.
@@ -278,6 +282,8 @@ impl GpuContext {
             calibration: OnceLock::new(),
             uma,
             pool: Mutex::default(),
+            binding_cap: AtomicU64::new(0),
+            buffer_cap: AtomicU64::new(0),
         }
     }
 
@@ -298,9 +304,11 @@ impl GpuContext {
             }
         }
         let granule: u64 = if size > (64 << 20) { 4 << 20 } else { 256 };
+        // Never round past the adapter's buffer size limit.
+        let rounded = (size.div_ceil(granule) * granule).min(self.info.max_buffer_size & !3).max(size);
         self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
-            size: size.div_ceil(granule) * granule,
+            size: rounded,
             usage,
             mapped_at_creation: false,
         })
@@ -474,14 +482,35 @@ impl GpuContext {
     }
 
     /// Map `buffer[..size]` for writing and fill it with `data` (zero-padded).
-    pub(crate) async fn write_mapped(&self, buffer: &wgpu::Buffer, data: &[u8]) -> Result<()> {
+    ///
+    /// `after` is the last submission that used the buffer (`None`: idle). Only that
+    /// submission is waited for, so later work (e.g. the previous band's kernel) keeps
+    /// running while the host fills the buffer. Returns the time spent copying (ms),
+    /// excluding the wait for the buffer.
+    pub(crate) async fn write_mapped(
+        &self,
+        buffer: &wgpu::Buffer,
+        data: &[u8],
+        after: Option<wgpu::SubmissionIndex>,
+    ) -> Result<f64> {
         let size = (data.len() as u64).div_ceil(4).max(1) * 4;
         let (tx, rx) = oneshot::channel();
         buffer.map_async(wgpu::MapMode::Write, ..size, move |r| tx.send(r));
         #[cfg(not(target_arch = "wasm32"))]
-        self.device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|e| Error::GpuUnavailable(format!("device poll failed: {e}")))?;
+        {
+            let poll = match after {
+                Some(i) => wgpu::PollType::Wait { submission_index: Some(i), timeout: None },
+                None => wgpu::PollType::Poll,
+            };
+            self.device.poll(poll).map_err(|e| Error::GpuUnavailable(format!("device poll failed: {e}")))?;
+            if !rx.is_ready() {
+                self.device
+                    .poll(wgpu::PollType::wait_indefinitely())
+                    .map_err(|e| Error::GpuUnavailable(format!("device poll failed: {e}")))?;
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = after;
         let r = match rx.try_take() {
             Some(r) => Some(r),
             None => rx.await,
@@ -491,6 +520,7 @@ impl GpuContext {
             Some(Err(e)) => return Err(Error::GpuUnavailable(format!("buffer mapping failed: {e}"))),
             None => return Err(Error::GpuUnavailable("buffer mapping was cancelled".into())),
         }
+        let t0 = flashraw_core::profile::now_ms();
         {
             let mut view = buffer
                 .get_mapped_range_mut(..size)
@@ -502,7 +532,7 @@ impl GpuContext {
             }
         }
         buffer.unmap();
-        Ok(())
+        Ok(flashraw_core::profile::now_ms() - t0)
     }
 
     /// Take the last uncaptured device error, if any.
@@ -510,17 +540,39 @@ impl GpuContext {
         self.last_error.lock().ok()?.take()
     }
 
-    /// Check a buffer size against device limits.
-    pub(crate) fn check_size(&self, what: &str, bytes: u64) -> Result<()> {
-        let max = self.info.max_buffer_size.min(self.info.max_storage_binding);
-        if bytes > max {
-            return Err(Error::LimitExceeded(format!(
-                "{what} needs a {:.1} MB GPU buffer; adapter limit is {:.1} MB",
-                bytes as f64 / 1e6,
-                max as f64 / 1e6
-            )));
+    /// Cap the storage-binding size and/or the buffer size FlashRaw plans with, below
+    /// the adapter's limits (`None` restores the adapter limit). Frames are processed
+    /// in bands that fit these caps, so this bounds the size of every buffer FlashRaw
+    /// binds (useful to limit peak device memory, and to exercise tiling in tests).
+    /// Values are rounded down to a multiple of 256 bytes, with a 4 KB minimum.
+    pub fn override_limits(&self, max_binding: Option<u64>, max_buffer: Option<u64>) {
+        let v = |o: Option<u64>| o.map(|b| (b & !255).max(4096)).unwrap_or(0);
+        self.binding_cap.store(v(max_binding), Ordering::Relaxed);
+        self.buffer_cap.store(v(max_buffer), Ordering::Relaxed);
+    }
+
+    /// Largest storage binding FlashRaw uses (adapter limit, caps, 32-bit addressing).
+    pub fn max_binding_bytes(&self) -> u64 {
+        let mut b = self.info.max_storage_binding.min(self.info.max_buffer_size).min(u32::MAX as u64 & !255);
+        let cap = self.binding_cap.load(Ordering::Relaxed);
+        if cap > 0 {
+            b = b.min(cap);
         }
-        Ok(())
+        b.min(self.max_buffer_bytes())
+    }
+
+    /// Largest single buffer FlashRaw allocates (adapter limit and cap).
+    pub fn max_buffer_bytes(&self) -> u64 {
+        let cap = self.buffer_cap.load(Ordering::Relaxed);
+        if cap > 0 { self.info.max_buffer_size.min(cap) } else { self.info.max_buffer_size }
+    }
+
+    /// Number of bands a frame with `input_bytes` of upload and `output_bytes` of
+    /// result needs on this device (an estimate for cost models; 1 = untiled).
+    pub fn estimate_bands(&self, input_bytes: u64, output_bytes: u64) -> u32 {
+        let b = self.max_binding_bytes().max(1);
+        let out = if output_bytes <= b { 1 } else { output_bytes.div_ceil(b) };
+        input_bytes.div_ceil(b).max(out).max(1).min(u32::MAX as u64) as u32
     }
 }
 
