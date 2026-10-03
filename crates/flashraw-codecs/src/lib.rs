@@ -21,6 +21,7 @@ pub mod jxl;
 pub mod kodak;
 pub mod leaf;
 pub mod ljpeg;
+mod ljpeg_par;
 pub mod misc_packed;
 pub mod nikon_huffman;
 pub mod nikon_packed;

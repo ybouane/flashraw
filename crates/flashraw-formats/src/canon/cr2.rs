@@ -415,7 +415,16 @@ fn open_bayer<'a>(
         Box::new(move |ctx: &DecodeContext| {
             let mut img = RawImage::new_u16(raw_w, raw_h, 1, &ctx.limits)?;
             ctx.profiler.time(Stage::EntropyDecode, || {
-                canon_cr2::decode(sdata, &hdr, raw_w as usize, raw_h as usize, slices, shift, img.u16_mut())
+                canon_cr2::decode(
+                    sdata,
+                    &hdr,
+                    raw_w as usize,
+                    raw_h as usize,
+                    slices,
+                    shift,
+                    ctx.parallel,
+                    img.u16_mut(),
+                )
             })?;
             if let Some(c) = &curve {
                 let mut full = c.clone();

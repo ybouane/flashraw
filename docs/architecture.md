@@ -86,6 +86,15 @@ precisely without per-symbol checks.
 fully-decoded difference (code + diff bits ≤ 12), so most lossless-JPEG samples
 decode with one lookup and one shift.
 
+**Parallel decoding of one Huffman stream.** Formats whose single lossless-JPEG scan
+has no restart markers (CR2) are still decoded on all threads: the stream is cut into
+chunks that are decoded speculatively (once per table phase), Huffman
+self-synchronisation locates where each chunk's speculation joins the true path
+(typically within a few dozen symbols), and rows are rebuilt from the differences by
+a parallel prefix sum. Any case the speculation cannot prove identical — no
+synchronisation, an invalid code, truncation — falls back to the sequential decoder,
+so results and errors never differ.
+
 **Camera knowledge as data.** `camera-db/cameras.json` — one database for the whole
 library — holds camera entries (aliases, modes, crops, masked areas, per-ISO levels,
 CFA, colour matrices, decoder hints, verification records), fallback colour tables,

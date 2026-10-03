@@ -8,9 +8,10 @@
 //! slices preceding the last one. Without the tag (or with `count == 0`) the samples
 //! simply fill the image row by row.
 //!
-//! The decoder streams JPEG rows straight into the output image: every decoded row
-//! is split into runs that are copied to their final position, so no intermediate
-//! frame buffer exists.
+//! Large frames are entropy-decoded on all threads ([`ljpeg::decode_frame_parallel`])
+//! into a frame buffer whose rows are then copied to their slice positions in
+//! parallel. Otherwise the decoder streams JPEG rows straight into the output image,
+//! splitting every row into runs copied to their final position.
 
 use crate::ljpeg::{self, LjpegHeader};
 use flashraw_core::{Error, Result};
@@ -100,10 +101,52 @@ impl Placement {
     }
 }
 
+/// Frames smaller than this decode sequentially (speculation has a fixed cost).
+const PARALLEL_MIN_SAMPLES: usize = 4 << 20;
+
+/// Decode the frame with [`ljpeg::decode_frame_parallel`] and place it. Returns
+/// `Ok(false)` when the stream has to be decoded sequentially.
+fn decode_parallel(
+    data: &[u8],
+    hdr: &LjpegHeader,
+    place: &Placement,
+    out: &mut [u16],
+    chunk: Option<usize>,
+) -> Result<bool> {
+    let frame_len = hdr.row_len() * hdr.height as usize;
+    if place.widths.len() == 1 && frame_len <= out.len() {
+        // Unsliced: the sample stream is the image in raster order.
+        return crate::ljpeg_par::decode_frame_chunked(data, hdr, &mut out[..frame_len], chunk);
+    }
+    let mut frame = vec![0u16; frame_len];
+    if !crate::ljpeg_par::decode_frame_chunked(data, hdr, &mut frame, chunk)? {
+        return Ok(false);
+    }
+    let (w, h) = (place.raw_width, place.raw_height);
+    let workers = flashraw_core::par::memory_bound_workers();
+    flashraw_core::par::for_each_row_chunk_bounded(out, w, workers, true, |y0, rows| {
+        for (dy, row) in rows.chunks_exact_mut(w).enumerate() {
+            let y = y0 + dy;
+            let mut base = 0usize;
+            for (&sw, &x0) in place.widths.iter().zip(&place.starts) {
+                let src = base + y * sw;
+                base += sw * h;
+                if x0 >= w || src >= frame.len() {
+                    continue;
+                }
+                let n = sw.min(w - x0).min(frame.len() - src);
+                row[x0..x0 + n].copy_from_slice(&frame[src..src + n]);
+            }
+        }
+    });
+    Ok(true)
+}
+
 /// Decode a CR2 lossless-JPEG stream into `out` (`raw_width * raw_height` samples).
 ///
 /// `shift_left_2` reproduces the EOS-1D Mark III quirk where the stream is offset by
 /// two samples (every sample lands two positions earlier in raster order).
+#[allow(clippy::too_many_arguments)]
 pub fn decode(
     data: &[u8],
     hdr: &LjpegHeader,
@@ -111,6 +154,7 @@ pub fn decode(
     raw_height: usize,
     slices: Slices,
     shift_left_2: bool,
+    parallel: bool,
     out: &mut [u16],
 ) -> Result<()> {
     let total = raw_width.checked_mul(raw_height).ok_or_else(|| Error::corrupt("CR2: size overflow"))?;
@@ -119,6 +163,13 @@ pub fn decode(
     }
     let out = &mut out[..total];
     let mut place = Placement::new(raw_width, raw_height, slices)?;
+    if parallel && total >= PARALLEL_MIN_SAMPLES && decode_parallel(data, hdr, &place, out, None)? {
+        if shift_left_2 && total > 2 {
+            out.copy_within(2.., 0);
+            out[total - 2..].fill(0);
+        }
+        return Ok(());
+    }
     let mut overflow = false;
     ljpeg::decode_rows(data, hdr, |_, row| {
         if overflow {
@@ -193,7 +244,11 @@ mod tests {
             Slices { count: 0, width: 0, last_width: 14 },
         ] {
             let mut out = vec![0u16; w * h];
-            decode(&jpg, &hdr, w, h, s, false, &mut out).unwrap();
+            decode(&jpg, &hdr, w, h, s, false, false, &mut out).unwrap();
+            let place = Placement::new(w, h, s).unwrap();
+            let mut par = vec![0u16; w * h];
+            assert!(decode_parallel(&jpg, &hdr, &place, &mut par, Some(9)).unwrap());
+            assert_eq!(par, out, "parallel {s:?}");
             assert_eq!(out, reference(&samples, w, h, s), "{s:?}");
         }
     }
@@ -205,7 +260,7 @@ mod tests {
         let jpg = encode(8, 2, 1, 12, 1, &samples);
         let hdr = LjpegHeader::parse(&jpg, Default::default()).unwrap();
         let mut out = vec![0u16; w * h];
-        decode(&jpg, &hdr, w, h, Slices::default(), true, &mut out).unwrap();
+        decode(&jpg, &hdr, w, h, Slices::default(), true, false, &mut out).unwrap();
         assert_eq!(&out[..w * h - 2], &samples[2..]);
         assert_eq!(&out[w * h - 2..], &[0, 0]);
     }

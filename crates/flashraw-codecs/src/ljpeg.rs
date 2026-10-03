@@ -16,6 +16,8 @@ use flashraw_core::bits::{BitPumpMsb, BitRead};
 use flashraw_core::huffman::HuffTable;
 use flashraw_core::{Error, ReadAt, Result};
 
+pub use crate::ljpeg_par::decode_frame_parallel;
+
 /// Frame component.
 #[derive(Debug, Clone, Copy)]
 pub struct Component {
@@ -41,7 +43,10 @@ pub struct LjpegHeader {
     pub point_transform: u32,
     pub restart_interval: u32,
     /// Huffman table per value position in the MCU.
-    tables: Vec<HuffTable>,
+    pub(crate) tables: Vec<HuffTable>,
+    /// Table identity per entry of `tables`: equal ids mean identical tables (slots with
+    /// byte-identical definitions share the id of the first).
+    pub(crate) table_ids: Vec<u8>,
     /// Offset of entropy-coded data in the input.
     pub scan_offset: usize,
 }
@@ -67,6 +72,8 @@ impl LjpegHeader {
         }
         let mut pos = 2usize;
         let mut dht: [Option<HuffTable>; 4] = [None, None, None, None];
+        // Raw DHT bytes per slot: slots holding identical tables share an id.
+        let mut dht_raw: [Option<&[u8]>; 4] = [None; 4];
         let mut frame: Option<(u32, u32, u32, Vec<Component>, u32)> = None;
         let mut restart = 0u32;
         let mut sof_marker = 0xC3u8;
@@ -126,6 +133,7 @@ impl LjpegHeader {
                         let mut t = HuffTable::from_counts(counts, vals, true)?;
                         t.dng_bug16 = opts.dng_bug16;
                         dht[id] = Some(t);
+                        dht_raw[id] = Some(&seg[p + 1..p + 17 + total]);
                         p += 17 + total;
                     }
                 }
@@ -155,14 +163,20 @@ impl LjpegHeader {
                     let clrs = comps.len() as u32 + sraw;
                     // Table per MCU position: luma table repeated for sRAW extra samples.
                     let mut tables = Vec::with_capacity(clrs as usize);
+                    let mut table_ids = Vec::with_capacity(clrs as usize);
                     for c in 0..clrs as usize {
                         let comp = c.saturating_sub(sraw as usize);
-                        let id = comp_tables[comp];
-                        let t = dht[id]
-                            .clone()
-                            .or_else(|| dht.iter().flatten().next().cloned())
-                            .ok_or_else(|| Error::corrupt("lossless JPEG: missing Huffman table"))?;
+                        // A missing table falls back to the first one defined.
+                        let id = if dht[comp_tables[comp]].is_some() {
+                            comp_tables[comp]
+                        } else {
+                            dht.iter().position(|t| t.is_some()).unwrap_or(0)
+                        };
+                        let t =
+                            dht[id].clone().ok_or_else(|| Error::corrupt("lossless JPEG: missing Huffman table"))?;
                         tables.push(t);
+                        let canon = dht_raw.iter().position(|r| r.is_some() && *r == dht_raw[id]).unwrap_or(id);
+                        table_ids.push(canon as u8);
                     }
                     if bits == 0 || bits > 16 || pt >= bits || width == 0 || height == 0 {
                         return Err(Error::corrupt(format!(
@@ -180,6 +194,7 @@ impl LjpegHeader {
                         point_transform: pt,
                         restart_interval: restart,
                         tables,
+                        table_ids,
                         scan_offset: pos + len,
                     });
                 }
@@ -252,13 +267,13 @@ where
 
 /// Entropy-coded data with `FF 00` stuffing removed, split at restart markers.
 pub struct Unstuffed {
-    data: Vec<u8>,
+    pub(crate) data: Vec<u8>,
     /// `(start, end)` of each restart interval within `data`.
-    segments: Vec<(usize, usize)>,
+    pub(crate) segments: Vec<(usize, usize)>,
 }
 
 impl Unstuffed {
-    fn segment(&self, i: usize) -> &[u8] {
+    pub(crate) fn segment(&self, i: usize) -> &[u8] {
         self.segments.get(i).map(|&(a, b)| &self.data[a..b]).unwrap_or(&[])
     }
 }

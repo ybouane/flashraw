@@ -64,7 +64,14 @@ pub fn undo_float_predictor(row: &mut [u8], tmp: &mut Vec<u8>, width_samples: us
 /// stored as byte planes (most significant plane first). With `factor == 0` the samples
 /// are stored contiguously in file byte order (`little_endian`). Fuses what
 /// [`undo_float_predictor`] + [`float_bytes_to_f32`] do, without a temporary row.
-pub fn decode_float_row(row: &mut [u8], samples: usize, bps_bytes: usize, factor: usize, little_endian: bool, out: &mut [f32]) {
+pub fn decode_float_row(
+    row: &mut [u8],
+    samples: usize,
+    bps_bytes: usize,
+    factor: usize,
+    little_endian: bool,
+    out: &mut [f32],
+) {
     let n = samples * bps_bytes;
     if row.len() < n || out.len() < samples || !(2..=4).contains(&bps_bytes) {
         return;
@@ -73,8 +80,14 @@ pub fn decode_float_row(row: &mut [u8], samples: usize, bps_bytes: usize, factor
     let out = &mut out[..samples];
     if factor == 0 {
         match (bps_bytes, little_endian) {
-            (4, true) => out.iter_mut().zip(row.chunks_exact(4)).for_each(|(o, c)| *o = f32::from_le_bytes([c[0], c[1], c[2], c[3]])),
-            (4, false) => out.iter_mut().zip(row.chunks_exact(4)).for_each(|(o, c)| *o = f32::from_be_bytes([c[0], c[1], c[2], c[3]])),
+            (4, true) => out
+                .iter_mut()
+                .zip(row.chunks_exact(4))
+                .for_each(|(o, c)| *o = f32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            (4, false) => out
+                .iter_mut()
+                .zip(row.chunks_exact(4))
+                .for_each(|(o, c)| *o = f32::from_be_bytes([c[0], c[1], c[2], c[3]])),
             (2, le) => out.iter_mut().zip(row.chunks_exact(2)).for_each(|(o, c)| {
                 *o = f16_to_f32(if le { u16::from_le_bytes([c[0], c[1]]) } else { u16::from_be_bytes([c[0], c[1]]) })
             }),

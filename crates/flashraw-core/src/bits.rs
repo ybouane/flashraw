@@ -144,6 +144,22 @@ impl<'a> BitPumpMsb<'a> {
         let r = self.bits % 8;
         self.skip_no_fill(r);
     }
+
+    /// Bits consumed from the start of the input (padding past the end included).
+    #[inline(always)]
+    pub fn bit_position(&self) -> u64 {
+        self.pos as u64 * 8 - self.bits as u64
+    }
+
+    /// A pump positioned `bit` bits into `data`.
+    pub fn at_bit(data: &'a [u8], bit: u64) -> Self {
+        let mut p = Self::new(data.get((bit / 8) as usize..).unwrap_or(&[]));
+        p.fill();
+        p.skip_no_fill((bit % 8) as u32);
+        p.pos += (bit / 8) as usize;
+        p.data = data;
+        p
+    }
 }
 
 impl BitRead for BitPumpMsb<'_> {
