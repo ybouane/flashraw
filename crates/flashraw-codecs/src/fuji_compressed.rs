@@ -279,15 +279,22 @@ impl OutputMap {
     }
 }
 
+/// Size of a level table: a power of two above every difference of 16-bit samples
+/// (`-65535..=65535`), so a difference wraps to a unique index.
+const LUT_LEN: usize = 1 << 17;
+type Lut = Box<[i8; LUT_LEN]>;
+
 /// A quantisation table: maps a neighbour difference to a level in `-4..=4`.
 #[derive(Clone)]
 struct QTable {
-    lut: Vec<i8>,
+    lut: Lut,
     q_base: i32,
     max_grad: i32,
     grad_mult: i32,
     total_values: i32,
     raw_bits: u32,
+    /// Longest unary prefix of a Rice code; longer prefixes escape to a raw value.
+    max_zeros: i32,
 }
 
 fn log2ceil(v: i32) -> u32 {
@@ -295,11 +302,13 @@ fn log2ceil(v: i32) -> u32 {
 }
 
 impl QTable {
-    /// Level lookup for differences in `-max..=max` with thresholds `qp[0..4]`.
-    fn lut(qp: [i32; 5]) -> Vec<i8> {
+    /// Level lookup for differences in `-max..=max` with thresholds `qp[0..4]`, indexed
+    /// by the difference modulo the table size.
+    fn lut(qp: [i32; 5]) -> Lut {
         let max = qp[4];
-        (-max..=max)
-            .map(|v| {
+        let mut t: Lut = vec![0; LUT_LEN].into_boxed_slice().try_into().unwrap();
+        for v in -max..=max {
+            t[v as usize & (LUT_LEN - 1)] = {
                 if v <= -qp[3] {
                     -4
                 } else if v <= -qp[2] {
@@ -319,8 +328,15 @@ impl QTable {
                 } else {
                     4
                 }
-            })
-            .collect()
+            };
+        }
+        t
+    }
+
+    fn new(lut: Lut, q_base: i32, max_grad: i32, grad_mult: i32, total_values: i32, max_value: i32) -> Self {
+        let raw_bits = log2ceil(total_values);
+        let max_bits = 4 * log2ceil(max_value + 1) as i32;
+        QTable { lut, q_base, max_grad, grad_mult, total_values, raw_bits, max_zeros: max_bits - raw_bits as i32 - 1 }
     }
 
     /// The main table for a line quantisation base.
@@ -337,7 +353,13 @@ impl QTable {
             qp[3] = qp[2];
         }
         let total_values = (qp[4] + 2 * q_base) / (2 * q_base + 1) + 1;
-        QTable { lut: Self::lut(qp), q_base, max_grad: 0, grad_mult: 9, total_values, raw_bits: log2ceil(total_values) }
+        Self::new(Self::lut(qp), q_base, 0, 9, total_values, max_value)
+    }
+
+    #[inline(always)]
+    fn level(&self, v: i32) -> i32 {
+        // The mask keeps the index in range without a bounds check.
+        self.lut[v as usize & (LUT_LEN - 1)] as i32
     }
 
     /// The three fixed tables used by lossy streams for flat areas.
@@ -348,26 +370,13 @@ impl QTable {
             let q1 = pick(t[0], q_base + 1);
             let q2 = pick(t[1], q1);
             let q3 = pick(t[2], q2);
-            QTable {
-                lut: Self::lut([q_base, q1, q2, q3, m]),
-                q_base,
-                max_grad,
-                grad_mult: 3,
-                total_values,
-                raw_bits: log2ceil(total_values),
-            }
+            Self::new(Self::lut([q_base, q1, q2, q3, m]), q_base, max_grad, 3, total_values, m)
         };
         [
             mk(0, 5, m + 1, [0x12, 0x43, 0x114]),
             mk(1, 6, (m + 2) / 3 + 1, [0x15, 0x48, 0x11B]),
             mk(2, 7, (m + 4) / 5 + 1, [0x18, 0x4D, 0x122]),
         ]
-    }
-
-    #[inline(always)]
-    fn level(&self, max: i32, v: i32) -> i32 {
-        // `v` is a difference of two samples in 0..=max, so the index is in range.
-        self.lut.get((max + v) as usize).copied().unwrap_or(0) as i32
     }
 }
 
@@ -376,7 +385,6 @@ struct Common {
     xtrans: bool,
     line_width: usize,
     max_value: i32,
-    max_bits: i32,
     /// Main tables indexed by q_base (lossless: only index 0).
     main: Vec<Option<QTable>>,
     extra: [QTable; 3],
@@ -402,7 +410,6 @@ impl Common {
             xtrans: h.xtrans,
             line_width: h.line_width(),
             max_value,
-            max_bits: 4 * log2ceil(max_value + 1) as i32,
             main,
             extra: QTable::lossy_extra(max_value),
         })
@@ -410,7 +417,25 @@ impl Common {
 }
 
 /// Adaptive statistics for one gradient context: (accumulated magnitude, count).
-type Stat = (i32, i32);
+/// The Rice parameter `bit_diff(sum, n)` is kept alongside, computed when the
+/// statistics change rather than on every use.
+/// Packed in 8 bytes so one load fetches all three.
+#[derive(Clone, Copy)]
+#[repr(C, align(8))]
+struct Stat {
+    sum: i32,
+    n: u8,
+    k: u8,
+    /// `(1 << k) - 1`, the mask of the Rice remainder.
+    mask: u16,
+}
+
+#[inline(always)]
+fn new_stat(sum: i32, n: i32) -> Stat {
+    // `n` stays within 1..=MIN_VALUE and `k` within 0..=15.
+    let k = bit_diff(sum, n);
+    Stat { sum, n: n as u8, k: k as u8, mask: ((1u32 << k) - 1) as u16 }
+}
 
 /// Per-context statistics: 41 main gradient contexts and, for lossy streams, 5
 /// contexts for each of the three flat-area tables.
@@ -475,7 +500,7 @@ enum Even {
 impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     fn new(c: &'c Common, data: &'a [u8], q_bases: &'a [u8]) -> Result<Self> {
         let stride = c.line_width + 2;
-        let init = Grads { main: [(0, 1); 41], lossy: [[(0, 1); 5]; 3] };
+        let init = Grads { main: [new_stat(0, 1); 41], lossy: [[new_stat(0, 1); 5]; 3] };
         let first_q = if LOSSY { q_bases.first().copied().unwrap_or(0) as usize } else { 0 };
         let qt = c.main[first_q].as_ref().ok_or_else(|| Error::corrupt("Fuji quantisation table missing"))?;
         let mut d = BlockDecoder {
@@ -494,7 +519,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
             for k in 0..3 {
                 let max_diff = 2.max((c.extra[k].total_values + 0x20) >> 6);
                 for g in d.grads.iter_mut().flatten() {
-                    g.lossy[k] = [(max_diff, 1); 5];
+                    g.lossy[k] = [new_stat(max_diff, 1); 5];
                 }
             }
         } else {
@@ -507,7 +532,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     fn init_main_grads(&mut self) {
         let max_diff = 2.max((self.qt.total_values + 0x20) >> 6);
         for g in self.grads.iter_mut().flatten() {
-            g.main = [(max_diff, 1); 41];
+            g.main = [new_stat(max_diff, 1); 41];
         }
     }
 
@@ -583,29 +608,39 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     /// even steps behind (they need the even neighbours on both sides).
     #[inline(never)]
     fn pass(&mut self, a: usize, b: usize, g: usize, rule_a: impl Fn(usize) -> Even, rule_b: impl Fn(usize) -> Even) {
-        let lw = self.c.line_width;
-        // The line buffers are moved out for the pass so each sample's neighbourhood is
-        // borrowed once, alongside the mutable decoder state.
+        let s = self.stride;
+        // Everything the samples touch is held in locals for the pass: the bit pump stays
+        // in registers, and the line windows and statistics are borrowed once.
         let mut lines = std::mem::take(&mut self.lines);
+        let mut st = Sampler { c: self.c, qt: self.qt, bits: self.bits, overrun: false };
+        let [even, odd] = &mut self.grads;
+        let (ge, go) = (&mut even[g], &mut odd[g]);
+        // `a` lies below `b` in the buffer and their three-line windows do not overlap.
+        let (lo, hi) = lines.split_at_mut((b - 2) * s);
+        let mut la = Lines::new(&mut lo[(a - 2) * s..], s);
+        let mut lb = Lines::new(hi, s);
+        let lw = la.width();
         let (mut ep, mut op) = (0usize, 1usize);
         while ep < lw || op < lw {
             if ep < lw {
                 match rule_a(ep) {
-                    Even::Decode => self.decode_even(&mut lines, a, ep, g),
-                    Even::Interp => self.interp_even(&mut lines, a, ep),
+                    Even::Decode => la.decode_even::<LOSSY>(&mut st, ge, ep),
+                    Even::Interp => la.interp_even(ep),
                 }
                 match rule_b(ep) {
-                    Even::Decode => self.decode_even(&mut lines, b, ep, g),
-                    Even::Interp => self.interp_even(&mut lines, b, ep),
+                    Even::Decode => lb.decode_even::<LOSSY>(&mut st, ge, ep),
+                    Even::Interp => lb.interp_even(ep),
                 }
                 ep += 2;
             }
             if ep > 8 {
-                self.decode_odd(&mut lines, a, op, g);
-                self.decode_odd(&mut lines, b, op, g);
+                la.decode_odd::<LOSSY>(&mut st, go, op);
+                lb.decode_odd::<LOSSY>(&mut st, go, op);
                 op += 2;
             }
         }
+        self.bits = st.bits;
+        self.overrun |= st.overrun;
         self.lines = lines;
     }
 
@@ -632,49 +667,19 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
             self.lines[first * s + lw + 1] = self.lines[(first - 1) * s + lw];
         }
     }
+}
 
-    /// Neighbourhood of `(line, pos)` as one slice starting two lines up at `pos`:
-    /// `rf = w[0]`, `rc/rb/rd = w[s-1..=s+1]`, `ra/cur/rg = w[2s-1..=2s+1]`.
-    #[inline(always)]
-    fn window(lines: &mut [u16], s: usize, line: usize, pos: usize) -> &mut [u16] {
-        let start = (line - 2) * s + 1 + pos;
-        &mut lines[start..start + 2 * s + 2]
-    }
+/// Entropy-decoding state of one pass, held in locals.
+struct Sampler<'c, 'a> {
+    c: &'c Common,
+    /// Current main table.
+    qt: &'c QTable,
+    bits: BitPumpMsb<'a>,
+    /// Set when the bit stream ran dry inside a zero run.
+    overrun: bool,
+}
 
-    #[inline(always)]
-    fn interp_even(&mut self, lines: &mut [u16], line: usize, pos: usize) {
-        let s = self.stride;
-        let w = Self::window(lines, s, line, pos);
-        let (rf, rc, rb, rd) = (w[0] as i32, w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
-        w[2 * s] = (even_prediction(rf, rc, rb, rd) >> 2) as u16;
-    }
-
-    #[inline(always)]
-    fn decode_even(&mut self, lines: &mut [u16], line: usize, pos: usize, g: usize) {
-        let s = self.stride;
-        let w = Self::window(lines, s, line, pos);
-        let (rf, rc, rb, rd) = (w[0] as i32, w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
-        let interp = even_prediction(rf, rc, rb, rd) >> 2;
-        let flat = (rf - rb).abs() + (rc - rb).abs();
-        w[2 * s] = self.decode_residual::<0>(g, flat, rb - rf, rc - rb, interp);
-    }
-
-    #[inline(always)]
-    fn decode_odd(&mut self, lines: &mut [u16], line: usize, pos: usize, g: usize) {
-        let s = self.stride;
-        let w = Self::window(lines, s, line, pos);
-        let (rc, rb, rd) = (w[s - 1] as i32, w[s] as i32, w[s + 1] as i32);
-        let (ra, rg) = (w[2 * s - 1] as i32, w[2 * s + 1] as i32);
-        // `rb` is a local extremum among (rc, rb, rd) exactly when both differences share a
-        // sign (and neither is zero); then the prediction also weighs `rb`.
-        let (x, y) = (rb - rc, rb - rd);
-        let extremum = ((x ^ y) >= 0) & (x != 0) & (y != 0);
-        let e = -(extremum as i32);
-        let interp = (((rg + ra + 2 * rb) >> 2) & e) | (((ra + rg) >> 1) & !e);
-        let flat = (rb - rc).abs() + (rc - ra).abs();
-        w[2 * s] = self.decode_residual::<1>(g, flat, rb - rc, rc - ra, interp);
-    }
-
+impl Sampler<'_, '_> {
     /// Count zero bits up to (and consuming) the next one bit.
     #[inline(always)]
     fn zero_run(&mut self) -> i32 {
@@ -697,9 +702,16 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
     }
 
     /// Decode one residual and reconstruct the sample from the prediction `interp`.
-    /// `SIDE` selects the even (0) or odd (1) statistics.
+    /// `grads` are the statistics of the sample's side (even or odd) and pass.
     #[inline(always)]
-    fn decode_residual<const SIDE: usize>(&mut self, g: usize, flat: i32, v1: i32, v2: i32, interp: i32) -> u16 {
+    fn decode_residual<const LOSSY: bool>(
+        &mut self,
+        grads: &mut Grads,
+        flat: i32,
+        v1: i32,
+        v2: i32,
+        interp: i32,
+    ) -> u16 {
         let c = self.c;
         let max = c.max_value;
         let mut qt = self.qt;
@@ -717,26 +729,27 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
                 i += 1;
             }
         }
-        let grad = qt.grad_mult * qt.level(max, v1) + qt.level(max, v2);
+        // The main table always weighs the first difference by 9.
+        let mult = if LOSSY { qt.grad_mult } else { 9 };
+        let grad = mult * qt.level(v1) + qt.level(v2);
         let gi = grad.unsigned_abs() as usize;
-        let (sum, n) = if LOSSY && ctx != usize::MAX {
-            self.grads[SIDE][g].lossy[ctx][gi.min(4)]
-        } else {
-            self.grads[SIDE][g].main[gi.min(40)]
-        };
+        let st = if LOSSY && ctx != usize::MAX { grads.lossy[ctx][gi.min(4)] } else { grads.main[gi.min(40)] };
+        let (sum, n, k, mask) = (st.sum, st.n as i32, st.k as u32, st.mask as u32);
         // Fast path: the unary prefix and the Rice remainder fit in one 32-bit peek.
-        self.bits.fill();
+        // The refill is unconditional: it is branch-free, while testing the fill level
+        // mispredicts on the irregular code lengths.
+        self.bits.refill_force();
         let w = self.bits.peek_no_fill(32);
         let lz = w.leading_zeros();
-        let k = bit_diff(sum, n);
-        let code = if w != 0 && (lz as i32) < c.max_bits - qt.raw_bits as i32 - 1 && lz + 1 + k <= 32 {
+        let code = if w != 0 && (lz as i32) < qt.max_zeros && lz + 1 + k <= 32 {
             let total = lz + 1 + k;
-            let v = self.bits.peek_no_fill(total) & ((1u32 << k) - 1);
+            // The remainder is the `k` bits after the prefix's terminating one bit.
+            let v = (w >> (32 - total)) & mask;
             self.bits.skip_no_fill(total);
             ((lz << k) | v) as i32
         } else {
             let sample = self.zero_run();
-            if sample < c.max_bits - qt.raw_bits as i32 - 1 {
+            if sample < qt.max_zeros {
                 ((sample as u32) << k | self.bits.get(k)) as i32
             } else {
                 self.bits.get(qt.raw_bits) as i32 + 1
@@ -745,17 +758,13 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         // Out-of-range codes are tolerated rather than treated as fatal.
         // Zig-zag decode (odd codes are negative): branch-free `code & 1 ? -1 - code/2 : code/2`.
         let code = (code >> 1) ^ -(code & 1);
-        let (mut sum, mut n) = (sum + code.abs(), n);
-        if n == MIN_VALUE {
-            sum >>= 1;
-            n >>= 1;
-        }
-        let stat = if LOSSY && ctx != usize::MAX {
-            &mut self.grads[SIDE][g].lossy[ctx][gi.min(4)]
-        } else {
-            &mut self.grads[SIDE][g].main[gi.min(40)]
-        };
-        *stat = (sum, n + 1);
+        // Halve the statistics when the count reaches MIN_VALUE (branch-free: rare but
+        // irregular).
+        let h = (n == MIN_VALUE) as u32;
+        let (sum, n) = ((sum + code.abs()) >> h, n >> h);
+        let stat =
+            if LOSSY && ctx != usize::MAX { &mut grads.lossy[ctx][gi.min(4)] } else { &mut grads.main[gi.min(40)] };
+        *stat = new_stat(sum, n + 1);
         // Lossless streams always quantise with base 0 (step 1).
         let (q_base, step) = if LOSSY { (qt.q_base, 2 * qt.q_base + 1) } else { (0, 1) };
         // The residual's sign follows the gradient's (branch-free: (grad >> 31) | 1 is ±1).
@@ -766,6 +775,67 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
             v -= qt.total_values * step;
         }
         v.clamp(0, max) as u16
+    }
+}
+
+/// The three-line window of one colour line in a pass: the two lines above (read) and
+/// the line being decoded. Each line is `width + 2` samples with one guard on each side.
+struct Lines<'l> {
+    up2: &'l [u16],
+    up1: &'l [u16],
+    cur: &'l mut [u16],
+}
+
+impl<'l> Lines<'l> {
+    /// `block` starts at the first of the three lines; `s` is the line stride.
+    #[inline(always)]
+    fn new(block: &'l mut [u16], s: usize) -> Self {
+        let (up2, rest) = block.split_at_mut(s);
+        let (up1, rest) = rest.split_at_mut(s);
+        Lines { up2, up1, cur: &mut rest[..s] }
+    }
+
+    /// Number of samples per line (positions `0..width`, stored at `1..=width`).
+    #[inline(always)]
+    fn width(&self) -> usize {
+        self.cur.len().saturating_sub(2)
+    }
+
+    /// Even-position neighbours of `pos`: `(rf, rc, rb, rd)`.
+    #[inline(always)]
+    fn even_ctx(&self, pos: usize) -> (i32, i32, i32, i32) {
+        let up = &self.up1[pos..pos + 3];
+        (self.up2[pos + 1] as i32, up[0] as i32, up[1] as i32, up[2] as i32)
+    }
+
+    #[inline(always)]
+    fn interp_even(&mut self, pos: usize) {
+        let (rf, rc, rb, rd) = self.even_ctx(pos);
+        self.cur[pos + 1] = (even_prediction(rf, rc, rb, rd) >> 2) as u16;
+    }
+
+    #[inline(always)]
+    fn decode_even<const LOSSY: bool>(&mut self, st: &mut Sampler, grads: &mut Grads, pos: usize) {
+        let (rf, rc, rb, rd) = self.even_ctx(pos);
+        let interp = even_prediction(rf, rc, rb, rd) >> 2;
+        let flat = (rf - rb).abs() + (rc - rb).abs();
+        self.cur[pos + 1] = st.decode_residual::<LOSSY>(grads, flat, rb - rf, rc - rb, interp);
+    }
+
+    #[inline(always)]
+    fn decode_odd<const LOSSY: bool>(&mut self, st: &mut Sampler, grads: &mut Grads, pos: usize) {
+        let up = &self.up1[pos..pos + 3];
+        let (rc, rb, rd) = (up[0] as i32, up[1] as i32, up[2] as i32);
+        let cur = &mut self.cur[pos..pos + 3];
+        let (ra, rg) = (cur[0] as i32, cur[2] as i32);
+        // `rb` is a local extremum among (rc, rb, rd) exactly when both differences share a
+        // sign (and neither is zero); then the prediction also weighs `rb`.
+        let (x, y) = (rb - rc, rb - rd);
+        let extremum = ((x ^ y) >= 0) & (x != 0) & (y != 0);
+        let e = -(extremum as i32);
+        let interp = (((rg + ra + 2 * rb) >> 2) & e) | (((ra + rg) >> 1) & !e);
+        let flat = (rb - rc).abs() + (rc - ra).abs();
+        cur[1] = st.decode_residual::<LOSSY>(grads, flat, rb - rc, rc - ra, interp);
     }
 }
 
@@ -838,12 +908,12 @@ mod tests {
         let t = QTable::main(0, 16383);
         assert_eq!(t.total_values, 16384);
         assert_eq!(t.raw_bits, 14);
-        assert_eq!(t.level(16383, 0), 0);
-        assert_eq!(t.level(16383, 1), 1);
-        assert_eq!(t.level(16383, -1), -1);
-        assert_eq!(t.level(16383, 0x12), 2);
-        assert_eq!(t.level(16383, 16383), 4);
-        assert_eq!(t.level(16383, -16383), -4);
+        assert_eq!(t.level(0), 0);
+        assert_eq!(t.level(1), 1);
+        assert_eq!(t.level(-1), -1);
+        assert_eq!(t.level(0x12), 2);
+        assert_eq!(t.level(16383), 4);
+        assert_eq!(t.level(-16383), -4);
         let t = QTable::main(3, 16383);
         assert_eq!(t.total_values, (16383 + 6) / 7 + 1);
         let x = QTable::lossy_extra(4095);

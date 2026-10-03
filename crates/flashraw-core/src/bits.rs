@@ -110,7 +110,7 @@ macro_rules! common_fields {
 }
 
 /// MSB-first bit pump (big-endian bit order).
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct BitPumpMsb<'a> {
     data: &'a [u8],
     pos: usize,
@@ -123,7 +123,15 @@ pub struct BitPumpMsb<'a> {
 impl<'a> BitPumpMsb<'a> {
     common_fields!();
 
+    /// The end-of-input refill. Takes and returns the pump by value so a pump held in
+    /// a local stays in registers in hot loops (a `&mut self` call would pin it to memory).
     #[cold]
+    #[inline(never)]
+    fn filled_slow(mut self) -> Self {
+        self.fill_slow();
+        self
+    }
+
     fn fill_slow(&mut self) {
         while self.bits <= 56 {
             let b = match self.data.get(self.pos) {
@@ -178,7 +186,7 @@ impl BitRead for BitPumpMsb<'_> {
             self.pos += ((63 - self.bits) >> 3) as usize;
             self.bits |= 56;
         } else {
-            self.fill_slow();
+            *self = self.filled_slow();
         }
     }
     #[inline(always)]
