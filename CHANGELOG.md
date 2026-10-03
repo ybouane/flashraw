@@ -32,7 +32,9 @@ First complete release of FlashRaw.
 - Speculative parallel decoding of single sequential entropy streams (Huffman
   self-synchronisation; anything speculation cannot prove exact falls back to the
   sequential decoder): CR2 lossless JPEG and sRAW, single-strip lossless DNG, Kodak
-  DCS, Hasselblad 3FR/FFF, Nikon and Pentax predictive Huffman.
+  DCS, Hasselblad 3FR/FFF, Nikon and Pentax predictive Huffman, Panasonic v8 strips,
+  Sony ARW1.
+- Fuji compressed: branch-free predictions; Samsung V2: staged block decoding.
 - Floating-point DNG: fused predictor and float assembly, zlib-rs inflate,
   parallel float → integer conversion.
 
