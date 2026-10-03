@@ -18,11 +18,22 @@ First complete release of FlashRaw.
 - Region and tile decoding for tiled/row-addressable formats; honest
   `RandomAccess` reporting.
 - Zero-copy embedded preview/thumbnail access.
+- DNG opcode lists applied by default, each in its specified stage (List 1 on stored
+  values, List 2 on normalised active-area values, List 3 on demosaiced camera RGB):
+  GainMap, MapTable, MapPolynomial, per-row/column delta and scale, bad-pixel repair
+  and FixVignetteRadial; geometric opcodes reported. `apply_opcodes` / `--no-opcodes`
+  / `applyOpcodes` turn them off; `DecodeStatistics::opcodes` reports what ran.
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
   (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed
   output buffers, fused single-pass RGB development with orientation.
+- Speculative parallel decoding of single sequential entropy streams (Huffman
+  self-synchronisation; any case it cannot prove identical falls back to the
+  sequential decoder): CR2 lossless JPEG and sRAW, single-strip lossless DNG, Kodak
+  DCS, Hasselblad 3FR/FFF, Nikon and Pentax predictive Huffman.
+- Floating-point DNG: fused predictor and float assembly, zlib-rs inflate,
+  parallel float → integer conversion.
 
 ### Camera database
 - Single JSON database (`camera-db/cameras.json`): 1,624 camera entries, 814 fallback
@@ -32,8 +43,12 @@ First complete release of FlashRaw.
 ### Platforms
 - `flashraw` CLI: info, decode, preview, thumbnail, benchmark, verify,
   dump-metadata, supported, camera-db tooling.
-- Optional wgpu/WebGPU backend with GPU-resident outputs and a measured Auto policy.
-- WASM bindings and the `flashraw` npm package (browser, Node, workers, TypeScript).
+- Optional wgpu/WebGPU backend with GPU-resident outputs and a measured Auto policy;
+  frames beyond the adapter's buffer limits are processed in bands (pipelined
+  uploads, banded or tiled outputs).
+- WASM bindings and the `flashraw` npm package (browser, Node, workers, TypeScript):
+  multithreaded build (shared-memory rayon pool, chosen automatically when available),
+  opt-in WebGPU build with GPU-resident frames.
 
 ### Quality
   malformed-input suite, 10 fuzz targets, criterion benchmarks, comparative
