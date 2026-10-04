@@ -176,27 +176,25 @@ fn develop_half(@builtin(global_invocation_id) gid: vec3<u32>) {
         let x = x0 + (k & 1u);
         let y = y0 + (k >> 1u);
         if (x < P.width && y < P.height) {
+            // Accumulate through channel masks rather than `acc[c] += ...`: some shader
+            // compilers (FXC on Direct3D 12) reject dynamically indexed vector writes.
             if (is_cfa()) {
                 let c = cfa_site(x, y) & 3u;
-                acc[c] += sample_norm(x, y, 0u);
-                n[c] += 1.0;
+                let m = select(vec4<f32>(0.0), vec4<f32>(1.0), vec4<u32>(c) == vec4<u32>(0u, 1u, 2u, 3u));
+                acc += m * sample_norm(x, y, 0u);
+                n += m;
             } else if (LAYOUT == 2u) {
-                for (var c = 0u; c < 3u; c++) {
-                    acc[c] += sample_norm(x, y, c);
-                    n[c] += 1.0;
-                }
+                acc += vec4<f32>(sample_norm(x, y, 0u), sample_norm(x, y, 1u), sample_norm(x, y, 2u), 0.0);
+                n += vec4<f32>(1.0, 1.0, 1.0, 0.0);
             } else {
-                acc[0] += sample_norm(x, y, 0u);
-                n[0] += 1.0;
+                acc.x += sample_norm(x, y, 0u);
+                n.x += 1.0;
             }
         }
     }
-    var rgb = vec3<f32>(0.0);
-    for (var c = 0u; c < 3u; c++) {
-        if (n[c] > 0.0) {
-            rgb[c] = acc[c] / n[c];
-        }
-    }
+    let have = n.xyz > vec3<f32>(0.0);
+    let rgb_avg = acc.xyz / select(vec3<f32>(1.0), n.xyz, have);
+    var rgb = select(vec3<f32>(0.0), rgb_avg, have);
     if (LAYOUT == 0u) {
         rgb = vec3<f32>(rgb.x);
     }

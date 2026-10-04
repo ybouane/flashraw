@@ -1,5 +1,5 @@
 target/
-corpus/
+/corpus/
 node_modules/
 *.part
 /reference/
