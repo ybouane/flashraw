@@ -14,7 +14,14 @@ use flashraw_codecs::packed::unpack_row_scalar;
 use flashraw_core::*;
 use flashraw_gpu::reference::{PackedRaster, packed_sample};
 use flashraw_gpu::{DevelopOutput, DevelopSpec, GpuFrame, GpuInput, GpuOp, HostPixels};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
+
+/// GPU tests run one at a time: some software adapters (the Direct3D 12 WARP driver on
+/// Windows CI runners) crash when several devices record and submit concurrently.
+fn serial() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 fn gpu() -> Option<Arc<flashraw_gpu::GpuContext>> {
     match flashraw_gpu::context() {
@@ -84,6 +91,7 @@ fn reference_model_matches_scalar_unpack() {
 
 #[test]
 fn gpu_unpack_bit_exact() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let info = FrameInfo::new(8, 8, 16);
     let mut cases = 0;
@@ -117,6 +125,7 @@ fn gpu_unpack_bit_exact() {
 
 #[test]
 fn gpu_unpack_window_and_lut() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let (w, h, bits) = (301usize, 47usize, 14u32);
     let stride = (w * bits as usize).div_ceil(8) + 5;
@@ -186,6 +195,7 @@ fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
 
 #[test]
 fn gpu_normalize_matches_cpu() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     for (cfa, cpp) in [(Some(CfaPattern::RGGB), 1u32), (None, 3), (None, 1)] {
         let (w, h) = (123u32, 77u32);
@@ -229,6 +239,7 @@ fn cmp_rgba(got: &[u8], want: &[u8], what: &str) {
 
 #[test]
 fn gpu_develop_matches_cpu() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let cases = [
         DevCase { name: "bayer", cfa: Some(CfaPattern::RGGB), cpp: 1 },
@@ -304,6 +315,7 @@ fn gpu_develop_matches_cpu() {
 
 #[test]
 fn gpu_develop_from_packed_and_f32() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let (w, h, bits) = (211u32, 64u32, 12u32);
     let stride = (w * bits).div_ceil(8) as usize + 2; // padded, unaligned rows
@@ -368,6 +380,7 @@ fn gpu_develop_from_packed_and_f32() {
 
 #[test]
 fn gpu_image_to_texture() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let info = {
         let mut i = FrameInfo::new(40, 30, 12);
@@ -446,6 +459,7 @@ fn download(run: &flashraw_gpu::GpuRun) -> HostPixels {
 
 #[test]
 fn gpu_tiled_develop_matches_untiled_and_cpu() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let Some(tiny) = tiny_context() else { return };
     let cases = [
@@ -526,6 +540,7 @@ fn gpu_tiled_develop_matches_untiled_and_cpu() {
 
 #[test]
 fn gpu_tiled_unpack_and_normalize() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let Some(tiny) = tiny_context() else { return };
     // Odd row length (bands must start on whole u16 pairs), padded unaligned stride,
@@ -576,6 +591,7 @@ fn gpu_tiled_unpack_and_normalize() {
 
 #[test]
 fn gpu_tiled_packed_develop_and_texture() {
+    let _serial = serial();
     let Some(ctx) = gpu() else { return };
     let Some(tiny) = tiny_context() else { return };
     let (w, h, bits) = (211u32, 130u32, 12u32);
