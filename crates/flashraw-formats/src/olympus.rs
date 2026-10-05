@@ -189,8 +189,10 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     classify_previews(&mut meta.previews);
 
     // Read from the first strip to the end of the file (the extra
-    // row of odd-height frames comes from the bytes after the strip).
-    let src = data.get(offset..).ok_or_else(|| Error::corrupt("ORF: strip offset beyond file"))?;
+    // row of odd-height frames comes from the bytes after the strip). A strip past the
+    // end of the file fails when decoded; metadata and previews stay available.
+    let src = data.get(offset..).unwrap_or(&[]);
+    let strip = Strip { data, offset, declared: first_len, src };
     let (w, h) = (raw_w as usize, buf_h as usize);
     let mut dec = SimpleDecoder::new(
         RawFormat::Orf,
@@ -198,7 +200,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         info,
         Box::new(move |ctx| {
             let mut img = RawImage::new_u16(w as u32, h as u32, 1, &ctx.limits)?;
-            decode(src, payload, img.u16_mut(), w, h, raw_h as usize, ctx)?;
+            decode(&strip, payload, img.u16_mut(), w, h, raw_h as usize, ctx)?;
             Ok(img)
         }),
     );
@@ -218,9 +220,28 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     Ok(Box::new(dec))
 }
 
+/// The raw strip: `src` runs from its offset to the end of the file (empty when the
+/// offset is past it).
+struct Strip<'a> {
+    data: &'a [u8],
+    offset: usize,
+    declared: usize,
+    src: &'a [u8],
+}
+
+impl Strip<'_> {
+    /// Check that the file holds the `need` bytes the coded rows require: a structured
+    /// error (strict) or the truncation to report once the missing samples are counted
+    /// (recover). Buffer rows past the coded rows (odd-height frames) read whatever
+    /// follows the strip and are not part of the check.
+    fn check(&self, ctx: &DecodeContext, need: usize) -> Result<Option<Truncation>> {
+        Ok(ctx.sensor_bytes(self.data, DataUnit::Strip(0), self.offset, need)?.truncation)
+    }
+}
+
 /// Decode a payload into `out` (`w x h`, `coded_rows` rows present in the strip).
 fn decode(
-    src: &[u8],
+    strip: &Strip,
     payload: Payload,
     out: &mut [u16],
     w: usize,
@@ -228,9 +249,23 @@ fn decode(
     coded_rows: usize,
     ctx: &DecodeContext,
 ) -> Result<()> {
-    match payload {
+    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+    let src = strip.src;
+    // Samples of the coded rows left zero because the strip is truncated (recover).
+    let filled = AtomicU64::new(0);
+    let missing = |y: usize, n: usize| {
+        if y < coded_rows && n < w {
+            filled.fetch_add((w - n) as u64, Relaxed);
+        }
+    };
+    let truncation = match payload {
         Payload::Compressed(p) => {
-            ctx.profiler.time(Stage::EntropyDecode, || codec::decode_with(src, &p, out, w, h, ctx.parallel))
+            // Compressed streams are strict under every policy; a failure over a strip
+            // running past the end of the file is reported as truncation.
+            return ctx
+                .profiler
+                .time(Stage::EntropyDecode, || codec::decode_with(src, &p, out, w, h, ctx.parallel))
+                .map_err(|e| e.or_truncated(strip.data.len(), DataUnit::Strip(0), strip.offset, strip.declared));
         }
         Payload::Packed12Words | Payload::Packed12Msb => {
             let words = matches!(payload, Payload::Packed12Words);
@@ -239,67 +274,117 @@ fn decode(
                 return Err(Error::unsupported_compression("ORF", "12-bit packed rows with an odd width"));
             }
             let stride = w * 3 / 2;
-            require(src, stride * coded_rows)?;
+            let truncation = strip.check(ctx, stride * coded_rows)?;
             if words && stride % 4 != 0 {
                 // Rows do not start on a word boundary: one continuous stream.
-                return ctx.profiler.time(Stage::Unpack, || {
+                ctx.profiler.time(Stage::Unpack, || {
                     let mut p = flashraw_core::bits::BitPumpMsb32::new(src);
                     for v in out.iter_mut() {
                         *v = flashraw_core::bits::BitRead::get(&mut p, 12) as u16;
                     }
-                    Ok(())
                 });
+                if truncation.is_some() {
+                    // Recovering: samples not entirely in the data are zero.
+                    let complete = flashraw_codecs::packed::complete_samples(src.len(), 12, order).min(out.len());
+                    out[complete..].fill(0);
+                    filled.store((w * coded_rows).saturating_sub(complete) as u64, Relaxed);
+                }
+                truncation
+            } else {
+                let layout = flashraw_codecs::PackedLayout { width: w, height: h, bits: 12, order, row_stride: stride };
+                ctx.profiler.time(Stage::Unpack, || {
+                    // Rows past the strip (odd-height frames) read the following file bytes.
+                    flashraw_codecs::unpack(src, layout, out, w, ctx.parallel, ctx.simd, true)
+                })?;
+                if truncation.is_some() {
+                    let g = RowGeometry::packed(coded_rows, w, 12, stride);
+                    filled.store(g.missing_samples(src.len()), Relaxed);
+                }
+                truncation
             }
-            let layout = flashraw_codecs::PackedLayout { width: w, height: h, bits: 12, order, row_stride: stride };
-            ctx.profiler.time(Stage::Unpack, || {
-                // Rows past the strip (odd-height frames) read the following file bytes.
-                flashraw_codecs::unpack(src, layout, out, w, ctx.parallel, ctx.simd, true)
-            })
         }
         Payload::Packed12Interlaced => {
             let stride = w * 12 / 8;
             let half = h.div_ceil(2);
             let second = (half * stride).div_ceil(2048) * 2048;
-            require(src, second + stride * (coded_rows / 2))?;
+            let truncation = strip.check(ctx, second + stride * (coded_rows / 2))?;
             ctx.profiler.time(Stage::Unpack, || {
                 par::for_each_row_chunk_bounded(out, w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let y = first + i;
                         let off = if y % 2 == 0 { y / 2 * stride } else { second + y / 2 * stride };
-                        let Some(s) = src.get(off..(off + stride).min(src.len())) else { continue };
-                        flashraw_codecs::packed::unpack_row(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+                        let s = src.get(off..(off + stride).min(src.len())).unwrap_or(&[]);
+                        if s.len() == stride {
+                            flashraw_codecs::packed::unpack_row(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+                        } else if truncation.is_some() {
+                            let n =
+                                flashraw_codecs::packed::unpack_row_partial(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+                            missing(y, n);
+                        } else if !s.is_empty() {
+                            flashraw_codecs::packed::unpack_row(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+                        }
                     }
                 });
             });
-            Ok(())
+            truncation
         }
         Payload::Packed12Padded => {
             if w % 10 != 0 {
                 return Err(Error::unsupported_compression("ORF", "padded 12-bit rows not a multiple of 10 pixels"));
             }
             let stride = w / 10 * 16;
-            require(src, stride * coded_rows)?;
+            // The last row needs its last group's 15 data bytes, not the padding byte.
+            let need = RowGeometry { rows: coded_rows, stride, row_bytes: stride - 1, samples: w }.needed();
+            let truncation = strip.check(ctx, need)?;
             ctx.profiler.time(Stage::Unpack, || {
                 par::for_each_row_chunk_bounded(out, w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let y = first + i;
-                        let Some(s) = src.get(y * stride..(y + 1) * stride) else { continue };
-                        for (group, px) in s.chunks_exact(16).zip(row.chunks_exact_mut(10)) {
-                            flashraw_codecs::packed::unpack_row(&group[..15], px, 12, PackOrder::LsbBytes, false);
+                        let s = src.get(y * stride..).unwrap_or(&[]);
+                        let s = &s[..stride.min(s.len())];
+                        let mut n = 0;
+                        for (group, px) in s.chunks(16).zip(row.chunks_exact_mut(10)) {
+                            // Rows past the coded rows keep needing whole groups.
+                            if group.len() == 16 || (y < coded_rows && group.len() == 15) {
+                                flashraw_codecs::packed::unpack_row(&group[..15], px, 12, PackOrder::LsbBytes, false);
+                                n += 10;
+                            } else if truncation.is_some() {
+                                n += flashraw_codecs::packed::unpack_row_partial(
+                                    group,
+                                    px,
+                                    12,
+                                    PackOrder::LsbBytes,
+                                    false,
+                                );
+                                break;
+                            }
+                        }
+                        if truncation.is_some() {
+                            missing(y, n);
                         }
                     }
                 });
             });
-            Ok(())
+            truncation
         }
         Payload::Unpacked { big_endian, shift } => {
-            require(src, w * 2 * coded_rows)?;
+            let truncation = strip.check(ctx, w * 2 * coded_rows)?;
             let order = if big_endian { PackOrder::MsbBytes } else { PackOrder::LsbBytes };
             ctx.profiler.time(Stage::Unpack, || {
                 par::for_each_row_chunk_bounded(out, w, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let y = first + i;
-                        let Some(s) = src.get(y * w * 2..(y + 1) * w * 2) else { continue };
+                        let s = match src.get(y * w * 2..(y + 1) * w * 2) {
+                            Some(s) => s,
+                            None if truncation.is_some() => {
+                                let s = src.get(y * w * 2..).unwrap_or(&[]);
+                                let n = flashraw_codecs::packed::unpack_row_partial(s, row, 16, order, true);
+                                missing(y, n);
+                                row[..n].iter_mut().for_each(|v| *v >>= shift);
+                                continue;
+                            }
+                            None => continue,
+                        };
                         flashraw_codecs::packed::unpack_row(s, row, 16, order, true);
                         if shift > 0 {
                             row.iter_mut().for_each(|v| *v >>= shift);
@@ -307,14 +392,11 @@ fn decode(
                     }
                 });
             });
-            Ok(())
+            truncation
         }
-    }
-}
-
-fn require(src: &[u8], n: usize) -> Result<()> {
-    if src.len() < n {
-        return Err(Error::corrupt(format!("ORF: payload truncated ({} of {n} bytes)", src.len())));
+    };
+    if let Some(t) = truncation {
+        ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
     }
     Ok(())
 }
