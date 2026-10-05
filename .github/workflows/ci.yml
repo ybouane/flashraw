@@ -22,6 +22,9 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy -p flashraw --all-features -- -D warnings
+      # Unit tests in a debug build too: overflow checks catch arithmetic bugs that
+      # release builds silently wrap.
+      - run: cargo test --lib -p flashraw-core -p flashraw-codecs -p flashraw-formats -p flashraw
 
   msrv:
     runs-on: ubuntu-latest

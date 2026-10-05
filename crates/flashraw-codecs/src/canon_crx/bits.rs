@@ -39,7 +39,9 @@ impl<'a> CrxBits<'a> {
 
     #[cold]
     fn refill_slow(&mut self) {
-        while self.avail <= 56 {
+        // Stop at 56..=63 bits like the fast path: a full 64 would make consuming the
+        // whole cache a 64-bit shift.
+        while self.avail < 56 {
             let b = match self.data.get(self.pos) {
                 Some(&b) => b,
                 None => {

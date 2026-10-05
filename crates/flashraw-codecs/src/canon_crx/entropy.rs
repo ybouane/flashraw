@@ -681,7 +681,7 @@ mod tests {
         }
         pub fn put(&mut self, v: u32, bits: u32) {
             for i in (0..bits).rev() {
-                self.acc = (self.acc << 1) | ((v >> i) & 1) as u64;
+                self.acc = (self.acc << 1) | (v.checked_shr(i).unwrap_or(0) & 1) as u64;
                 self.n += 1;
                 if self.n == 8 {
                     self.out.push(self.acc as u8);
