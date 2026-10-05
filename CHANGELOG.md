@@ -68,7 +68,9 @@ First complete release of FlashRaw.
   "LG-H815" gives "H815" instead of "-H815" and "OM-1" stays whole; a trailing Kodak
   "FILE VERSION n" signature and whitespace padding are dropped ("DCS460B").
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
-  bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
+  bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark), and JPEG XL tiles
+  with RowInterleaveFactor/ColumnInterleaveFactor are de-interleaved (they decoded as four
+  quadrant sub-images).
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack

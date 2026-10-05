@@ -52,6 +52,24 @@ struct DngRaw<'a> {
     dng_bug16: bool,
     vc5_white: u32,
     vc5_phase: Option<flashraw_codecs::vc5::CfaPhase>,
+    /// RowInterleaveFactor and ColumnInterleaveFactor: a tile stores its rows (columns)
+    /// grouped by `index % factor`.
+    #[cfg_attr(not(feature = "jpegxl"), allow(dead_code))]
+    interleave: (usize, usize),
+}
+
+/// Stored position of row (column) `pos` of an `n`-long tile dimension whose rows
+/// (columns) are grouped into `factor` fields: field `pos % factor` holds positions
+/// `f, f + factor, ...` in order, fields one after another.
+#[cfg_attr(not(feature = "jpegxl"), allow(dead_code))]
+fn interleaved_pos(pos: usize, n: usize, factor: usize) -> usize {
+    if factor <= 1 || pos >= n {
+        return pos;
+    }
+    let f = pos % factor;
+    // Lengths of the fields before `f`: ceil((n - g) / factor) for g < f.
+    let before: usize = (0..f).map(|g| (n - g).div_ceil(factor)).sum();
+    before + pos / factor
 }
 
 /// Open a DNG.
@@ -673,6 +691,13 @@ fn parse_raw<'a>(
         });
 
     let order = tiff.order;
+    // Field interleaving (DNG 1.7, used with JPEG XL tiles); other payloads store rows in order.
+    let factor = |t: u16| raw.u32(t).map(|v| v.clamp(1, 16) as usize).unwrap_or(1);
+    let interleave = if payload == Payload::JpegXl {
+        (factor(tags::ROW_INTERLEAVE_FACTOR), factor(tags::COLUMN_INTERLEAVE_FACTOR))
+    } else {
+        (1, 1)
+    };
     let dng_bug16 = version >= [1, 1, 0, 0];
     let tile_w = tile_w.min(width.max(1)).max(if raw.has(tags::TILE_OFFSETS) { tile_w } else { 1 });
     let raw_desc = DngRaw {
@@ -693,6 +718,7 @@ fn parse_raw<'a>(
         dng_bug16,
         vc5_white: info.white_level.max(),
         vc5_phase: info.cfa.as_ref().and_then(flashraw_codecs::vc5::CfaPhase::from_pattern),
+        interleave,
     };
     Ok((info, raw_desc))
 }
@@ -1006,7 +1032,7 @@ impl DngRaw<'_> {
                 }
                 Ok(())
             }
-            Payload::JpegXl => decode_jxl_u16(src, self.bps, &mut t, sx, sy, cpp, finish),
+            Payload::JpegXl => decode_jxl_u16(self, src, &mut t, sx, sy, finish),
             Payload::Vc5 => Err(Error::corrupt("VC-5 is decoded as a whole image")),
         }
     }
@@ -1105,28 +1131,31 @@ impl DngRaw<'_> {
 
 #[cfg(feature = "jpegxl")]
 fn decode_jxl_u16(
+    raw: &DngRaw,
     src: &[u8],
-    bits: u32,
     t: &mut TileMut<'_, '_, u16>,
     sx: usize,
     sy: usize,
-    cpp: usize,
     finish: impl Fn(&mut [u16]),
 ) -> Result<()> {
     // Samples are scaled to the DNG's BitsPerSample, not the codestream's bit depth.
-    let img = flashraw_codecs::jxl::decode(src, bits)?;
+    let img = flashraw_codecs::jxl::decode(src, raw.bps)?;
+    let cpp = raw.cpp as usize;
+    let (rif, cif) = raw.interleave;
     let (w, h) = t.size();
     for y in 0..h {
         let yy = sy + y;
         if yy >= img.height {
             break;
         }
+        let sr = interleaved_pos(yy, img.height, rif);
         let r = t.row(y);
         for (xi, v) in r.iter_mut().enumerate().take(w * cpp) {
             let x = (sx + xi) / cpp;
             let c = (sx + xi) % cpp;
             if x < img.width {
-                *v = img.data[(yy * img.width + x) * img.channels + c.min(img.channels - 1)];
+                let sc = interleaved_pos(x, img.width, cif);
+                *v = img.data[(sr * img.width + sc) * img.channels + c.min(img.channels - 1)];
             }
         }
         finish(r);
@@ -1136,12 +1165,11 @@ fn decode_jxl_u16(
 
 #[cfg(not(feature = "jpegxl"))]
 fn decode_jxl_u16(
+    _raw: &DngRaw,
     _src: &[u8],
-    _bits: u32,
     _t: &mut TileMut<'_, '_, u16>,
     _sx: usize,
     _sy: usize,
-    _cpp: usize,
     _finish: impl Fn(&mut [u16]),
 ) -> Result<()> {
     Err(Error::unsupported_compression("DNG", "JPEG XL (build with the `jpegxl` feature)"))
@@ -1389,6 +1417,24 @@ mod tests {
         let f = float_dng(true, 1).build();
         assert_eq!(open_dng(&f).unwrap().frame_info().white_level.values, vec![1]);
         assert_eq!(decode_dng(&f).unwrap().data.as_f32().unwrap(), &float_samples()[..]);
+    }
+
+    #[test]
+    fn interleave_fields() {
+        // Factor 2 over 6 rows: even rows first, then odd rows.
+        let map: Vec<usize> = (0..6).map(|y| interleaved_pos(y, 6, 2)).collect();
+        assert_eq!(map, [0, 3, 1, 4, 2, 5]);
+        // Uneven fields: 7 rows in 3 fields of 3, 2 and 2 rows.
+        let map: Vec<usize> = (0..7).map(|y| interleaved_pos(y, 7, 3)).collect();
+        assert_eq!(map, [0, 3, 5, 1, 4, 6, 2]);
+        // Always a permutation; factor 1 (or out-of-range positions) is the identity.
+        for (n, f) in [(1, 2), (5, 2), (4224, 2), (17, 4), (9, 16)] {
+            let mut seen: Vec<usize> = (0..n).map(|p| interleaved_pos(p, n, f)).collect();
+            seen.sort_unstable();
+            assert!(seen.iter().copied().eq(0..n), "{n} {f}");
+        }
+        assert_eq!(interleaved_pos(5, 8, 1), 5);
+        assert_eq!(interleaved_pos(9, 8, 2), 9);
     }
 
     #[test]

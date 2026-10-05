@@ -155,6 +155,7 @@ pub mod tags {
     pub const ILLUMINANT_DATA1: u16 = 0xCD35;
     pub const ILLUMINANT_DATA2: u16 = 0xCD36;
     pub const ILLUMINANT_DATA3: u16 = 0xCD37;
+    pub const ROW_INTERLEAVE_FACTOR: u16 = 0xC71F;
     pub const COLUMN_INTERLEAVE_FACTOR: u16 = 0xCD43;
     pub const JXL_DISTANCE: u16 = 0xCD49;
 }
