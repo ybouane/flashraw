@@ -3,7 +3,7 @@
 mod output;
 
 use clap::{Args, Parser, Subcommand};
-use flashraw::{Backend, DecodeOptions, Demosaic, FlashRaw, OutputFormat, Rect};
+use flashraw::{Backend, CorruptionPolicy, DecodeOptions, Demosaic, FlashRaw, OutputFormat, Rect};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -37,6 +37,10 @@ struct DecodeArgs {
     /// Do not apply DNG opcode lists (bad pixels, lens shading, ...).
     #[arg(long)]
     no_opcodes: bool,
+    /// Fail on truncated or corrupt sensor data instead of zero-filling what is missing
+    /// (with a warning, the default).
+    #[arg(long)]
+    strict: bool,
     /// Print per-stage timings.
     #[arg(long)]
     profile: bool,
@@ -89,6 +93,10 @@ enum Cmd {
         /// it, samples are hashed as stored (the payload decode alone).
         #[arg(long)]
         apply_opcodes: bool,
+        /// Fail on truncated or corrupt sensor data instead of recovering it (recovered
+        /// files report `incomplete` and `warnings`).
+        #[arg(long)]
+        strict: bool,
     },
     /// List supported formats and compression modes.
     Supported {
@@ -127,6 +135,10 @@ fn parse_rect(s: &str) -> Result<Rect, String> {
     Ok(Rect::new(v[0], v[1], v[2], v[3]))
 }
 
+fn policy(strict: bool) -> CorruptionPolicy {
+    if strict { CorruptionPolicy::Strict } else { CorruptionPolicy::Recover }
+}
+
 fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
     Ok(DecodeOptions {
         backend: Backend::parse(&a.backend).ok_or_else(|| format!("unknown backend {:?}", a.backend))?,
@@ -135,6 +147,7 @@ fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
         region: a.region,
         demosaic: if a.demosaic.starts_with("half") { Demosaic::HalfSize } else { Demosaic::Bilinear },
         apply_opcodes: !a.no_opcodes,
+        corruption_policy: policy(a.strict),
         ..Default::default()
     })
 }
@@ -205,6 +218,9 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
                 None => raw.decode(opts),
             }
             .map_err(|e| format!("{}: {e}", file.display()))?;
+            for w in frame.warnings() {
+                eprintln!("warning: {}: {w}", file.display());
+            }
             let fmt = format
                 .or_else(|| out.extension().map(|e| e.to_string_lossy().to_lowercase()))
                 .unwrap_or_else(|| "raw".into());
@@ -215,7 +231,8 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
             if args.json {
                 println!(
                     "{}",
-                    serde_json::json!({"width": frame.width, "height": frame.height, "cpp": frame.cpp, "stats": frame.stats})
+                    serde_json::json!({"width": frame.width, "height": frame.height, "cpp": frame.cpp, "stats": frame.stats,
+                        "incomplete": frame.is_incomplete(), "warnings": output::warnings_json(frame.warnings())})
                 );
             } else {
                 eprintln!("wrote {} ({}x{}x{})", out.display(), frame.width, frame.height, frame.cpp);
@@ -243,10 +260,10 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Cmd::Verify { files, json, dump_dir, apply_opcodes } => {
+        Cmd::Verify { files, json, dump_dir, apply_opcodes, strict } => {
             let mut failed = false;
             for f in &files {
-                let r = output::verify(f, dump_dir.as_deref(), apply_opcodes);
+                let r = output::verify(f, dump_dir.as_deref(), apply_opcodes, policy(strict));
                 if r.get("error").is_some() {
                     failed = true;
                 }
