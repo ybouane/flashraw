@@ -17,6 +17,12 @@ fuzz_target!(|data: &[u8]| {
     unpack_row_scalar(src, &mut a, bits, order);
     unpack_row(src, &mut b, bits, order, true);
     assert_eq!(a, b);
+    // Partial rows (recovering truncated data): complete samples match, the rest are zero.
+    let mut c = vec![0xFFFFu16; width];
+    let n = unpack_row_partial(src, &mut c, bits, order, true);
+    assert_eq!(n, complete_samples(src.len(), bits, order).min(width));
+    assert_eq!(&c[..n], &a[..n]);
+    assert!(c[n..].iter().all(|&v| v == 0));
     let layout = PackedLayout { width: width.min(64), height: 4, bits, order, row_stride: (data[1] as usize) + 1 };
     let mut dst = vec![0u16; 64 * 4];
     let _ = unpack(src, layout, &mut dst, 64, false, true, data[2] & 1 == 0);
