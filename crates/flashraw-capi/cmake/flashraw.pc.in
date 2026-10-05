@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: flashraw
+Description: Fast, safe RAW image decoding (C/C++ API)
+URL: https://github.com/ybouane/flashraw
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lflashraw_capi
+Libs.private: @FLASHRAW_PC_LIBS_PRIVATE@
+Cflags: -I${includedir}
