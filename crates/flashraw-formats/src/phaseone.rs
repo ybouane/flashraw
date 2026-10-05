@@ -233,7 +233,7 @@ impl IiqRaw<'_> {
             return Err(Error::truncated(Truncation::new(
                 DataUnit::Strip(y as u32),
                 s as u64,
-                (e - s).max(1) as u64,
+                e.saturating_sub(s).max(1) as u64,
                 len,
             )));
         }
