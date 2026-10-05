@@ -178,9 +178,16 @@ fn gpu_opcode_notes(raw: &FlashRaw<'_>) -> Vec<String> {
 
 impl FlashRaw<'_> {
     /// Asynchronous GPU decode (required in the browser, where the GPU cannot be
-    /// waited on synchronously; also usable on native). Always uses the GPU path
-    /// (call `flashraw::gpu::init().await` first in the browser).
+    /// waited on synchronously; also usable on native). Uses the GPU path (call
+    /// `flashraw::gpu::init().await` first in the browser), except for host outputs that a
+    /// DNG opcode list changes: those are decoded by the CPU pipeline, like [`FlashRaw::decode`].
     pub async fn decode_gpu_async(&self, opts: DecodeOptions) -> Result<RawFrame> {
+        if !opts.output.is_gpu_resident()
+            && opts.apply_opcodes
+            && crate::opcodes::Lists::of(self.frame_info()).is_some_and(|l| l.affects(opts.output))
+        {
+            return self.decode(DecodeOptions { backend: Backend::Auto, ..opts });
+        }
         let t0 = flashraw_core::profile::now_ms();
         let profiler = Profiler::new();
         profiler.record(Stage::ContainerParse, self.parse_ms);

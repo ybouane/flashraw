@@ -8,7 +8,8 @@
 <canvas id="c"></canvas>
 <script type="module">
   // Driven by tests/browser/run.mjs. Query: ?simd=0 forces the fallback binary, ?threads=0|N
-  // the single-threaded build / N threads, ?gpu=1 loads the WebGPU build and runs GPU checks.
+  // the single-threaded build / N threads, ?gpu=1 loads the WebGPU build and runs GPU checks,
+  // ?nogpu=1 hides navigator.gpu.
   import * as fr from '/dist/browser.js';
   import { createWorkerPool } from '/dist/worker.browser.js';
 
@@ -39,8 +40,11 @@
     const blob = await (await fetch(`/tests/fixtures/${name}`)).blob();
     const raw = await fr.FlashRaw.open(blob);
     const out = { device: !!(await fr.getGpuDevice()) };
-    const cpu = await raw.decode({ output: 'rgba8' });
-    const g = await raw.decode({ backend: 'gpu', output: 'rgba8' });
+    // The fixture carries a DNG opcode list (bad pixels): host outputs that it changes are
+    // decoded by the CPU pipeline; without opcodes the GPU unpacks and develops.
+    out.opcodes = (await raw.decode({ backend: 'gpu', output: 'rgba8' })).backend.kind;
+    const cpu = await raw.decode({ output: 'rgba8', applyOpcodes: false });
+    const g = await raw.decode({ backend: 'gpu', output: 'rgba8', applyOpcodes: false });
     out.rgba = { kind: g.backend.kind, adapter: g.backend.gpuAdapter, fallbackReason: g.backend.fallbackReason, size: [g.width, g.height], diff: diff(cpu.data, g.data) };
     const r = await raw.decode({ output: 'gpu-rgba8' });
     if (r instanceof fr.GpuFrame) {
@@ -66,6 +70,8 @@
 
   async function run() {
     const q = new URLSearchParams(location.search);
+    // ?nogpu=1: behave like a browser without WebGPU.
+    if (q.get('nogpu') === '1') Object.defineProperty(Navigator.prototype, 'gpu', { get: () => undefined, configurable: true });
     const t0 = performance.now();
     const opts = {};
     if (q.get('simd') === '0') opts.simd = false;
