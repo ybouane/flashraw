@@ -44,7 +44,7 @@ architecture, memory model, builds, sizes and performance. User-facing API docs:
 | Data | Copies | Lifetime |
 |---|---|---|
 | Input bytes (`Uint8Array`/`ArrayBuffer`/`Buffer`) | **1** (into an `InputBuffer` allocated in WASM memory with `try_reserve`, not zero-filled since JS overwrites it; OOM → `OutOfMemoryError`) | owned by the `RawFile` until `close()` |
-| Input `Blob`/`File` (browser), file path (Node) | **1**, streamed chunk by chunk straight into WASM memory — no full-size JS copy (Node paths: read directly into the shared memory of the threaded build, through an 8 MiB staging buffer otherwise) | same |
+| Input `Blob`/`File` (browser), file path (Node) | **1**, streamed chunk by chunk straight into WASM memory (a Blob whose stream fails is re-read in 8 MiB slices: WebKit rejects streaming fetched Blobs over ~100 MB) — no full-size JS copy (Node paths: read directly into the shared memory of the threaded build, through an 8 MiB staging buffer otherwise) | same |
 | Metadata, frame info | JSON string (small) | plain JS objects, cached per handle |
 | Embedded preview (default) | 1 (`slice()` of the input region) | standalone `Uint8Array` |
 | Embedded preview (`zeroCopy: true`) | **0**: view into the input buffer | until `close()`; the handle is pinned (not GC-able) meanwhile |

@@ -270,6 +270,27 @@ describe('inputs', () => {
     assert.equal(fnv1a64U16(f.data), ref.hash_full);
   });
 
+  test('a Blob that fails to stream is read in slices', async () => {
+    // WebKit rejects stream()/arrayBuffer() of large fetched Blobs (NotReadableError), even
+    // part-way through, while slice() reads work.
+    class Flaky extends Blob {
+      stream() {
+        let sent = false;
+        return new ReadableStream({
+          pull(c) {
+            if (sent) c.error(new DOMException('The I/O read operation failed.', 'NotReadableError'));
+            else {
+              sent = true;
+              c.enqueue(new Uint8Array(1000));
+            }
+          },
+        });
+      }
+    }
+    const f = await decodeRaw(new Flaky([buf]));
+    assert.equal(fnv1a64U16(f.data), ref.hash_full);
+  });
+
   test('input is copied: mutating the caller buffer after open has no effect', async () => {
     const copy = new Uint8Array(buf);
     const raw = await FlashRaw.open(copy);

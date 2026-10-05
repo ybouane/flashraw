@@ -296,24 +296,33 @@ function copyIn(bytes) {
   return buf;
 }
 
-/** Stream chunks straight into WASM memory (one copy, no full-size JS buffer). */
-async function streamIn(size, chunks) {
-  let buf;
-  try {
-    buf = wcall(() => new wb.InputBuffer(size));
-  } catch (e) {
-    await chunks.return?.(); // release the underlying file handle / reader
-    throw e;
-  }
+/** Write `chunks` into `buf` (one copy, no full-size JS buffer); they must total `size` bytes. */
+async function fill(buf, size, chunks) {
   let off = 0;
+  for await (const c of chunks) {
+    if (off + c.length > size) throw new IoError(`input is longer than its announced size (${size} bytes)`);
+    // Re-derive the view each chunk: memory may have grown (and detached old views) meanwhile.
+    heap(Uint8Array, buf.ptr + off, c.length).set(c);
+    off += c.length;
+  }
+  if (off !== size) throw new IoError(`input ended after ${off} of ${size} bytes`);
+}
+
+/**
+ * Stream a Blob/File into WASM memory. Some engines fail to stream (or read in one piece) very
+ * large Blobs that they read fine in slices (WebKit: fetched Blobs over ~100 MB reject with
+ * `NotReadableError`), so a failed stream is retried slice by slice.
+ */
+async function blobIn(blob) {
+  const size = blob.size;
+  const buf = wcall(() => new wb.InputBuffer(size));
   try {
-    for await (const c of chunks) {
-      if (off + c.length > size) throw new IoError(`input is longer than its announced size (${size} bytes)`);
-      // Re-derive the view each chunk: memory may have grown (and detached old views) meanwhile.
-      heap(Uint8Array, buf.ptr + off, c.length).set(c);
-      off += c.length;
+    try {
+      await fill(buf, size, blobChunks(blob));
+    } catch (e) {
+      if (e instanceof FlashRawError) throw e;
+      await fill(buf, size, blobSlices(blob));
     }
-    if (off !== size) throw new IoError(`input ended after ${off} of ${size} bytes`);
   } catch (e) {
     buf.free();
     throw e instanceof FlashRawError ? e : new IoError(`failed to read input: ${e?.message ?? e}`, { cause: e });
@@ -373,10 +382,18 @@ async function* blobChunks(blob) {
   }
 }
 
+const BLOB_SLICE = 8 << 20;
+
+async function* blobSlices(blob) {
+  for (let off = 0; off < blob.size; off += BLOB_SLICE) {
+    yield new Uint8Array(await blob.slice(off, off + BLOB_SLICE).arrayBuffer());
+  }
+}
+
 async function inputBuffer(input) {
   const bytes = asBytes(input);
   if (bytes) return copyIn(bytes);
-  if (isBlob(input)) return streamIn(input.size, blobChunks(input));
+  if (isBlob(input)) return blobIn(input);
   if (typeof input === 'string' || input instanceof URL) {
     if (!platform.fileSource) {
       throw new InvalidArgumentError('file paths are only supported in Node.js; pass bytes, a Blob or a File');
