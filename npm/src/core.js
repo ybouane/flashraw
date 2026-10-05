@@ -321,6 +321,45 @@ async function streamIn(size, chunks) {
   return buf;
 }
 
+const isShared = (b) => tag(b) === '[object SharedArrayBuffer]';
+
+/**
+ * Read a file (Node path) into WASM memory chunk by chunk. With shared memory (threaded build)
+ * the reads land in WASM memory directly: a shared buffer is never detached by growth, so the
+ * view stays valid across the await. Otherwise each chunk goes through a staging buffer, as a
+ * view into non-shared memory would be detached if memory grew during the read.
+ */
+async function fileIn(src) {
+  const { size } = src;
+  let buf;
+  try {
+    buf = wcall(() => new wb.InputBuffer(size));
+  } catch (e) {
+    await src.close();
+    throw e;
+  }
+  const chunk = Math.max(1, Math.min(size, src.chunkSize ?? 8 << 20));
+  const direct = isShared(wasm.memory.buffer);
+  const staging = direct ? null : new Uint8Array(chunk);
+  let off = 0;
+  try {
+    while (off < size) {
+      const n = Math.min(chunk, size - off);
+      const got = await src.read(direct ? heap(Uint8Array, buf.ptr + off, n) : staging.subarray(0, n), off);
+      if (got === 0) break;
+      if (!direct) heap(Uint8Array, buf.ptr + off, got).set(staging.subarray(0, got));
+      off += got;
+    }
+    if (off !== size) throw new IoError(`input ended after ${off} of ${size} bytes`);
+  } catch (e) {
+    buf.free();
+    throw e instanceof FlashRawError ? e : new IoError(`failed to read input: ${e?.message ?? e}`, { cause: e });
+  } finally {
+    await src.close();
+  }
+  return buf;
+}
+
 async function* blobChunks(blob) {
   const reader = blob.stream().getReader();
   try {
@@ -342,8 +381,7 @@ async function inputBuffer(input) {
     if (!platform.fileSource) {
       throw new InvalidArgumentError('file paths are only supported in Node.js; pass bytes, a Blob or a File');
     }
-    const { size, chunks } = await platform.fileSource(input);
-    return streamIn(size, chunks);
+    return fileIn(await platform.fileSource(input));
   }
   throw new InvalidArgumentError(
     `unsupported input type ${tag(input)}; expected ArrayBuffer, Uint8Array/Buffer, another ArrayBufferView, Blob/File${platform.fileSource ? ' or a file path' : ''}`,

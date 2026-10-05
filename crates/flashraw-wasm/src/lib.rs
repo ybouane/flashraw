@@ -115,9 +115,23 @@ mod bindings {
     }
 
     /// A byte buffer allocated inside WASM memory, filled by JS, then consumed by [`open`].
+    ///
+    /// The bytes start uninitialised: the JS layer writes all of them (or frees the buffer)
+    /// before [`open`] reads it, so zero-filling would only cost a pass over the whole input.
     #[wasm_bindgen]
     pub struct InputBuffer {
-        buf: Vec<u8>,
+        buf: Vec<std::mem::MaybeUninit<u8>>,
+    }
+
+    impl InputBuffer {
+        /// The filled bytes.
+        fn into_bytes(self) -> Vec<u8> {
+            let mut v = std::mem::ManuallyDrop::new(self.buf);
+            // SAFETY: same allocation, length and capacity, and `MaybeUninit<u8>` has the layout
+            // of `u8`; the JS layer has written every byte before handing the buffer to `open`
+            // (`copyIn` / `streamIn` / `fileIn` in npm/src/core.js free it otherwise).
+            unsafe { Vec::from_raw_parts(v.as_mut_ptr().cast::<u8>(), v.len(), v.capacity()) }
+        }
     }
 
     #[wasm_bindgen]
@@ -129,7 +143,8 @@ mod bindings {
             buf.try_reserve_exact(len).map_err(|_| {
                 to_js(ApiError { kind: "OutOfMemory", message: format!("cannot allocate {len} bytes for the input") })
             })?;
-            buf.resize(len, 0);
+            // SAFETY: capacity is at least `len`, and `MaybeUninit` needs no initialisation.
+            unsafe { buf.set_len(len) };
             Ok(InputBuffer { buf })
         }
         /// Address of the buffer in WASM memory.
@@ -150,7 +165,7 @@ mod bindings {
     /// Open a RAW file, taking ownership of `input` (the JS `InputBuffer` becomes unusable).
     #[wasm_bindgen]
     pub fn open(input: InputBuffer, options_json: &str) -> Result<RawFile, JsValue> {
-        let raw = api::open(input.buf, options_json).map_err(to_js)?;
+        let raw = api::open(input.into_bytes(), options_json).map_err(to_js)?;
         Ok(RawFile { raw: Arc::new(raw) })
     }
 
