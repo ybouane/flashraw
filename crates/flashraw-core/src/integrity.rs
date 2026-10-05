@@ -281,7 +281,11 @@ impl RowGeometry {
 }
 
 /// Check that `[offset, offset + needed)` lies within an input of `file_len` bytes.
+/// Nothing is missing from an empty range, wherever it starts.
 pub fn check_range(file_len: usize, unit: DataUnit, offset: usize, needed: usize) -> Result<(), Truncation> {
+    if needed == 0 {
+        return Ok(());
+    }
     match offset.checked_add(needed) {
         Some(end) if end <= file_len => Ok(()),
         _ => Err(Truncation::new(unit, offset as u64, needed as u64, file_len as u64)),
@@ -319,7 +323,7 @@ impl DecodeContext<'_> {
         needed: usize,
     ) -> Result<SensorBytes<'a>> {
         match check_range(data.len(), unit, offset, needed) {
-            Ok(()) => Ok(SensorBytes { bytes: &data[offset..offset + needed], truncation: None }),
+            Ok(()) => Ok(SensorBytes { bytes: data.get(offset..offset + needed).unwrap_or(&[]), truncation: None }),
             Err(t) if self.recover => {
                 let start = offset.min(data.len());
                 let end = start.saturating_add(needed).min(data.len());
@@ -427,6 +431,7 @@ mod tests {
         let e = ctx.sensor_bytes(&data, DataUnit::Strip(1), 4, 8).unwrap_err();
         assert_eq!(e.truncation().unwrap().available, 6);
         assert!(ctx.sensor_bytes(&data, DataUnit::Strip(1), usize::MAX, 8).is_err());
+        assert!(ctx.sensor_bytes(&data, DataUnit::Strip(1), 100, 0).unwrap().bytes.is_empty());
         ctx.recover = true;
         let s = ctx.sensor_bytes(&data, DataUnit::Strip(1), 4, 8).unwrap();
         assert_eq!(s.bytes.len(), 6);
