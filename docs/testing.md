@@ -82,7 +82,9 @@ cargo +nightly fuzz run -O open_decode fuzz/corpus/open_decode -- -max_total_tim
 
 - `ci.yml` (every PR): fmt, clippy (-D warnings), tests on Linux x86-64/ARM64, macOS
   x86-64/ARM64, Windows; no-default-features build; a small corpus sample with
-  regression + malformed tests; camera-db validation; WASM builds (SIMD and not);
+  regression + malformed tests; camera-db validation; C API: CMake install and the C/C++
+  examples built against it on Linux/macOS/Windows, plus a check that the generated
+  `flashraw.h` is up to date (see [c-api.md](c-api.md#tests)); WASM builds (SIMD and not);
   GPU feature build; fuzz smoke (30 s per target + regression replay); bench
   compilation.
 - `nightly.yml`: decodes the full corpus (verify records as artifact), regression and
