@@ -55,6 +55,10 @@ First complete release of FlashRaw.
 - Samsung NX20/NX200/NX210/NX1000/NX1100 SRWs stored as unpacked 16-bit words (header
   BitsPerSample 14, no row table) are read as little-endian words with 12 significant
   bits and white 4095 (previously big-endian with white 16383).
+- Sony ARWs from pre-production firmware whose IFD0 Model is a placeholder ("MODEL-NAME",
+  or a model whose digits are all zeros) are identified by the maker-note model id (tag
+  0xB001): camera-database entry, colour matrix and visible area of the production body
+  (the IFD0 string is kept as the `ifd0_model` extra).
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 

@@ -19,6 +19,7 @@
 //! `DNGPrivateData` (0xC634). Geometry follows per-model visible-area rules.
 
 pub mod crypt;
+mod model_id;
 #[cfg(test)]
 mod robustness;
 mod srf;
@@ -127,6 +128,13 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let mut meta = RawMetadata::default();
     for ifd in &tiff.ifds {
         flashraw_core::exif::read_ifd0(ifd, &mut meta);
+    }
+    if model_id::is_placeholder(&meta.model) {
+        // Pre-production firmware: the maker-note model id names the body.
+        if let Some(m) = model_id::makernote_model_id(data, &tiff).and_then(model_id::model_for_id) {
+            meta.set_extra("ifd0_model", meta.model.clone());
+            meta.model = m.to_string();
+        }
     }
     let model = meta.model.clone();
     if srf::is_srf(&model) {
