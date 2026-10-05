@@ -111,15 +111,17 @@ export function useRaw(file) {
   const [state, setState] = useState(null);
   useEffect(() => {
     if (!file) return;
+    const ac = new AbortController(); // a new file (or unmount) cancels the pending work
     let raw;
-    let cancelled = false;
     (async () => {
-      raw = await pool.open(file);
-      const frame = await raw.decode({ output: 'rgba8', demosaic: 'half-size' });
-      if (!cancelled) setState({ metadata: raw.metadata, frame });
-    })();
+      raw = await pool.open(file, { signal: ac.signal });
+      const frame = await raw.decode({ output: 'rgba8', demosaic: 'half-size', signal: ac.signal });
+      setState({ metadata: raw.metadata, frame });
+    })()
+      .catch((e) => ac.signal.aborted || console.error(e))
+      .finally(() => ac.signal.aborted && raw?.close());
     return () => {
-      cancelled = true;
+      ac.abort();
       raw?.close();
     };
   }, [file]);

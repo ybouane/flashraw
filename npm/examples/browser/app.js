@@ -12,10 +12,14 @@ const drop = $('drop');
 const status = (s) => ($('status').textContent = s);
 let pool = null;
 
-const caps = await getCapabilities();
-$('caps').textContent =
-  `v${caps.version} · WASM ${caps.wasm.variant} (${caps.simd.level}) · init ${caps.wasm.initMs.toFixed(1)} ms · ` +
-  `${caps.threads.hardwareConcurrency} cores · WebGPU ${caps.gpu.webgpu ? 'present' : 'absent'}${caps.gpu.compiled ? '' : ' (GPU backend not built)'}`;
+// Capabilities load in the background (initialising the threaded build starts its workers);
+// the handlers below are attached right away.
+getCapabilities().then((caps) => {
+  const threads = caps.threads.count ? `${caps.threads.count} threads` : `1 thread (${caps.threads.reason})`;
+  $('caps').textContent =
+    `v${caps.version} · WASM ${caps.wasm.binary} build (${caps.simd.level}), ${threads} · init ${caps.wasm.initMs.toFixed(1)} ms · ` +
+    `WebGPU ${caps.gpu.webgpu ? 'present' : 'absent'}${caps.gpu.compiled ? '' : ' (GPU backend not built)'}`;
+});
 
 drop.addEventListener('dragover', (e) => {
   e.preventDefault();

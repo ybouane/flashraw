@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-// Batch-decode RAW files with a worker_threads pool and compare with sequential decoding.
+// Batch-decode RAW files with a worker_threads pool and compare with sequential decoding on
+// this thread. In Node the main thread runs the multithreaded build (one decode on all cores),
+// pool workers the single-threaded one (several files at once): which wins depends on how well
+// a format's decoder parallelises and on the number of files.
 //
 //   node examples/worker/node-batch.mjs [--workers 4] [--output rgba8] file1.dng file2.dng ...
 //
 // In your project: import { createWorkerPool } from 'flashraw/worker';
 import { createWorkerPool } from '../../dist/worker.node.js';
-import { decodeRaw } from '../../dist/node.js';
+import { decodeRaw, getCapabilities } from '../../dist/node.js';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => {
@@ -22,6 +25,7 @@ const output = opt('--output', 'raw-u16');
 let t = performance.now();
 for (const f of files) await decodeRaw(f, { output });
 const sequential = performance.now() - t;
+const caps = await getCapabilities();
 
 const pool = createWorkerPool({ size: Number(opt('--workers', 4)) });
 await Promise.all(Array.from({ length: pool.size }, () => pool.getCapabilities())); // spawn + init workers
@@ -39,6 +43,7 @@ results.forEach((r, i) => {
   }
 });
 console.log(
-  `\n${files.length} files: sequential ${sequential.toFixed(0)} ms, ${pool.size} workers ${parallel.toFixed(0)} ms ` +
+  `\n${files.length} files: sequential ${sequential.toFixed(0)} ms (${caps.threads.count || 1} threads per decode), ` +
+    `${pool.size} workers ${parallel.toFixed(0)} ms ` +
     `(${(sequential / parallel).toFixed(2)}x)`,
 );
