@@ -48,7 +48,7 @@ enum Payload<'a> {
     V7(&'a [u8], u32),
     V8(Arc<V8Decoder>, Vec<V8Strip<'a>>),
     /// Early bodies without a payload version: 16-bit little-endian words, 12 bits left-aligned.
-    Unpacked(&'a [u8]),
+    Unpacked,
     /// Early bodies declared 12 bits per sample (FZ8/FZ18 `.RAW`): tightly packed, MSB first.
     Packed12(&'a [u8]),
 }
@@ -57,6 +57,12 @@ struct Rw2<'a> {
     width: u32,
     height: u32,
     payload: Payload<'a>,
+    /// The whole file.
+    data: &'a [u8],
+    /// File offset of the payload (format 8: unused, see `v8_ranges`).
+    offset: usize,
+    /// Format 8: declared `(offset, length)` of every strip.
+    v8_ranges: Vec<(usize, usize)>,
 }
 
 fn u16_tag(ifd: &Ifd, tag: u16) -> Option<u32> {
@@ -79,7 +85,11 @@ fn counted(e: &Entry, size: usize) -> Vec<u32> {
         .collect()
 }
 
-fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Result<Payload<'a>> {
+/// Format-8 payload plus each strip's declared `(offset, length)`. Strips past the end
+/// of the file hold what the file has; the decode reports the truncation.
+type V8Payload<'a> = (Payload<'a>, Vec<(usize, usize)>);
+
+fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Result<V8Payload<'a>> {
     let e = |t: u16| ifd.get(t).ok_or_else(|| Error::invalid_metadata(format!("RW2 v8 tag {t:#x} missing")));
     let mut p = V8Params { clip: u16_tag(ifd, 0x3b).unwrap_or(0xffff), ..Default::default() };
     let slopes = counted(e(0x39)?, 4);
@@ -106,12 +116,15 @@ fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Resu
     let widths = counted(e(0x47)?, 2);
     let heights = counted(e(0x48)?, 2);
     let mut strips = Vec::with_capacity(count);
+    let mut ranges = Vec::with_capacity(count);
     let mut area = 0u64;
     for i in 0..count {
         let get = |v: &Vec<u32>| v.get(i).copied().ok_or_else(|| Error::corrupt("RW2 v8 strip table too short"));
         let (off, bits) = (get(&offsets)? as usize, get(&sizes)? as u64);
         let len = bits.div_ceil(8) as usize;
-        let sdata = flashraw_core::bytes::slice_at(data, off, len)?;
+        let start = off.min(data.len());
+        let sdata = &data[start..off.saturating_add(len).min(data.len())];
+        ranges.push((off, len));
         // Line offset: x in the low 16 bits, y in the high 16 bits.
         let (pos, width, height) = (get(&lefts)?, get(&widths)?, get(&heights)?);
         let (left, top) = (pos & 0xffff, pos >> 16);
@@ -124,7 +137,7 @@ fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Resu
     if area != raw_w as u64 * raw_h as u64 {
         return Err(Error::corrupt("RW2 v8 strips do not cover the image"));
     }
-    Ok(Payload::V8(Arc::new(V8Decoder::new(&p)?), strips))
+    Ok((Payload::V8(Arc::new(V8Decoder::new(&p)?), strips), ranges))
 }
 
 /// Open an RW2/RWL (or an older Panasonic TIFF-like RAW).
@@ -151,12 +164,13 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         meta.exposure.iso = u16_tag(ifd, 0x17).filter(|&v| v != 0 && v != 65535).or_else(|| u16_tag(ifd, 0x37));
     }
 
-    // Payload.
+    // Payload. A payload past the end of the file fails when decoded (metadata and
+    // previews stay available).
+    let mut v8_ranges = Vec::new();
+    let payload_offset;
     let (payload, compression, mode_name) = if let Some(off) = ifd.u32(0x118) {
-        let body = data
-            .get(off as usize..)
-            .filter(|b| !b.is_empty())
-            .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
+        payload_offset = off as usize;
+        let body = data.get(off as usize..).unwrap_or(&[]);
         // Block split used by all RW2 files carrying tag 0x118.
         let split = 0x2008;
         match version.unwrap_or(4) {
@@ -164,15 +178,17 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             5 => (Payload::V5(BlockedStream::new(body, split)?, bps), Compression::PanasonicV5, "v5"),
             6 => (Payload::V6(body, bps), Compression::PanasonicV6, "v6"),
             7 => (Payload::V7(body, bps), Compression::PanasonicV7, "v7"),
-            8 => (v8_payload(data, ifd, raw_w, raw_h)?, Compression::PanasonicV8, "v8"),
+            8 => {
+                let (p, r) = v8_payload(data, ifd, raw_w, raw_h)?;
+                v8_ranges = r;
+                (p, Compression::PanasonicV8, "v8")
+            }
             v => return Err(Error::unsupported_compression("RW2", format!("raw format {v}"))),
         }
     } else {
         let off = ifd.u32(tags::STRIP_OFFSETS).ok_or_else(|| Error::invalid_metadata("RW2 without payload offset"))?;
-        let body = data
-            .get(off as usize..)
-            .filter(|b| !b.is_empty())
-            .ok_or_else(|| Error::corrupt("RW2 payload offset beyond end of file"))?;
+        payload_offset = off as usize;
+        let body = data.get(off as usize..).unwrap_or(&[]);
         // Packed when the remaining size matches 8/7 bytes per pixel.
         if raw_w >= 7 && (body.len() / (raw_w as usize * 8 / 7)) == raw_h as usize {
             (Payload::V4(BlockedStream::new(body, 0)?), Compression::Panasonic, "v4")
@@ -182,7 +198,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             // TIFF BitsPerSample 12 selects the 12-bit packed reader.
             (Payload::Packed12(body), Compression::Uncompressed, "packed12")
         } else {
-            (Payload::Unpacked(body), Compression::Uncompressed, "unpacked")
+            (Payload::Unpacked, Compression::Uncompressed, "unpacked")
         }
     };
     let version = version.unwrap_or(match payload {
@@ -326,7 +342,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     classify_previews(&mut meta.previews);
 
-    let rw2 = Arc::new(Rw2 { width: raw_w, height: raw_h, payload });
+    let rw2 = Arc::new(Rw2 { width: raw_w, height: raw_h, payload, data, offset: payload_offset, v8_ranges });
     let r = rw2.clone();
     let mut dec = SimpleDecoder::new(
         RawFormat::Rw2,
@@ -353,11 +369,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     if let Payload::V8(_, strips) = &rw2.payload {
         dec.units = strips
             .iter()
-            .map(|s| DecodeUnit {
-                rect: Rect::new(s.left, s.top, s.width, s.height),
-                offset: (s.data.as_ptr() as usize - data.as_ptr() as usize) as u64,
-                length: s.data.len() as u64,
-            })
+            .map(|s| DecodeUnit { rect: Rect::new(s.left, s.top, s.width, s.height), offset: 0, length: 0 })
+            .zip(&rw2.v8_ranges)
+            .map(|(u, &(o, l))| DecodeUnit { offset: o as u64, length: l as u64, ..u })
             .collect();
     }
     Ok(Box::new(dec))
@@ -377,6 +391,39 @@ fn guess_mode(w: u32, h: u32) -> &'static str {
 }
 
 impl Rw2<'_> {
+    /// Bytes the payload stream needs for the whole image (formats 4-7), for reporting
+    /// a decoder's "truncated" error as structured truncation. Format 4/5 streams
+    /// tolerate a short final block (its missing bytes repeat the previous block's), so
+    /// they are only short when the decoder says so.
+    fn stream_need(&self) -> usize {
+        let (w, h) = (self.width as usize, self.height as usize);
+        let ppp = |bits: u32| codec::packed_pixels(bits).unwrap_or(1);
+        match &self.payload {
+            Payload::V4(_) => (w * h).div_ceil(codec::V4_PIXELS) * 16,
+            Payload::V5(_, bits) => w.div_ceil(ppp(*bits)) * h * 16,
+            Payload::V6(_, bits) => w / if *bits == 12 { 14 } else { 11 } * 16 * (h / 16 * 16),
+            Payload::V7(_, bits) => w / ppp(*bits) * 16 * (h / 16 * 16),
+            _ => 0,
+        }
+    }
+
+    /// A compressed-stream failure, reported as truncation when the stream's range runs
+    /// past the end of the file. Compressed streams are strict under every policy.
+    fn stream_error(&self, e: Error) -> Error {
+        e.or_truncated(self.data.len(), DataUnit::Payload, self.offset, self.stream_need())
+    }
+
+    /// Format 8: strips whose declared range runs past the end of the file (always
+    /// incomplete, so checked before decoding; strict under every policy).
+    fn check_v8(&self) -> Result<()> {
+        for (i, &(o, l)) in self.v8_ranges.iter().enumerate() {
+            if let Err(t) = flashraw_core::integrity::check_range(self.data.len(), DataUnit::Strip(i as u32), o, l) {
+                return Err(Error::truncated(t));
+            }
+        }
+        Ok(())
+    }
+
     /// Decode only the rows of `rect` (row-independent formats), then keep its columns.
     fn decode_region(&self, rect: Rect, ctx: &DecodeContext) -> Result<RawImage> {
         let (w, h) = (self.width as usize, self.height as usize);
@@ -384,21 +431,14 @@ impl Rw2<'_> {
         let par = ctx.parallel;
         let mut band = RawImage::new_u16(self.width, rect.height, 1, &ctx.limits)?;
         let out = band.u16_mut();
+        let se = |e| self.stream_error(e);
         match &self.payload {
-            Payload::V4(s) if w % codec::V4_PIXELS == 0 => codec::decode_v4_rows(s, w, h, y0, out, par)?,
-            Payload::V5(s, bits) => codec::decode_v5_rows(s, *bits, w, h, y0, out, par)?,
-            Payload::V6(d, bits) => codec::decode_v6_rows(d, *bits, w, h, y0, out, par)?,
-            Payload::V7(d, bits) => codec::decode_v7_rows(d, *bits, w, h, y0, out, par)?,
-            Payload::Packed12(d) => unpack_packed12(d, w, h, y0, rows, out, par, ctx.simd)?,
-            Payload::Unpacked(d) => {
-                if d.len() < w * h * 2 {
-                    return Err(Error::corrupt("RW2 unpacked payload truncated"));
-                }
-                let src = &d[y0 * w * 2..(y0 + rows) * w * 2];
-                for (o, s) in out.iter_mut().zip(src.chunks_exact(2)) {
-                    *o = u16::from_le_bytes([s[0], s[1]]) >> 4;
-                }
-            }
+            Payload::V4(s) if w % codec::V4_PIXELS == 0 => codec::decode_v4_rows(s, w, h, y0, out, par).map_err(se)?,
+            Payload::V5(s, bits) => codec::decode_v5_rows(s, *bits, w, h, y0, out, par).map_err(se)?,
+            Payload::V6(d, bits) => codec::decode_v6_rows(d, *bits, w, h, y0, out, par).map_err(se)?,
+            Payload::V7(d, bits) => codec::decode_v7_rows(d, *bits, w, h, y0, out, par).map_err(se)?,
+            Payload::Packed12(d) => self.unpack_packed12(d, y0, rows, out, ctx)?,
+            Payload::Unpacked => self.unpack_words(y0, rows, out, ctx)?,
             _ => {
                 // Sequential streams and format-8 strips (full image height): decode all.
                 let mut img = RawImage::new_u16(self.width, self.height, 1, &ctx.limits)?;
@@ -412,64 +452,75 @@ impl Rw2<'_> {
     fn decode(&self, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
         let (w, h) = (self.width as usize, self.height as usize);
         let par = ctx.parallel;
+        let se = |e| self.stream_error(e);
         match &self.payload {
-            Payload::V4(s) => codec::decode_v4(s, w, h, out, par),
-            Payload::V5(s, bits) => codec::decode_v5(s, *bits, w, h, out, par),
-            Payload::V6(d, bits) => codec::decode_v6(d, *bits, w, h, out, par),
-            Payload::V7(d, bits) => codec::decode_v7(d, *bits, w, h, out, par),
-            Payload::V8(dec, strips) => dec.decode(strips, out, w, h, par),
-            Payload::Packed12(d) => unpack_packed12(d, w, h, 0, h, out, par, ctx.simd),
-            Payload::Unpacked(d) => {
-                if d.len() < w * h * 2 {
-                    return Err(Error::corrupt("RW2 unpacked payload truncated"));
-                }
-                for (o, s) in out[..w * h].iter_mut().zip(d.chunks_exact(2)) {
-                    *o = u16::from_le_bytes([s[0], s[1]]) >> 4;
-                }
-                Ok(())
+            Payload::V4(s) => codec::decode_v4(s, w, h, out, par).map_err(se),
+            Payload::V5(s, bits) => codec::decode_v5(s, *bits, w, h, out, par).map_err(se),
+            Payload::V6(d, bits) => codec::decode_v6(d, *bits, w, h, out, par).map_err(se),
+            Payload::V7(d, bits) => codec::decode_v7(d, *bits, w, h, out, par).map_err(se),
+            Payload::V8(dec, strips) => {
+                self.check_v8()?;
+                dec.decode(strips, out, w, h, par)
             }
+            Payload::Packed12(d) => self.unpack_packed12(d, 0, h, out, ctx),
+            Payload::Unpacked => self.unpack_words(0, h, out, ctx),
         }
     }
-}
 
-/// Early 12-bit bodies (FZ8/FZ18): LSB-first (little-endian) packed rows, either tight or with one
-/// padding byte after every 15 data bytes (10 pixels). The layout is chosen from the payload size.
-#[allow(clippy::too_many_arguments)]
-fn unpack_packed12(
-    d: &[u8],
-    w: usize,
-    h: usize,
-    y0: usize,
-    rows: usize,
-    out: &mut [u16],
-    par: bool,
-    simd: bool,
-) -> Result<()> {
-    let tight = w * 3 / 2;
-    let padded = tight * 16 / 15;
-    if d.len() < padded * h {
-        let src = d.get(y0 * tight..).unwrap_or(&[]);
-        let layout = flashraw_codecs::PackedLayout::tight(w, rows, 12, PackOrder::LsbBytes);
-        return flashraw_codecs::unpack(src, layout, out, w, par, simd, false);
-    }
-    if d.len() < padded * (y0 + rows) {
-        return Err(Error::corrupt("RW2 packed payload truncated"));
-    }
-    par::for_each_row_chunk_bounded(&mut out[..w * rows], w, par::memory_bound_workers(), par, |first, chunk| {
-        let mut row = vec![0u8; tight + 16];
-        for (i, o) in chunk.chunks_mut(w).enumerate() {
-            let src = &d[(y0 + first + i) * padded..(y0 + first + i + 1) * padded];
-            // Drop the padding byte that follows every 15 data bytes.
-            let mut n = 0;
-            for g in src.chunks(16) {
-                let take = g.len().min(15);
-                row[n..n + take].copy_from_slice(&g[..take]);
-                n += take;
-            }
-            flashraw_codecs::unpack_row(&row[..tight.min(n)], o, 12, PackOrder::LsbBytes, simd);
+    /// Early bodies: 16-bit little-endian words, 12 bits left-aligned. Rows
+    /// `y0..y0 + rows` into `out`; missing samples (recover) stay zero.
+    fn unpack_words(&self, y0: usize, rows: usize, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
+        let w = self.width as usize;
+        let geometry = RowGeometry::tight(y0 + rows, w, 16);
+        let src = ctx.sensor_bytes(self.data, DataUnit::Strip(0), self.offset, geometry.needed())?;
+        let d = src.bytes.get(y0 * w * 2..).unwrap_or(&[]);
+        let n = (d.len() / 2).min(w * rows);
+        for (o, s) in out[..n].iter_mut().zip(d.chunks_exact(2)) {
+            *o = u16::from_le_bytes([s[0], s[1]]) >> 4;
         }
-    });
-    Ok(())
+        if let Some(t) = src.truncation {
+            ctx.recovered(CorruptReason::Truncated(t), (w * rows - n) as u64);
+        }
+        Ok(())
+    }
+
+    /// Early 12-bit bodies (FZ8/FZ18): LSB-first (little-endian) packed rows, either tight or
+    /// with one padding byte after every 15 data bytes (10 pixels). The layout is chosen from
+    /// the payload size, so a payload too short for padded rows is read as tight rows.
+    fn unpack_packed12(&self, d: &[u8], y0: usize, rows: usize, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
+        let (w, h) = (self.width as usize, self.height as usize);
+        let (par, simd) = (ctx.parallel, ctx.simd);
+        let tight = w * 3 / 2;
+        let padded = tight * 16 / 15;
+        if d.len() < padded * h {
+            let geometry = RowGeometry::tight(y0 + rows, w, 12);
+            let src = ctx.sensor_bytes(self.data, DataUnit::Strip(0), self.offset, geometry.needed())?;
+            let rest = src.bytes.get(y0 * tight..).unwrap_or(&[]);
+            let layout = flashraw_codecs::PackedLayout::tight(w, rows, 12, PackOrder::LsbBytes);
+            flashraw_codecs::unpack(rest, layout, out, w, par, simd, ctx.recover)?;
+            if let Some(t) = src.truncation {
+                let filled = RowGeometry::tight(rows, w, 12).missing_samples(rest.len());
+                ctx.recovered(CorruptReason::Truncated(t), filled);
+            }
+            return Ok(());
+        }
+        // Padded rows: the payload holds every row (checked by the layout choice above).
+        par::for_each_row_chunk_bounded(&mut out[..w * rows], w, par::memory_bound_workers(), par, |first, chunk| {
+            let mut row = vec![0u8; tight + 16];
+            for (i, o) in chunk.chunks_mut(w).enumerate() {
+                let src = &d[(y0 + first + i) * padded..(y0 + first + i + 1) * padded];
+                // Drop the padding byte that follows every 15 data bytes.
+                let mut n = 0;
+                for g in src.chunks(16) {
+                    let take = g.len().min(15);
+                    row[n..n + take].copy_from_slice(&g[..take]);
+                    n += take;
+                }
+                flashraw_codecs::unpack_row(&row[..tight.min(n)], o, 12, PackOrder::LsbBytes, simd);
+            }
+        });
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -564,6 +615,11 @@ mod tests {
         for cut in [0, 7, 30, 200, f.len() / 2, f.len() - 1] {
             assert!(decode(&f[..cut]).is_err(), "truncated at {cut} must fail");
         }
+        // A truncated stream is reported with its range; metadata still opens.
+        let e = decode(&f[..f.len() - 1]).unwrap_err();
+        let t = e.truncation().expect("structured truncation");
+        assert_eq!(t.available + 1, t.expected);
+        assert!(crate::open(&f[..300], &OpenOptions::default()).is_ok());
         let mut x = 0x1234_5678u32;
         for i in 0..400 {
             let mut g = f.clone();
