@@ -285,10 +285,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     build_decoder(data, meta, info, payload, src, raw_w, buf_h)
 }
 
-/// Whole-payload slice for strip-based payloads (empty for tiles).
-fn payload_bytes<'a>(data: &'a [u8], raw: &Ifd, payload: &Payload) -> Result<&'a [u8]> {
+/// Whole-payload range for strip-based payloads (empty for tiles).
+fn payload_bytes<'a>(data: &'a [u8], raw: &Ifd, payload: &Payload) -> Result<PayloadRange<'a>> {
     match payload {
-        Payload::LjpegTiles { .. } | Payload::Ycbcr { .. } => Ok(&[]),
+        Payload::LjpegTiles { .. } | Payload::Ycbcr { .. } => {
+            Ok(PayloadRange { offset: 0, declared: 0, bytes: &[], unit: DataUnit::Payload })
+        }
         _ => contiguous_payload(data, raw),
     }
 }
@@ -299,10 +301,13 @@ fn build_decoder<'a>(
     meta: RawMetadata,
     info: FrameInfo,
     payload: Payload,
-    src: &'a [u8],
+    src: PayloadRange<'a>,
     width: u32,
     height: u32,
 ) -> Result<Box<dyn RawDecoder + 'a>> {
+    // Bytes a GPU unpack may use: what the geometry needs, as far as the file has them
+    // (a truncated payload is not complete and decodes on the CPU).
+    let gpu_bytes = |need: usize| data.get(src.offset..).map(|s| &s[..need.min(s.len())]).unwrap_or(&[]);
     let p = std::sync::Arc::new(payload);
     let (p1, p2) = (p.clone(), p.clone());
     let row_based =
@@ -337,7 +342,7 @@ fn build_decoder<'a>(
         }
         Payload::Unpacked16 { big_endian } => {
             dec.packed = Some(PackedPayload {
-                data: src,
+                data: gpu_bytes(width as usize * height as usize * 2),
                 width,
                 height,
                 bits: 16,
@@ -347,7 +352,7 @@ fn build_decoder<'a>(
         }
         Payload::Packed12 { lsb } => {
             dec.packed = Some(PackedPayload {
-                data: src,
+                data: gpu_bytes(width as usize * 3 / 2 * height as usize),
                 width,
                 height,
                 bits: 12,
@@ -361,9 +366,9 @@ fn build_decoder<'a>(
 }
 
 /// Decode the full buffer or, for row-addressable payloads, only `region`.
-fn decode_region(
-    data: &[u8],
-    src: &[u8],
+fn decode_region<'a>(
+    data: &'a [u8],
+    src: PayloadRange<'a>,
     payload: &Payload,
     width: u32,
     height: u32,
@@ -379,15 +384,17 @@ fn decode_region(
     match payload {
         Payload::Arw2 { curve } => {
             let mut img = RawImage::new_u16(region.width, region.height, 1, &ctx.limits)?;
-            check_rows(src, w, height as usize, "ARW2")?;
+            // Fixed-size rows of `w` bytes (32-pixel blocks of 16 bytes): only whole rows
+            // decode; rows missing from truncated data stay zero (recover).
+            let sb = src.require(data, ctx, w * region.bottom() as usize)?;
+            let (truncation, src) = (sb.truncation, sb.bytes);
             let (x0, rw) = (region.x as usize, region.width as usize);
             ctx.profiler.time(Stage::EntropyDecode, || {
                 par::for_each_row_chunk(img.u16_mut(), rw, 16, ctx.parallel, |first, chunk| {
                     let mut tmp = if rw == w { Vec::new() } else { vec![0u16; w] };
                     for (i, row) in chunk.chunks_mut(rw).enumerate() {
                         let y = region.y as usize + first + i;
-                        let s = src.get(y * w..).unwrap_or(&[]);
-                        let s = &s[..w.min(s.len())];
+                        let Some(s) = src.get(y * w..(y + 1) * w) else { break };
                         if tmp.is_empty() {
                             sony_arw2::decode_row(s, row, curve);
                         } else {
@@ -397,19 +404,26 @@ fn decode_region(
                     }
                 });
             });
+            if let Some(t) = truncation {
+                let rows = (src.len() / w.max(1)).saturating_sub(region.y as usize).min(region.height as usize);
+                ctx.recovered(CorruptReason::Truncated(t), ((region.height as usize - rows) * rw) as u64);
+            }
             Ok(img)
         }
         Payload::Unpacked16 { big_endian } => {
             let order = if *big_endian { PackOrder::MsbBytes } else { PackOrder::LsbBytes };
-            unpack_rows(src, w, height as usize, 16, w * 2, order, region, 1, ctx)
+            unpack_rows(data, src, w, 16, w * 2, order, region, 1, ctx)
         }
         Payload::Packed12 { lsb } => {
             let order = if *lsb { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
-            unpack_rows(src, w, height as usize, 12, w * 3 / 2, order, region, 1, ctx)
+            unpack_rows(data, src, w, 12, w * 3 / 2, order, region, 1, ctx)
         }
         Payload::Arq => {
             // Stored R, G, G2, B per pixel; the output order is R, G, B, G2.
-            check_rows(src, w * 8, height as usize, "ARQ")?;
+            let geometry = RowGeometry::tight(region.bottom() as usize, w * 4, 16);
+            let sb = src.require(data, ctx, geometry.needed())?;
+            let (truncation, src) = (sb.truncation, sb.bytes);
+            let filled = std::sync::atomic::AtomicU64::new(0);
             let mut img = RawImage::new_u16(region.width, region.height, 4, &ctx.limits)?;
             let rl = region.width as usize * 4;
             ctx.profiler.time(Stage::Unpack, || {
@@ -421,7 +435,13 @@ fn decode_region(
                     |first, chunk| {
                         for (i, row) in chunk.chunks_mut(rl).enumerate() {
                             let y = region.y as usize + first + i;
-                            let s = &src[y * w * 8 + region.x as usize * 8..];
+                            let start = (y * w * 8 + region.x as usize * 8).min(src.len());
+                            let s = &src[start..(start + rl * 2).min(src.len())];
+                            // Pixels missing from truncated data (recover) stay zero.
+                            let lost = (rl - s.len() / 8 * 4) as u64;
+                            if lost > 0 {
+                                filled.fetch_add(lost, std::sync::atomic::Ordering::Relaxed);
+                            }
                             for (o, b) in row.chunks_exact_mut(4).zip(s.chunks_exact(8)) {
                                 o[0] = u16::from_le_bytes([b[0], b[1]]);
                                 o[1] = u16::from_le_bytes([b[2], b[3]]);
@@ -432,13 +452,18 @@ fn decode_region(
                     },
                 );
             });
+            if let Some(t) = truncation {
+                ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
+            }
             Ok(img)
         }
         Payload::Arw1 { coded_rows, stored_rows } => {
             let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
-            ctx.profiler.time(Stage::EntropyDecode, || {
-                sony_arw1::decode_par(src, img.u16_mut(), w, *coded_rows, *stored_rows, ctx.parallel)
-            })?;
+            ctx.profiler
+                .time(Stage::EntropyDecode, || {
+                    sony_arw1::decode_par(src.bytes, img.u16_mut(), w, *coded_rows, *stored_rows, ctx.parallel)
+                })
+                .map_err(|e| e.or_truncated(data.len(), src.unit, src.offset, src.declared))?;
             if region == full { Ok(img) } else { img.crop(region) }
         }
         Payload::LjpegTiles { tiles, tile_w, tile_h } => {
@@ -450,9 +475,11 @@ fn decode_region(
         }
         Payload::Arw6 => {
             let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
-            ctx.profiler.time(Stage::EntropyDecode, || {
-                flashraw_codecs::sony_arw6::decode(src, img.u16_mut(), w, height as usize, ctx.parallel)
-            })?;
+            ctx.profiler
+                .time(Stage::EntropyDecode, || {
+                    flashraw_codecs::sony_arw6::decode(src.bytes, img.u16_mut(), w, height as usize, ctx.parallel)
+                })
+                .map_err(|e| e.or_truncated(data.len(), src.unit, src.offset, src.declared))?;
             if region == full { Ok(img) } else { img.crop(region) }
         }
         Payload::Ycbcr { tiles, tile_w, tile_h } => {
@@ -470,21 +497,14 @@ fn decode_region(
     }
 }
 
-/// Require at least one full row of payload for every buffer row (truncated files
-/// are corrupt).
-fn check_rows(src: &[u8], row_bytes: usize, rows: usize, what: &str) -> Result<()> {
-    if src.len() < row_bytes * rows {
-        return Err(Error::corrupt(format!("{what}: payload truncated ({} of {} bytes)", src.len(), row_bytes * rows)));
-    }
-    Ok(())
-}
-
 /// Unpack fixed-size rows of `samples` values (row-parallel), restricted to `region`.
+/// Rows missing from truncated data fail (strict) or keep their complete samples and
+/// are zero-filled with a warning (recover).
 #[allow(clippy::too_many_arguments)]
 fn unpack_rows(
-    src: &[u8],
+    data: &[u8],
+    src: PayloadRange<'_>,
     samples: usize,
-    rows: usize,
     bits: u32,
     stride: usize,
     order: PackOrder,
@@ -492,7 +512,11 @@ fn unpack_rows(
     cpp: usize,
     ctx: &DecodeContext,
 ) -> Result<RawImage> {
-    check_rows(src, stride, rows, "Sony uncompressed")?;
+    let geometry = RowGeometry::packed(region.bottom() as usize, samples, bits, stride);
+    let row_bytes = geometry.row_bytes;
+    let sb = src.require(data, ctx, geometry.needed())?;
+    let (truncation, src) = (sb.truncation, sb.bytes);
+    let filled = std::sync::atomic::AtomicU64::new(0);
     let mut img = RawImage::new_u16(region.width, region.height, cpp as u32, &ctx.limits)?;
     let rl = region.width as usize * cpp;
     let x0 = region.x as usize * cpp;
@@ -507,8 +531,16 @@ fn unpack_rows(
                 let mut tmp = if rl == samples { Vec::new() } else { vec![0u16; samples] };
                 for (i, row) in chunk.chunks_mut(rl).enumerate() {
                     let y = region.y as usize + first + i;
-                    let s = &src[y * stride..y * stride + stride];
-                    if tmp.is_empty() {
+                    let s = src.get(y * stride..).unwrap_or(&[]);
+                    let s = &s[..row_bytes.min(s.len())];
+                    if s.len() < row_bytes {
+                        // Recovering truncated data: complete samples of this row only.
+                        tmp.resize(samples, 0);
+                        let n = packed::unpack_row_partial(s, &mut tmp, bits, order, simd);
+                        row.copy_from_slice(&tmp[x0..x0 + rl]);
+                        let keep = n.saturating_sub(x0).min(rl);
+                        filled.fetch_add((rl - keep) as u64, std::sync::atomic::Ordering::Relaxed);
+                    } else if tmp.is_empty() {
                         packed::unpack_row(s, row, bits, order, simd);
                     } else {
                         packed::unpack_row(s, &mut tmp, bits, order, simd);
@@ -518,6 +550,9 @@ fn unpack_rows(
             },
         );
     });
+    if let Some(t) = truncation {
+        ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
+    }
     Ok(img)
 }
 
@@ -545,9 +580,10 @@ fn decode_ljpeg_tiles(
     let errors = std::sync::Mutex::new(Vec::<Error>::new());
     par::for_each_index(n, ctx.parallel, |i| {
         let Some(mut t) = g.claim(i as u32 % tx, i as u32 / tx) else { return };
-        let res = (|| -> Result<()> {
-            let (o, l) = tiles[i];
-            let src = flashraw_core::bytes::slice_at_lenient(data, o, l)?;
+        let (tw, th) = t.size();
+        let t = std::cell::RefCell::new(&mut t);
+        let decode = |src: &[u8]| -> Result<()> {
+            let mut t = t.borrow_mut();
             let hdr = ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions::default())?;
             if hdr.clrs != 4 {
                 return Err(Error::unsupported_compression(
@@ -555,7 +591,6 @@ fn decode_ljpeg_tiles(
                     format!("lossless tile with {} components", hdr.clrs),
                 ));
             }
-            let (tw, th) = t.size();
             let (sx, sy) = (t.skip_x as usize, t.skip_y as usize);
             // Quads are written only while they fit the image (the bound for odd
             // sizes): limits in tile-local coordinates.
@@ -582,7 +617,12 @@ fn decode_ljpeg_tiles(
                 }
                 Ok(())
             })
-        })();
+        };
+        let clear = || {
+            let mut t = t.borrow_mut();
+            (0..th).for_each(|y| t.row(y).fill(0));
+        };
+        let res = compressed_unit(data, ctx, DataUnit::Tile(i as u32), tiles[i], (tw * th) as u64, decode, clear);
         if let Err(e) = res {
             errors.lock().unwrap_or_else(|p| p.into_inner()).push(e);
         }
@@ -617,11 +657,11 @@ fn decode_ycc_tiles(
     let errors = std::sync::Mutex::new(Vec::<Error>::new());
     par::for_each_index(n, ctx.parallel, |i| {
         let Some(mut t) = g.claim(i as u32 % tx, i as u32 / tx) else { return };
-        let res = (|| -> Result<()> {
-            let (o, l) = tiles[i];
-            let src = flashraw_core::bytes::slice_at_lenient(data, o, l)?;
+        let (tw, th) = t.size();
+        let t = std::cell::RefCell::new(&mut t);
+        let decode = |src: &[u8]| -> Result<()> {
+            let mut t = t.borrow_mut();
             let ycc = sony_ycc::decode_tile(src, tile_w as usize, tile_h as usize)?;
-            let (tw, th) = t.size();
             let (sx, sy) = (t.skip_x as usize, t.skip_y as usize);
             for y in 0..th {
                 let row = t.row(y);
@@ -633,7 +673,12 @@ fn decode_ycc_tiles(
                 }
             }
             Ok(())
-        })();
+        };
+        let clear = || {
+            let mut t = t.borrow_mut();
+            (0..th).for_each(|y| t.row(y).fill(0));
+        };
+        let res = compressed_unit(data, ctx, DataUnit::Tile(i as u32), tiles[i], (tw * th * 3) as u64, decode, clear);
         if let Err(e) = res {
             errors.lock().unwrap_or_else(|p| p.into_inner()).push(e);
         }

@@ -60,8 +60,6 @@ pub fn open<'a>(
     }
     opts.limits.check_dims(width, height, 1)?;
     let key = data_key(data)?;
-    let len = width as usize * height as usize * 2;
-    let src = flashraw_core::bytes::slice_at(data, m.data_offset, len)?;
     db_lookup(&mut meta, "srf");
     let mut info = FrameInfo::new(width, height, 14);
     info.compression = Compression::Uncompressed;
@@ -90,18 +88,28 @@ pub fn open<'a>(
     info.orientation = Orientation::from_exif(ifd0.u32(tags::ORIENTATION).unwrap_or(1));
     info.color_matrices = super::table::color(super::table::lookup("Sony", m.name), &meta);
     meta.previews = tiff_previews(data, 0, tiff, info.orientation);
-    let dec = SimpleDecoder::new(RawFormat::Arw, meta, info, Box::new(move |ctx| decode(src, key, width, height, ctx)));
+    let dec = SimpleDecoder::new(
+        RawFormat::Arw,
+        meta,
+        info,
+        Box::new(move |ctx| decode(data, m.data_offset, key, width, height, ctx)),
+    );
     Ok(Box::new(dec))
 }
 
-/// Decrypt and unpack the SRF samples. The key stream is generated in bulk
-/// (it is sequential but cheap); XOR and byte swapping then run per row in parallel.
-pub fn decode(src: &[u8], key: u32, width: u32, height: u32, ctx: &DecodeContext) -> Result<RawImage> {
+/// Decrypt and unpack the SRF samples at `offset` of `data`. The key stream is generated
+/// in bulk (it is sequential but cheap); XOR and byte swapping then run per row in
+/// parallel. Truncated data fails (strict) or leaves the missing samples zero (recover).
+pub fn decode(data: &[u8], offset: usize, key: u32, width: u32, height: u32, ctx: &DecodeContext) -> Result<RawImage> {
     let mut img = RawImage::new_u16(width, height, 1, &ctx.limits)?;
     let w = width as usize;
-    if w % 2 != 0 || src.len() < w * 2 * height as usize {
-        return Err(Error::corrupt("SRF: data truncated"));
+    if w % 2 != 0 {
+        return Err(Error::corrupt("SRF: odd width"));
     }
+    // Samples are decrypted in 32-bit pairs: a partial pair is not usable.
+    let geometry = RowGeometry { rows: height as usize, stride: w * 2, row_bytes: w * 2, samples: w };
+    let src = ctx.sensor_bytes(data, DataUnit::Payload, offset, geometry.needed())?;
+    let (truncation, src) = (src.truncation, src.bytes);
     let ks = ctx.profiler.time(Stage::Unpack, || keystream(key, w / 2 * height as usize));
     let bad = std::sync::atomic::AtomicUsize::new(0);
     ctx.profiler.time(Stage::Unpack, || {
@@ -109,7 +117,8 @@ pub fn decode(src: &[u8], key: u32, width: u32, height: u32, ctx: &DecodeContext
             let mut nbad = 0;
             for (i, out) in chunk.chunks_exact_mut(w).enumerate() {
                 let y = first + i;
-                let s = &src[y * w * 2..(y + 1) * w * 2];
+                let s = src.get(y * w * 2..).unwrap_or(&[]);
+                let s = &s[..(w * 2).min(s.len())];
                 let k = &ks[y * w / 2..(y + 1) * w / 2];
                 for ((o, b), &k) in out.chunks_exact_mut(2).zip(s.chunks_exact(4)).zip(k) {
                     let v = u32::from_be_bytes([b[0], b[1], b[2], b[3]]) ^ k;
@@ -121,7 +130,11 @@ pub fn decode(src: &[u8], key: u32, width: u32, height: u32, ctx: &DecodeContext
             bad.fetch_add(nbad, std::sync::atomic::Ordering::Relaxed);
         });
     });
-    if bad.into_inner() > w * height as usize / 16 {
+    let present = (src.len() / 4 * 2) as u64;
+    if let Some(t) = truncation {
+        ctx.recovered(CorruptReason::Truncated(t), geometry.total() - present);
+    }
+    if bad.into_inner() as u64 > present / 16 {
         return Err(Error::corrupt("SRF: decrypted samples out of range (wrong key or corrupt data)"));
     }
     Ok(img)
