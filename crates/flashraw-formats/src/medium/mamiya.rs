@@ -27,7 +27,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     let (off, len) = *strips(raw).first().ok_or_else(|| Error::invalid_metadata("MEF: no strips"))?;
     let rb = (w as usize * bps as usize).div_ceil(8);
-    let src = bytes::slice_at_lenient(data, off, len.max(rb * h as usize))?;
+    // Addressed by geometry; a payload past the end of the file fails when decoded.
+    let src = bytes::slice_at_lenient(data, off, len.max(rb * h as usize)).unwrap_or(&[]);
 
     let mut info = FrameInfo::new(w, h, bps as u8);
     let cfa = tiff_ep_cfa(raw).unwrap_or(CfaPattern::RGGB);
@@ -44,9 +45,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let wu = w as usize;
     let order = if bps == 16 && tiff.order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
     let decode = move |ctx: &DecodeContext| -> Result<RawImage> {
-        if src.len() < rb {
-            return Err(Error::corrupt("MEF: raw data truncated"));
-        }
+        let geometry = RowGeometry::tight(h as usize, wu, bps);
+        let src = ctx.sensor_rows(data, DataUnit::Strip(0), off, geometry)?;
         let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
         ctx.profiler.time(Stage::Unpack, || {
             flashraw_codecs::packed::unpack(
@@ -56,7 +56,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
                 wu,
                 ctx.parallel,
                 ctx.simd,
-                true,
+                ctx.recover,
             )
         })?;
         Ok(img)

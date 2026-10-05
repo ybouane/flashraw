@@ -103,6 +103,42 @@ pub fn unpack_u16_rows(
     Ok(())
 }
 
+/// Fill `out` (zeroed, whole rows of `width` samples) from uncompressed 16-bit samples of
+/// sensor-data `unit`, `stride` bytes per row from `offset` of `data` (the whole file).
+/// The payload is addressed by geometry: the rows' bytes must be in the file (the last
+/// row needs no padding; a declared length that is shorter or longer does not matter).
+/// Missing bytes fail under the strict policy; under the recover policy the complete
+/// samples are decoded, the rest stay zero and a warning is recorded.
+#[allow(clippy::too_many_arguments)]
+pub fn decode_u16_rows(
+    ctx: &DecodeContext,
+    data: &[u8],
+    unit: DataUnit,
+    offset: usize,
+    order: ByteOrder,
+    width: usize,
+    stride: usize,
+    out: &mut [u16],
+) -> Result<()> {
+    if width == 0 {
+        return Ok(());
+    }
+    let rows = out.len() / width;
+    let geometry = RowGeometry { rows, stride, row_bytes: width * 2, samples: width };
+    let src = ctx.sensor_rows(data, unit, offset, geometry)?;
+    // Plain 16-bit copies are memory-bound: more than a few workers only add contention.
+    par::for_each_row_chunk_bounded(out, width, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
+        for (i, row) in chunk.chunks_mut(width).enumerate() {
+            // Only complete samples are read (missing ones stay zero when recovering).
+            match src.get((first + i) * stride..) {
+                Some(s) => read_u16s(s, order, row),
+                None => break,
+            };
+        }
+    });
+    Ok(())
+}
+
 /// Collect per-row decode errors from parallel workers (first error wins).
 #[derive(Default)]
 pub struct ErrorSlot(std::sync::Mutex<Option<Error>>);
@@ -226,6 +262,28 @@ mod tests {
         assert_eq!(cfa_at_origin(CfaPattern::RGGB, 26, 21), CfaPattern::GBRG);
         assert_eq!(cfa_at_origin(CfaPattern::RGGB, 41, 22), CfaPattern::GRBG);
         assert_eq!(cfa_at_origin(CfaPattern::RGGB, 0, 0), CfaPattern::RGGB);
+    }
+
+    #[test]
+    fn u16_rows_by_policy() {
+        // 3 rows of 2 samples at a 4-byte stride from offset 2; the last row needs 4 bytes.
+        let data = [9u8, 9, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0];
+        let p = Profiler::default();
+        let mut ctx = DecodeContext::new(&p);
+        let mut out = vec![0u16; 6];
+        decode_u16_rows(&ctx, &data, DataUnit::Strip(0), 2, ByteOrder::Little, 2, 4, &mut out).unwrap();
+        assert_eq!(out, vec![1, 2, 3, 4, 5, 6]);
+        assert!(ctx.take_warnings().is_empty());
+        // One byte short: recover keeps the complete samples, strict fails.
+        let mut out = vec![0u16; 6];
+        decode_u16_rows(&ctx, &data[..13], DataUnit::Strip(0), 2, ByteOrder::Little, 2, 4, &mut out).unwrap();
+        assert_eq!(out, vec![1, 2, 3, 4, 5, 0]);
+        let w = ctx.take_warnings();
+        assert_eq!((w.len(), w[0].samples_filled), (1, 1));
+        ctx.recover = false;
+        let e = decode_u16_rows(&ctx, &data[..13], DataUnit::Strip(0), 2, ByteOrder::Little, 2, 4, &mut out);
+        let t = e.unwrap_err().truncation().cloned().unwrap();
+        assert_eq!((t.offset, t.expected, t.available), (2, 12, 11));
     }
 
     #[test]
