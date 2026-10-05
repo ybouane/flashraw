@@ -42,6 +42,10 @@ First complete release of FlashRaw.
   `std::thread::scope`.
 - Truncated Nikon Huffman NEFs fail with `CorruptFile` instead of decoding with frozen
   rows (a stream may only run dry within its last row, for unflushed encoders).
+- DNGs with AsShotWhiteXY but no AsShotNeutral (recent Pixel phones, several converters
+  and scanners) get their as-shot white balance: the camera neutral of that chromaticity
+  through the colour matrices interpolated for its temperature (including a third
+  calibration described by IlluminantData). D75 maps to 7500 K instead of 6500 K.
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 
