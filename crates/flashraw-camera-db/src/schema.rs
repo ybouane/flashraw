@@ -20,6 +20,44 @@ pub struct DbFile {
     /// Sensor geometry selected by raw buffer size (older bodies without margin metadata).
     #[serde(default)]
     pub size_rules: Vec<DbSizeRule>,
+    /// Orientation policies by canonical make and model prefix (cameras without their own
+    /// `orientation.policy`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub orientation_rules: Vec<DbOrientationRule>,
+}
+
+/// How the cameras of a make (optionally narrowed by a model-name prefix) record their
+/// orientation.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbOrientationRule {
+    pub canonical_make: String,
+    /// Canonical model prefix ("" = every model of the make).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model_prefix: String,
+    /// Policy name: exif-only, makernote-preferred, makernote-when-exif-normal,
+    /// canon-auto-rotate-aware.
+    pub policy: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// Per-camera orientation data.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbOrientation {
+    /// Policy name overriding the make's rule ("" = use the rule).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub policy: String,
+    /// Byte offset of the orientation-sensor field in the vendor camera-info record
+    /// (Canon CameraInfo: 0 = horizontal, 1 = rotate 90° CW, 2 = rotate 270° CW).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maker_note_offset: Option<u32>,
+    /// Byte offset of the Auto Rotate setting in the same record (0 = off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_rotate_offset: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
 }
 
 /// Rebadged or regional model names that share a canonical model's data.
@@ -119,6 +157,9 @@ pub struct DbCamera {
     /// signature for this entry).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_size_match: bool,
+    /// Orientation policy override and vendor-record layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<DbOrientation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification: Option<DbVerification>,
 }

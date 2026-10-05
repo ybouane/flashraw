@@ -42,9 +42,21 @@ fn main() {
             })
             .collect();
         let hints: Vec<String> = c.hints.iter().map(|(k, v)| format!("({}, {})", q(k), q(v))).collect();
+        let orientation = c
+            .orientation
+            .as_ref()
+            .map(|o| {
+                format!(
+                    "Some(CameraOrientation {{ policy: {}, maker_note_offset: {:?}, auto_rotate_offset: {:?} }})",
+                    q(&o.policy),
+                    o.maker_note_offset,
+                    o.auto_rotate_offset
+                )
+            })
+            .unwrap_or("None".into());
         writeln!(
             out,
-            "  Camera {{ make: {}, model: {}, mode: {}, canonical_make: {}, canonical_model: {}, aliases: &[{}], cfa: {}, crop: {}, black_areas_v: &{:?}, black_areas_h: &{:?}, sensors: &[{}], color_matrix: &{:?}, hints: &[{}], no_size_match: {} }},",
+            "  Camera {{ make: {}, model: {}, mode: {}, canonical_make: {}, canonical_model: {}, aliases: &[{}], cfa: {}, crop: {}, black_areas_v: &{:?}, black_areas_h: &{:?}, sensors: &[{}], color_matrix: &{:?}, hints: &[{}], no_size_match: {}, orientation: {} }},",
             q(&c.make), q(&c.model), q(&c.mode), q(&c.canonical_make), q(&c.canonical_model),
             aliases.join(", "),
             c.cfa.as_ref().map(|s| format!("Some({})", q(s))).unwrap_or("None".into()),
@@ -54,6 +66,7 @@ fn main() {
             c.color_matrix,
             hints.join(", "),
             c.no_size_match,
+            orientation,
         )
         .unwrap();
     }
@@ -106,6 +119,18 @@ fn main() {
             out,
             "  SizeRule {{ canonical_make: {}, raw_width: {}, raw_height: {}, left: {}, top: {}, width_delta: {}, height_delta: {} }},",
             q(&r.canonical_make), r.raw_width, r.raw_height, r.left, r.top, r.width_delta, r.height_delta
+        )
+        .unwrap();
+    }
+    writeln!(out, "];").unwrap();
+    writeln!(out, "pub static ORIENTATION_RULES: &[OrientationRule] = &[").unwrap();
+    for r in &db.orientation_rules {
+        writeln!(
+            out,
+            "  OrientationRule {{ canonical_make: {}, model_prefix: {}, policy: {} }},",
+            q(&r.canonical_make),
+            q(&r.model_prefix),
+            q(&r.policy)
         )
         .unwrap();
     }

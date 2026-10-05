@@ -9,6 +9,10 @@ use std::path::Path;
 
 include!("schema.rs");
 
+/// Orientation policy names accepted in `orientation.policy` / `orientation_rules`.
+pub const ORIENTATION_POLICIES: &[&str] =
+    &["exif-only", "makernote-preferred", "makernote-when-exif-normal", "canon-auto-rotate-aware"];
+
 /// Errors from tooling operations.
 pub type ToolResult<T> = Result<T, String>;
 
@@ -115,6 +119,27 @@ pub fn validate(db: &DbFile) -> Vec<String> {
                 problems.push(format!("{id}: negative crop origin"));
             }
         }
+        if let Some(o) = &c.orientation {
+            if !o.policy.is_empty() && !ORIENTATION_POLICIES.contains(&o.policy.as_str()) {
+                problems.push(format!("{id}: unknown orientation policy {:?}", o.policy));
+            }
+            if o.auto_rotate_offset.is_some() && o.maker_note_offset.is_none() {
+                problems.push(format!("{id}: orientation auto_rotate_offset without maker_note_offset"));
+            }
+        }
+    }
+    let mut rules = BTreeMap::new();
+    for r in &db.orientation_rules {
+        let id = format!("orientation rule {} {:?}", r.canonical_make, r.model_prefix);
+        if r.canonical_make.trim().is_empty() {
+            problems.push(format!("{id}: empty make"));
+        }
+        if !ORIENTATION_POLICIES.contains(&r.policy.as_str()) {
+            problems.push(format!("{id}: unknown policy {:?}", r.policy));
+        }
+        if rules.insert((r.canonical_make.to_lowercase(), r.model_prefix.to_lowercase()), ()).is_some() {
+            problems.push(format!("{id}: duplicate"));
+        }
     }
     for g in &db.model_aliases {
         if g.model.trim().is_empty() || g.aliases.is_empty() {
@@ -164,6 +189,9 @@ pub fn compare(a: &DbFile, b: &DbFile) -> Vec<String> {
                 if ca.hints != cb.hints {
                     diffs.push("hints".into());
                 }
+                if ca.orientation != cb.orientation {
+                    diffs.push("orientation".into());
+                }
                 if diffs.is_empty() {
                     diffs.push("other fields".into());
                 }
@@ -183,6 +211,27 @@ pub fn compare(a: &DbFile, b: &DbFile) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::format_json;
+
+    #[test]
+    fn orientation_entries_are_validated() {
+        let mut db = super::DbFile::default();
+        db.orientation_rules.push(super::DbOrientationRule {
+            canonical_make: "Canon".into(),
+            policy: "sideways".into(),
+            ..Default::default()
+        });
+        db.cameras.push(super::DbCamera {
+            make: "Canon".into(),
+            model: "Canon EOS X".into(),
+            canonical_make: "Canon".into(),
+            canonical_model: "EOS X".into(),
+            orientation: Some(super::DbOrientation { auto_rotate_offset: Some(4), ..Default::default() }),
+            ..Default::default()
+        });
+        let p = super::validate(&db);
+        assert!(p.iter().any(|m| m.contains("unknown policy")), "{p:?}");
+        assert!(p.iter().any(|m| m.contains("auto_rotate_offset without")), "{p:?}");
+    }
 
     #[test]
     fn inline_arrays_keep_string_contents() {

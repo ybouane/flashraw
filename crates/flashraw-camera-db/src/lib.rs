@@ -55,6 +55,28 @@ pub struct Camera {
     pub color_matrix: &'static [i32],
     pub hints: &'static [(&'static str, &'static str)],
     pub no_size_match: bool,
+    /// Orientation policy override and vendor-record layout.
+    pub orientation: Option<CameraOrientation>,
+}
+
+/// Per-camera orientation data (see `orientation` in docs/camera-db.md).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraOrientation {
+    /// Policy name overriding the make's rule ("" = use the rule).
+    pub policy: &'static str,
+    /// Byte offset of the orientation-sensor field in the vendor camera-info record.
+    pub maker_note_offset: Option<u32>,
+    /// Byte offset of the Auto Rotate setting in the same record.
+    pub auto_rotate_offset: Option<u32>,
+}
+
+/// Orientation policy for a canonical make, optionally narrowed by a model prefix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrientationRule {
+    pub canonical_make: &'static str,
+    /// Canonical model prefix ("" = all models).
+    pub model_prefix: &'static str,
+    pub policy: &'static str,
 }
 
 /// Fallback colour data (prefix matched), used when no exact camera entry has a matrix.
@@ -139,6 +161,26 @@ fn norm(s: &str) -> String {
         out.push_str(&w.to_uppercase());
     }
     out
+}
+
+/// Orientation policy name for a camera: its own override, else the longest matching
+/// make/model-prefix rule, else `"exif-only"`.
+pub fn orientation_policy(canonical_make: &str, canonical_model: &str, cam: Option<&Camera>) -> &'static str {
+    if let Some(p) = cam.and_then(|c| c.orientation).map(|o| o.policy).filter(|p| !p.is_empty()) {
+        return p;
+    }
+    let (make, model) = (norm(canonical_make), norm(canonical_model));
+    ORIENTATION_RULES
+        .iter()
+        .filter(|r| norm(r.canonical_make) == make)
+        .filter(|r| {
+            let p = norm(r.model_prefix);
+            model.starts_with(&p)
+                && (p.is_empty() || model.len() == p.len() || !model.as_bytes()[p.len()].is_ascii_alphanumeric())
+        })
+        .max_by_key(|r| r.model_prefix.len())
+        .map(|r| r.policy)
+        .unwrap_or("exif-only")
 }
 
 impl Camera {
@@ -285,6 +327,24 @@ mod tests {
     }
 
     #[test]
+    fn orientation_policies() {
+        assert_eq!(orientation_policy("Canon", "EOS 6D", None), "canon-auto-rotate-aware");
+        assert_eq!(orientation_policy("Nikon", "D70", None), "makernote-when-exif-normal");
+        assert_eq!(orientation_policy("Kodak", "EasyShare Z980", None), "makernote-when-exif-normal");
+        assert_eq!(orientation_policy("Sony", "ILCE-7M3", None), "exif-only");
+        let six_d = find("Canon", "Canon EOS 6D", "").and_then(|c| c.orientation).unwrap();
+        assert_eq!((six_d.maker_note_offset, six_d.auto_rotate_offset), (Some(0x83), Some(0x3b2)));
+        // Aliases share the base model's layout.
+        let t3i = find("Canon", "Canon EOS REBEL T3i", "").and_then(|c| c.orientation).unwrap();
+        assert_eq!(t3i.maker_note_offset, Some(0x38));
+        // A per-camera policy overrides the make's rule.
+        let mut c = *find("Canon", "Canon EOS 6D", "").unwrap();
+        c.orientation =
+            Some(CameraOrientation { policy: "exif-only", maker_note_offset: None, auto_rotate_offset: None });
+        assert_eq!(orientation_policy("Canon", "EOS 6D", Some(&c)), "exif-only");
+    }
+
+    #[test]
     fn make_normalisation() {
         assert_eq!(canonical_make("NIKON CORPORATION"), "Nikon");
         assert_eq!(canonical_make("OM Digital Solutions"), "OM Digital Solutions");
@@ -309,6 +369,7 @@ mod tests {
             color_matrix: &[],
             hints: &[],
             no_size_match: false,
+            orientation: None,
         };
         assert_eq!(c.resolve_crop(100, 50), Some((10, 4, 82, 46)));
     }
