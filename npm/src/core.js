@@ -358,7 +358,8 @@ function checkObject(o, what) {
 
 // --- decoded frames -------------------------------------------------------------------------
 
-const ARRAYS = { u16: Uint16Array, f32: Float32Array, u8: Uint8Array };
+// `f16`: IEEE half floats as raw bits (`sampleType: 'f16'` normalized output).
+const ARRAYS = { u16: Uint16Array, f16: Uint16Array, f32: Float32Array, u8: Uint8Array };
 // Zero-copy frames / pinned handles are strongly referenced until freed: a bare view does not
 // keep its owner alive, so GC must never free WASM memory a view still points at.
 const live = new Set();

@@ -63,7 +63,7 @@ pub fn decode(
     declared: usize,
 ) -> Result<bool> {
     let p = PredictiveParams { width, rows: height, tables: &[(0, table)], vpred: [[0; 2]; 2] };
-    decode_predictive_par(src, &p, out, stride, |h| h, parallel, declared)
+    Ok(decode_predictive_par(src, &p, out, stride, |h| h, parallel, declared)?.is_some())
 }
 
 #[cfg(test)]

@@ -30,6 +30,8 @@ pub use decoder::{
 };
 pub use error::{Error, Result};
 pub use image::{Limits, PixelData, RawImage, alloc_zeroed, max_nonneg_bits};
-pub use metadata::{ExposureInfo, GpsInfo, LensInfo, PreviewEncoding, PreviewInfo, PreviewKind, RawMetadata};
+pub use metadata::{
+    DngExtras, DngProfileInfo, ExposureInfo, GpsInfo, LensInfo, PreviewEncoding, PreviewInfo, PreviewKind, RawMetadata,
+};
 pub use profile::{Profiler, Stage};
 pub use types::*;

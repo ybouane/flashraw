@@ -25,6 +25,24 @@ First complete release of FlashRaw.
   and FixVignetteRadial; geometric opcodes reported. `apply_opcodes` / `--no-opcodes`
   / `applyOpcodes` turn them off; `DecodeStatistics::opcodes` reports what ran.
 
+- Editor-facing output options: `normalized` as half floats (`sampleType: 'f16'`, converted
+  in place in WASM memory) and raw outputs cropped to the active area (`crop: 'active'`).
+- Region decodes of formats whose black level is measured from masked (optical black) areas
+  now measure it from those areas even when the region excludes them (previously the region's
+  own pixels were averaged, e.g. CR2 active-area crops normalised against ~980 instead of 512).
+- Metadata: `metadata.dng` (BaselineExposure, BaselineNoise/Sharpness, LinearResponseLimit,
+  AsShotNeutral, AsShotWhiteXY, DefaultUserCrop, DefaultScale, NoiseProfile, camera-profile
+  tag presence: ProfileName, HueSatMap dims/count, LookTable dims, ToneCurve, EmbedPolicy,
+  BaselineExposureOffset) and `metadata.opcodes` (every DNG opcode with id, flags, whether it
+  is applied, and WarpRectilinear / FixVignetteRadial parameters).
+
+### Fixes
+- Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):
+  the pipelined entropy/prediction stages use `rayon::join` on wasm32 instead of
+  `std::thread::scope`.
+- Truncated Nikon Huffman NEFs fail with `CorruptFile` instead of decoding with frozen
+  rows (a stream may only run dry within its last row, for unflushed encoders).
+
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
   (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed

@@ -13,7 +13,7 @@ import {
   ERROR_KINDS,
   errorFromKind,
 } from 'flashraw';
-import { fixture, fixtures } from './helpers.mjs';
+import { fixture, fixtures, corpusFile } from './helpers.mjs';
 
 /** Run `fn`; it may succeed, but any failure must be a structured, non-internal FlashRawError. */
 async function noCrash(fn, label) {
@@ -161,5 +161,21 @@ describe('structured errors', () => {
 
   test('the constructor is private', () => {
     assert.throws(() => new FlashRaw(), TypeError);
+  });
+});
+
+describe('truncated entropy streams', () => {
+  const nef = corpusFile('Nikon/Z 7/3-Nikon-Z7-RAW-14bit-lossless-compressed-L.NEF');
+  test('truncated Nikon Huffman NEF → CorruptFileError (not silent garbage rows)', { skip: !nef && 'corpus not available' }, async () => {
+    const bytes = readFileSync(nef);
+    for (const pct of [50, 90, 99]) {
+      const cut = bytes.subarray(0, Math.floor((bytes.length * pct) / 100));
+      const e = await decodeRaw(cut).then(() => null, (x) => x);
+      assert.ok(e, `${pct} %: decoded a truncated file`);
+      assert.equal(e.kind, 'CorruptFile', `${pct} %: ${e.message}`);
+      assert.match(e.message, /truncated/);
+    }
+    const ok = await decodeRaw(bytes);
+    assert.equal(ok.width * ok.height, ok.data.length);
   });
 });

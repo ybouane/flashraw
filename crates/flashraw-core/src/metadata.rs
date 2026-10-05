@@ -125,6 +125,55 @@ pub enum PreviewKind {
     FullSize,
 }
 
+/// DNG camera-profile tags an editor needs to know about (presence and sizes; the tables
+/// themselves are not decoded).
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct DngProfileInfo {
+    /// ProfileName.
+    pub name: Option<String>,
+    /// ProfileEmbedPolicy (0 allow copying ... 3 no restrictions).
+    pub embed_policy: Option<u32>,
+    /// ProfileHueSatMapDims `[hue, sat, val]` when HueSatMap data exists.
+    pub hue_sat_map_dims: Option<[u32; 3]>,
+    /// Number of ProfileHueSatMapData tables present (0..=3).
+    pub hue_sat_map_count: u8,
+    /// ProfileLookTableDims `[hue, sat, val]` when ProfileLookTableData exists.
+    pub look_table_dims: Option<[u32; 3]>,
+    /// Whether ProfileToneCurve is present.
+    pub tone_curve: bool,
+    /// BaselineExposureOffset (stops).
+    pub baseline_exposure_offset: Option<f64>,
+}
+
+/// DNG rendering hints from IFD0 / the raw IFD that FlashRaw does not apply itself.
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub struct DngExtras {
+    /// BaselineExposure in stops (signed).
+    pub baseline_exposure: Option<f64>,
+    /// BaselineNoise.
+    pub baseline_noise: Option<f64>,
+    /// BaselineSharpness.
+    pub baseline_sharpness: Option<f64>,
+    /// LinearResponseLimit (fraction of white).
+    pub linear_response_limit: Option<f64>,
+    /// AsShotNeutral as stored (camera RGB of the neutral).
+    pub as_shot_neutral: Option<Vec<f64>>,
+    /// AsShotWhiteXY chromaticity.
+    pub as_shot_white_xy: Option<(f64, f64)>,
+    /// DefaultUserCrop as fractions of the default-cropped image: top, left, bottom, right.
+    pub default_user_crop: Option<[f64; 4]>,
+    /// DefaultScale (horizontal, vertical).
+    pub default_scale: Option<(f64, f64)>,
+    /// NoiseProfile (pairs of scale/offset per plane).
+    pub noise_profile: Option<Vec<f64>>,
+    /// Camera profile tags.
+    pub profile: DngProfileInfo,
+}
+
 /// Normalised metadata for a RAW file, available without decoding sensor data.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -180,6 +229,8 @@ pub struct RawMetadata {
     pub extra: Vec<(String, String)>,
     /// Embedded previews and thumbnails.
     pub previews: Vec<PreviewInfo>,
+    /// DNG rendering hints (`None` for non-DNG files).
+    pub dng: Option<DngExtras>,
 }
 
 impl RawMetadata {

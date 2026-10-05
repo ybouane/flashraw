@@ -68,6 +68,23 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
 
   const region = await raw.decodeRegion({ x: 0, y: 0, width: 64, height: 64 }, { output: 'normalized' });
   const norm: Float32Array = region.data;
+  // Editor options: half-float normalized output cropped to the active area.
+  const half = await raw.decode({ output: 'normalized', sampleType: 'f16', crop: 'active', zeroCopy: true });
+  const halfBits: Uint16Array = half.data;
+  const dt: 'u8' | 'u16' | 'f16' | 'f32' = half.dataType;
+  const origin: number = half.origin.x;
+  half.free();
+  // @ts-expect-error f16 normalized data is not a Float32Array
+  const notF32: Float32Array = (await raw.decode({ output: 'normalized', sampleType: 'f16' })).data;
+  const be: number | null | undefined = raw.metadata.dng?.baselineExposure;
+  const xy: [number, number] | null | undefined = raw.metadata.dng?.asShotWhiteXY;
+  for (const op of raw.metadata.opcodes) {
+    if (op.params?.kind === 'WarpRectilinear') {
+      const kr: [number, number, number, number] = op.params.planes[0].kr;
+      void kr;
+    }
+  }
+  void [halfBits, dt, origin, notF32, be, xy];
   const tile = await raw.decodeTile(0);
   const zc = await raw.decode({ zeroCopy: true });
   zc.free();
@@ -130,6 +147,9 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const remote = await pool.open(buffer, { transfer: true });
   const rf = await remote.decode();
   const rd: Uint16Array = rf.data;
+  const wh = await pool.decode(file, { output: 'normalized', sampleType: 'f16' });
+  const whd: Uint16Array = wh.data;
+  void whd;
   await remote.close();
   pool.terminate();
 

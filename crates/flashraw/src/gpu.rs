@@ -225,12 +225,9 @@ async fn run(
         None => {
             let dctx =
                 DecodeContext { limits: opts.limits, parallel: threads > 1, simd: cfg!(feature = "simd"), profiler };
-            let decoded =
-                if win != full { raw.decoder.decode_region(&dctx, win)? } else { raw.decoder.decode(&dctx)? };
-            if info.black_from_masked {
-                if let Some(b) = profiler.time(Stage::Calibration, || process::black_from_masked(&decoded, info)) {
-                    black = b;
-                }
+            let (decoded, measured) = raw.decode_window(&dctx, win, profiler)?;
+            if let Some(b) = measured {
+                black = b;
             }
             img = Some(decoded);
             let d = img.as_ref().expect("just set");

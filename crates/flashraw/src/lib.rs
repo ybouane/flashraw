@@ -43,10 +43,10 @@ pub mod process;
 mod source;
 
 pub use flashraw_core::{
-    BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, DecodeUnit, Error,
-    ExposureInfo, FrameInfo, GpsInfo, Illuminant, LensInfo, Limits, Orientation, PreviewEncoding, PreviewInfo,
-    PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result, SampleFormat, SensorLayout, Stage, WhiteBalance,
-    WhiteLevel,
+    BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, DecodeUnit, DngExtras,
+    DngProfileInfo, Error, ExposureInfo, FrameInfo, GpsInfo, Illuminant, LensInfo, Limits, Orientation,
+    PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result, SampleFormat,
+    SensorLayout, Stage, WhiteBalance, WhiteLevel,
 };
 pub use frame::{BackendReport, DecodeStatistics, RawFrame, RawPixelData};
 pub use options::{Backend, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};
@@ -205,6 +205,36 @@ impl<'a> FlashRaw<'a> {
         self.decode_region(unit.rect, opts)
     }
 
+    /// Decode `win` (sensor-buffer coordinates; the whole buffer or a region) and, for
+    /// formats whose black level comes from masked (optical black) areas, measure it. Those
+    /// areas usually lie outside a cropped window (e.g. the active area), so the decode then
+    /// covers the window plus the masked areas and is cropped back afterwards: a region must
+    /// normalise exactly like the same pixels of a full decode.
+    pub(crate) fn decode_window(
+        &self,
+        ctx: &DecodeContext,
+        win: Rect,
+        profiler: &Profiler,
+    ) -> Result<(RawImage, Option<flashraw_core::BlackLevel>)> {
+        let info = self.decoder.frame_info();
+        let full = Rect::full(info.width, info.height);
+        let decode = |r: Rect| if r == full { self.decoder.decode(ctx) } else { self.decoder.decode_region(ctx, r) };
+        if !info.black_from_masked || info.masked_areas.is_empty() {
+            return Ok((decode(win)?, None));
+        }
+        let span = info.masked_areas.iter().fold(win, |a, m| {
+            Rect::from_ltrb(a.x.min(m.x), a.y.min(m.y), a.right().max(m.right()), a.bottom().max(m.bottom()))
+                .unwrap_or(a)
+                .intersect(&full)
+                .unwrap_or(a)
+        });
+        let img = decode(span)?;
+        let black = profiler.time(Stage::Calibration, || process::black_from_masked_at(&img, info, (span.x, span.y)));
+        let img =
+            if span == win { img } else { img.crop(Rect::new(win.x - span.x, win.y - span.y, win.width, win.height))? };
+        Ok((img, black))
+    }
+
     fn decode_inner(&self, opts: &DecodeOptions) -> Result<RawFrame> {
         let t0 = flashraw_core::profile::now_ms();
         let profiler = Profiler::new();
@@ -238,10 +268,7 @@ impl<'a> FlashRaw<'a> {
             }
             None => None,
         };
-        let mut img = match region {
-            Some(r) if r != full => self.decoder.decode_region(&ctx, r)?,
-            _ => self.decoder.decode(&ctx)?,
-        };
+        let (mut img, measured) = self.decode_window(&ctx, region.unwrap_or(full), &profiler)?;
         let origin = region.map(|r| (r.x, r.y)).unwrap_or((0, 0));
         let mut lists = opcodes::Lists::of(info);
         if let Some(l) = &mut lists {
@@ -257,12 +284,7 @@ impl<'a> FlashRaw<'a> {
                 .map(|i| Rect::new(i.x - origin.0, i.y - origin.1, i.width, i.height))
                 .unwrap_or_default()
         };
-        let mut black = info.black_level.clone();
-        if info.black_from_masked {
-            if let Some(b) = profiler.time(Stage::Calibration, || process::black_from_masked(&img, info)) {
-                black = b;
-            }
-        }
+        let black = measured.unwrap_or_else(|| info.black_level.clone());
         let decode_backend = format!(
             "CPU {} x{} thread{}",
             if use_simd { simd_level.name() } else { "scalar" },

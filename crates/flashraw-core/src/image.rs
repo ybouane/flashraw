@@ -234,7 +234,7 @@ impl RawImage {
             _ => panic!("f32 image"),
         }
     }
-    /// Copy out a sub-rectangle.
+    /// Copy out a sub-rectangle (rows copied in parallel for large images).
     pub fn crop(&self, r: Rect) -> Result<RawImage> {
         if r.is_empty() || r.right() > self.width || r.bottom() > self.height {
             return Err(Error::InvalidArgument(format!("crop {r} outside {}x{}", self.width, self.height)));
@@ -242,23 +242,30 @@ impl RawImage {
         let cpp = self.cpp as usize;
         let (x0, w) = (r.x as usize * cpp, r.width as usize * cpp);
         let rl = self.row_len();
+        let y0 = r.y as usize;
+        fn copy<T: Copy + Send + Sync + crate::image::zeroable::Zeroable>(
+            v: &[T],
+            rl: usize,
+            x0: usize,
+            y0: usize,
+            w: usize,
+            h: usize,
+        ) -> Result<Vec<T>> {
+            let mut out = alloc_zeroed::<T>(w * h)?;
+            crate::par::for_each_row_chunk(&mut out, w, 64, true, |first, rows| {
+                for (i, row) in rows.chunks_mut(w).enumerate() {
+                    let s = (y0 + first + i) * rl + x0;
+                    row.copy_from_slice(&v[s..s + w]);
+                }
+            });
+            Ok(out)
+        }
+        let h = r.height as usize;
         let data = match &self.data {
-            PixelData::U16(v) => {
-                let mut out = Vec::with_capacity(w * r.height as usize);
-                for y in r.y as usize..r.bottom() as usize {
-                    out.extend_from_slice(&v[y * rl + x0..y * rl + x0 + w]);
-                }
-                PixelData::U16(out)
-            }
-            PixelData::F32(v) => {
-                let mut out = Vec::with_capacity(w * r.height as usize);
-                for y in r.y as usize..r.bottom() as usize {
-                    out.extend_from_slice(&v[y * rl + x0..y * rl + x0 + w]);
-                }
-                PixelData::F32(out)
-            }
+            PixelData::U16(v) => PixelData::U16(copy(v, rl, x0, y0, w, h)?),
+            PixelData::F32(v) => PixelData::F32(copy(v, rl, x0, y0, w, h)?),
         };
-        Ok(RawImage { width: r.width, height: r.height, cpp: self.cpp, data, float_max: None })
+        Ok(RawImage { width: r.width, height: r.height, cpp: self.cpp, data, float_max: self.float_max })
     }
     /// Sample at `(x, y, c)` as f32 (convenience for tests/tools; not for hot loops).
     pub fn sample(&self, x: u32, y: u32, c: u32) -> f32 {

@@ -3,7 +3,8 @@ import type {
   DecodeOptions,
   FileCapabilities,
   FrameFields,
-  FrameData,
+  FrameDataFor,
+  SampleType,
   FrameInfo,
   InitOptions,
   OpenOptions,
@@ -36,7 +37,9 @@ export interface TransferOption {
 }
 
 /** A decoded frame received from a worker: plain fields + a standalone typed array. */
-export type WorkerFrame<O extends OutputFormat = OutputFormat> = FrameFields<O> & { data: FrameData[O] };
+export type WorkerFrame<O extends OutputFormat = OutputFormat, S extends SampleType = 'f32'> = FrameFields<O> & {
+  data: FrameDataFor<O, S>;
+};
 type PreviewFor<T> = T extends { format: 'rgba8' } ? RgbaPreview : EncodedPreview;
 
 /** A FlashRaw handle that lives inside one worker. */
@@ -50,15 +53,17 @@ export declare class RemoteFlashRaw {
   readonly parseMs: number;
   readonly format: RawFormatName;
   readonly closed: boolean;
-  decode<O extends OutputFormat = 'raw-u16'>(options?: Omit<DecodeOptions, 'zeroCopy'> & { output?: O }): Promise<WorkerFrame<O>>;
-  decodeRegion<O extends OutputFormat = 'raw-u16'>(
+  decode<O extends OutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
+    options?: Omit<DecodeOptions, 'zeroCopy'> & { output?: O; sampleType?: S },
+  ): Promise<WorkerFrame<O, S>>;
+  decodeRegion<O extends OutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
     region: Rect,
-    options?: Omit<DecodeOptions, 'zeroCopy' | 'region'> & { output?: O },
-  ): Promise<WorkerFrame<O>>;
-  decodeTile<O extends OutputFormat = 'raw-u16'>(
+    options?: Omit<DecodeOptions, 'zeroCopy' | 'region'> & { output?: O; sampleType?: S },
+  ): Promise<WorkerFrame<O, S>>;
+  decodeTile<O extends OutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
     index: number,
-    options?: Omit<DecodeOptions, 'zeroCopy' | 'region'> & { output?: O },
-  ): Promise<WorkerFrame<O>>;
+    options?: Omit<DecodeOptions, 'zeroCopy' | 'region'> & { output?: O; sampleType?: S },
+  ): Promise<WorkerFrame<O, S>>;
   preview<T extends Omit<PreviewOptions, 'zeroCopy'> | undefined = undefined>(options?: T): Promise<PreviewFor<T> | null>;
   thumbnail<T extends Omit<PreviewOptions, 'zeroCopy'> | undefined = undefined>(options?: T): Promise<PreviewFor<T> | null>;
   close(): Promise<void>;
@@ -70,10 +75,10 @@ export declare class WorkerPool {
   readonly size: number;
   /** Pending requests per spawned worker. */
   readonly load: number[];
-  decode<O extends OutputFormat = 'raw-u16'>(
+  decode<O extends OutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
     input: RawInput,
-    options?: OpenOptions & Omit<DecodeOptions, 'zeroCopy'> & TransferOption & { output?: O },
-  ): Promise<WorkerFrame<O>>;
+    options?: OpenOptions & Omit<DecodeOptions, 'zeroCopy'> & TransferOption & { output?: O; sampleType?: S },
+  ): Promise<WorkerFrame<O, S>>;
   readMetadata(input: RawInput, options?: OpenOptions & TransferOption): Promise<RawMetadata>;
   extractPreview<T extends Omit<PreviewOptions, 'zeroCopy'> | undefined = undefined>(
     input: RawInput,

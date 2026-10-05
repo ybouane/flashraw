@@ -61,19 +61,28 @@ pub fn camera_to_srgb(cm: &ColorMatrices) -> [[f32; 3]; 3] {
 }
 
 /// Measure per-position black levels from masked (optical black) areas.
-/// Returns a pattern with the CFA's dimensions (or 1x1 without CFA).
+/// Returns a pattern with the CFA's dimensions (or 1x1 without CFA), anchored at buffer (0, 0).
 pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel> {
+    black_from_masked_at(img, info, (0, 0))
+}
+
+/// [`black_from_masked`] for an image whose top-left is at `origin` in the sensor buffer
+/// (region decodes): `info.masked_areas` are buffer coordinates, the pattern is still
+/// anchored at buffer (0, 0).
+pub fn black_from_masked_at(img: &RawImage, info: &FrameInfo, origin: (u32, u32)) -> Option<BlackLevel> {
     if info.masked_areas.is_empty() || img.cpp != 1 {
         return None;
     }
     let data = img.data.as_u16()?;
     let (pw, ph) = info.cfa.map(|p| (p.width(), p.height())).unwrap_or((1, 1));
     let w = img.width as usize;
-    // (row, x0, x1) spans of every masked area; rows are summed in parallel with integer
-    // accumulators and no per-pixel modulo.
+    let (ox, oy) = (origin.0 as usize, origin.1 as usize);
+    let frame = Rect::new(origin.0, origin.1, img.width, img.height);
+    // (row, x0, x1) spans of every masked area (buffer coordinates); rows are summed in
+    // parallel with integer accumulators and no per-pixel modulo.
     let mut spans: Vec<(usize, usize, usize)> = Vec::new();
     for r in &info.masked_areas {
-        let r = r.clamp_to(img.width, img.height);
+        let Some(r) = r.intersect(&frame) else { continue };
         for y in r.y as usize..r.bottom() as usize {
             spans.push((y, r.x as usize, r.right() as usize));
         }
@@ -81,13 +90,13 @@ pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel>
     let partial = par::map(spans, true, |(y, x0, x1)| {
         let mut sum = vec![0u64; pw * ph];
         let mut cnt = vec![0u64; pw * ph];
-        let row = &data[y * w..y * w + w];
+        let row = &data[(y - oy) * w..(y - oy) * w + w];
         let base = (y % ph) * pw;
         for k in 0..pw {
             // First x >= x0 with x % pw == k.
             let mut x = x0 + (k + pw - x0 % pw) % pw;
             while x < x1 {
-                sum[base + k] += row[x] as u64;
+                sum[base + k] += row[x - ox] as u64;
                 cnt[base + k] += 1;
                 x += pw;
             }

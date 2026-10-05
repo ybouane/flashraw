@@ -157,11 +157,13 @@ pub struct ExactBits<'a> {
     pos: u64,
     /// Set after the first read that crossed the end of the data.
     dead: bool,
+    /// First output row during which the stream ran past its data ([`decode_predictive`]).
+    dead_row: Option<usize>,
 }
 
 impl<'a> ExactBits<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        ExactBits { data, pos: 0, dead: false }
+        ExactBits { data, pos: 0, dead: false, dead_row: None }
     }
 
     /// Bits consumed so far.
@@ -172,6 +174,12 @@ impl<'a> ExactBits<'a> {
     /// Whether the stream ran past the end of its data.
     pub fn is_dead(&self) -> bool {
         self.dead
+    }
+
+    /// The first row (of a [`decode_predictive`] call) that needed bits past the end of the
+    /// data, i.e. how much of the image is real: rows from here on are frozen predictors.
+    pub fn dead_row(&self) -> Option<usize> {
+        self.dead_row
     }
 
     #[inline(always)]
@@ -296,13 +304,16 @@ where
         } else {
             decode_row_exact(&mut bits, t, vp, line, &map);
         }
+        if bits.dead && bits.dead_row.is_none() {
+            bits.dead_row = Some(row);
+        }
     }
     Ok(bits)
 }
 
 /// [`decode_predictive`] that entropy-decodes large single-table streams on all threads
-/// ([`crate::par_entropy`]) when `parallel` is set. Returns whether the stream ran past
-/// its data (`is_dead`). Output is identical to [`decode_predictive`]: streams whose
+/// ([`crate::par_entropy`]) when `parallel` is set. Returns the first row that ran past
+/// its data ([`ExactBits::dead_row`]; `None` when the stream was complete). Output is identical to [`decode_predictive`]: streams whose
 /// speculation cannot be proven equal (table switches, truncation, invalid codes) take
 /// the sequential path. `declared` is the payload length the container states (`src`
 /// may run on to the end of the file); speculation covers about that much.
@@ -314,7 +325,7 @@ pub fn decode_predictive_par<M>(
     map: M,
     parallel: bool,
     declared: usize,
-) -> Result<bool>
+) -> Result<Option<usize>>
 where
     M: Fn(u16) -> u16 + Sync,
 {
@@ -328,9 +339,9 @@ where
         && rows * width >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES
         && decode_predictive_parallel(src, p, out, stride, &map, declared, None)
     {
-        return Ok(false);
+        return Ok(None);
     }
-    Ok(decode_predictive(src, p, out, stride, map)?.is_dead())
+    Ok(decode_predictive(src, p, out, stride, map)?.dead_row())
 }
 
 /// The stream as one difference per symbol.
@@ -368,7 +379,7 @@ impl crate::par_entropy::SymbolStream for DiffScan<'_> {
         }
     }
     fn pump_at(&self, bit: u64) -> ExactBits<'_> {
-        ExactBits { data: self.src, pos: bit, dead: false }
+        ExactBits { data: self.src, pos: bit, dead: false, dead_row: None }
     }
     fn position(p: &ExactBits<'_>) -> u64 {
         p.pos
@@ -676,7 +687,7 @@ pub fn decode_nikon(
     stride: usize,
     parallel: bool,
     declared: usize,
-) -> Result<bool> {
+) -> Result<()> {
     let main = DirectHuff::from_counts(NIKON_TREES[meta.tree])?;
     let after;
     let mut tables: Vec<(usize, &DirectHuff)> = vec![(0, &main)];
@@ -687,7 +698,7 @@ pub fn decode_nikon(
     let p = PredictiveParams { width, rows, tables: &tables, vpred: meta.vpred };
     let curve: &[u16; 0x4000] =
         meta.curve.as_slice().try_into().map_err(|_| Error::corrupt("Nikon curve has the wrong size"))?;
-    decode_predictive_par(
+    let dead_row = decode_predictive_par(
         src,
         &p,
         out,
@@ -699,7 +710,20 @@ pub fn decode_nikon(
         },
         parallel,
         declared,
-    )
+    )?;
+    check_complete(dead_row, rows)
+}
+
+/// A stream may need a few zero padding bits for its very last codes (encoders do not
+/// always flush), but running dry earlier means the file is truncated: the remaining rows
+/// would be flat garbage, so report it instead of returning a "successful" image.
+pub fn check_complete(dead_row: Option<usize>, rows: usize) -> Result<()> {
+    match dead_row {
+        Some(r) if r + 1 < rows => {
+            Err(Error::corrupt(format!("compressed data ends at row {r}/{rows} (truncated file)")))
+        }
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -842,6 +866,22 @@ mod tests {
         // After death, rows repeat the frozen vertical predictors and differences are zero.
         let last = &out[(rows - 1) * width..];
         assert!(last.chunks(2).all(|c| c == &last[..2]));
+    }
+
+    #[test]
+    fn truncated_streams_are_corrupt() {
+        let t = DirectHuff::from_counts(NIKON_TREES[2]).unwrap();
+        let data = [0xA5u8; 10];
+        let (width, rows) = (16, 8);
+        let mut out = vec![0u16; width * rows];
+        let p = PredictiveParams { width, rows, tables: &[(0, &t)], vpred: [[0, 0], [0, 0]] };
+        let b = decode_predictive(&data, &p, &mut out, width, |h| h).unwrap();
+        let dead = b.dead_row().expect("ran past the data");
+        assert!(dead + 1 < rows);
+        assert!(matches!(check_complete(Some(dead), rows), Err(Error::CorruptFile { .. })));
+        // Needing padding bits only for the last row is tolerated (unflushed encoders).
+        assert!(check_complete(Some(rows - 1), rows).is_ok());
+        assert!(check_complete(None, rows).is_ok());
     }
 
     #[test]

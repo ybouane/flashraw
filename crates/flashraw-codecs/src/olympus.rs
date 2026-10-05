@@ -190,7 +190,35 @@ fn decode_standard(stream: &[u8], out: &mut [u16], width: usize, height: usize, 
     if width == 0 || height == 0 {
         return Ok(());
     }
-    #[cfg(feature = "rayon")]
+    // WASM threads cannot `std::thread::spawn` (the threaded build traps with "failed to spawn
+    // thread"), so there the two stages overlap through `rayon::join` instead: entropy-decode band
+    // k while predicting band k-1. `join` degrades to sequential execution on a one-thread pool.
+    #[cfg(all(feature = "rayon", target_arch = "wasm32"))]
+    if parallel && height > BAND {
+        let mut cur = Vec::new();
+        let mut prev: Option<(usize, Vec<i32>)> = None;
+        for y0 in (0..height).step_by(BAND) {
+            let (res, done) = rayon::join(
+                || entropy_band(y0, &mut cur).map(|_| ()),
+                || {
+                    if let Some((py, codes)) = prev.take() {
+                        predict_band(out, &codes, py, width);
+                        Some(codes)
+                    } else {
+                        None
+                    }
+                },
+            );
+            res?;
+            let recycled = done.unwrap_or_default();
+            prev = Some((y0, std::mem::replace(&mut cur, recycled)));
+        }
+        if let Some((py, codes)) = prev {
+            predict_band(out, &codes, py, width);
+        }
+        return Ok(());
+    }
+    #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
     if parallel && height > BAND {
         use std::sync::mpsc;
         return std::thread::scope(|s| {

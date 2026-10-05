@@ -228,6 +228,80 @@ export interface RawMetadata {
   previews: PreviewDescriptor[];
   /** Vendor-specific extras (mode names, quality, crop mode, ...). */
   extra: Record<string, string>;
+  /** DNG rendering hints FlashRaw does not apply itself; `null` for non-DNG files. */
+  dng: DngExtras | null;
+  /** DNG opcode lists with parameters, known before decoding (`[]` when there are none). */
+  opcodes: OpcodeInfo[];
+}
+
+/** DNG camera-profile tags (presence and table sizes; the tables are not decoded). */
+export interface DngProfileInfo {
+  name: string | null;
+  embedPolicy: number | null;
+  /** ProfileHueSatMapDims `[hue, sat, val]` when HueSatMap data exists. */
+  hueSatMapDims: [number, number, number] | null;
+  /** Number of ProfileHueSatMapData tables: 0, 1, 2 (or 3 with DNG 1.6 triple illuminant). */
+  hueSatMapCount: number;
+  /** ProfileLookTableDims `[hue, sat, val]` when ProfileLookTableData exists. */
+  lookTableDims: [number, number, number] | null;
+  /** ProfileToneCurve present. */
+  toneCurve: boolean;
+  /** BaselineExposureOffset (stops). */
+  baselineExposureOffset: number | null;
+}
+
+/** DNG rendering hints from IFD0 / the raw IFD. */
+export interface DngExtras {
+  /** BaselineExposure in stops (signed). */
+  baselineExposure: number | null;
+  baselineNoise: number | null;
+  baselineSharpness: number | null;
+  /** LinearResponseLimit (fraction of white where the sensor stops being linear). */
+  linearResponseLimit: number | null;
+  /** AsShotNeutral as stored (camera RGB of the neutral). */
+  asShotNeutral: number[] | null;
+  /** AsShotWhiteXY chromaticity (used instead of AsShotNeutral by some writers). */
+  asShotWhiteXY: [number, number] | null;
+  /** DefaultUserCrop as fractions of the default-cropped image: top, left, bottom, right. */
+  defaultUserCrop: [number, number, number, number] | null;
+  /** DefaultScale (horizontal, vertical). */
+  defaultScale: [number, number] | null;
+  /** NoiseProfile: (scale, offset) pairs per plane. */
+  noiseProfile: number[] | null;
+  profile: DngProfileInfo;
+}
+
+/** One DNG opcode (OpcodeList1/2/3). */
+export interface OpcodeInfo {
+  list: 1 | 2 | 3;
+  /** DNG opcode id (1 = WarpRectilinear ... 13 = ScalePerColumn). */
+  id: number;
+  /** e.g. 'WarpRectilinear', 'FixVignetteRadial', 'GainMap'; unknown ids are 'Opcode<id>'. */
+  name: string;
+  optional: boolean;
+  previewOnly: boolean;
+  /**
+   * Whether FlashRaw applies it during decode (geometric ones never are). List 1 applies to
+   * every output, list 2 to `normalized` and RGB outputs, list 3 to RGB outputs only.
+   */
+  applied: boolean;
+  /** Decoded parameters for the opcodes an editor implements itself, else null. */
+  params: WarpRectilinearParams | FixVignetteRadialParams | null;
+}
+
+/** Lens distortion / lateral CA model (DNG §6.2.1); `center` in relative image coordinates. */
+export interface WarpRectilinearParams {
+  kind: 'WarpRectilinear';
+  /** One entry per plane (1 = all planes, else R, G, B). */
+  planes: { kr: [number, number, number, number]; kt: [number, number] }[];
+  center: [number, number];
+}
+
+/** Radial vignette gain `1 + k0 r^2 + ... + k4 r^10` (DNG §6.2.3). */
+export interface FixVignetteRadialParams {
+  kind: 'FixVignetteRadial';
+  k: [number, number, number, number, number];
+  center: [number, number];
 }
 
 /** Geometry and calibration of the sensor buffer (known before decoding). */
@@ -292,11 +366,14 @@ export type HostOutput<O extends OutputFormat | GpuOutputFormat> = O extends `gp
  * What `decode()` resolves to: a `DecodedFrame`, or for `gpu-*` outputs a `GpuFrame` (or the
  * host-output `DecodedFrame` when WebGPU was unavailable and `fallback` is `'cpu'`).
  */
-export type DecodeResult<O extends OutputFormat | GpuOutputFormat> = O extends GpuOutputFormat
+export type DecodeResult<O extends OutputFormat | GpuOutputFormat, S extends SampleType = 'f32'> = O extends GpuOutputFormat
   ? GpuFrame<O> | DecodedFrame<HostOutput<O>>
   : O extends OutputFormat
-    ? DecodedFrame<O>
+    ? DecodedFrame<O, S>
     : never;
+
+/** Sample type of `normalized` output: `f16` = IEEE half floats as `Uint16Array` bits. */
+export type SampleType = 'f32' | 'f16';
 
 // WebGPU types resolve to the real ones when they are in scope (e.g. `@webgpu/types`), else `object`.
 type WebGpuType<K extends string> = K extends keyof typeof globalThis
@@ -323,8 +400,21 @@ export interface DecodeOptions {
   output?: OutputFormat | GpuOutputFormat;
   /** Demosaic for RGB outputs. `half-size` = 2x2 binning (fast). Default `bilinear`. */
   demosaic?: 'bilinear' | 'half-size';
-  /** Crop RGB outputs to the default crop (default true; raw outputs are never cropped). */
-  crop?: boolean;
+  /**
+   * RGB outputs: crop to the default crop (default true). Raw outputs (`raw-u16`, `raw-f32`,
+   * `normalized`) are never cropped by `true`; `'active'` crops them to `frameInfo.activeArea`
+   * (like `region: activeArea`): `origin` reports the buffer position, `cfa` is anchored at
+   * the origin, `blackLevel`/`maskedAreas` keep buffer semantics (black patterns stay anchored at
+   * buffer (0, 0); masked-area black levels are still measured from the masked areas).
+   * An explicit `region` wins. On RGB outputs `'active'` behaves like `true`.
+   */
+  crop?: boolean | 'active';
+  /**
+   * `normalized` only: `'f16'` returns IEEE half floats (as `Uint16Array` bits, round to
+   * nearest even, saturating at 65504; `dataType: 'f16'`) — half the memory and upload size of
+   * `'f32'` (default), converted in place in WASM memory.
+   */
+  sampleType?: SampleType;
   /**
    * Apply DNG opcode lists (bad pixels, lens-shading gain maps, vignetting) in their
    * specified stages. Geometric opcodes are never applied. Default true.
@@ -377,6 +467,16 @@ export interface FrameData {
   rgba8: Uint8ClampedArray<ArrayBuffer>;
 }
 
+/** `data` of a frame: `FrameData[O]`, or `Uint16Array` half floats for `normalized` + `sampleType: 'f16'`. */
+export type FrameDataFor<O extends OutputFormat, S extends SampleType = 'f32'> = O extends 'normalized'
+  ? S extends 'f16'
+    ? Uint16Array<ArrayBuffer>
+    : Float32Array<ArrayBuffer>
+  : FrameData[O];
+
+/** Element type of `data`. */
+export type DataType = 'u8' | 'u16' | 'f16' | 'f32';
+
 /** Decoded frame metadata (no pixels): what the worker pool returns alongside `data`. */
 export interface FrameFields<O extends OutputFormat = OutputFormat> {
   width: number;
@@ -384,7 +484,7 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   /** Samples per pixel: 1 (CFA), 3 (linear RGB / linear DNG), 4 (rgba8). */
   channels: number;
   output: O;
-  dataType: 'u8' | 'u16' | 'f32';
+  dataType: DataType;
   bitsPerSample: number;
   /** CFA pattern for raw outputs (anchored at the frame origin's sensor position). */
   cfa: CfaInfo | null;
@@ -409,13 +509,13 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
 }
 
 /** A decoded frame as returned by `FlashRaw#decode`. */
-export declare class DecodedFrame<O extends OutputFormat = OutputFormat> {
+export declare class DecodedFrame<O extends OutputFormat = OutputFormat, S extends SampleType = 'f32'> {
   private constructor();
   readonly width: number;
   readonly height: number;
   readonly channels: number;
   readonly output: O;
-  readonly dataType: 'u8' | 'u16' | 'f32';
+  readonly dataType: DataType;
   readonly bitsPerSample: number;
   readonly cfa: CfaInfo | null;
   readonly layout: SensorLayout;
@@ -435,11 +535,11 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat> {
   /** DNG opcode lists: what was applied and what was not (empty without lists). */
   readonly opcodes: string[];
   /** Pixels, row-major, `channels` interleaved samples per pixel. */
-  readonly data: FrameData[O];
+  readonly data: FrameDataFor<O, S>;
   /** True while `data` is a view into WASM memory (`zeroCopy: true`). */
   readonly zeroCopy: boolean;
   /** Copy the pixels out of WASM memory and free the WASM buffer (zero-copy frames). */
-  detach(): FrameData[O];
+  detach(): FrameDataFor<O, S>;
   /** Free the WASM buffer of a zero-copy frame (no-op otherwise). */
   free(): void;
   [Symbol.dispose](): void;
@@ -549,15 +649,17 @@ export declare class FlashRaw {
   /** Smallest embedded preview, or null if there is none. */
   thumbnail<T extends PreviewOptions | undefined = undefined>(options?: T): Promise<PreviewFor<T> | null>;
 
-  decode<O extends OutputFormat | GpuOutputFormat = 'raw-u16'>(options?: DecodeOptions & { output?: O }): Promise<DecodeResult<O>>;
-  decodeRegion<O extends OutputFormat | GpuOutputFormat = 'raw-u16'>(
+  decode<O extends OutputFormat | GpuOutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
+    options?: DecodeOptions & { output?: O; sampleType?: S },
+  ): Promise<DecodeResult<O, S>>;
+  decodeRegion<O extends OutputFormat | GpuOutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
     region: Rect,
-    options?: Omit<DecodeOptions, 'region'> & { output?: O },
-  ): Promise<DecodeResult<O>>;
-  decodeTile<O extends OutputFormat | GpuOutputFormat = 'raw-u16'>(
+    options?: Omit<DecodeOptions, 'region'> & { output?: O; sampleType?: S },
+  ): Promise<DecodeResult<O, S>>;
+  decodeTile<O extends OutputFormat | GpuOutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
     index: number,
-    options?: Omit<DecodeOptions, 'region'> & { output?: O },
-  ): Promise<DecodeResult<O>>;
+    options?: Omit<DecodeOptions, 'region'> & { output?: O; sampleType?: S },
+  ): Promise<DecodeResult<O, S>>;
 
   /** Free the WASM memory of this file (idempotent). */
   close(): void;
@@ -567,10 +669,10 @@ export declare class FlashRaw {
 // ------------------------------------------------------------------------------- functions
 
 export function init(options?: InitOptions): Promise<BuildInfo>;
-export function decodeRaw<O extends OutputFormat = 'raw-u16'>(
+export function decodeRaw<O extends OutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
   input: RawInput,
-  options?: OpenOptions & Omit<DecodeOptions, 'zeroCopy'> & { output?: O },
-): Promise<DecodedFrame<O>>;
+  options?: OpenOptions & Omit<DecodeOptions, 'zeroCopy'> & { output?: O; sampleType?: S },
+): Promise<DecodedFrame<O, S>>;
 export function readMetadata(input: RawInput, options?: OpenOptions): Promise<RawMetadata>;
 export function extractPreview<T extends Omit<PreviewOptions, 'zeroCopy'> | undefined = undefined>(
   input: RawInput,

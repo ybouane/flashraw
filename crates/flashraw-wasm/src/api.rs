@@ -7,6 +7,8 @@
 use crate::json;
 use flashraw::{Backend, DecodeOptions, Demosaic, Error, FlashRaw, Limits, OutputFormat, PreviewInfo, Rect};
 use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 /// Default limits on wasm32: the address space is 4 GiB, so the native 1.2 G-sample default
 /// would only turn a hostile header into an abort. 400 M samples covers 150 MP sensors (and
@@ -40,6 +42,13 @@ pub enum Pixels {
     U8(Vec<u8>),
     U16(Vec<u16>),
     F32(Vec<f32>),
+    /// IEEE half floats (as u16 bits) packed at the start of the original f32 buffer: the
+    /// conversion runs in place so `sampleType: 'f16'` never needs a second buffer (WASM
+    /// memory never shrinks, so a peak would stay forever). `len` counts halves.
+    F16 {
+        buf: Vec<f32>,
+        len: usize,
+    },
 }
 
 impl Pixels {
@@ -48,6 +57,7 @@ impl Pixels {
             Pixels::U8(_) => "u8",
             Pixels::U16(_) => "u16",
             Pixels::F32(_) => "f32",
+            Pixels::F16 { .. } => "f16",
         }
     }
     /// Number of elements.
@@ -56,6 +66,7 @@ impl Pixels {
             Pixels::U8(v) => v.len(),
             Pixels::U16(v) => v.len(),
             Pixels::F32(v) => v.len(),
+            Pixels::F16 { len, .. } => *len,
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -67,6 +78,7 @@ impl Pixels {
             Pixels::U8(v) => v.as_ptr() as usize,
             Pixels::U16(v) => v.as_ptr() as usize,
             Pixels::F32(v) => v.as_ptr() as usize,
+            Pixels::F16 { buf, .. } => buf.as_ptr() as usize,
         }
     }
 }
@@ -146,9 +158,24 @@ pub fn parse_open_options(s: &str) -> ApiResult<Limits> {
     limits_from(v.get("limits"))
 }
 
+/// Options handled by this layer on top of [`DecodeOptions`].
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ApiExtras {
+    /// `sampleType: 'f16'` (normalized output as half floats).
+    pub f16: bool,
+    /// `crop: 'active'`: raw outputs cropped to the active area.
+    pub active: bool,
+}
+
 /// Parse decode options. Returns the options and the requested backend name.
 pub fn parse_decode_options(s: &str) -> ApiResult<(DecodeOptions, String)> {
+    parse_decode_request(s).map(|(o, b, _)| (o, b))
+}
+
+/// [`parse_decode_options`] plus the options applied by this layer ([`ApiExtras`]).
+pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExtras)> {
     let v = parse_json(s)?;
+    let mut extras = ApiExtras::default();
     // Single-threaded builds decode on the calling thread; the threaded build (feature `threads`)
     // uses rayon's global pool, which the JS layer starts in workers (`threads: None`).
     let threads = if cfg!(feature = "threads") { None } else { Some(1) };
@@ -174,7 +201,19 @@ pub fn parse_decode_options(s: &str) -> ApiResult<(DecodeOptions, String)> {
     match v.get("crop") {
         None | Some(Value::Null) => {}
         Some(Value::Bool(b)) => o.crop = *b,
-        Some(_) => return Err(ApiError::invalid("option `crop` must be a boolean")),
+        // RGB outputs: the default crop as with `true`; raw outputs: the active area.
+        Some(Value::String(c)) if c == "active" => extras.active = true,
+        Some(_) => return Err(ApiError::invalid("option `crop` must be a boolean or \"active\"")),
+    }
+    match str_opt(&v, "sampleType")? {
+        None | Some("f32") => {}
+        Some("f16") => {
+            if o.output.host_equivalent() != OutputFormat::NormalizedF32 || o.output.is_gpu_resident() {
+                return Err(ApiError::invalid("sampleType \"f16\" requires output \"normalized\""));
+            }
+            extras.f16 = true;
+        }
+        Some(t) => return Err(ApiError::invalid(format!("unknown sampleType `{t}` (expected f32 or f16)"))),
     }
     match v.get("applyOpcodes") {
         None | Some(Value::Null) => {}
@@ -184,7 +223,89 @@ pub fn parse_decode_options(s: &str) -> ApiResult<(DecodeOptions, String)> {
     if let Some(r) = v.get("region").filter(|r| !r.is_null()) {
         o.region = Some(parse_rect(r)?);
     }
-    Ok((o, backend.to_ascii_lowercase()))
+    Ok((o, backend.to_ascii_lowercase(), extras))
+}
+
+fn is_raw_output(o: OutputFormat) -> bool {
+    matches!(o.host_equivalent(), OutputFormat::RawU16 | OutputFormat::RawF32 | OutputFormat::NormalizedF32)
+}
+
+/// `crop: 'active'` on a raw output: decode the active area as a region (an explicit
+/// `region` wins). The frame's `origin` and CFA phase then describe the cropped buffer.
+fn apply_active_crop(raw: &FlashRaw<'_>, o: &mut DecodeOptions, x: ApiExtras) {
+    if x.active && o.region.is_none() && is_raw_output(o.output) {
+        let f = raw.frame_info();
+        let a = f.active_area;
+        if a.width > 0 && a.height > 0 && (a.width, a.height) != (f.width, f.height) {
+            o.region = Some(a);
+        }
+    }
+}
+
+/// f32 → IEEE half bits, round to nearest even; finite values beyond the half range saturate
+/// to ±65504, NaN stays NaN (Fabian Giesen's `float_to_half_fast3_rtne`).
+#[inline(always)]
+pub fn f32_to_f16(x: f32) -> u16 {
+    // Branch-free (selects) so the block loop below vectorises.
+    let b = x.to_bits();
+    let sign = (b >> 16) & 0x8000;
+    let a = b & 0x7fff_ffff;
+    let odd = (a >> 13) & 1;
+    let normal = a.wrapping_add(0xc800_0fff).wrapping_add(odd) >> 13;
+    // Below the smallest normal half: let the FPU round into the subnormal range.
+    let sub = (f32::from_bits(a) + 0.5).to_bits().wrapping_sub(0x3f00_0000);
+    let mut h = if a < 0x3880_0000 { sub } else { normal };
+    // >= 65520 would round to infinity: saturate (NaN stays NaN).
+    let big = if a > 0x7f80_0000 { 0x7e00 } else { 0x7bff };
+    h = if a >= 0x477f_f000 { big } else { h };
+    (sign | h) as u16
+}
+
+/// Convert `v` to halves in place (half `i` lands in bytes `2i..2i+2`, which only overlap
+/// floats `< i` that are already converted). Blocks `[m, 2m)` read bytes `[4m, 8m)` and write
+/// `[2m, 4m)`: disjoint, so each block runs in parallel once the blocks below it are done.
+fn to_f16_in_place(mut v: Vec<f32>) -> Pixels {
+    let n = v.len();
+    let base = v.as_mut_ptr() as usize;
+    // SAFETY: indices stay below `n`; reads of float `i` happen before any write to the bytes
+    // of float `i` (writes of halves `j <= 2i+1` happen after their sources are read, see above).
+    // Blocks of 64 are read into registers/stack first, so a block's writes never clobber its
+    // own unread inputs (writes `[2lo, 2hi)` vs reads `[4lo, 4hi)` overlap only when
+    // `hi > 2lo`, i.e. inside the sequential prefix, which is converted one element at a time).
+    let run = move |lo: usize, hi: usize| unsafe {
+        let src = base as *const f32;
+        let dst = base as *mut u16;
+        let mut i = lo;
+        if lo >= 64 {
+            while i + 64 <= hi {
+                let mut tmp = [0u16; 64];
+                let s = std::slice::from_raw_parts(src.add(i), 64);
+                for (t, &f) in tmp.iter_mut().zip(s) {
+                    *t = f32_to_f16(f);
+                }
+                std::ptr::copy_nonoverlapping(tmp.as_ptr(), dst.add(i), 64);
+                i += 64;
+            }
+        }
+        for j in i..hi {
+            let h = f32_to_f16(src.add(j).read());
+            dst.add(j).write(h);
+        }
+    };
+    const SEQ: usize = 1 << 16;
+    run(0, n.min(SEQ));
+    let mut m = SEQ;
+    while m < n {
+        let hi = (2 * m).min(n);
+        const CHUNK: usize = 1 << 16;
+        let (lo0, len) = (m, hi - m);
+        flashraw::low_level::core::par::for_each_index(len.div_ceil(CHUNK), cfg!(feature = "threads"), |c| {
+            let lo = lo0 + c * CHUNK;
+            run(lo, (lo + CHUNK).min(hi))
+        });
+        m = hi;
+    }
+    Pixels::F16 { buf: v, len: n }
 }
 
 /// Open from an owned buffer (the single copy of the input made by the JS layer).
@@ -193,11 +314,17 @@ pub fn open(bytes: Vec<u8>, options_json: &str) -> ApiResult<FlashRaw<'static>> 
     Ok(FlashRaw::open_with(bytes, limits)?)
 }
 
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
 fn into_decoded(frame: flashraw::RawFrame, backend: &str) -> ApiResult<Decoded> {
+    into_decoded_x(frame, backend, ApiExtras::default())
+}
+
+fn into_decoded_x(frame: flashraw::RawFrame, backend: &str, x: ApiExtras) -> ApiResult<Decoded> {
     let info = json::frame(&frame, backend).to_string();
     let pixels = match frame.data {
         flashraw::RawPixelData::U8(v) => Pixels::U8(v),
         flashraw::RawPixelData::U16(v) => Pixels::U16(v),
+        flashraw::RawPixelData::F32(v) if x.f16 => to_f16_in_place(v),
         flashraw::RawPixelData::F32(v) => Pixels::F32(v),
         #[allow(unreachable_patterns)]
         _ => {
@@ -212,8 +339,9 @@ fn into_decoded(frame: flashraw::RawFrame, backend: &str) -> ApiResult<Decoded> 
 
 /// Decode the sensor data (full frame or `options.region`).
 pub fn decode(raw: &FlashRaw<'_>, options_json: &str) -> ApiResult<Decoded> {
-    let (opts, backend) = parse_decode_options(options_json)?;
-    into_decoded(raw.decode(opts)?, &backend)
+    let (mut opts, backend, x) = parse_decode_request(options_json)?;
+    apply_active_crop(raw, &mut opts, x);
+    into_decoded_x(raw.decode(opts)?, &backend, x)
 }
 
 /// Result of [`decode_gpu`]: host pixels, or an image left on the GPU (`gpu-*` outputs).
@@ -241,7 +369,10 @@ pub async fn download_gpu(frame: &flashraw::RawFrame, backend: &str) -> ApiResul
 /// the CPU, exactly like the native `Backend::Gpu` (the CPU decode *is* the result there).
 #[cfg(feature = "gpu")]
 pub async fn decode_gpu(raw: &FlashRaw<'_>, tile: Option<u32>, options_json: &str) -> ApiResult<GpuDecoded> {
-    let (mut opts, backend) = parse_decode_options(options_json)?;
+    let (mut opts, backend, x) = parse_decode_request(options_json)?;
+    if tile.is_none() {
+        apply_active_crop(raw, &mut opts, x);
+    }
     if let Some(i) = tile {
         let units = raw.units();
         let unit = units
@@ -253,20 +384,20 @@ pub async fn decode_gpu(raw: &FlashRaw<'_>, tile: Option<u32>, options_json: &st
     let resident = opts.output.is_gpu_resident();
     if !resident && (base == OutputFormat::RawF32 || (base == OutputFormat::RawU16 && !raw.capabilities().gpu_unpack)) {
         opts.backend = Backend::Auto;
-        return into_decoded(raw.decode(opts)?, &backend).map(GpuDecoded::Host);
+        return into_decoded_x(raw.decode(opts)?, &backend, x).map(GpuDecoded::Host);
     }
     let frame = raw.decode_gpu_async(opts).await?;
     if frame.as_gpu().is_some() {
         let info = json::frame(&frame, &backend).to_string();
         return Ok(GpuDecoded::Resident { frame: Box::new(frame), info, backend });
     }
-    into_decoded(frame, &backend).map(GpuDecoded::Host)
+    into_decoded_x(frame, &backend, x).map(GpuDecoded::Host)
 }
 
 /// Decode one independently decodable tile/strip.
 pub fn decode_tile(raw: &FlashRaw<'_>, index: u32, options_json: &str) -> ApiResult<Decoded> {
-    let (opts, backend) = parse_decode_options(options_json)?;
-    into_decoded(raw.decode_tile(index as usize, opts)?, &backend)
+    let (opts, backend, x) = parse_decode_request(options_json)?;
+    into_decoded_x(raw.decode_tile(index as usize, opts)?, &backend, x)
 }
 
 /// Resolve a preview selector: `"largest"`, `"smallest"` or an index.
@@ -408,5 +539,135 @@ mod tests {
         assert_eq!(select_preview(&raw, "9").unwrap_err().kind, "NotAvailable");
         let r = decode(&raw, r#"{"region":{"x":16,"y":8,"width":64,"height":32}}"#).unwrap();
         assert_eq!(r.pixels.len(), 64 * 32);
+    }
+
+    /// Reference half conversion via f64 (round to nearest even, saturating).
+    fn half_ref(x: f32) -> u16 {
+        let s = if x.is_sign_negative() { 0x8000u16 } else { 0 };
+        let a = (x as f64).abs();
+        if x.is_nan() {
+            return s | 0x7e00;
+        }
+        if a >= 65520.0 {
+            return s | 0x7bff;
+        }
+        // Enumerate: find nearest half by bits (monotonic for positives).
+        let val = |h: u16| -> f64 {
+            let e = (h >> 10) & 31;
+            let m = (h & 1023) as f64;
+            if e == 0 { m * 2f64.powi(-24) } else { (1.0 + m / 1024.0) * 2f64.powi(e as i32 - 15) }
+        };
+        let (mut lo, mut hi) = (0u16, 0x7bffu16);
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if val(mid) <= a { lo = mid } else { hi = mid }
+        }
+        let (dl, dh) = (a - val(lo), val(hi) - a);
+        let h = if dl < dh || (dl == dh && lo & 1 == 0) { lo } else { hi };
+        s | if a < val(lo) { lo } else { h }
+    }
+
+    #[test]
+    fn f16_conversion() {
+        let mut x = 1u32;
+        for i in 0..200_000u32 {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            // Bias toward the interesting [0, 4) range of normalised data.
+            let v = if i % 2 == 0 { f32::from_bits(x) } else { (x as f32 / u32::MAX as f32) * 4.0 };
+            if v.is_infinite() {
+                continue;
+            }
+            assert_eq!(f32_to_f16(v), half_ref(v), "{v:e}");
+        }
+        for v in [0.0f32, 1.0, 0.5, 65504.0, 65519.0, 65520.0, 1e9, 5.960_464_5e-8, 2.9e-8, 6.1e-5] {
+            assert_eq!(f32_to_f16(v), half_ref(v), "{v:e}");
+        }
+        // In place, across the sequential prefix and several doubling blocks.
+        let n = (1 << 18) + 12345;
+        let v: Vec<f32> = (0..n).map(|i| i as f32 / 977.0).collect();
+        let expect: Vec<u16> = v.iter().map(|&f| f32_to_f16(f)).collect();
+        let Pixels::F16 { buf, len } = to_f16_in_place(v) else { panic!() };
+        assert_eq!(len, n);
+        // SAFETY: `len` halves at the start of `buf`.
+        let got = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u16, len) };
+        assert_eq!(got, &expect[..]);
+    }
+
+    #[test]
+    fn normalized_f16_and_active_crop() {
+        let Some(bytes) = corpus_file("Canon/EOS 5D Mark IV/B13A0729.CR2") else { return };
+        let raw = open(bytes, "").unwrap();
+        let fi = raw.frame_info().clone();
+        let a = fi.active_area;
+        assert!(a.width < fi.width && a.height < fi.height);
+        let full = decode(&raw, r#"{"output":"normalized"}"#).unwrap();
+        let act = decode(&raw, r#"{"output":"normalized","crop":"active","sampleType":"f16"}"#).unwrap();
+        let info: Value = serde_json::from_str(&act.info).unwrap();
+        assert_eq!(act.pixels.kind(), "f16");
+        assert_eq!(info["origin"]["x"], a.x);
+        assert_eq!(info["origin"]["y"], a.y);
+        assert_eq!(
+            (info["width"].as_u64().unwrap(), info["height"].as_u64().unwrap()),
+            (a.width as u64, a.height as u64)
+        );
+        assert_eq!(act.pixels.len(), (a.width * a.height) as usize);
+        let Pixels::F32(f) = &full.pixels else { panic!() };
+        let Pixels::F16 { buf, len } = &act.pixels else { panic!() };
+        // SAFETY: `len` halves at the start of `buf`.
+        let h = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u16, *len) };
+        let w = fi.width as usize;
+        for (y, x) in [(0usize, 0usize), (17, 33), (a.height as usize - 1, a.width as usize - 1), (1000, 2000)] {
+            let fv = f[(y + a.y as usize) * w + x + a.x as usize];
+            assert_eq!(h[y * a.width as usize + x], f32_to_f16(fv), "({x},{y})");
+        }
+        assert_eq!(decode(&raw, r#"{"output":"raw-u16","sampleType":"f16"}"#).unwrap_err().kind, "InvalidArgument");
+        let r = decode(&raw, r#"{"output":"raw-u16","crop":"active"}"#).unwrap();
+        assert_eq!(r.pixels.len(), (a.width * a.height) as usize);
+    }
+}
+
+#[cfg(test)]
+mod dng_metadata_tests {
+    use super::*;
+
+    fn read(rel: &str) -> Option<Vec<u8>> {
+        std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)).ok()
+    }
+
+    #[test]
+    fn dng_extras_and_opcodes() {
+        let raw = open(read("npm/tests/fixtures/canon-5d3-lossy.dng").expect("fixture"), "").unwrap();
+        let m = json::metadata(&raw);
+        let d = &m["dng"];
+        assert_eq!(d["baselineExposure"], 0.25);
+        assert_eq!(d["linearResponseLimit"], 1.0);
+        assert_eq!(d["profile"]["name"], "Adobe Standard");
+        assert_eq!(d["profile"]["hueSatMapCount"], 2);
+        assert_eq!(d["profile"]["hueSatMapDims"], json!([90, 30, 1]));
+        assert_eq!(d["profile"]["lookTableDims"], json!([36, 8, 16]));
+        assert_eq!(d["asShotNeutral"].as_array().unwrap().len(), 3);
+        let ops = m["opcodes"].as_array().unwrap();
+        assert!(ops.iter().all(|o| o["list"] == 2 && o["name"] == "MapPolynomial" && o["applied"] == true));
+
+        let Some(bytes) = read("corpus/Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng") else { return };
+        let m = json::metadata(&open(bytes, "").unwrap());
+        assert_eq!(m["dng"]["asShotWhiteXY"].as_array().unwrap().len(), 2);
+        assert_eq!(m["dng"]["profile"]["toneCurve"], true);
+        let warp = m["opcodes"].as_array().unwrap().iter().find(|o| o["name"] == "WarpRectilinear").unwrap().clone();
+        assert_eq!(warp["list"], 3);
+        assert_eq!(warp["applied"], false);
+        assert_eq!(warp["params"]["kind"], "WarpRectilinear");
+        assert_eq!(warp["params"]["planes"][0]["kr"].as_array().unwrap().len(), 4);
+        assert!((warp["params"]["center"][0].as_f64().unwrap() - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn non_dng_has_no_extras() {
+        let Some(bytes) = read("corpus/Canon/EOS 5D Mark IV/B13A0729.CR2") else { return };
+        let m = json::metadata(&open(bytes, "").unwrap());
+        assert!(m["dng"].is_null());
+        assert_eq!(m["opcodes"], json!([]));
     }
 }

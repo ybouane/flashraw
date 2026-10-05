@@ -27,7 +27,14 @@ pub struct Region {
 /// A parsed opcode.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
-    WarpRectilinear,
+    /// Lens distortion / lateral CA model (DNG 1.3 §6.2): per plane radial `kr[0..4]`
+    /// and tangential `kt[0..2]` coefficients around the optical centre `(cx, cy)`
+    /// (relative image coordinates). Reported, never applied.
+    WarpRectilinear {
+        planes: Vec<([f64; 4], [f64; 2])>,
+        cx: f64,
+        cy: f64,
+    },
     WarpFisheye,
     /// Radial gain `1 + k0 r^2 + k1 r^4 + ... + k4 r^10` around `(cx, cy)` (relative
     /// image coordinates), `r` normalised to 1 at the farthest image corner.
@@ -96,7 +103,7 @@ pub enum Opcode {
 impl Opcode {
     pub fn name(&self) -> &'static str {
         match self {
-            Opcode::WarpRectilinear => "WarpRectilinear",
+            Opcode::WarpRectilinear { .. } => "WarpRectilinear",
             Opcode::WarpFisheye => "WarpFisheye",
             Opcode::FixVignetteRadial { .. } => "FixVignetteRadial",
             Opcode::FixBadPixelsConstant { .. } => "FixBadPixelsConstant",
@@ -116,7 +123,7 @@ impl Opcode {
     pub fn is_pixel_opcode(&self) -> bool {
         !matches!(
             self,
-            Opcode::WarpRectilinear | Opcode::WarpFisheye | Opcode::TrimBounds { .. } | Opcode::Other { .. }
+            Opcode::WarpRectilinear { .. } | Opcode::WarpFisheye | Opcode::TrimBounds { .. } | Opcode::Other { .. }
         )
     }
 }
@@ -144,8 +151,39 @@ fn count(c: &mut Cursor, elem: usize) -> Result<usize> {
     Ok(n)
 }
 
+fn warp_rectilinear(b: &mut Cursor) -> Result<Opcode> {
+    let n = b.u32()? as usize;
+    if n == 0 || n > 4 || (n * 6 + 2) * 8 > b.remaining() {
+        return Err(Error::corrupt("WarpRectilinear plane count"));
+    }
+    let mut f = || b.u64().map(f64::from_bits);
+    let mut planes = Vec::with_capacity(n);
+    for _ in 0..n {
+        planes.push(([f()?, f()?, f()?, f()?], [f()?, f()?]));
+    }
+    let (cx, cy) = (f()?, f()?);
+    Ok(Opcode::WarpRectilinear { planes, cx, cy })
+}
+
+/// One opcode of a list with its header fields.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpcodeEntry {
+    /// DNG opcode id (1 = WarpRectilinear ... 13 = ScalePerColumn).
+    pub id: u32,
+    /// Flag bit 0: the opcode may be skipped by readers that do not understand it.
+    pub optional: bool,
+    /// Flag bit 1: may be skipped when rendering previews.
+    pub preview_only: bool,
+    pub op: Opcode,
+}
+
 /// Parse an opcode list (always big-endian, per the DNG spec).
 pub fn parse(data: &[u8]) -> Result<Vec<Opcode>> {
+    Ok(parse_entries(data)?.into_iter().map(|e| e.op).collect())
+}
+
+/// [`parse`] keeping each opcode's id and flags.
+pub fn parse_entries(data: &[u8]) -> Result<Vec<OpcodeEntry>> {
     let mut c = Cursor::new(data, ByteOrder::Big);
     let n = c.u32()? as usize;
     if n > 4096 {
@@ -160,7 +198,9 @@ pub fn parse(data: &[u8]) -> Result<Vec<Opcode>> {
         let body = c.bytes(len)?;
         let mut b = Cursor::new(body, ByteOrder::Big);
         let op = match id {
-            1 => Opcode::WarpRectilinear,
+            // Never applied, so a malformed body must not cost the rest of the list: report
+            // it without parameters instead.
+            1 => warp_rectilinear(&mut b).unwrap_or(Opcode::WarpRectilinear { planes: Vec::new(), cx: 0.5, cy: 0.5 }),
             2 => Opcode::WarpFisheye,
             3 => {
                 let mut v = [0f64; 7];
@@ -238,7 +278,7 @@ pub fn parse(data: &[u8]) -> Result<Vec<Opcode>> {
             }
             _ => Opcode::Other { id, optional: flags & 1 != 0 },
         };
-        out.push(op);
+        out.push(OpcodeEntry { id, optional: flags & 1 != 0, preview_only: flags & 2 != 0, op });
     }
     Ok(out)
 }

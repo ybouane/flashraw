@@ -81,6 +81,7 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
     let raw_ifd = find_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("DNG has no raw image IFD"))?;
     let (info, raw) = parse_raw(data, &tiff, ifd0, raw_ifd, v4, &meta, opts)?;
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
+    meta.dng = Some(dng_extras(ifd0, raw_ifd));
     if let Some(sw) = &meta.software {
         meta.set_extra("software", sw.clone());
     }
@@ -138,6 +139,42 @@ fn find_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>) -> Option<&'t Ifd<'a>> {
             Some(b) if b.width() as u64 * b.height() as u64 >= i.width() as u64 * i.height() as u64 => Some(b),
             _ => Some(i),
         })
+}
+
+/// Rendering hints an editor applies itself (BaselineExposure, profile tables, user crop...).
+/// Per-image tags may sit in the raw IFD; profile tags live in IFD0.
+fn dng_extras(ifd0: &Ifd, raw: &Ifd) -> flashraw_core::DngExtras {
+    let get = |t: u16| raw.get(t).or_else(|| ifd0.get(t));
+    let finite = |v: Option<f64>| v.filter(|x| x.is_finite());
+    let scalar = |t: u16| finite(get(t).and_then(|e| e.f64(0)));
+    let vec = |t: u16| get(t).map(|e| e.f64s()).filter(|v| !v.is_empty() && v.iter().all(|x| x.is_finite()));
+    let dims = |t: u16| {
+        let v = ifd0.get(t)?.u32s();
+        (v.len() >= 3 && v[..3].iter().all(|&d| d > 0 && d < 1 << 16)).then(|| [v[0], v[1], v[2]])
+    };
+    let mut x = flashraw_core::DngExtras::default();
+    x.baseline_exposure = scalar(tags::BASELINE_EXPOSURE);
+    x.baseline_noise = scalar(tags::BASELINE_NOISE);
+    x.baseline_sharpness = scalar(tags::BASELINE_SHARPNESS);
+    x.linear_response_limit = scalar(tags::LINEAR_RESPONSE_LIMIT);
+    x.as_shot_neutral = vec(tags::AS_SHOT_NEUTRAL);
+    x.as_shot_white_xy = vec(tags::AS_SHOT_WHITE_XY).filter(|v| v.len() >= 2).map(|v| (v[0], v[1]));
+    x.default_user_crop = vec(tags::DEFAULT_USER_CROP).filter(|v| v.len() >= 4).map(|v| [v[0], v[1], v[2], v[3]]);
+    x.default_scale = vec(tags::DEFAULT_SCALE).filter(|v| v.len() >= 2).map(|v| (v[0], v[1]));
+    x.noise_profile = vec(tags::NOISE_PROFILE);
+    let p = &mut x.profile;
+    p.name = ifd0.string(tags::PROFILE_NAME).filter(|s| !s.is_empty());
+    p.embed_policy = ifd0.u32(tags::PROFILE_EMBED_POLICY);
+    p.hue_sat_map_count =
+        [tags::PROFILE_HUE_SAT_MAP_DATA1, tags::PROFILE_HUE_SAT_MAP_DATA2, tags::PROFILE_HUE_SAT_MAP_DATA3]
+            .iter()
+            .filter(|&&t| ifd0.has(t))
+            .count() as u8;
+    p.hue_sat_map_dims = dims(tags::PROFILE_HUE_SAT_MAP_DIMS).filter(|_| p.hue_sat_map_count > 0);
+    p.look_table_dims = dims(tags::PROFILE_LOOK_TABLE_DIMS).filter(|_| ifd0.has(tags::PROFILE_LOOK_TABLE_DATA));
+    p.tone_curve = ifd0.has(tags::PROFILE_TONE_CURVE);
+    p.baseline_exposure_offset = finite(ifd0.f64(tags::BASELINE_EXPOSURE_OFFSET));
+    x
 }
 
 fn rational_pair(ifd: &Ifd, tag: u16) -> Option<(f64, f64)> {

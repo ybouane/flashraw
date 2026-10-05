@@ -246,7 +246,81 @@ pub fn metadata(raw: &FlashRaw<'_>) -> Value {
         "colorMatrices": colors(&f.color_matrices),
         "previews": previews(m),
         "extra": extra,
+        "dng": m.dng.as_ref().map(dng).unwrap_or(Value::Null),
+        "opcodes": opcodes(f),
     })
+}
+
+fn opt_num(v: Option<f64>) -> Value {
+    v.map(num).unwrap_or(Value::Null)
+}
+
+fn nums(v: &[f64]) -> Value {
+    Value::Array(v.iter().map(|&x| num(x)).collect())
+}
+
+/// DNG rendering hints (`metadata.dng`).
+fn dng(x: &flashraw::DngExtras) -> Value {
+    let p = &x.profile;
+    json!({
+        "baselineExposure": opt_num(x.baseline_exposure),
+        "baselineNoise": opt_num(x.baseline_noise),
+        "baselineSharpness": opt_num(x.baseline_sharpness),
+        "linearResponseLimit": opt_num(x.linear_response_limit),
+        "asShotNeutral": x.as_shot_neutral.as_deref().map(nums).unwrap_or(Value::Null),
+        "asShotWhiteXY": x.as_shot_white_xy.map(|(a, b)| json!([num(a), num(b)])).unwrap_or(Value::Null),
+        "defaultUserCrop": x.default_user_crop.map(|c| nums(&c)).unwrap_or(Value::Null),
+        "defaultScale": x.default_scale.map(|(a, b)| json!([num(a), num(b)])).unwrap_or(Value::Null),
+        "noiseProfile": x.noise_profile.as_deref().map(nums).unwrap_or(Value::Null),
+        "profile": {
+            "name": opt_str(&p.name),
+            "embedPolicy": p.embed_policy,
+            "hueSatMapDims": p.hue_sat_map_dims.map(|d| json!(d)).unwrap_or(Value::Null),
+            "hueSatMapCount": p.hue_sat_map_count,
+            "lookTableDims": p.look_table_dims.map(|d| json!(d)).unwrap_or(Value::Null),
+            "toneCurve": p.tone_curve,
+            "baselineExposureOffset": opt_num(p.baseline_exposure_offset),
+        },
+    })
+}
+
+/// The DNG opcode lists with parameters of the opcodes an editor applies itself
+/// (`metadata.opcodes`). Unparsable lists are left out (decoding reports them).
+pub fn opcodes(f: &FrameInfo) -> Value {
+    use flashraw::low_level::codecs::dng_opcodes::{Opcode, parse_entries};
+    let Some(lists) = &f.opcodes else { return json!([]) };
+    let mut out = Vec::new();
+    for (i, bytes) in lists.lists.iter().enumerate() {
+        if bytes.len() <= 4 {
+            continue;
+        }
+        let Ok(entries) = parse_entries(bytes) else { continue };
+        for e in entries {
+            let params = match &e.op {
+                Opcode::WarpRectilinear { planes, cx, cy } if !planes.is_empty() => json!({
+                    "kind": "WarpRectilinear",
+                    "planes": planes.iter().map(|(kr, kt)| json!({ "kr": nums(kr), "kt": nums(kt) })).collect::<Vec<_>>(),
+                    "center": [num(*cx), num(*cy)],
+                }),
+                Opcode::FixVignetteRadial { k, cx, cy } => json!({
+                    "kind": "FixVignetteRadial",
+                    "k": nums(k),
+                    "center": [num(*cx), num(*cy)],
+                }),
+                _ => Value::Null,
+            };
+            out.push(json!({
+                "list": i + 1,
+                "id": e.id,
+                "name": match &e.op { Opcode::Other { .. } => format!("Opcode{}", e.id), op => op.name().to_string() },
+                "optional": e.optional,
+                "previewOnly": e.preview_only,
+                "applied": e.op.is_pixel_opcode(),
+                "params": params,
+            }));
+        }
+    }
+    Value::Array(out)
 }
 
 pub fn random_access(r: RandomAccess) -> Value {

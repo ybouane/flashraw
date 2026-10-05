@@ -17,8 +17,9 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **TypeScript** types for everything; structured errors (`err.kind`).
 - One package for Vite, webpack 5, Rollup/Rolldown, esbuild, Node.js ≥ 18, Deno.
 
-Formats: DNG today, with CR2/CR3/NEF/ARW/RAF/RW2/ORF/PEF/… arriving as the Rust decoders land.
-The JS API is format-agnostic.
+Formats: DNG, CR2, CR3, CRW, NEF/NRW, ARW/SR2/SRF/ARQ, RAF, RW2/RWL, ORF/ORI, PEF, SRW, MRW,
+IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI and more (every make and model on
+raw.pixls.us; see `docs/formats.md`). The JS API is format-agnostic.
 
 ```sh
 npm install flashraw
@@ -211,6 +212,13 @@ m.cfa;                     // { pattern: "RGGB", width: 2, height: 2, colors: [.
 m.blackLevel; m.whiteLevel; m.whiteBalance; m.colorMatrices;
 m.previews;                // [{ index, kind, encoding, mimeType, width, height, byteLength, offset, orientation }]
 m.extra;                   // vendor extras { key: value }
+m.dng;                     // DNG only (else null): { baselineExposure, baselineNoise, baselineSharpness,
+                           //   linearResponseLimit, asShotNeutral, asShotWhiteXY, defaultUserCrop,
+                           //   defaultScale, noiseProfile, profile: { name, embedPolicy, hueSatMapDims,
+                           //   hueSatMapCount, lookTableDims, toneCurve, baselineExposureOffset } }
+m.opcodes;                 // DNG opcodes: [{ list, id, name, optional, previewOnly, applied, params }]
+                           //   params for WarpRectilinear ({ planes: [{ kr, kt }], center }) and
+                           //   FixVignetteRadial ({ k, center }), so editors can apply them themselves
 ```
 
 `metadata` is plain JSON (safe to `postMessage`, store or `JSON.stringify`). `raw.frameInfo`
@@ -224,14 +232,22 @@ const f = await raw.decode({
   output: 'raw-u16',        // 'raw-u16' | 'raw-f32' | 'normalized' | 'linear-rgb' | 'rgba8'
   backend: 'auto',          // 'auto' | 'cpu' (scalar reference) | 'cpu-simd' | 'gpu'
   demosaic: 'bilinear',     // RGB outputs: 'bilinear' | 'half-size'
-  crop: true,               // RGB outputs: apply the default crop
+  crop: true,               // RGB outputs: apply the default crop; raw outputs: 'active' = active area only
+  sampleType: 'f32',        // normalized only: 'f16' = half floats (Uint16Array bits, half the memory)
   limits: { maxSamples: 4e8 },
 });
-f.data;            // Uint16Array (raw-u16) | Float32Array (raw-f32, normalized, linear-rgb) | Uint8ClampedArray (rgba8)
+f.data;            // Uint16Array (raw-u16, normalized + f16) | Float32Array (raw-f32, normalized, linear-rgb) | Uint8ClampedArray (rgba8)
+f.dataType;        // 'u8' | 'u16' | 'f16' | 'f32' 
 f.channels;        // 1 (CFA), 3 (linear-rgb / linear DNG), 4 (rgba8)
 f.cfa; f.blackLevel; f.whiteLevel; f.whiteBalance; f.colorMatrices; f.activeArea; f.crop; f.origin;
 f.backend;         // { requested, kind: 'cpu', decode: 'CPU WASM SIMD128 x1 thread', simd, fallbackReason }
 f.timings;         // { totalMs, stages: { containerParse, entropyDecode, postprocess, ... }, copyMs, wallMs }
+
+// For an editor that demosaics on its own GPU: black-subtracted, white-normalised CFA (DNG
+// opcode lists 1 and 2 applied) as half floats, cropped to the active area. `f.origin` is the
+// crop's position in the sensor buffer and `f.cfa.pattern` is anchored at it; upload
+// `f.data` straight into an `r16float` texture.
+using cfa = await raw.decode({ output: 'normalized', sampleType: 'f16', crop: 'active', zeroCopy: true });
 
 const region = await raw.decodeRegion({ x: 0, y: 0, width: 512, height: 512 });
 const tile = await raw.decodeTile(3); // see raw.tiles
