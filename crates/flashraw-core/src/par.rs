@@ -93,6 +93,139 @@ pub fn threads() -> usize {
     }
 }
 
+/// Geometry of a [`wavefront`] pass over a row-major buffer.
+#[derive(Clone, Copy, Debug)]
+pub struct Wavefront {
+    /// Samples per row.
+    pub row_len: usize,
+    /// Rows above a row that it reads (the band above must be at least this tall).
+    pub halo: usize,
+    /// Columns left of a block that its first samples read from rows above.
+    pub margin: usize,
+    /// Block width in samples (block boundaries are multiples of it).
+    pub block: usize,
+}
+
+/// Process a buffer whose sample `(r, x)` depends only on samples left of it in row `r`
+/// and on columns `<= x` of the `halo` rows above it. Rows are cut into bands (one per
+/// thread) and columns into blocks; block `j` of a band runs once block `j - 1` of the
+/// same band and block `j` of the band above are done, so the bands advance as a
+/// wavefront without waiting for each other row by row.
+///
+/// `f(first_row, band, above, lo, a, b)` must process columns `a..b` of every row of
+/// `band` (whole rows, `first_row` being the index of its first row in `data`) in row
+/// order. `above` holds the rows directly above the band (up to `halo`, oldest first),
+/// restricted to columns `lo..b` (`lo = a - margin`, clamped at 0); for the first band
+/// they come from `top` (which may hold fewer than `halo` rows, or none).
+#[allow(clippy::type_complexity)]
+pub fn wavefront<T, F>(data: &mut [T], top: &[T], geo: Wavefront, parallel: bool, f: F)
+where
+    T: Copy + Default + Send + Sync,
+    F: Fn(usize, &mut [T], &[T], usize, usize, usize) + Sync,
+{
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    let Wavefront { row_len: rl, halo, block, .. } = geo;
+    if rl == 0 || block == 0 || data.len() < rl {
+        return;
+    }
+    let rows = data.len() / rl;
+    let halo = halo.max(1);
+    let workers = if parallel { threads() } else { 1 };
+    let nbands = workers.min(rows / halo).max(1);
+    let nblocks = rl.div_ceil(block);
+    let bounds: Vec<(usize, usize)> =
+        (0..nbands).map(|k| (rows * k / nbands * rl, rows * (k + 1) / nbands * rl)).collect();
+    if nbands == 1 {
+        // One band: whole rows, no blocks.
+        let top_rows = (top.len() / rl).min(halo);
+        f(0, &mut data[..rows * rl], &top[top.len() - top_rows * rl..], 0, 0, rl);
+        return;
+    }
+    let Some(parts) = split_disjoint(&mut data[..rows * rl], &bounds) else { return };
+
+    struct Ctx<'a, T, F> {
+        /// A band is used by one task at a time (its blocks run in order); the locks only
+        /// make that visible to the compiler and are never contended.
+        bands: Vec<Mutex<&'a mut [T]>>,
+        first_rows: Vec<usize>,
+        /// The rows above each band, filled block by block as the band above finishes.
+        edges: Vec<Mutex<Vec<T>>>,
+        /// Unfinished dependencies of each block (`band * nblocks + block`).
+        pending: Vec<AtomicU8>,
+        nblocks: usize,
+        geo: Wavefront,
+        halo: usize,
+        f: F,
+    }
+
+    impl<T: Copy + Default + Send + Sync, F: Fn(usize, &mut [T], &[T], usize, usize, usize) + Sync> Ctx<'_, T, F> {
+        /// Run block `j` of band `k`; returns the blocks it made ready.
+        fn block(&self, k: usize, j: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
+            let (rl, block, halo) = (self.geo.row_len, self.geo.block, self.halo);
+            let (a, b) = (j * block, ((j + 1) * block).min(rl));
+            let lo = a.saturating_sub(self.geo.margin);
+            let above: Vec<T> = {
+                let e = self.edges[k].lock().unwrap_or_else(|e| e.into_inner());
+                e.chunks_exact(rl).flat_map(|row| row[lo..b].iter().copied()).collect()
+            };
+            {
+                let mut band = self.bands[k].lock().unwrap_or_else(|e| e.into_inner());
+                (self.f)(self.first_rows[k], &mut band, &above, lo, a, b);
+                if let Some(next) = self.edges.get(k + 1) {
+                    let mut e = next.lock().unwrap_or_else(|e| e.into_inner());
+                    let n = band.len() / rl;
+                    for (h, dst) in e.chunks_exact_mut(rl).enumerate() {
+                        let src = &band[(n - halo + h) * rl..][..rl];
+                        dst[lo..b].copy_from_slice(&src[lo..b]);
+                    }
+                }
+            }
+            // The last dependency to finish starts a block; AcqRel orders this block's
+            // writes before it (the locks order the data as well).
+            [(k + 1, j), (k, j + 1)].into_iter().filter(move |&(k2, j2)| {
+                k2 < self.bands.len()
+                    && j2 < self.nblocks
+                    && self.pending[k2 * self.nblocks + j2].fetch_sub(1, Ordering::AcqRel) == 1
+            })
+        }
+    }
+
+    let first_rows: Vec<usize> = bounds.iter().map(|&(s, _)| s / rl).collect();
+    let top_rows = (top.len() / rl).min(halo);
+    let edges = (0..nbands)
+        .map(|k| {
+            Mutex::new(if k == 0 { top[top.len() - top_rows * rl..].to_vec() } else { vec![T::default(); halo * rl] })
+        })
+        .collect();
+    let pending =
+        (0..nbands * nblocks).map(|i| AtomicU8::new((i / nblocks > 0) as u8 + (i % nblocks > 0) as u8)).collect();
+    let ctx =
+        Ctx { bands: parts.into_iter().map(Mutex::new).collect(), first_rows, edges, pending, nblocks, geo, halo, f };
+
+    #[cfg(feature = "rayon")]
+    if nbands > 1 && rayon::current_num_threads() > 1 {
+        fn run<'s, T, F>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s, T, F>, k: usize, j: usize)
+        where
+            T: Copy + Default + Send + Sync,
+            F: Fn(usize, &mut [T], &[T], usize, usize, usize) + Sync,
+        {
+            for (k2, j2) in ctx.block(k, j) {
+                s.spawn(move |s| run(s, ctx, k2, j2));
+            }
+        }
+        rayon::scope(|s| run(s, &ctx, 0, 0));
+        return;
+    }
+    // In order, band by band: every block's dependencies are done before it runs.
+    for k in 0..nbands {
+        for j in 0..nblocks {
+            ctx.block(k, j).for_each(drop);
+        }
+    }
+}
+
 /// Split a mutable slice into disjoint sub-slices at the given ascending offsets.
 /// `bounds` are `(start, end)` pairs that must not overlap and be sorted. Returns
 /// `None` if they are not valid for `data`.
@@ -129,6 +262,62 @@ mod tests {
             }
         });
         assert!(v.iter().enumerate().all(|(i, &x)| x == i as u32));
+    }
+
+    /// `v[r][x] += v[r][x-1] + 3 v[r-1][x] + 5 v[r-1][x-1] + 7 v[r-2][x]` (missing terms 0).
+    fn recurrence(get: impl Fn(isize, isize) -> u32, own: u32) -> u32 {
+        own.wrapping_add(get(0, -1))
+            .wrapping_add(get(-1, 0).wrapping_mul(3))
+            .wrapping_add(get(-1, -1).wrapping_mul(5))
+            .wrapping_add(get(-2, 0).wrapping_mul(7))
+    }
+
+    #[test]
+    fn wavefront_matches_row_order() {
+        for (rl, rows, block) in [(1000usize, 97usize, 64usize), (130, 9, 16), (64, 3, 64), (50, 40, 7)] {
+            let seed: Vec<u32> = (0..rl * rows).map(|i| (i as u32).wrapping_mul(2654435761) >> 7).collect();
+            let mut want = seed.clone();
+            for r in 0..rows {
+                for x in 0..rl {
+                    let v = recurrence(
+                        |dr, dx| {
+                            let (rr, xx) = (r as isize + dr, x as isize + dx);
+                            if rr < 0 || xx < 0 { 0 } else { want[rr as usize * rl + xx as usize] }
+                        },
+                        want[r * rl + x],
+                    );
+                    want[r * rl + x] = v;
+                }
+            }
+            for parallel in [false, true] {
+                let mut got = seed.clone();
+                let geo = Wavefront { row_len: rl, halo: 2, margin: 1, block };
+                wavefront(&mut got, &[], geo, parallel, |first, band, above, lo, a, b| {
+                    let w = b - lo;
+                    let na = above.len() / w;
+                    for i in 0..band.len() / rl {
+                        for x in a..b {
+                            let get = |dr: isize, dx: isize| {
+                                let xx = x as isize + dx;
+                                if xx < 0 || (first + i) as isize + dr < 0 {
+                                    return 0;
+                                }
+                                let xx = xx as usize;
+                                let ri = i as isize + dr;
+                                if ri >= 0 {
+                                    band[ri as usize * rl + xx]
+                                } else {
+                                    above[(na as isize + ri) as usize * w + xx - lo]
+                                }
+                            };
+                            let v = recurrence(get, band[i * rl + x]);
+                            band[i * rl + x] = v;
+                        }
+                    }
+                });
+                assert_eq!(got, want, "{rl}x{rows} block {block} parallel {parallel}");
+            }
+        }
     }
 
     #[test]

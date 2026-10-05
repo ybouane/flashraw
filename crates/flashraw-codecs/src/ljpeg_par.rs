@@ -291,87 +291,21 @@ fn rebuild_2d_psv<const PSV: u32>(hdr: &LjpegHeader, frame: &mut [u16], rl: usiz
     for i in clrs..rl {
         row0[i] = row0[i - clrs].wrapping_add(row0[i]);
     }
-    #[cfg(feature = "rayon")]
-    if par::threads() > 1 && rest.len() >= 2 * rl && rl >= 2 * BLOCK_MIN_MCUS * clrs {
-        wavefront::<PSV>(row0, rest, rl, clrs);
-        return;
-    }
-    let mut prev: &mut [u16] = row0;
-    for cur in rest.chunks_exact_mut(rl) {
-        rebuild_window::<PSV>(cur, prev, 0, clrs);
-        prev = cur;
-    }
+    // Columns `a..b` of a band's rows from the row above it (`above`, columns `lo..b`).
+    let geo = par::Wavefront { row_len: rl, halo: 1, margin: clrs, block: block_width(rl, clrs) };
+    par::wavefront(rest, row0, geo, true, |_, band, above, lo, a, b| {
+        let mut prev: &[u16] = above;
+        for row in band.chunks_exact_mut(rl) {
+            let cur = &mut row[lo..b];
+            rebuild_window::<PSV>(cur, prev, a - lo, clrs);
+            prev = cur;
+        }
+    });
 }
 
-/// Narrowest column block of the wavefront, in MCUs.
-#[cfg(feature = "rayon")]
-const BLOCK_MIN_MCUS: usize = 64;
-
-/// [`rebuild_2d`] for rows after the first as a dependency-driven wavefront: each
-/// finished block starts the blocks that were only waiting for it, so no thread waits
-/// for a round to end.
-#[cfg(feature = "rayon")]
-fn wavefront<const PSV: u32>(row0: &[u16], rest: &mut [u16], rl: usize, clrs: usize) {
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicU8, Ordering};
-
-    struct Ctx<'a> {
-        bands: Vec<Mutex<&'a mut [u16]>>,
-        /// The row above each band, filled block by block as the band above finishes them.
-        edges: Vec<Mutex<Vec<u16>>>,
-        /// Unfinished dependencies of each block (`band * nblocks + block`).
-        pending: Vec<AtomicU8>,
-        nblocks: usize,
-        bw: usize,
-        rl: usize,
-        clrs: usize,
-    }
-
-    fn run<'s, const PSV: u32>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, k: usize, j: usize) {
-        let (rl, clrs) = (ctx.rl, ctx.clrs);
-        let (a, b) = (j * ctx.bw, ((j + 1) * ctx.bw).min(rl));
-        let lo = a.saturating_sub(clrs);
-        let top: Vec<u16> = ctx.edges[k].lock().unwrap_or_else(|e| e.into_inner())[lo..b].to_vec();
-        {
-            let mut band = ctx.bands[k].lock().unwrap_or_else(|e| e.into_inner());
-            let mut prev: &[u16] = &top;
-            for row in band.chunks_exact_mut(rl) {
-                let cur = &mut row[lo..b];
-                rebuild_window::<PSV>(cur, prev, a - lo, clrs);
-                prev = cur;
-            }
-            if let Some(next) = ctx.edges.get(k + 1) {
-                next.lock().unwrap_or_else(|e| e.into_inner())[lo..b].copy_from_slice(prev);
-            }
-        }
-        for (k2, j2) in [(k + 1, j), (k, j + 1)] {
-            // The last dependency to finish starts the block; AcqRel publishes this block's
-            // writes to it (the locks order the data as well).
-            if k2 < ctx.bands.len()
-                && j2 < ctx.nblocks
-                && ctx.pending[k2 * ctx.nblocks + j2].fetch_sub(1, Ordering::AcqRel) == 1
-            {
-                s.spawn(move |s| run::<PSV>(s, ctx, k2, j2));
-            }
-        }
-    }
-
-    let rows = rest.len() / rl;
-    let threads = par::threads();
-    let nbands = threads.min(rows);
-    let bw = (rl / clrs).div_ceil(4 * threads).max(BLOCK_MIN_MCUS) * clrs;
-    let nblocks = rl.div_ceil(bw);
-    let bounds: Vec<(usize, usize)> =
-        (0..nbands).map(|k| (rows * k / nbands * rl, rows * (k + 1) / nbands * rl)).collect();
-    let Some(parts) = par::split_disjoint(rest, &bounds) else { return };
-    // A band is used by one task at a time (its blocks run in order); the locks only make
-    // that visible to the compiler and are never contended.
-    let bands: Vec<Mutex<&mut [u16]>> = parts.into_iter().map(Mutex::new).collect();
-    let edges = (0..nbands).map(|k| Mutex::new(if k == 0 { row0.to_vec() } else { vec![0; rl] })).collect();
-    let pending =
-        (0..nbands * nblocks).map(|i| AtomicU8::new((i / nblocks > 0) as u8 + (i % nblocks > 0) as u8)).collect();
-    let ctx = Ctx { bands, edges, pending, nblocks, bw, rl, clrs };
-    rayon::scope(|s| run::<PSV>(s, &ctx, 0, 0));
+/// Wavefront block width: about four blocks per thread, at least 64 MCUs.
+fn block_width(rl: usize, clrs: usize) -> usize {
+    (rl / clrs).div_ceil(4 * par::threads().max(1)).max(64) * clrs
 }
 
 /// Rebuild `cur[start..]` from `prev` (the same columns of the row above); both start
