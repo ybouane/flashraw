@@ -118,7 +118,8 @@ for (engine of ENGINES) {
       assert.equal(r.files[name].raw.backend.threads, r.caps.threads.count);
     }
     const h = expected[FILES[0]].hash_full;
-    assert.deepEqual([r.worker.a, r.worker.b], [h, h], 'worker pool output');
+    assert.deepEqual([r.worker.a, r.worker.b, r.worker.after], [h, h, h], 'worker pool output');
+    assert.equal(r.worker.aborted, 'AbortError');
     assert.equal(r.worker.caps.platform, 'worker');
     assert.equal(r.worker.caps.wasm.binary, 'simd', 'pool workers default to the single-threaded build');
   });
