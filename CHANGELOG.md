@@ -151,6 +151,14 @@ First complete release of FlashRaw.
   multithreaded build (shared-memory rayon pool, chosen automatically when available),
   opt-in WebGPU build with GPU-resident frames; worker pool with a shared request
   queue and `AbortSignal` cancellation.
+- Python bindings (`crates/flashraw-python`, the `flashraw` package; PyO3 + maturin, abi3
+  wheels for CPython 3.9+ on Linux, macOS and Windows): `flashraw.open` (paths are
+  memory-mapped, `bytes` borrowed without a copy, file objects), typed frozen-dataclass
+  metadata, previews, `RawFile.decode` returning NumPy arrays that own the decoder's buffer
+  (no copy), GIL released while decoding (per-thread pools for explicit `threads`), a
+  `FlashRawError` hierarchy with structured truncation details, `imread` and `to_pil`
+  helpers, type stubs; pytest suite with corpus equivalence against the CLI and a binding
+  overhead benchmark (see `docs/python.md`).
 
 ### API
 - Semver-ready surface: growable enums and result/metadata structs are

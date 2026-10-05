@@ -34,6 +34,7 @@ RawFrame  (+ optional fused post-processing: normalise / demosaic / WB / colour 
 | `flashraw-gpu` | optional wgpu/WebGPU compute backend (WGSL in `shaders/`) | core |
 | `flashraw-cli` | `flashraw` binary | flashraw |
 | `flashraw-wasm` | wasm-bindgen bindings for the npm package | flashraw |
+| `flashraw-python` | PyO3 bindings for the `flashraw` Python package (built with maturin, not a default workspace member) | flashraw |
 
 The split keeps codecs independent of containers (each codec is fuzzed and
 benchmarked alone) and keeps the camera database out of the codec crates (WASM

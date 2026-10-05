@@ -65,8 +65,9 @@ redistributable); each set is skipped when absent.
   strip among complete ones, every cut point of a multi-strip file, compressed vs.
   uncompressed consistency, region decodes and previews of truncated files. Each case
   checks the structured `Truncation` (unit, expected/available bytes) under Strict and
-  the zero-filled samples and `DecodeWarning` under Recover. `crates/flashraw-cli/tests/`
-  and `npm/tests/truncation.test.mjs` check the same through the CLI JSON and the JS API.
+  the zero-filled samples and `DecodeWarning` under Recover. `crates/flashraw-cli/tests/`,
+  `npm/tests/truncation.test.mjs` and `crates/flashraw-python/tests/test_errors.py` check the
+  same through the CLI JSON, the JS API and the Python API.
 - `fuzz/`: cargo-fuzz targets `open_decode` (whole pipeline, all formats,
   decoding under both corruption policies with consistency checks), `tiff_parse`,
   `bmff_parse`, `bit_pumps` (with a model check), `huffman`, `ljpeg`, `packed_unpack`
@@ -88,3 +89,6 @@ cargo +nightly fuzz run -O open_decode fuzz/corpus/open_decode -- -max_total_tim
   malformed suites over every file; 15-minute fuzzing per target.
 - `perf.yml`: benchmark set on PR vs. main on the same runner; fails beyond the
   tolerance (see [benchmarks.md](benchmarks.md)).
+- `python.yml`: abi3 wheels for Linux (manylinux x86-64/ARM64), macOS (x86-64/ARM64)
+  and Windows plus an sdist; every wheel is installed and its pytest suite run on
+  CPython 3.9 and 3.13; strict type check of the package (see [python.md](python.md)).
