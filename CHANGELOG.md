@@ -36,6 +36,32 @@ First complete release of FlashRaw.
   BaselineExposureOffset) and `metadata.opcodes` (every DNG opcode with id, flags, whether it
   is applied, and WarpRectilinear / FixVignetteRadial parameters).
 
+### Truncated and corrupt sensor data
+- A strip, tile or other sensor-data range running past the end of the file is never
+  silently zero-filled (previously e.g. uncompressed DNG strips were). Ranges are checked
+  before decoding (overflow, offset past EOF, range past EOF, data too short for the
+  geometry) in every format: uncompressed and packed (8–16-bit) strips, tiles, planes and
+  multi-sample data.
+- `DecodeOptions::corruption_policy`: `CorruptionPolicy::Recover` (default) decodes every
+  complete sample, zero-fills the rest and reports it in `RawFrame::warnings()`
+  (`DecodeWarning`: unit, bytes expected/available, samples filled) with
+  `RawFrame::is_incomplete()`; `CorruptionPolicy::Strict` fails with `Error::CorruptFile`
+  carrying a structured `CorruptReason::Truncated(Truncation)` (unit and index, offset,
+  expected and available bytes, file length; `Error::truncation()`), e.g. "truncated
+  image data: strip 17 expected 131072 bytes at offset 24576000, but only 48291 bytes
+  remain before EOF". `Error::kind()` is unchanged.
+- Recovery also covers compressed DNG strips/tiles: a unit that is truncated or fails to
+  decode is zero-filled with a warning. Other compressed streams fail under both
+  policies; failures over a declared range past EOF report the truncation details.
+- Tolerances for complete data: the last row needs no stride padding; declared lengths
+  beyond the last needed sample may run past EOF; geometry-addressed payloads may read
+  past an understated byte count when the file holds the bytes.
+- Opening a file, its metadata and previews no longer fail because the payload is
+  truncated or starts past EOF; only decodes that need the missing data report it.
+- CLI: `--strict` on `decode`/`verify`; JSON output has `incomplete` and `warnings`, and
+  errors carry `corrupt` (the structured cause). JS: `corruptionPolicy: 'recover' |
+  'strict'`, `frame.incomplete`, `frame.warnings`, `CorruptFileError.corrupt`.
+
 ### Fixes
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):
   the pipelined entropy/prediction stages use `rayon::join` on wasm32 instead of

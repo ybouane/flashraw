@@ -85,6 +85,30 @@ Output formats: `RawU16` (default), `RawF32`, `NormalizedF32` (black-subtracted,
 white-scaled), `LinearRgbF32`, `Rgba8`. Statistics (`frame.stats()`) report
 per-stage timings and the backend that ran.
 
+### Truncated and corrupt sensor data
+
+A strip, tile or other sensor-data range that runs past the end of the file is never
+silently zero-filled. `DecodeOptions::corruption_policy` decides what happens:
+
+- `CorruptionPolicy::Recover` (default): every complete sample is decoded, missing ones
+  are zero, and the frame says so: `frame.is_incomplete()` and `frame.warnings()`, each a
+  `DecodeWarning` with the unit (strip/tile index), the bytes expected and available and
+  the samples filled ("recovered truncated strip 17: 48291 / 131072 bytes available;
+  41390 missing samples were zero-filled").
+- `CorruptionPolicy::Strict`: the decode fails with `Error::CorruptFile`; `e.truncation()`
+  (or `e.corrupt_reason()`) gives the same details ("truncated image data: strip 17
+  expected 131072 bytes at offset 24576000, but only 48291 bytes remain before EOF").
+  `e.kind()` stays `"CorruptFile"`.
+
+Only the data a decode needs is checked: metadata, previews and region decodes that do
+not touch the missing data work normally. Short data that still holds every sample is
+complete: the last row needs no padding to the row stride, and a declared length beyond
+the last needed sample may run past the end of the file. Recovery covers uncompressed
+and bit-packed payloads in every format and compressed DNG strips/tiles (a unit that is
+truncated or fails to decode is zero-filled with a warning). Other compressed streams
+(one entropy-coded stream per image) fail under both policies; when their declared range
+runs past the end of the file the error carries the same truncation details.
+
 ### API stability
 
 FlashRaw follows semver. The public API is everything documented at the crate root:
@@ -97,9 +121,12 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
   `DecodeStatistics`, `Limits`, ...) are `#[non_exhaustive]`: read their fields; build
   `Limits` with `Limits::default().with_max_samples(..)`.
 - Build `DecodeOptions` with `..Default::default()` (new options are added as fields
-  with backwards-compatible defaults).
-- `Backend`, `OutputFormat` and `Demosaic` implement `FromStr`/`Display` with the names
-  the CLI and the JS bindings use.
+  with backwards-compatible defaults, e.g. `corruption_policy`).
+- `Error::CorruptFile` and its structured cause (`CorruptReason`, `Truncation`,
+  `DataUnit`) and `DecodeWarning` are `#[non_exhaustive]`; read them through their
+  fields and `Error::truncation()` / `Error::corrupt_reason()`.
+- `Backend`, `OutputFormat`, `Demosaic` and `CorruptionPolicy` implement
+  `FromStr`/`Display` with the names the CLI and the JS bindings use.
 - Minimum supported Rust version: 1.85 for the library with default features and
   `serde`; 1.87 with `gpu` (and for the CLI and WASM crates); 1.88 with `jpegxl`.
   Raising it is a minor-version change.
@@ -132,6 +159,7 @@ flashraw preview photo.CR2 preview.jpg      # embedded full-size JPEG
 flashraw thumbnail photo.CR2 thumb.jpg
 flashraw benchmark photo.NEF --iterations 10 --threads 8
 flashraw verify photo.ORF --json            # geometry, levels and full-buffer hashes
+flashraw verify cut.DNG --json --strict     # fail on truncated data (default: recover + warnings)
 flashraw supported                          # format/mode support matrix
 flashraw camera-db validate|generate|compare|stats
 ```
