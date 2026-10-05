@@ -52,6 +52,9 @@ First complete release of FlashRaw.
   and white is 1.0.
 - `flashraw verify` reports the white level of the decoded frame, in the same units as the
   black level (floating-point DNGs reported the file's white next to a rescaled black).
+- Samsung NX20/NX200/NX210/NX1000/NX1100 SRWs stored as unpacked 16-bit words (header
+  BitsPerSample 14, no row table) are read as little-endian words with 12 significant
+  bits and white 4095 (previously big-endian with white 16383).
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 

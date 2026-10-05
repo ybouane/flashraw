@@ -158,6 +158,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 
     // --- Visible area and quirks (per-camera conventions by model/buffer size) ---
     let mut area = Rect::full(w, h);
+    // Significant bits per sample when the header's BitsPerSample overstates them.
+    let mut sig_bits = bps;
     let mut cfa_visible: Option<CfaPattern> = None;
     if w == 4704 {
         // NX5, NX10, NX11, NX100
@@ -181,6 +183,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             if let Payload::Packed(s) = &mut payload {
                 s.flags = 80;
             }
+        }
+        // Unpacked frames (16-bit words, BitsPerSample 14 in the header) hold little-endian
+        // words with 12 significant bits.
+        if let Payload::Words(o, _) = &mut payload {
+            *o = ByteOrder::Little;
+            sig_bits = 12;
         }
     } else if w == 5664 {
         // NX mini
@@ -240,12 +248,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         base_black = 1 << bps.saturating_sub(7).min(15);
     }
     if maximum == 0 {
-        maximum = (1u32 << bps.clamp(1, 16)) - 1;
+        maximum = (1u32 << sig_bits.clamp(1, 16)) - 1;
     }
 
     let info_payload_kind =
         if matches!(payload, Payload::Packed(_)) { PayloadKind::Packed } else { PayloadKind::Other };
-    let mut info = FrameInfo::new(w, h, bps.min(16) as u8);
+    let mut info = FrameInfo::new(w, h, sig_bits.min(16) as u8);
     info.compression = match &payload {
         Payload::V0 { .. } => Compression::SamsungV0,
         Payload::V1 => Compression::SamsungV1,
@@ -396,6 +404,64 @@ mod tests {
         let data = [row.clone(), row].concat();
         let b = masked_black_msb12(&data, 16, &areas).unwrap();
         assert_eq!(b.values, vec![257.0; 4]);
+    }
+
+    /// Big-endian single-IFD SRW: `width` x `height`, uncompressed (32770) 16-bit words
+    /// with BitsPerSample `bps`, no row-offset table.
+    fn words_srw(model: &str, width: u32, height: u32, bps: u16, payload: &[u8]) -> Vec<u8> {
+        let mut model = model.as_bytes().to_vec();
+        model.push(0);
+        let n = 9u16;
+        let ifd_end = 8 + 2 + n as usize * 12 + 4;
+        let model_off = ifd_end + 8;
+        let strip_off = model_off + model.len().next_multiple_of(2);
+        let mut out = b"MM\0*\0\0\0\x08".to_vec();
+        out.extend(n.to_be_bytes());
+        let mut entry = |tag: u16, typ: u16, count: u32, value: u32| {
+            out.extend(tag.to_be_bytes());
+            out.extend(typ.to_be_bytes());
+            out.extend(count.to_be_bytes());
+            if typ == 3 && count == 1 {
+                out.extend((value as u16).to_be_bytes());
+                out.extend([0, 0]);
+            } else {
+                out.extend(value.to_be_bytes());
+            }
+        };
+        entry(tags::IMAGE_WIDTH, 4, 1, width);
+        entry(tags::IMAGE_LENGTH, 4, 1, height);
+        entry(tags::BITS_PER_SAMPLE, 3, 1, bps as u32);
+        entry(tags::COMPRESSION, 4, 1, 32770);
+        entry(tags::PHOTOMETRIC, 3, 1, 32803);
+        entry(tags::MAKE, 2, 8, ifd_end as u32);
+        entry(tags::MODEL, 2, model.len() as u32, model_off as u32);
+        entry(tags::STRIP_OFFSETS, 4, 1, strip_off as u32);
+        entry(tags::STRIP_BYTE_COUNTS, 4, 1, payload.len() as u32);
+        out.extend(0u32.to_be_bytes());
+        out.extend(b"SAMSUNG\0");
+        out.extend(&model);
+        out.resize(strip_off, 0);
+        out.extend(payload);
+        out
+    }
+
+    #[test]
+    fn nx200_family_word_frames_are_little_endian_12_bit() {
+        let (w, h) = (5632u32, 8u32);
+        let samples: Vec<u16> = (0..w * h).map(|i| (i * 7 % 4096) as u16).collect();
+        let payload: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let f = words_srw("NX200", w, h, 14, &payload);
+        let d = crate::open(&f, &OpenOptions::default()).unwrap();
+        let info = d.frame_info().clone();
+        assert_eq!(info.white_level.values, vec![4095]);
+        assert_eq!(info.bits_per_sample, 12);
+        let p = Profiler::new();
+        let img = d.decode(&DecodeContext::new(&p)).unwrap();
+        assert_eq!(img.u16(), &samples[..]);
+        // Region decodes read the same words.
+        let r = Rect::new(100, 2, 64, 4);
+        let reg = d.decode_region(&DecodeContext::new(&p), r).unwrap();
+        assert_eq!(reg.u16(), img.crop(r).unwrap().u16());
     }
 
     /// One corpus sample per payload variant: originals decode, truncated/corrupted
