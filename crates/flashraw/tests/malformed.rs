@@ -121,7 +121,7 @@ fn flashraw_codecs_encode(s: &[u16]) -> Vec<u8> {
 fn exercise(data: &[u8]) -> Result<(), String> {
     let t = Instant::now();
     let r = catch_unwind(AssertUnwindSafe(|| {
-        let limits = Limits { max_samples: 64 << 20, max_dimension: 65535 };
+        let limits = Limits::default().with_max_samples(64 << 20).with_max_dimension(65535);
         if let Ok(raw) = FlashRaw::open_with(data, limits) {
             let _ = raw.metadata().camera();
             for p in raw.previews() {

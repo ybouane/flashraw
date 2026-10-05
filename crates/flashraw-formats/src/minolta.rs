@@ -265,7 +265,7 @@ fn open_z2<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder 
     const W: u32 = 2288;
     const H: u32 = 1710;
     opts.limits.check_dims(W, H, 1)?;
-    let mut meta = RawMetadata { make: "Minolta".into(), model: "DiMAGE Z2".into(), ..Default::default() };
+    let mut meta = RawMetadata::new("Minolta", "DiMAGE Z2");
     db_lookup(&mut meta, "z2-headerless");
     let entry = crate::sony::table::lookup("Minolta", "DiMAGE Z2");
     let (mut black, mut cblack, mut white) = (0, [0; 4], None);
@@ -310,7 +310,7 @@ fn open_rd175<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecod
     const H: u32 = 986;
     const OFFSET: usize = 513;
     opts.limits.check_dims(W, H, 1)?;
-    let mut meta = RawMetadata { make: "Minolta".into(), model: "RD175".into(), ..Default::default() };
+    let mut meta = RawMetadata::new("Minolta", "RD175");
     db_lookup(&mut meta, "rd175");
     let mut info = FrameInfo::new(W, H, 9);
     info.compression = Compression::Uncompressed;

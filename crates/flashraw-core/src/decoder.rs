@@ -9,6 +9,7 @@ use crate::types::*;
 /// Numeric format of decoded samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum SampleFormat {
     U16,
     F32,
@@ -18,6 +19,7 @@ pub enum SampleFormat {
 ///
 /// Everything here is known after parsing, before any pixel is decoded.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct FrameInfo {
     /// Full decoded buffer width (including masked areas).
     pub width: u32,
@@ -128,6 +130,7 @@ impl<'p> DecodeContext<'p> {
 /// How the payload can be accessed independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum RandomAccess {
     /// A single sequential stream; any region requires decoding from the start.
     Sequential,

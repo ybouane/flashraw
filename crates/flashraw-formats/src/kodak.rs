@@ -651,7 +651,7 @@ fn open_dump<'a>(
     offset: usize,
 ) -> Result<Box<dyn RawDecoder + 'a>> {
     opts.limits.check_dims(rw, rh, 3)?;
-    let mut meta = RawMetadata { make: "Kodak".into(), model: model.into(), ..Default::default() };
+    let mut meta = RawMetadata::new("Kodak", model);
     let cam = db_lookup(&mut meta, "");
     let bps = ((data.len() - offset) as u64 * 8 / (rw as u64 * rh as u64)) as u32;
     let cfa = match cf {

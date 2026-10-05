@@ -85,6 +85,25 @@ Output formats: `RawU16` (default), `RawF32`, `NormalizedF32` (black-subtracted,
 white-scaled), `LinearRgbF32`, `Rgba8`. Statistics (`frame.stats()`) report
 per-stage timings and the backend that ran.
 
+### API stability
+
+FlashRaw follows semver. The public API is everything documented at the crate root:
+`FlashRaw`, `Source`, `DecodeOptions` and its enums, `RawFrame`, the metadata types,
+`Error`, and the `gpu` module (feature `gpu`).
+
+- Enums that can gain variants (formats, compressions, outputs, backends, errors,
+  stages, preview kinds, ...) are `#[non_exhaustive]`: match them with a wildcard arm.
+- Result and metadata structs (`RawFrame`, `RawMetadata`, `FrameInfo`,
+  `DecodeStatistics`, `Limits`, ...) are `#[non_exhaustive]`: read their fields; build
+  `Limits` with `Limits::default().with_max_samples(..)`.
+- Build `DecodeOptions` with `..Default::default()` (new options are added as fields
+  with backwards-compatible defaults).
+- `Backend`, `OutputFormat` and `Demosaic` implement `FromStr`/`Display` with the names
+  the CLI and the JS bindings use.
+- The minimum supported Rust version is 1.85; raising it is a minor-version change.
+- Hidden items (`low_level`, `process`, `decode_raw_image`) expose internals for
+  tooling and carry no stability guarantee.
+
 ### Cargo features
 
 | feature | default | effect |

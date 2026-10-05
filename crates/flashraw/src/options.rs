@@ -5,6 +5,7 @@ use flashraw_core::{Limits, Rect};
 /// Execution backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum Backend {
     /// Pick the fastest available backend for this file and output.
     #[default]
@@ -18,6 +19,8 @@ pub enum Backend {
 }
 
 impl Backend {
+    /// Parse a backend name (`auto`, `cpu`/`scalar`, `simd`/`cpu-simd`, `gpu`/`webgpu`;
+    /// case-insensitive).
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.to_ascii_lowercase().as_str() {
             "auto" => Backend::Auto,
@@ -32,6 +35,7 @@ impl Backend {
 /// What the decode produces.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum OutputFormat {
     /// Sensor samples as stored (u16, or f32 for floating-point DNG). No processing.
     #[default]
@@ -80,6 +84,9 @@ impl OutputFormat {
 }
 
 impl OutputFormat {
+    /// Parse an output name as accepted by the CLI and the JS bindings (`raw-u16`,
+    /// `raw-f32`, `normalized`, `linear-rgb`, `rgba8`, `gpu-raw-u16`, `gpu-normalized`,
+    /// `gpu-linear-rgb`, `gpu-rgba8`, plus a few aliases; case-insensitive, `_` or `-`).
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.to_ascii_lowercase().replace('_', "-").as_str() {
             "raw" | "raw-u16" | "u16" => OutputFormat::RawU16,
@@ -99,6 +106,7 @@ impl OutputFormat {
 /// Demosaic algorithm for RGB outputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum Demosaic {
     /// Bilinear interpolation (Bayer), nearest-same-colour average (other CFAs).
     #[default]
@@ -138,5 +146,118 @@ impl Default for DecodeOptions {
             apply_opcodes: true,
             limits: Limits::default(),
         }
+    }
+}
+
+impl Demosaic {
+    /// Parse a demosaic name (`bilinear`, `half`/`half-size`; case-insensitive).
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.to_ascii_lowercase().replace('_', "-").as_str() {
+            "bilinear" => Demosaic::Bilinear,
+            "half" | "half-size" | "halfsize" => Demosaic::HalfSize,
+            _ => return None,
+        })
+    }
+
+    /// Canonical name, accepted by [`Demosaic::parse`].
+    pub fn name(self) -> &'static str {
+        match self {
+            Demosaic::Bilinear => "bilinear",
+            Demosaic::HalfSize => "half-size",
+        }
+    }
+}
+
+impl Backend {
+    /// Canonical name, accepted by [`Backend::parse`].
+    pub fn name(self) -> &'static str {
+        match self {
+            Backend::Auto => "auto",
+            Backend::Cpu => "cpu",
+            Backend::CpuSimd => "simd",
+            Backend::Gpu => "gpu",
+        }
+    }
+}
+
+impl OutputFormat {
+    /// Canonical name, accepted by [`OutputFormat::parse`].
+    pub fn name(self) -> &'static str {
+        match self {
+            OutputFormat::RawU16 => "raw-u16",
+            OutputFormat::RawF32 => "raw-f32",
+            OutputFormat::NormalizedF32 => "normalized",
+            OutputFormat::LinearRgbF32 => "linear-rgb",
+            OutputFormat::Rgba8 => "rgba8",
+            OutputFormat::GpuRawU16 => "gpu-raw-u16",
+            OutputFormat::GpuNormalizedF32 => "gpu-normalized",
+            OutputFormat::GpuLinearRgbF32 => "gpu-linear-rgb",
+            OutputFormat::GpuRgba8 => "gpu-rgba8",
+        }
+    }
+}
+
+/// Error returned when parsing an unknown option name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseOptionError {
+    kind: &'static str,
+    value: String,
+}
+
+impl std::fmt::Display for ParseOptionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown {} {:?}", self.kind, self.value)
+    }
+}
+
+impl std::error::Error for ParseOptionError {}
+
+macro_rules! name_traits {
+    ($t:ty, $kind:literal) => {
+        impl std::str::FromStr for $t {
+            type Err = ParseOptionError;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                <$t>::parse(s).ok_or_else(|| ParseOptionError { kind: $kind, value: s.to_string() })
+            }
+        }
+
+        impl std::fmt::Display for $t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.name())
+            }
+        }
+    };
+}
+
+name_traits!(Backend, "backend");
+name_traits!(OutputFormat, "output format");
+name_traits!(Demosaic, "demosaic");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_round_trip() {
+        for b in [Backend::Auto, Backend::Cpu, Backend::CpuSimd, Backend::Gpu] {
+            assert_eq!(b.to_string().parse::<Backend>(), Ok(b));
+        }
+        for o in [
+            OutputFormat::RawU16,
+            OutputFormat::RawF32,
+            OutputFormat::NormalizedF32,
+            OutputFormat::LinearRgbF32,
+            OutputFormat::Rgba8,
+            OutputFormat::GpuRawU16,
+            OutputFormat::GpuNormalizedF32,
+            OutputFormat::GpuLinearRgbF32,
+            OutputFormat::GpuRgba8,
+        ] {
+            assert_eq!(o.to_string().parse::<OutputFormat>(), Ok(o));
+        }
+        for d in [Demosaic::Bilinear, Demosaic::HalfSize] {
+            assert_eq!(d.to_string().parse::<Demosaic>(), Ok(d));
+        }
+        assert_eq!("nope".parse::<Backend>().unwrap_err().to_string(), "unknown backend \"nope\"");
     }
 }

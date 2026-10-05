@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// Decode pipeline stages reported by `--profile` and `DecodeStatistics`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum Stage {
     /// Container structure (TIFF/BMFF/vendor headers).
     ContainerParse,

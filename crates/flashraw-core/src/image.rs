@@ -4,6 +4,7 @@ use crate::{Error, Rect, Result};
 
 /// Safety limits applied while decoding untrusted input.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub struct Limits {
     /// Maximum number of samples (width * height * components) in a decoded image.
     pub max_samples: u64,
@@ -19,6 +20,19 @@ impl Default for Limits {
 }
 
 impl Limits {
+    /// These limits with a different sample cap.
+    pub fn with_max_samples(mut self, max_samples: u64) -> Self {
+        self.max_samples = max_samples;
+        self
+    }
+
+    /// These limits with a different width/height cap.
+    pub fn with_max_dimension(mut self, max_dimension: u32) -> Self {
+        self.max_dimension = max_dimension;
+        self
+    }
+
+    /// Check that an image of `width × height × cpp` samples is within the limits.
     pub fn check_dims(&self, width: u32, height: u32, cpp: u32) -> Result<()> {
         if width == 0 || height == 0 {
             return Err(Error::invalid_metadata(format!("zero image dimension {width}x{height}")));

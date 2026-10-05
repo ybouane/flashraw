@@ -79,7 +79,7 @@ pub struct Decoded {
 }
 
 fn limits_from(v: Option<&Value>) -> ApiResult<Limits> {
-    let mut l = Limits { max_samples: DEFAULT_MAX_SAMPLES, ..Limits::default() };
+    let mut l = Limits::default().with_max_samples(DEFAULT_MAX_SAMPLES);
     if let Some(v) = v.filter(|v| !v.is_null()) {
         let o = v.as_object().ok_or_else(|| ApiError::invalid("limits must be an object"))?;
         if let Some(x) = o.get("maxSamples").filter(|x| !x.is_null()) {
@@ -400,7 +400,10 @@ mod tests {
         let p = decode_preview_rgba(&raw, "smallest").unwrap();
         let pi: Value = serde_json::from_str(&p.info).unwrap();
         assert_eq!(p.pixels.len() as u64, pi["width"].as_u64().unwrap() * pi["height"].as_u64().unwrap() * 4);
-        assert_eq!(decode(&raw, r#"{"backend":"gpu"}"#).unwrap_err().kind, "GpuUnavailable");
+        // Without an adapter (or the `gpu` feature) a GPU request fails cleanly.
+        if !flashraw::gpu_available() {
+            assert_eq!(decode(&raw, r#"{"backend":"gpu"}"#).unwrap_err().kind, "GpuUnavailable");
+        }
         assert_eq!(select_preview(&raw, "9").unwrap_err().kind, "NotAvailable");
         let r = decode(&raw, r#"{"region":{"x":16,"y":8,"width":64,"height":32}}"#).unwrap();
         assert_eq!(r.pixels.len(), 64 * 32);

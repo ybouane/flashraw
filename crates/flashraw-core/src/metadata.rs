@@ -5,6 +5,7 @@ use crate::types::{Compression, Orientation, RawFormat};
 /// Lens information.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct LensInfo {
     pub make: Option<String>,
     pub model: Option<String>,
@@ -18,6 +19,7 @@ pub struct LensInfo {
 /// Exposure / capture parameters.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct ExposureInfo {
     pub iso: Option<u32>,
     /// Exposure time in seconds.
@@ -35,6 +37,7 @@ pub struct ExposureInfo {
 /// GPS position.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct GpsInfo {
     /// Decimal degrees, negative for south.
     pub latitude: Option<f64>,
@@ -48,6 +51,7 @@ pub struct GpsInfo {
 /// Encoding of an embedded preview image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum PreviewEncoding {
     Jpeg,
     /// Uncompressed 8-bit RGB, `width * height * 3` bytes.
@@ -63,6 +67,7 @@ pub enum PreviewEncoding {
 /// An embedded preview / thumbnail stored in the RAW container.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct PreviewInfo {
     pub offset: u64,
     pub length: u64,
@@ -75,8 +80,25 @@ pub struct PreviewInfo {
     pub kind: PreviewKind,
 }
 
+impl PreviewInfo {
+    /// A preview of `length` bytes at `offset` in the file.
+    pub fn new(
+        offset: u64,
+        length: u64,
+        width: u32,
+        height: u32,
+        encoding: PreviewEncoding,
+        orientation: Orientation,
+        kind: PreviewKind,
+    ) -> Self {
+        PreviewInfo { offset, length, width, height, encoding, orientation, kind }
+    }
+}
+
+/// What the container labels a preview as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum PreviewKind {
     Thumbnail,
     Preview,
@@ -86,6 +108,7 @@ pub enum PreviewKind {
 /// Normalised metadata for a RAW file, available without decoding sensor data.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub struct RawMetadata {
     /// Make as written in the file.
     pub make: String,
@@ -125,6 +148,12 @@ pub struct RawMetadata {
 }
 
 impl RawMetadata {
+    /// Metadata with the given make and model as written in the file; everything else
+    /// empty.
+    pub fn new(make: impl Into<String>, model: impl Into<String>) -> Self {
+        RawMetadata { make: make.into(), model: model.into(), ..Default::default() }
+    }
+
     pub fn set_extra(&mut self, key: &str, value: impl ToString) {
         let value = value.to_string();
         if let Some(e) = self.extra.iter_mut().find(|(k, _)| k == key) {

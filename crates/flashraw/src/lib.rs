@@ -35,6 +35,9 @@ mod frame;
 pub mod gpu;
 mod opcodes;
 mod options;
+// Host-side develop kernels, shared with the GPU crate's equivalence tests. Not part
+// of the stable API.
+#[doc(hidden)]
 pub mod process;
 mod source;
 
@@ -45,18 +48,17 @@ pub use flashraw_core::{
     WhiteLevel,
 };
 pub use frame::{BackendReport, DecodeStatistics, RawFrame, RawPixelData};
-pub use options::{Backend, DecodeOptions, Demosaic, OutputFormat};
+pub use options::{Backend, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};
 pub use source::Source;
 
-/// Low-level access for advanced users and tooling.
+/// Low-level access for advanced users and tooling: the internal crates. Not covered
+/// by semver guarantees; may change in any release.
+#[doc(hidden)]
 pub mod low_level {
     pub use flashraw_codecs as codecs;
     pub use flashraw_core as core;
     pub use flashraw_formats as formats;
 }
-
-/// Alias matching the conceptual name used in documentation.
-pub type RawFile<'a> = FlashRaw<'a>;
 
 use flashraw_core::{DecodeContext, PixelData, Profiler, RawDecoder, RawImage};
 
@@ -391,9 +393,9 @@ impl<'a> FlashRaw<'a> {
         })
     }
 
-    /// Decode into a caller-provided [`RawImage`]-compatible u16 buffer is not exposed;
-    /// use [`FlashRaw::decode`]. This helper decodes and returns the raw image without
-    /// building a [`RawFrame`] (used by benchmarks).
+    /// Decode and return the internal raw image without building a [`RawFrame`] (used by
+    /// benchmarks). Not part of the stable API; use [`FlashRaw::decode`].
+    #[doc(hidden)]
     pub fn decode_raw_image(&self, opts: &DecodeOptions) -> Result<RawImage> {
         let profiler = Profiler::new();
         let ctx = DecodeContext {
@@ -467,6 +469,7 @@ fn float_to_u16(v: &[f32], white: u32, known_max: Option<f32>) -> (Vec<u16>, f32
 /// File capabilities.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
 pub struct Capabilities {
     pub random_access: RandomAccess,
     /// Number of independently decodable units.

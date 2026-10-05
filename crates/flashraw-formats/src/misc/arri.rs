@@ -33,7 +33,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         return Err(Error::corrupt("ARRI payload offset beyond end of file"));
     }
     let model = flashraw_core::bytes::ascii_field(data.get(668..732).unwrap_or(&[]));
-    let mut meta = RawMetadata { make: "ARRI".into(), model, ..Default::default() };
+    let mut meta = RawMetadata::new("ARRI", model);
     let cam = db_lookup(&mut meta, "");
     let mut info = FrameInfo::new(w, h, 12);
     info.cfa = Some(CfaPattern::GRBG);

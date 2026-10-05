@@ -257,15 +257,15 @@ fn previews(data: &[u8], cr3: &Cr3, orientation: Orientation) -> Vec<PreviewInfo
     for (w, h, jpeg) in [cr3.thumbnail, cr3.preview].into_iter().flatten() {
         let (jw, jh) = flashraw_codecs::jpeg::dimensions(jpeg).unwrap_or((w as u32, h as u32));
         if jpeg.len() >= 4 && jpeg[0] == 0xFF && jpeg[1] == 0xD8 {
-            out.push(PreviewInfo {
-                offset: offset_of(jpeg),
-                length: jpeg.len() as u64,
-                width: jw,
-                height: jh,
-                encoding: PreviewEncoding::Jpeg,
+            out.push(PreviewInfo::new(
+                offset_of(jpeg),
+                jpeg.len() as u64,
+                jw,
+                jh,
+                PreviewEncoding::Jpeg,
                 orientation,
-                kind: PreviewKind::Preview,
-            });
+                PreviewKind::Preview,
+            ));
         }
     }
     for t in &cr3.tracks {
@@ -284,15 +284,7 @@ fn previews(data: &[u8], cr3: &Cr3, orientation: Orientation) -> Vec<PreviewInfo
             },
             _ => (t.entry_width as u32, t.entry_height as u32),
         };
-        out.push(PreviewInfo {
-            offset: off,
-            length: len,
-            width: w,
-            height: h,
-            encoding,
-            orientation,
-            kind: PreviewKind::Preview,
-        });
+        out.push(PreviewInfo::new(off, len, w, h, encoding, orientation, PreviewKind::Preview));
     }
     classify_previews(&mut out);
     out

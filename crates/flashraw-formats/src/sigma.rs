@@ -304,15 +304,15 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
             Some((THUMB_PLAIN, w, h, stride)) if w > 0 && h > 0 && stride == w * 3 => {
                 let len = w as usize * h as usize * 3;
                 if len <= s.size - IMAGE_HEADER {
-                    meta.previews.push(PreviewInfo {
-                        offset: (s.offset + IMAGE_HEADER) as u64,
-                        length: len as u64,
-                        width: w,
-                        height: h,
-                        encoding: PreviewEncoding::Rgb8,
+                    meta.previews.push(PreviewInfo::new(
+                        (s.offset + IMAGE_HEADER) as u64,
+                        len as u64,
+                        w,
+                        h,
+                        PreviewEncoding::Rgb8,
                         orientation,
-                        kind: PreviewKind::Thumbnail,
-                    });
+                        PreviewKind::Thumbnail,
+                    ));
                 }
             }
             _ => {}

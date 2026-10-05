@@ -59,6 +59,7 @@ impl RawPixelData {
 /// Which backend actually ran each part of the decode.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
 pub struct BackendReport {
     /// e.g. "CPU AVX2 x16 threads"
     pub decode: String,
@@ -72,6 +73,7 @@ pub struct BackendReport {
 /// Timing and resource statistics for one decode.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[non_exhaustive]
 pub struct DecodeStatistics {
     pub backend: BackendReport,
     /// Per-stage wall-clock milliseconds, in pipeline order.
@@ -93,6 +95,7 @@ impl DecodeStatistics {
 
 /// A decoded frame: sensor-domain samples plus everything needed to interpret them.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct RawFrame {
     pub width: u32,
     pub height: u32,

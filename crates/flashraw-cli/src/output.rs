@@ -274,6 +274,7 @@ pub fn write_preview(raw: &FlashRaw, p: &PreviewInfo, out: &Path) -> Result<(), 
             let enc = jpeg_encoder::Encoder::new(std::io::BufWriter::new(f), 92);
             enc.encode(&rgb, w as u16, h as u16, jpeg_encoder::ColorType::Rgb).map_err(|e| e.to_string())
         }
+        e => Err(format!("cannot write a {e:?} preview")),
     }
 }
 

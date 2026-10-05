@@ -185,7 +185,7 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
     // the data: the S2 IS has non-black samples in this column band.
     let model =
         if make == "Canon" && model == "PowerShot A610" && is_canon_s2is(data) { "PowerShot S2 IS" } else { model };
-    let mut meta = RawMetadata { make: make.to_string(), model: model.to_string(), ..Default::default() };
+    let mut meta = RawMetadata::new(make.to_string(), model.to_string());
     db_lookup(&mut meta, cam.mode);
     meta.canonical_make = if cam.canonical_make.is_empty() { make.into() } else { cam.canonical_make.into() };
     meta.canonical_model = model.to_string();
@@ -440,7 +440,7 @@ fn open_size_matched<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOption
         (8, _) => PackOrder::MsbBytes,
         (_, o) => o,
     };
-    let mut meta = RawMetadata { make: cam.make.to_string(), model: cam.model.to_string(), ..Default::default() };
+    let mut meta = RawMetadata::new(cam.make.to_string(), cam.model.to_string());
     let db = db_lookup(&mut meta, cam.mode);
     if meta.canonical_model.is_empty() {
         meta.canonical_model = cam.canonical_model.to_string();

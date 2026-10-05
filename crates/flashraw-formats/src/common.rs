@@ -227,15 +227,15 @@ pub fn tiff_previews(data: &[u8], base: usize, tiff: &Tiff, orientation: Orienta
             let need = (w as u64) * (h as u64) * 3;
             let end = base.checked_add(o).and_then(|v| v.checked_add(l));
             if w > 0 && h > 0 && (l as u64) >= need && end.is_some_and(|e| e <= data.len()) {
-                out.push(PreviewInfo {
-                    offset: (base + o) as u64, // checked above
-                    length: need,
-                    width: w,
-                    height: h,
-                    encoding: PreviewEncoding::Rgb8,
+                out.push(PreviewInfo::new(
+                    (base + o) as u64,
+                    need,
+                    w,
+                    h,
+                    PreviewEncoding::Rgb8,
                     orientation,
-                    kind: PreviewKind::Thumbnail,
-                });
+                    PreviewKind::Thumbnail,
+                ));
             }
         }
     }
@@ -256,15 +256,15 @@ pub fn push_jpeg(data: &[u8], offset: usize, len: usize, orientation: Orientatio
         return;
     }
     let (w, h) = flashraw_codecs::jpeg::dimensions(d).unwrap_or((0, 0));
-    out.push(PreviewInfo {
-        offset: offset as u64,
-        length: len as u64,
-        width: w,
-        height: h,
-        encoding: PreviewEncoding::Jpeg,
+    out.push(PreviewInfo::new(
+        offset as u64,
+        len as u64,
+        w,
+        h,
+        PreviewEncoding::Jpeg,
         orientation,
-        kind: PreviewKind::Preview,
-    });
+        PreviewKind::Preview,
+    ));
 }
 
 /// Label previews: the smallest is the thumbnail; previews >= 1/2 of the largest dimension are "full size".

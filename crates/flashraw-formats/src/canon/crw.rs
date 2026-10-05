@@ -640,7 +640,7 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
         return Err(Error::invalid_metadata("CIFF without make/model record"));
     }
 
-    let mut meta = RawMetadata { make: ciff.make.clone(), model: ciff.model.clone(), ..Default::default() };
+    let mut meta = RawMetadata::new(ciff.make.clone(), ciff.model.clone());
     let cam = db_lookup(&mut meta, "");
     let short_model = strip_make_prefix(&ciff.model, "Canon");
     let model_is = |names: &[&str]| names.iter().any(|n| short_model.eq_ignore_ascii_case(n));

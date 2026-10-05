@@ -68,6 +68,7 @@ impl fmt::Display for Rect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum CfaColor {
     #[default]
     Red = 0,
@@ -277,6 +278,7 @@ impl serde::Serialize for CfaPattern {
 /// How samples are arranged on the sensor / in the decoded buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum SensorLayout {
     /// 2x2 Bayer CFA, one sample per pixel.
     Bayer,
@@ -476,6 +478,7 @@ impl ColorMatrix {
 /// Where colour calibration came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum ColorSource {
     #[default]
     None,

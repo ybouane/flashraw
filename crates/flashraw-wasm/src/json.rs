@@ -53,6 +53,7 @@ pub fn layout(l: SensorLayout) -> &'static str {
         SensorLayout::Monochrome => "monochrome",
         SensorLayout::Linear => "linear",
         SensorLayout::Foveon => "foveon",
+        _ => "unknown",
     }
 }
 
@@ -99,6 +100,7 @@ pub fn colors(c: &ColorMatrices) -> Value {
             ColorSource::None => "none",
             ColorSource::File => "file",
             ColorSource::CameraDb => "camera-db",
+            _ => "unknown",
         },
     })
 }
@@ -110,6 +112,7 @@ pub fn preview_mime(e: PreviewEncoding) -> &'static str {
         PreviewEncoding::Heif => "image/heif",
         PreviewEncoding::Rgb8 => "application/x-flashraw-rgb8",
         PreviewEncoding::Ycbcr422 => "application/x-flashraw-ycbcr422",
+        _ => "application/octet-stream",
     }
 }
 
@@ -120,6 +123,7 @@ fn preview(i: usize, p: &PreviewInfo) -> Value {
             PreviewKind::Thumbnail => "thumbnail",
             PreviewKind::Preview => "preview",
             PreviewKind::FullSize => "full-size",
+            _ => "unknown",
         },
         "encoding": match p.encoding {
             PreviewEncoding::Jpeg => "jpeg",
@@ -127,6 +131,7 @@ fn preview(i: usize, p: &PreviewInfo) -> Value {
             PreviewEncoding::Ycbcr422 => "ycbcr422",
             PreviewEncoding::JpegXl => "jpeg-xl",
             PreviewEncoding::Heif => "heif",
+            _ => "unknown",
         },
         "mimeType": preview_mime(p.encoding),
         "width": p.width,
@@ -147,7 +152,7 @@ pub fn frame_info(f: &FrameInfo) -> Value {
         "height": f.height,
         "channels": f.cpp,
         "bitsPerSample": f.bits_per_sample,
-        "sampleFormat": match f.sample_format { SampleFormat::U16 => "u16", SampleFormat::F32 => "f32" },
+        "sampleFormat": match f.sample_format { SampleFormat::U16 => "u16", SampleFormat::F32 => "f32", _ => "unknown" },
         "cfa": cfa(f.cfa),
         "layout": layout(f.layout),
         "activeArea": rect(f.active_area),
@@ -251,6 +256,7 @@ pub fn random_access(r: RandomAccess) -> Value {
         RandomAccess::Strips { rows } => json!({ "kind": "strips", "rows": rows }),
         RandomAccess::Tiles { width, height } => json!({ "kind": "tiles", "width": width, "height": height }),
         RandomAccess::Blocks => json!({ "kind": "blocks" }),
+        _ => json!({ "kind": "unknown" }),
     }
 }
 
@@ -287,6 +293,7 @@ pub fn stage_key(s: Stage) -> &'static str {
         Stage::GpuCompute => "gpuCompute",
         Stage::GpuDownload => "gpuDownload",
         Stage::Preview => "preview",
+        _ => "unknown",
     }
 }
 
@@ -302,6 +309,7 @@ pub fn output_name(o: flashraw::OutputFormat) -> &'static str {
         GpuNormalizedF32 => "gpu-normalized",
         GpuLinearRgbF32 => "gpu-linear-rgb",
         GpuRgba8 => "gpu-rgba8",
+        _ => "unknown",
     }
 }
 
