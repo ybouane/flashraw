@@ -96,6 +96,11 @@ enum PayloadKind {
 }
 
 struct SrwRaw<'a> {
+    /// The whole file.
+    data: &'a [u8],
+    /// File offset of the payload.
+    offset: usize,
+    /// Payload bytes from `offset` to the end of the file (empty if past it).
     src: &'a [u8],
     width: usize,
     height: usize,
@@ -122,7 +127,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     opts.limits.check_dims(w, h, 1)?;
     let bps = raw.bps();
     let (offset, bytes) = *strips(raw).first().ok_or_else(|| Error::invalid_metadata("SRW raw IFD without strips"))?;
-    let src = data.get(offset..).filter(|s| !s.is_empty()).ok_or_else(|| Error::corrupt("SRW payload beyond EOF"))?;
+    // A payload past the end of the file fails when decoded (metadata stays available).
+    let src = data.get(offset..).unwrap_or(&[]);
     let (w64, h64, b64) = (w as u64, h as u64, bytes as u64);
     let row_table = raw.u32(TAG_SAMSUNG_ROW_OFFSETS);
     let packed12 = |flags| {
@@ -306,14 +312,15 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     };
     let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
     // V0 rows are addressed relative to the strip offset; keep the whole file.
-    let srw = Arc::new(SrwRaw { src, width: w as usize, height: h as usize, payload });
+    let srw = Arc::new(SrwRaw { data, offset, src, width: w as usize, height: h as usize, payload });
     let s2 = srw.clone();
     let mut dec = SimpleDecoder::new(RawFormat::Srw, meta, info, Box::new(move |ctx| s2.decode(ctx)));
     dec.random_access = random_access;
     dec.units = vec![DecodeUnit { rect: Rect::full(w, h), offset: offset as u64, length: bytes as u64 }];
     dec.packed = packed;
     if let Some(rl) = row_layout {
-        dec.region = Some(Box::new(move |ctx, r| conventions::decode_rows_region(src, rl, r, ctx)));
+        dec.region =
+            Some(Box::new(move |ctx, r| conventions::decode_rows_region(data, offset, DataUnit::Strip(0), rl, r, ctx)));
     }
     Ok(Box::new(dec))
 }
@@ -364,14 +371,20 @@ impl SrwRaw<'_> {
                 ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v1(self.src, w, h, out))?;
             }
             Payload::V2 => ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v2(self.src, w, h, out))?,
-            Payload::Packed(spec) => ctx
-                .profiler
-                .time(Stage::Unpack, || nikon_packed::decode(self.src, spec, out, w, ctx.parallel, ctx.simd))?,
+            Payload::Packed(spec) => {
+                let geometry = crate::nikon::packed_geometry(spec);
+                let src = ctx.sensor_rows(self.data, DataUnit::Strip(0), self.offset, geometry)?;
+                ctx.profiler.time(Stage::Unpack, || {
+                    nikon_packed::decode(src, spec, out, w, ctx.parallel, ctx.simd, ctx.recover)
+                })?
+            }
             Payload::Words(order, shift) => {
                 let po = if *order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
                 let layout = PackedLayout::tight(w, h, 16, po);
+                let geometry = conventions::row_geometry(&layout, h);
+                let src = ctx.sensor_rows(self.data, DataUnit::Strip(0), self.offset, geometry)?;
                 ctx.profiler
-                    .time(Stage::Unpack, || packed::unpack(self.src, layout, out, w, ctx.parallel, ctx.simd, false))?;
+                    .time(Stage::Unpack, || packed::unpack(src, layout, out, w, ctx.parallel, ctx.simd, ctx.recover))?;
                 if *shift > 0 {
                     let s = *shift;
                     par::for_each_row_chunk(out, w, 256, ctx.parallel, |_, c| c.iter_mut().for_each(|v| *v >>= s));

@@ -94,8 +94,18 @@ impl PackedSpec {
 }
 
 /// Decode `src` into `out` (rows of `stride` samples). Truncated input is an error
-/// (decoding aborts at the first row that starts past EOF).
-pub fn decode(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize, parallel: bool, simd: bool) -> Result<()> {
+/// (decoding aborts at the first row that starts past EOF) unless `lenient`
+/// (recovering truncated data): then every complete sample is decoded and the rest are
+/// left zero (`out` must be zeroed).
+pub fn decode(
+    src: &[u8],
+    spec: &PackedSpec,
+    out: &mut [u16],
+    stride: usize,
+    parallel: bool,
+    simd: bool,
+    lenient: bool,
+) -> Result<()> {
     if spec.bits == 0 || spec.bits > 16 || spec.width == 0 {
         return Err(Error::corrupt(format!("unsupported packed layout ({} bits)", spec.bits)));
     }
@@ -103,13 +113,19 @@ pub fn decode(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize, par
         return Err(Error::InvalidArgument("packed: output too small".into()));
     }
     if let Some(layout) = spec.fast_layout() {
-        return packed::unpack(src, layout, out, stride, parallel, simd, false);
+        return packed::unpack(src, layout, out, stride, parallel, simd, lenient);
     }
-    decode_exact(src, spec, out, stride)
+    decode_exact_with(src, spec, out, stride, lenient)
 }
 
 /// Exact sequential decode of any load-flags layout (the specification).
 pub fn decode_exact(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize) -> Result<()> {
+    decode_exact_with(src, spec, out, stride, false)
+}
+
+/// [`decode_exact`]; `lenient` stops at the first sample that needs bits past the end of
+/// `src` and zeroes it and the rest of its row instead of failing at the next row.
+fn decode_exact_with(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usize, lenient: bool) -> Result<()> {
     let (w, h, bits) = (spec.width, spec.height, spec.bits as i32);
     let bite = spec.bite() as i32;
     let rbits = spec.rbits();
@@ -149,6 +165,14 @@ pub fn decode_exact(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usiz
                     bitbuf |= b << i;
                 }
                 vbits += bite as i64;
+            }
+            if eof && lenient {
+                for c in col..w {
+                    if let Some(v) = line.get_mut(c ^ swap) {
+                        *v = 0;
+                    }
+                }
+                return Ok(());
             }
             let val = ((bitbuf << (64 - bits as i64 - vbits)) >> (64 - bits)) as u16;
             line[col ^ swap] = val;
@@ -196,7 +220,7 @@ mod tests {
             let mut b = vec![0u16; width * 7];
             decode_exact(&src, &spec, &mut a, width).unwrap();
             assert_eq!(spec.fast_layout().is_some(), fast, "{bits} {flags} {width}");
-            decode(&src, &spec, &mut b, width, false, true).unwrap();
+            decode(&src, &spec, &mut b, width, false, true, false).unwrap();
             assert_eq!(a, b, "bits {bits} flags {flags}");
         }
     }
@@ -221,7 +245,7 @@ mod tests {
         src[16] = 0x80; // sample 10 = 0x800
         let spec = PackedSpec { width: 20, height: 1, bits: 12, flags: 1, field2_offset: None };
         let mut out = vec![0u16; 20];
-        decode(&src, &spec, &mut out, 20, false, false).unwrap();
+        decode(&src, &spec, &mut out, 20, false, false, false).unwrap();
         assert_eq!(out[0], 0xFFF);
         assert_eq!(out[10], 0x800);
         assert_eq!(spec.row_bytes(), 32);
@@ -232,7 +256,7 @@ mod tests {
         let spec = PackedSpec { width: 2, height: 4, bits: 8, flags: 2, field2_offset: None };
         let src = [0u8, 1, 2, 3, 4, 5, 6, 7];
         let mut out = vec![0u16; 8];
-        decode(&src, &spec, &mut out, 2, false, false).unwrap();
+        decode(&src, &spec, &mut out, 2, false, false, false).unwrap();
         // Stored rows: 0, 2, 1, 3.
         assert_eq!(out, vec![0, 1, 4, 5, 2, 3, 6, 7]);
     }
@@ -242,8 +266,25 @@ mod tests {
         let spec = PackedSpec { width: 16, height: 8, bits: 12, flags: 1, field2_offset: None };
         let src = vec![0u8; 40];
         let mut out = vec![0u16; 16 * 8];
-        assert!(decode(&src, &spec, &mut out, 16, false, false).is_err());
+        assert!(decode(&src, &spec, &mut out, 16, false, false, false).is_err());
         let spec = PackedSpec { width: 16, height: 8, bits: 12, flags: 0, field2_offset: None };
-        assert!(decode(&src, &spec, &mut out, 16, false, false).is_err());
+        assert!(decode(&src, &spec, &mut out, 16, false, false, false).is_err());
+    }
+
+    #[test]
+    fn lenient_keeps_complete_samples() {
+        // Exact path (flags 1): 40 bytes hold the first two 32-byte rows' worth of data
+        // only partly; complete samples match a full decode, the rest are zero.
+        let spec = PackedSpec { width: 16, height: 4, bits: 12, flags: 1, field2_offset: None };
+        let full = pseudo(spec.required_bytes(), 7);
+        let mut a = vec![0u16; 16 * 4];
+        decode(&full, &spec, &mut a, 16, false, false, false).unwrap();
+        let mut b = vec![0u16; 16 * 4];
+        decode(&full[..40], &spec, &mut b, 16, false, false, true).unwrap();
+        assert_eq!(&b[..16], &a[..16]);
+        let kept = b[16..32].iter().take_while(|&&v| v != 0).count();
+        assert!(kept > 0 && kept < 16);
+        assert_eq!(&b[16..16 + kept], &a[16..16 + kept]);
+        assert!(b[16 + kept..].iter().all(|&v| v == 0));
     }
 }

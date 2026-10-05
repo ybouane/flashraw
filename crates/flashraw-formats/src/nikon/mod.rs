@@ -62,8 +62,12 @@ enum Payload {
 }
 
 struct NefRaw<'a> {
+    /// The whole file.
+    data: &'a [u8],
+    /// File offset of the payload.
+    offset: usize,
     /// Payload bytes from the data offset to the end of the file (some files' data
-    /// runs past the declared strip length).
+    /// runs past the declared strip length; empty when the offset is past the end).
     src: &'a [u8],
     /// Payload length the strip declares.
     declared: usize,
@@ -111,10 +115,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let compression = raw.compression();
     let strips = strips(raw);
     let (offset, bytes) = *strips.first().ok_or_else(|| Error::invalid_metadata("NEF raw IFD without strips"))?;
-    if offset >= data.len() {
-        return Err(Error::corrupt_at("NEF payload offset beyond end of file", offset as u64));
-    }
-    let src = &data[offset..];
+    // A payload past the end of the file fails when decoded, not here (metadata and
+    // previews stay available).
+    let src = data.get(offset..).unwrap_or(&[]);
     let software = meta.software.clone().unwrap_or_default();
     let samples = raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
 
@@ -400,7 +403,15 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         meta.set_extra("color_balance_version", mn.color_balance_version);
     }
 
-    let nef = Arc::new(NefRaw { src, declared: bytes, width: geo.raw_width as usize, height: raw_h as usize, payload });
+    let nef = Arc::new(NefRaw {
+        data,
+        offset,
+        src,
+        declared: bytes,
+        width: geo.raw_width as usize,
+        height: raw_h as usize,
+        payload,
+    });
     let packed_payload = nef.packed_payload();
     let row_layout = nef.row_layout();
     let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
@@ -418,7 +429,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     dec.packed = packed_payload;
     if let Some(rl) = row_layout {
         let n3 = nef.clone();
-        dec.region = Some(Box::new(move |ctx, r| conventions::decode_rows_region(n3.src, rl, r, ctx)));
+        dec.region = Some(Box::new(move |ctx, r| {
+            conventions::decode_rows_region(n3.data, n3.offset, DataUnit::Strip(0), rl, r, ctx)
+        }));
     }
     Ok(Box::new(dec))
 }
@@ -500,22 +513,37 @@ impl<'a> NefRaw<'a> {
         }
         let mut img = RawImage::new_u16(w as u32, h as u32, 1, &ctx.limits)?;
         let out = img.u16_mut();
+        let unit = DataUnit::Strip(0);
         match &self.payload {
             Payload::Huffman { meta, rows } => {
-                ctx.profiler.time(Stage::EntropyDecode, || {
-                    nikon_huffman::decode_nikon(self.src, meta, w, (*rows).min(h), out, w, ctx.parallel, self.declared)
-                })?;
+                ctx.profiler
+                    .time(Stage::EntropyDecode, || {
+                        nikon_huffman::decode_nikon(
+                            self.src,
+                            meta,
+                            w,
+                            (*rows).min(h),
+                            out,
+                            w,
+                            ctx.parallel,
+                            self.declared,
+                        )
+                    })
+                    .map_err(|e| e.or_truncated(self.data.len(), unit, self.offset, self.declared))?;
             }
             Payload::Packed(spec) => {
                 let spec = PackedSpec { width: w, height: h, ..*spec };
-                ctx.profiler
-                    .time(Stage::Unpack, || nikon_packed::decode(self.src, &spec, out, w, ctx.parallel, ctx.simd))?;
+                let src = ctx.sensor_rows(self.data, unit, self.offset, packed_geometry(&spec))?;
+                ctx.profiler.time(Stage::Unpack, || {
+                    nikon_packed::decode(src, &spec, out, w, ctx.parallel, ctx.simd, ctx.recover)
+                })?;
             }
             Payload::Words { order, shift } => {
                 let po = if *order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
                 let layout = PackedLayout::tight(w, h, 16, po);
+                let src = ctx.sensor_rows(self.data, unit, self.offset, conventions::row_geometry(&layout, h))?;
                 ctx.profiler
-                    .time(Stage::Unpack, || packed::unpack(self.src, layout, out, w, ctx.parallel, ctx.simd, false))?;
+                    .time(Stage::Unpack, || packed::unpack(src, layout, out, w, ctx.parallel, ctx.simd, ctx.recover))?;
                 if *shift > 0 {
                     let s = *shift;
                     par::for_each_row_chunk(out, w, 256, ctx.parallel, |_, c| c.iter_mut().for_each(|v| *v >>= s));
@@ -529,8 +557,9 @@ impl<'a> NefRaw<'a> {
                     order: PackOrder::LsbBytes,
                     row_stride: *row_stride,
                 };
+                let src = ctx.sensor_rows(self.data, unit, self.offset, conventions::row_geometry(&layout, h))?;
                 ctx.profiler
-                    .time(Stage::Unpack, || packed::unpack(self.src, layout, out, w, ctx.parallel, ctx.simd, false))?;
+                    .time(Stage::Unpack, || packed::unpack(src, layout, out, w, ctx.parallel, ctx.simd, ctx.recover))?;
             }
             Payload::HighEfficiency | Payload::Ycbcr | Payload::Coolscan { .. } => unreachable!("handled above"),
         }
@@ -546,12 +575,11 @@ impl<'a> NefRaw<'a> {
             return Err(Error::corrupt("sNEF too narrow"));
         }
         let row_bytes = w * 3;
-        if self.src.len() < row_bytes * h {
-            return Err(Error::corrupt("sNEF data truncated"));
-        }
+        // Pixel pairs are 6 bytes: a row is only usable whole.
+        let geometry = RowGeometry { rows: h, stride: row_bytes, row_bytes, samples: w * 3 };
+        let src = ctx.sensor_rows(self.data, DataUnit::Strip(0), self.offset, geometry)?;
         let curve = sraw_curve();
         let mut img = RawImage::new_u16(w as u32, h as u32, 3, &ctx.limits)?;
-        let src = self.src;
         par::for_each_row_chunk_bounded(
             img.u16_mut(),
             w * 3,
@@ -561,7 +589,8 @@ impl<'a> NefRaw<'a> {
                 let mut ycc = vec![[0u16; 3]; w];
                 for (i, out) in chunk.chunks_mut(w * 3).enumerate() {
                     let row = first + i;
-                    let rd = &src[row * row_bytes..(row + 1) * row_bytes];
+                    // Rows missing from truncated data (recovering) stay zero.
+                    let Some(rd) = src.get(row * row_bytes..(row + 1) * row_bytes) else { break };
                     let mut col = 0;
                     while col + 1 < w {
                         let b = &rd[col * 3..col * 3 + 6];
@@ -601,22 +630,38 @@ impl<'a> NefRaw<'a> {
         let mut img = RawImage::new_u16(w as u32, h as u32, cpp, &ctx.limits)?;
         let n = w * h * cpp as usize;
         let out = img.u16_mut();
-        if bits <= 8 {
+        let bits = if bits <= 8 { 8 } else { 16 };
+        let geometry = RowGeometry::tight(h, w * cpp as usize, bits);
+        // Missing samples of truncated data (recovering) stay zero.
+        let s = ctx.sensor_rows(self.data, DataUnit::Strip(0), self.offset, geometry)?;
+        if bits == 8 {
             // 8-bit scans are expanded to the 16-bit range (a linear transfer
             // curve: v * 65536 / 255, saturating at 255).
-            let s = self.src.get(..n).ok_or_else(|| Error::corrupt("Coolscan data truncated"))?;
+            let s = &s[..n.min(s.len())];
             let lut: Vec<u16> =
                 (0..256u32).map(|i| if i < 255 { (65536.0 * (i as f64 / 255.0)) as u16 } else { 0xffff }).collect();
             for (o, &v) in out.iter_mut().zip(s) {
                 *o = lut[v as usize];
             }
         } else {
-            let s = self.src.get(..n * 2).ok_or_else(|| Error::corrupt("Coolscan data truncated"))?;
             for (o, c) in out.iter_mut().zip(s.chunks_exact(2)) {
                 *o = order.u16([c[0], c[1]]);
             }
         }
         Ok(img)
+    }
+}
+
+/// Byte geometry of a load-flags packed payload: full rows (the exact layouts gather
+/// bits in multi-byte units, so the last row is needed whole).
+pub(crate) fn packed_geometry(spec: &PackedSpec) -> RowGeometry {
+    match spec.fast_layout() {
+        Some(l) => conventions::row_geometry(&l, spec.height),
+        None => {
+            let rb = spec.row_bytes();
+            let rows = if rb == 0 { 0 } else { spec.required_bytes().div_ceil(rb) };
+            RowGeometry { rows, stride: rb, row_bytes: rb, samples: spec.width * spec.height / rows.max(1) }
+        }
     }
 }
 
