@@ -198,7 +198,8 @@ impl<'a> CoeffBits<'a> {
         let head = if avail > 0 { self.read(avail) } else { 0 };
         self.status = 2;
         self.remaining = 0;
-        head << (n - avail)
+        // A full 32-bit read at the limit shifts by 32 (head is then 0).
+        head.checked_shl(n - avail).unwrap_or(0)
     }
 
     #[inline(always)]
