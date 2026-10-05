@@ -1,0 +1,48 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "flashraw"
+description = "Fast, safe camera RAW decoding (DNG, CR2, CR3, NEF, ARW, RAF, RW2, ORF, PEF and more) with zero-copy NumPy output"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+authors = [{ name = "Yassine Bouanane" }]
+keywords = ["raw", "camera", "dng", "image", "decoder", "numpy"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Typing :: Typed",
+]
+dependencies = ["numpy>=1.19"]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+pil = ["pillow>=8"]
+test = ["pytest>=7", "pillow>=8"]
+
+[project.urls]
+Homepage = "https://github.com/ybouane/flashraw"
+Documentation = "https://github.com/ybouane/flashraw/blob/main/docs/python.md"
+Source = "https://github.com/ybouane/flashraw"
+Changelog = "https://github.com/ybouane/flashraw/blob/main/CHANGELOG.md"
+
+[tool.maturin]
+# Mixed project: the public API is pure Python (python/flashraw), the decoder is the
+# native `flashraw._flashraw` extension.
+python-source = "python"
+module-name = "flashraw._flashraw"
+features = ["extension-module", "jpegxl"]
+profile = "release"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
