@@ -11,7 +11,9 @@ use crate::types::*;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum SampleFormat {
+    /// Unsigned integer samples (`u16`).
     U16,
+    /// Floating-point samples (`f32`, e.g. floating-point DNG).
     F32,
 }
 
@@ -29,8 +31,12 @@ pub struct FrameInfo {
     pub cpp: u32,
     /// Significant bits per sample (e.g. 12 or 14).
     pub bits_per_sample: u8,
+    /// Numeric format of the decoded samples.
     pub sample_format: SampleFormat,
+    /// Colour filter pattern anchored at buffer `(0, 0)`; `None` for monochrome and
+    /// multi-sample (linear, Foveon) data.
     pub cfa: Option<CfaPattern>,
+    /// How samples are arranged on the sensor.
     pub layout: SensorLayout,
     /// Region of valid image pixels (excludes optical black / masked borders).
     pub active_area: Rect,
@@ -38,16 +44,22 @@ pub struct FrameInfo {
     pub crop: Rect,
     /// Masked (optical black) regions usable for black-level estimation.
     pub masked_areas: Vec<Rect>,
+    /// Black level (see also `black_from_masked`).
     pub black_level: BlackLevel,
     /// When true, `black_level` is a fallback: the actual per-CFA-colour black is measured
     /// from `masked_areas` after decoding (done by the high-level API).
     pub black_from_masked: bool,
+    /// Saturation level of the stored samples.
     pub white_level: WhiteLevel,
+    /// As-shot white balance; `None` when the file records none.
     pub white_balance: Option<WhiteBalance>,
+    /// Colour calibration (file or camera database).
     pub color_matrices: ColorMatrices,
+    /// Orientation to apply for display.
     pub orientation: Orientation,
     /// Pixel aspect ratio (width / height of a sensor site); 1.0 for almost all cameras.
     pub pixel_aspect: f32,
+    /// Payload compression scheme.
     pub compression: Compression,
     /// DNG opcode lists carried by the file (applied by the high-level API).
     pub opcodes: Option<std::sync::Arc<OpcodeLists>>,
@@ -58,10 +70,12 @@ pub struct FrameInfo {
 /// area, list 3 to the demosaiced camera-RGB image.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct OpcodeLists {
+    /// OpcodeList1, OpcodeList2 and OpcodeList3 (empty when absent).
     pub lists: [Vec<u8>; 3],
 }
 
 impl OpcodeLists {
+    /// True if every list is absent or holds no opcodes (at most its 4-byte count).
     pub fn is_empty(&self) -> bool {
         self.lists.iter().all(|l| l.len() <= 4)
     }
@@ -113,15 +127,18 @@ impl FrameInfo {
 
 /// Context passed to decoders.
 pub struct DecodeContext<'p> {
+    /// Safety limits for allocations and dimensions.
     pub limits: Limits,
     /// Allow multithreaded decoding.
     pub parallel: bool,
     /// Allow explicit SIMD kernels (scalar reference paths otherwise).
     pub simd: bool,
+    /// Receives per-stage timings.
     pub profiler: &'p Profiler,
 }
 
 impl<'p> DecodeContext<'p> {
+    /// A context with default limits, parallelism and SIMD enabled.
     pub fn new(profiler: &'p Profiler) -> Self {
         DecodeContext { limits: Limits::default(), parallel: true, simd: true, profiler }
     }
@@ -137,9 +154,17 @@ pub enum RandomAccess {
     /// Independent rows (e.g. uncompressed / packed data): any region is directly addressable.
     Rows,
     /// Independent strips of `rows` rows.
-    Strips { rows: u32 },
+    Strips {
+        /// Rows per strip (the last strip may be shorter).
+        rows: u32,
+    },
     /// Independent tiles.
-    Tiles { width: u32, height: u32 },
+    Tiles {
+        /// Tile width in pixels.
+        width: u32,
+        /// Tile height in pixels.
+        height: u32,
+    },
     /// Independent vertical slices/blocks of varying geometry.
     Blocks,
 }
@@ -152,6 +177,7 @@ pub struct DecodeUnit {
     pub rect: Rect,
     /// Byte range of the compressed data in the source file (for range-request planning).
     pub offset: u64,
+    /// Length of the compressed data in bytes.
     pub length: u64,
 }
 
@@ -172,10 +198,15 @@ pub enum PackOrder {
 /// (directly on the GPU, or with SIMD kernels).
 #[derive(Debug, Clone, Copy)]
 pub struct PackedPayload<'a> {
+    /// Packed bytes, starting at the first row.
     pub data: &'a [u8],
+    /// Width in samples.
     pub width: u32,
+    /// Height in rows.
     pub height: u32,
+    /// Bits per sample.
     pub bits: u32,
+    /// Bit packing order.
     pub order: PackOrder,
     /// Bytes from the start of one row to the next.
     pub row_stride: usize,
@@ -183,8 +214,11 @@ pub struct PackedPayload<'a> {
 
 /// A parsed RAW file ready for decoding.
 pub trait RawDecoder: Send + Sync {
+    /// Container format.
     fn format(&self) -> RawFormat;
+    /// Normalised metadata.
     fn metadata(&self) -> &RawMetadata;
+    /// Geometry and calibration of the sensor buffer.
     fn frame_info(&self) -> &FrameInfo;
 
     /// Decode the full sensor buffer.

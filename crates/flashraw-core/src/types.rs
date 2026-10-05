@@ -11,13 +11,18 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Rect {
+    /// Left edge (first column), in pixels.
     pub x: u32,
+    /// Top edge (first row), in pixels.
     pub y: u32,
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
 }
 
 impl Rect {
+    /// Rect with top-left corner `(x, y)` and the given size.
     pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
         Rect { x, y, width, height }
     }
@@ -25,23 +30,29 @@ impl Rect {
     pub fn from_ltrb(left: u32, top: u32, right: u32, bottom: u32) -> Option<Self> {
         (right >= left && bottom >= top).then(|| Rect::new(left, top, right - left, bottom - top))
     }
+    /// Rect covering a whole `width x height` buffer, anchored at `(0, 0)`.
     pub const fn full(width: u32, height: u32) -> Self {
         Rect { x: 0, y: 0, width, height }
     }
+    /// Exclusive right edge (`x + width`, saturating).
     #[inline]
     pub fn right(&self) -> u32 {
         self.x.saturating_add(self.width)
     }
+    /// Exclusive bottom edge (`y + height`, saturating).
     #[inline]
     pub fn bottom(&self) -> u32 {
         self.y.saturating_add(self.height)
     }
+    /// True if the rect covers no pixels (zero width or height).
     pub fn is_empty(&self) -> bool {
         self.width == 0 || self.height == 0
     }
+    /// Number of pixels covered (`width * height`).
     pub fn area(&self) -> u64 {
         self.width as u64 * self.height as u64
     }
+    /// Overlap of two rects, or `None` if they do not overlap.
     pub fn intersect(&self, o: &Rect) -> Option<Rect> {
         let l = self.x.max(o.x);
         let t = self.y.max(o.y);
@@ -49,6 +60,7 @@ impl Rect {
         let b = self.bottom().min(o.bottom());
         (r > l && b > t).then(|| Rect::new(l, t, r - l, b - t))
     }
+    /// True if `o` lies entirely inside `self`.
     pub fn contains_rect(&self, o: &Rect) -> bool {
         o.x >= self.x && o.y >= self.y && o.right() <= self.right() && o.bottom() <= self.bottom()
     }
@@ -70,14 +82,22 @@ impl fmt::Display for Rect {
 #[repr(u8)]
 #[non_exhaustive]
 pub enum CfaColor {
+    /// Red (DNG index 0).
     #[default]
     Red = 0,
+    /// Green (DNG index 1).
     Green = 1,
+    /// Blue (DNG index 2).
     Blue = 2,
+    /// Cyan (DNG index 3).
     Cyan = 3,
+    /// Magenta (DNG index 4).
     Magenta = 4,
+    /// Yellow (DNG index 5).
     Yellow = 5,
+    /// White / unfiltered (DNG index 6).
     White = 6,
+    /// Emerald (RGBE sensors; no DNG index).
     Emerald = 7,
 }
 
@@ -95,6 +115,7 @@ impl CfaColor {
             _ => return None,
         })
     }
+    /// Single-letter abbreviation (`R`, `G`, `B`, `C`, `M`, `Y`, `W`, `E`).
     pub fn letter(self) -> char {
         match self {
             CfaColor::Red => 'R',
@@ -107,6 +128,7 @@ impl CfaColor {
             CfaColor::Emerald => 'E',
         }
     }
+    /// Inverse of [`CfaColor::letter`] (case-insensitive); `None` for unknown letters.
     pub fn from_letter(c: char) -> Option<Self> {
         Some(match c.to_ascii_uppercase() {
             'R' => CfaColor::Red,
@@ -159,15 +181,21 @@ impl CfaPattern {
         Self::parse_dims(s, side, side)
     }
 
+    /// Parse a pattern string with explicit dimensions (e.g. a 2x4 pattern). Whitespace and `/`
+    /// separators are ignored; returns `None` for unknown letters or a length mismatch.
     pub fn parse_dims(s: &str, width: usize, height: usize) -> Option<Self> {
         let colors: Option<Vec<CfaColor>> =
             s.chars().filter(|c| !c.is_whitespace() && *c != '/').map(CfaColor::from_letter).collect();
         Self::new(width, height, &colors?)
     }
 
+    /// Bayer pattern with red at `(0, 0)`.
     pub const RGGB: CfaPattern = Self::bayer2(CfaColor::Red, CfaColor::Green, CfaColor::Green, CfaColor::Blue);
+    /// Bayer pattern with blue at `(0, 0)`.
     pub const BGGR: CfaPattern = Self::bayer2(CfaColor::Blue, CfaColor::Green, CfaColor::Green, CfaColor::Red);
+    /// Bayer pattern with green at `(0, 0)` and red at `(1, 0)`.
     pub const GRBG: CfaPattern = Self::bayer2(CfaColor::Green, CfaColor::Red, CfaColor::Blue, CfaColor::Green);
+    /// Bayer pattern with green at `(0, 0)` and blue at `(1, 0)`.
     pub const GBRG: CfaPattern = Self::bayer2(CfaColor::Green, CfaColor::Blue, CfaColor::Red, CfaColor::Green);
 
     const fn bayer2(a: CfaColor, b: CfaColor, c: CfaColor, d: CfaColor) -> Self {
@@ -179,10 +207,12 @@ impl CfaPattern {
         CfaPattern { width: 2, height: 2, colors }
     }
 
+    /// Pattern width in samples (repeat period along x).
     #[inline]
     pub fn width(&self) -> usize {
         self.width as usize
     }
+    /// Pattern height in samples (repeat period along y).
     #[inline]
     pub fn height(&self) -> usize {
         self.height as usize
@@ -209,6 +239,7 @@ impl CfaPattern {
             .map(|(x, y)| self.colors[y][x])
             .collect()
     }
+    /// True for a 2x2 pattern with one red, two green and one blue site.
     pub fn is_bayer(&self) -> bool {
         if self.width != 2 || self.height != 2 {
             return false;
@@ -219,6 +250,7 @@ impl CfaPattern {
         }
         cnt[0] == 1 && cnt[1] == 2 && cnt[2] == 1
     }
+    /// True for a 6x6 (X-Trans) pattern.
     pub fn is_xtrans(&self) -> bool {
         self.width == 6 && self.height == 6
     }
@@ -304,7 +336,9 @@ pub enum SensorLayout {
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlackLevel {
+    /// Rows in the repeating pattern.
     pub rows: u8,
+    /// Columns in the repeating pattern.
     pub cols: u8,
     /// Samples per pixel covered by `values` (1 for CFA data).
     pub samples: u8,
@@ -319,6 +353,7 @@ pub struct BlackLevel {
 }
 
 impl BlackLevel {
+    /// A single black value for every sample.
     pub fn uniform(v: f32) -> Self {
         BlackLevel { rows: 1, cols: 1, samples: 1, values: vec![v], row_deltas: vec![], col_deltas: vec![] }
     }
@@ -326,6 +361,7 @@ impl BlackLevel {
     pub fn pattern2x2(v: [f32; 4]) -> Self {
         BlackLevel { rows: 2, cols: 2, samples: 1, values: v.to_vec(), row_deltas: vec![], col_deltas: vec![] }
     }
+    /// A `rows x cols` pattern (row-major, one sample per pixel) anchored at `(0, 0)`.
     pub fn pattern(rows: usize, cols: usize, values: Vec<f32>) -> Self {
         BlackLevel { rows: rows as u8, cols: cols as u8, samples: 1, values, row_deltas: vec![], col_deltas: vec![] }
     }
@@ -367,6 +403,7 @@ impl BlackLevel {
             col_deltas: vec![],
         }
     }
+    /// True if every pattern value is equal and there are no row/column deltas.
     pub fn is_uniform(&self) -> bool {
         self.row_deltas.is_empty() && self.col_deltas.is_empty() && self.values.windows(2).all(|w| w[0] == w[1])
     }
@@ -380,19 +417,25 @@ impl BlackLevel {
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WhiteLevel {
+    /// White level per CFA colour index ([`CfaColor`] as `u8`) or per sample plane;
+    /// a single value applies to all.
     pub values: Vec<u32>,
 }
 
 impl WhiteLevel {
+    /// The same white level for every colour.
     pub fn uniform(v: u32) -> Self {
         WhiteLevel { values: vec![v] }
     }
+    /// Largest white level (0 if empty).
     pub fn max(&self) -> u32 {
         self.values.iter().copied().max().unwrap_or(0)
     }
+    /// Smallest white level (0 if empty).
     pub fn min(&self) -> u32 {
         self.values.iter().copied().min().unwrap_or(0)
     }
+    /// White level for colour/plane `c`, falling back to the first value (0 if empty).
     pub fn at(&self, c: usize) -> u32 {
         self.values.get(c).or(self.values.first()).copied().unwrap_or(0)
     }
@@ -402,6 +445,7 @@ impl WhiteLevel {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WhiteBalance {
+    /// Multipliers `[R, G, B, G2]`; G is 1.
     pub coeffs: [f32; 4],
 }
 
@@ -430,10 +474,15 @@ impl WhiteBalance {
 pub struct Illuminant(pub u16);
 
 impl Illuminant {
+    /// Unknown light source (code 0).
     pub const UNKNOWN: Illuminant = Illuminant(0);
+    /// CIE standard illuminant A, tungsten, about 2856 K (code 17).
     pub const STANDARD_A: Illuminant = Illuminant(17);
+    /// CIE D50, about 5003 K (code 23).
     pub const D50: Illuminant = Illuminant(23);
+    /// CIE D65, about 6504 K (code 21).
     pub const D65: Illuminant = Illuminant(21);
+    /// CIE D55, about 5500 K (code 20).
     pub const D55: Illuminant = Illuminant(20);
 
     /// Approximate correlated colour temperature, when known.
@@ -461,15 +510,23 @@ impl Illuminant {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ColorMatrix {
+    /// Illuminant the matrix was calibrated for.
     pub illuminant: Illuminant,
+    /// Number of camera channels (rows); at least 3.
     pub rows: u8,
+    /// `rows x 3` coefficients, row-major.
     pub values: Vec<f32>,
 }
 
 impl ColorMatrix {
+    /// Build from row-major `values`; `None` unless `values.len() == rows * 3` and `rows >= 3`.
     pub fn new(illuminant: Illuminant, rows: usize, values: Vec<f32>) -> Option<Self> {
         (values.len() == rows * 3 && rows >= 3).then_some(ColorMatrix { illuminant, rows: rows as u8, values })
     }
+    /// Coefficient at row `r` (camera channel), column `c` (X, Y, Z).
+    ///
+    /// # Panics
+    /// If `(r, c)` is out of range.
     pub fn get(&self, r: usize, c: usize) -> f32 {
         self.values[r * 3 + c]
     }
@@ -480,6 +537,7 @@ impl ColorMatrix {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ColorSource {
+    /// No colour calibration is available.
     #[default]
     None,
     /// Embedded in the file (DNG tags, maker notes).
@@ -500,6 +558,7 @@ pub struct ColorMatrices {
     pub calibration: Vec<ColorMatrix>,
     /// DNG AnalogBalance.
     pub analog_balance: Vec<f32>,
+    /// Where these matrices came from.
     pub source: ColorSource,
 }
 
@@ -514,18 +573,27 @@ impl ColorMatrices {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Orientation {
+    /// No transformation (EXIF 1).
     #[default]
     Normal = 1,
+    /// Mirrored horizontally (EXIF 2).
     FlipH = 2,
+    /// Rotated 180° (EXIF 3).
     Rotate180 = 3,
+    /// Mirrored vertically (EXIF 4).
     FlipV = 4,
+    /// Mirrored along the top-left/bottom-right diagonal (EXIF 5).
     Transpose = 5,
+    /// Rotate 90° clockwise to display (EXIF 6).
     Rotate90 = 6,
+    /// Mirrored along the top-right/bottom-left diagonal (EXIF 7).
     Transverse = 7,
+    /// Rotate 270° clockwise (90° anticlockwise) to display (EXIF 8).
     Rotate270 = 8,
 }
 
 impl Orientation {
+    /// From an EXIF `Orientation` value; unknown values map to [`Orientation::Normal`].
     pub fn from_exif(v: u32) -> Self {
         match v {
             2 => Orientation::FlipH,
@@ -538,6 +606,7 @@ impl Orientation {
             _ => Orientation::Normal,
         }
     }
+    /// The EXIF `Orientation` value (1-8).
     pub fn exif(self) -> u32 {
         self as u32
     }
@@ -555,38 +624,68 @@ impl Orientation {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum RawFormat {
+    /// Adobe Digital Negative.
     Dng,
+    /// Canon CR2 (TIFF-based).
     Cr2,
+    /// Canon CR3 (ISO base media).
     Cr3,
+    /// Canon CRW (CIFF).
     Crw,
+    /// Nikon NEF.
     Nef,
+    /// Nikon NRW (compact cameras).
     Nrw,
+    /// Sony ARW.
     Arw,
+    /// Sony SR2.
     Sr2,
+    /// Sony SRF.
     Srf,
+    /// Fujifilm RAF.
     Raf,
+    /// Panasonic / Leica RW2.
     Rw2,
+    /// Olympus / OM System ORF.
     Orf,
+    /// Pentax PEF.
     Pef,
+    /// Phase One IIQ.
     Iiq,
+    /// Leaf / Mamiya MOS.
     Mos,
+    /// Hasselblad 3FR.
     ThreeFr,
+    /// Hasselblad / Imacon FFF.
     Fff,
+    /// Minolta MRW.
     Mrw,
+    /// Samsung SRW.
     Srw,
+    /// Sigma X3F (Foveon).
     X3f,
+    /// Kodak KDC.
     Kdc,
+    /// Kodak DCR.
     Dcr,
+    /// Kodak DCS (TIFF-based).
     Dcs,
+    /// Epson ERF.
     Erf,
+    /// Mamiya MEF.
     Mef,
+    /// Minolta MDC.
     Mdc,
+    /// Headerless sensor dump identified by its file size.
     Nakedraw,
+    /// ARRI ARI.
     Ari,
+    /// Any other container.
     Other,
 }
 
 impl RawFormat {
+    /// Short upper-case name (typically the file extension, e.g. `"NEF"`).
     pub fn name(self) -> &'static str {
         match self {
             RawFormat::Dng => "DNG",
@@ -643,11 +742,13 @@ pub enum Compression {
     Deflate,
     /// JPEG XL (DNG 1.7).
     JpegXl,
+    /// Canon CRW (CIFF) Huffman-coded differences.
     CanonCrw,
     /// Canon CR3 "CRX" wavelet codec (RAW and C-RAW).
     CanonCrx,
     /// Canon sRAW/mRAW (YCbCr lossless JPEG).
     CanonSraw,
+    /// Nikon NEF lossless / lossy Huffman compression.
     NikonHuffman,
     /// Nikon "high efficiency" (TicoRAW).
     NikonHighEfficiency,
@@ -657,34 +758,58 @@ pub enum Compression {
     SonyArw2,
     /// Sony lossless (lossless JPEG tiles).
     SonyLossless,
+    /// Panasonic RW2 format 4: 14 pixels per 16-byte packet.
     Panasonic,
+    /// Panasonic RW2 format 5: LSB-packed samples in 16-byte groups.
     PanasonicV5,
+    /// Panasonic RW2 format 6: delta-coded samples in 16-byte groups.
     PanasonicV6,
+    /// Panasonic RW2 format 7: 14-bit LSB-packed samples in 16-byte groups.
     PanasonicV7,
+    /// Panasonic RW2 format 8: Huffman-coded differences in vertical strips.
     PanasonicV8,
+    /// Fujifilm compressed RAF (lossless and lossy).
     FujiCompressed,
+    /// Olympus / OM System ORF lossless compression.
     OlympusCompressed,
+    /// Pentax PEF Huffman compression.
     PentaxHuffman,
+    /// Samsung SRW compression 32770 (V0).
     SamsungV0,
+    /// Samsung SRW compression 32772 (V1, predictive Huffman).
     SamsungV1,
+    /// Samsung SRW compression 32773 (V2).
     SamsungV2,
+    /// Phase One IIQ L entropy coder.
     PhaseOne,
+    /// Phase One IIQ S entropy coder.
     PhaseOneS,
+    /// Hasselblad lossless JPEG variant (3FR/FFF).
     HasselbladLjpeg,
+    /// Leaf lossless JPEG with restart intervals (MOS).
     LeafLjpeg,
+    /// Kodak DC120 rotated 8-bit rows.
     KodakDc120,
+    /// Kodak 65000 block coder (DCR, DCS).
     Kodak65000,
+    /// Kodak 65000-coded RGB images.
     KodakRgb,
+    /// Kodak YCbCr images (65000-coded or compact-camera 4:2:x).
     KodakYcbcr,
+    /// Kodak segmented payload.
     KodakSegmented,
+    /// Sigma / Foveon X3F entropy coders.
     SigmaX3f,
+    /// Minolta MRW 12-bit packed samples.
     MinoltaPacked,
     /// GoPro VC-5 (SMPTE ST 2073) wavelet codec in GPR (DNG compression 9).
     Vc5,
+    /// Any other scheme.
     Other,
 }
 
 impl Compression {
+    /// Stable lower-case identifier (e.g. `"lossless-jpeg"`).
     pub fn name(self) -> &'static str {
         match self {
             Compression::Uncompressed => "uncompressed",

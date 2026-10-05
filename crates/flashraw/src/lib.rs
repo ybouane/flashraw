@@ -28,6 +28,7 @@
 //! Convenience RGB outputs are available via [`OutputFormat`].
 
 #![deny(unsafe_op_in_unsafe_fn)]
+#![warn(missing_docs)]
 
 mod frame;
 // GPU backend (see crate::gpu and docs/gpu.md).
@@ -111,6 +112,7 @@ impl<'a> FlashRaw<'a> {
         self.decoder.frame_info()
     }
 
+    /// Container format of the file.
     pub fn format(&self) -> RawFormat {
         self.decoder.format()
     }
@@ -471,12 +473,15 @@ fn float_to_u16(v: &[f32], white: u32, known_max: Option<f32>) -> (Vec<u16>, f32
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[non_exhaustive]
 pub struct Capabilities {
+    /// How the payload can be accessed independently.
     pub random_access: RandomAccess,
     /// Number of independently decodable units.
     pub units: usize,
+    /// Number of embedded previews.
     pub previews: usize,
     /// The payload is uniformly bit-packed and can be unpacked on the GPU.
     pub gpu_unpack: bool,
+    /// The sensor data is floating-point (e.g. floating-point DNG).
     pub float: bool,
 }
 

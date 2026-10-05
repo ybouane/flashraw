@@ -117,7 +117,9 @@ pub mod zeroable {
 /// Sample storage for a decoded image.
 #[derive(Clone, PartialEq)]
 pub enum PixelData {
+    /// Integer samples.
     U16(Vec<u16>),
+    /// Floating-point samples (e.g. floating-point DNG).
     F32(Vec<f32>),
 }
 
@@ -131,33 +133,39 @@ impl std::fmt::Debug for PixelData {
 }
 
 impl PixelData {
+    /// Number of samples (not pixels).
     pub fn len(&self) -> usize {
         match self {
             PixelData::U16(v) => v.len(),
             PixelData::F32(v) => v.len(),
         }
     }
+    /// True if there are no samples.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    /// The samples if this is `U16` storage.
     pub fn as_u16(&self) -> Option<&[u16]> {
         match self {
             PixelData::U16(v) => Some(v),
             _ => None,
         }
     }
+    /// The samples, mutably, if this is `U16` storage.
     pub fn as_u16_mut(&mut self) -> Option<&mut [u16]> {
         match self {
             PixelData::U16(v) => Some(v),
             _ => None,
         }
     }
+    /// The samples if this is `F32` storage.
     pub fn as_f32(&self) -> Option<&[f32]> {
         match self {
             PixelData::F32(v) => Some(v),
             _ => None,
         }
     }
+    /// Size of one sample in bytes (2 or 4).
     pub fn bytes_per_sample(&self) -> usize {
         match self {
             PixelData::U16(_) => 2,
@@ -169,10 +177,13 @@ impl PixelData {
 /// A decoded image buffer: `width x height` pixels of `cpp` interleaved samples.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawImage {
+    /// Width in pixels.
     pub width: u32,
+    /// Height in pixels.
     pub height: u32,
     /// Components (samples) per pixel: 1 for CFA/mono, 3 for linear RGB / Foveon, 4 for some.
     pub cpp: u32,
+    /// Row-major samples, `width * height * cpp` in total.
     pub data: PixelData,
     /// Largest non-negative, non-NaN sample of float data, when the decoder measured it
     /// while decoding (saves a pass over the buffer when converting to integers).
@@ -208,6 +219,7 @@ impl RawImage {
     pub fn row_len(&self) -> usize {
         self.width as usize * self.cpp as usize
     }
+    /// `u16` samples. Panics if this is a float image (a decoder bug, not bad input).
     pub fn u16(&self) -> &[u16] {
         self.data.as_u16().expect("u16 image")
     }
@@ -215,6 +227,7 @@ impl RawImage {
     pub fn u16_mut(&mut self) -> &mut [u16] {
         self.data.as_u16_mut().expect("u16 image")
     }
+    /// Mutable `f32` samples. Panics if this is a `u16` image.
     pub fn f32_mut(&mut self) -> &mut [f32] {
         match &mut self.data {
             PixelData::F32(v) => v,

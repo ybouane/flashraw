@@ -36,6 +36,7 @@ pub enum Stage {
 }
 
 impl Stage {
+    /// Human-readable stage name (e.g. `"Entropy decode"`).
     pub fn label(self) -> &'static str {
         match self {
             Stage::ContainerParse => "Container parse",
@@ -93,6 +94,7 @@ pub struct Profiler {
 }
 
 impl Profiler {
+    /// An empty profiler.
     pub fn new() -> Self {
         Self::default()
     }

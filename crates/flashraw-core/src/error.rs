@@ -18,11 +18,21 @@ pub enum Error {
 
     /// The container was understood but the payload uses an unsupported compression scheme.
     #[error("unsupported compression {compression} in {format}")]
-    UnsupportedCompression { format: &'static str, compression: String },
+    UnsupportedCompression {
+        /// Container format name (e.g. `"NEF"`).
+        format: &'static str,
+        /// Description of the compression scheme.
+        compression: String,
+    },
 
     /// The file is structurally invalid (truncated, bad offsets, corrupt entropy data...).
     #[error("corrupt file: {what}{}", .offset.map(|o| format!(" (at offset {o:#x})")).unwrap_or_default())]
-    CorruptFile { what: String, offset: Option<u64> },
+    CorruptFile {
+        /// What was being parsed or what was wrong.
+        what: String,
+        /// Byte offset in the input where the problem was found, when known.
+        offset: Option<u64>,
+    },
 
     /// Metadata required for decoding is missing or nonsensical.
     #[error("invalid metadata: {0}")]
@@ -30,7 +40,14 @@ pub enum Error {
 
     /// The file format is supported but this camera or mode is not (yet).
     #[error("camera unsupported: {make} {model}{}", fmt_ctx(.reason))]
-    CameraUnsupported { make: String, model: String, reason: String },
+    CameraUnsupported {
+        /// Camera make.
+        make: String,
+        /// Camera model.
+        model: String,
+        /// Why the camera or mode is unsupported (may be empty).
+        reason: String,
+    },
 
     /// A GPU backend was requested but is not available.
     #[error("GPU unavailable: {0}")]
@@ -74,11 +91,13 @@ impl Error {
         Error::CorruptFile { what: what.to_string(), offset: Some(offset) }
     }
 
+    /// Shorthand for an [`Error::InvalidMetadata`].
     #[cold]
     pub fn invalid_metadata(what: impl fmt::Display) -> Self {
         Error::InvalidMetadata(what.to_string())
     }
 
+    /// Shorthand for an [`Error::UnsupportedCompression`].
     #[cold]
     pub fn unsupported_compression(format: &'static str, compression: impl fmt::Display) -> Self {
         Error::UnsupportedCompression { format, compression: compression.to_string() }

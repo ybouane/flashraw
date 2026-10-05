@@ -118,7 +118,9 @@ pub enum Demosaic {
 /// Options for [`crate::FlashRaw::decode`].
 #[derive(Debug, Clone)]
 pub struct DecodeOptions {
+    /// Execution backend. Default: [`Backend::Auto`].
     pub backend: Backend,
+    /// What the decode produces. Default: [`OutputFormat::RawU16`].
     pub output: OutputFormat,
     /// Worker threads (None = all cores; Some(1) = single-threaded).
     pub threads: Option<usize>,
@@ -126,6 +128,7 @@ pub struct DecodeOptions {
     pub region: Option<Rect>,
     /// Crop RGB outputs to the default crop (raw outputs are never cropped implicitly).
     pub crop: bool,
+    /// Demosaic algorithm for RGB outputs. Default: [`Demosaic::Bilinear`].
     pub demosaic: Demosaic,
     /// Apply DNG opcode lists (bad pixels, lens-shading gain maps, ...) in their
     /// specified stages. Geometric opcodes are never applied. Default: true.
