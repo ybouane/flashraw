@@ -5,8 +5,8 @@
 //! speculation; this module adapts lossless JPEG to it (unstuffed MSB stream, one
 //! difference per symbol, table per MCU position) and rebuilds samples:
 //! predictor-1 rows by a parallel prefix sum after chaining the first sample of every
-//! row, sRAW rows in parallel after chaining the first-column predictors, other
-//! predictors row by row. Whenever speculation cannot prove the result identical to the
+//! row, sRAW rows in parallel after chaining the first-column predictors, predictors
+//! 2-7 by a wavefront over bands of rows and blocks of columns. Whenever speculation cannot prove the result identical to the
 //! sequential decoder, the caller is told to decode sequentially.
 //!
 //! Scans with restart markers need no speculation: every restart interval is its own bit
@@ -151,9 +151,19 @@ pub(crate) fn decode_frame_chunked(
         });
         return Ok(!failed.into_inner());
     }
+    if hdr.sraw == 0 && (2..=7).contains(&hdr.predictor) && height > 1 {
+        // Two-dimensional predictors: differences go into the frame, then rows are rebuilt
+        // in place by a wavefront over bands of rows and blocks of columns.
+        let rows_per_task = height.div_ceil(par::threads().max(1) * 4).max(1);
+        par::for_each_row_chunk(&mut frame[..total], rl, rows_per_task, true, |r0, rows| {
+            diffs.copy_to(r0 * rl, rows);
+        });
+        rebuild_2d(hdr, &mut frame[..total], rl);
+        return Ok(true);
+    }
     if hdr.predictor != 1 || hdr.sraw != 0 || clrs > 4 {
-        // Other predictors and sRAW: rows depend on the previous row or on values decoded
-        // earlier in the row, so they are rebuilt in order (entropy decoding, the costly
+        // Remaining predictor/sRAW combinations: rows depend on the previous row or on
+        // values decoded earlier in the row, so they are rebuilt in order (entropy decoding, the costly
         // part, already ran in parallel).
         let init = 1u16 << (hdr.bits - 1);
         let mut vpred = [init; 6];
@@ -254,6 +264,159 @@ pub(crate) fn decode_frame_restarts(data: &[u8], hdr: &LjpegHeader, rows: usize,
     Ok(ok.into_iter().all(|v| v))
 }
 
+/// Rebuild a frame of predictor 2-7 rows (no sRAW) in place from the differences it
+/// holds. Row 0 predicts from the left; later rows start from the sample above and
+/// then use the predictor. Sample `(r, i)` depends on `(r, i - clrs)`, `(r - 1, i)` and
+/// `(r - 1, i - clrs)` only, so the rows are cut into bands and the columns into
+/// blocks: block `j` of band `k` can be rebuilt once block `j - 1` of the same band and
+/// block `j` of the band above are done, which lets the bands run as a wavefront.
+fn rebuild_2d(hdr: &LjpegHeader, frame: &mut [u16], rl: usize) {
+    match hdr.predictor {
+        2 => rebuild_2d_psv::<2>(hdr, frame, rl),
+        3 => rebuild_2d_psv::<3>(hdr, frame, rl),
+        4 => rebuild_2d_psv::<4>(hdr, frame, rl),
+        5 => rebuild_2d_psv::<5>(hdr, frame, rl),
+        6 => rebuild_2d_psv::<6>(hdr, frame, rl),
+        _ => rebuild_2d_psv::<7>(hdr, frame, rl),
+    }
+}
+
+fn rebuild_2d_psv<const PSV: u32>(hdr: &LjpegHeader, frame: &mut [u16], rl: usize) {
+    let clrs = hdr.clrs as usize;
+    let init = 1u16 << (hdr.bits - 1);
+    let (row0, rest) = frame.split_at_mut(rl);
+    for c in 0..clrs {
+        row0[c] = init.wrapping_add(row0[c]);
+    }
+    for i in clrs..rl {
+        row0[i] = row0[i - clrs].wrapping_add(row0[i]);
+    }
+    #[cfg(feature = "rayon")]
+    if par::threads() > 1 && rest.len() >= 2 * rl && rl >= 2 * BLOCK_MIN_MCUS * clrs {
+        wavefront::<PSV>(row0, rest, rl, clrs);
+        return;
+    }
+    let mut prev: &mut [u16] = row0;
+    for cur in rest.chunks_exact_mut(rl) {
+        rebuild_window::<PSV>(cur, prev, 0, clrs);
+        prev = cur;
+    }
+}
+
+/// Narrowest column block of the wavefront, in MCUs.
+#[cfg(feature = "rayon")]
+const BLOCK_MIN_MCUS: usize = 64;
+
+/// [`rebuild_2d`] for rows after the first as a dependency-driven wavefront: each
+/// finished block starts the blocks that were only waiting for it, so no thread waits
+/// for a round to end.
+#[cfg(feature = "rayon")]
+fn wavefront<const PSV: u32>(row0: &[u16], rest: &mut [u16], rl: usize, clrs: usize) {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    struct Ctx<'a> {
+        bands: Vec<Mutex<&'a mut [u16]>>,
+        /// The row above each band, filled block by block as the band above finishes them.
+        edges: Vec<Mutex<Vec<u16>>>,
+        /// Unfinished dependencies of each block (`band * nblocks + block`).
+        pending: Vec<AtomicU8>,
+        nblocks: usize,
+        bw: usize,
+        rl: usize,
+        clrs: usize,
+    }
+
+    fn run<'s, const PSV: u32>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, k: usize, j: usize) {
+        let (rl, clrs) = (ctx.rl, ctx.clrs);
+        let (a, b) = (j * ctx.bw, ((j + 1) * ctx.bw).min(rl));
+        let lo = a.saturating_sub(clrs);
+        let top: Vec<u16> = ctx.edges[k].lock().unwrap_or_else(|e| e.into_inner())[lo..b].to_vec();
+        {
+            let mut band = ctx.bands[k].lock().unwrap_or_else(|e| e.into_inner());
+            let mut prev: &[u16] = &top;
+            for row in band.chunks_exact_mut(rl) {
+                let cur = &mut row[lo..b];
+                rebuild_window::<PSV>(cur, prev, a - lo, clrs);
+                prev = cur;
+            }
+            if let Some(next) = ctx.edges.get(k + 1) {
+                next.lock().unwrap_or_else(|e| e.into_inner())[lo..b].copy_from_slice(prev);
+            }
+        }
+        for (k2, j2) in [(k + 1, j), (k, j + 1)] {
+            // The last dependency to finish starts the block; AcqRel publishes this block's
+            // writes to it (the locks order the data as well).
+            if k2 < ctx.bands.len()
+                && j2 < ctx.nblocks
+                && ctx.pending[k2 * ctx.nblocks + j2].fetch_sub(1, Ordering::AcqRel) == 1
+            {
+                s.spawn(move |s| run::<PSV>(s, ctx, k2, j2));
+            }
+        }
+    }
+
+    let rows = rest.len() / rl;
+    let threads = par::threads();
+    let nbands = threads.min(rows);
+    let bw = (rl / clrs).div_ceil(4 * threads).max(BLOCK_MIN_MCUS) * clrs;
+    let nblocks = rl.div_ceil(bw);
+    let bounds: Vec<(usize, usize)> =
+        (0..nbands).map(|k| (rows * k / nbands * rl, rows * (k + 1) / nbands * rl)).collect();
+    let Some(parts) = par::split_disjoint(rest, &bounds) else { return };
+    // A band is used by one task at a time (its blocks run in order); the locks only make
+    // that visible to the compiler and are never contended.
+    let bands: Vec<Mutex<&mut [u16]>> = parts.into_iter().map(Mutex::new).collect();
+    let edges = (0..nbands).map(|k| Mutex::new(if k == 0 { row0.to_vec() } else { vec![0; rl] })).collect();
+    let pending =
+        (0..nbands * nblocks).map(|i| AtomicU8::new((i / nblocks > 0) as u8 + (i % nblocks > 0) as u8)).collect();
+    let ctx = Ctx { bands, edges, pending, nblocks, bw, rl, clrs };
+    rayon::scope(|s| run::<PSV>(s, &ctx, 0, 0));
+}
+
+/// Rebuild `cur[start..]` from `prev` (the same columns of the row above); both start
+/// `start` samples before the first one rebuilt, which is column 0 when `start == 0`.
+#[inline(always)]
+fn rebuild_window<const PSV: u32>(cur: &mut [u16], prev: &[u16], start: usize, clrs: usize) {
+    let n = cur.len().min(prev.len());
+    let (cur, prev) = (&mut cur[..n], &prev[..n]);
+    let mut i = start;
+    if start == 0 {
+        // Column 0 predicts from the sample above.
+        while i < clrs.min(n) {
+            cur[i] = prev[i].wrapping_add(cur[i]);
+            i += 1;
+        }
+    }
+    if i >= n {
+        return;
+    }
+    match PSV {
+        2 => {
+            for (c, &p) in cur[i..].iter_mut().zip(&prev[i..]) {
+                *c = p.wrapping_add(*c);
+            }
+        }
+        3 => {
+            for (c, &p) in cur[i..].iter_mut().zip(&prev[i - clrs..]) {
+                *c = p.wrapping_add(*c);
+            }
+        }
+        _ => {
+            for i in i..n {
+                let (ra, rb, rc) = (cur[i - clrs] as i32, prev[i] as i32, prev[i - clrs] as i32);
+                let pred = match PSV {
+                    4 => ra + rb - rc,
+                    5 => ra + ((rb - rc) >> 1),
+                    6 => rb + ((ra - rc) >> 1),
+                    _ => (ra + rb) >> 1,
+                };
+                cur[i] = (pred as u16).wrapping_add(cur[i]);
+            }
+        }
+    }
+}
+
 /// Smallest `p` with `ids[i] == ids[i % p]` (table sequence repeats every `p` symbols).
 fn phase_period(ids: &[u8]) -> usize {
     let n = ids.len().max(1);
@@ -330,6 +493,26 @@ mod tests {
         let cut = &enc[..hdr.scan_offset + (enc.len() - hdr.scan_offset) / 2];
         let mut frame = vec![0u16; w * h * 2];
         assert!(!decode_frame_chunked(cut, &hdr, hdr.height as usize, &mut frame, Some(100)).unwrap());
+    }
+
+    #[test]
+    fn wavefront_rebuild_matches_sequential() {
+        // Wide enough for many column blocks, tall enough for one band per thread.
+        for (w, h) in [(700usize, 61usize), (300, 2), (129, 5)] {
+            for comps in 1..=4 {
+                for psv in 2..=7 {
+                    let samples = pseudo(w * h * comps, 16, comps as u32 * 3 + psv);
+                    let enc = encode(w, h, comps, 16, psv, &samples);
+                    let hdr = LjpegHeader::parse(&enc, LjpegOptions::default()).unwrap();
+                    let want = sequential(&enc, &hdr);
+                    assert_eq!(want, samples);
+                    let mut frame = vec![0u16; want.len()];
+                    let ok = decode_frame_chunked(&enc, &hdr, h, &mut frame, Some(500)).unwrap();
+                    assert!(ok, "{w}x{h} comps {comps} psv {psv}");
+                    assert_eq!(frame, want, "{w}x{h} comps {comps} psv {psv}");
+                }
+            }
+        }
     }
 
     #[test]
