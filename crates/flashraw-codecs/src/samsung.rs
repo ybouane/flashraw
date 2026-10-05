@@ -11,7 +11,7 @@
 //! pattern for its row alignment.
 
 use crate::nikon_huffman::{DirectHuff, PredictiveParams, decode_predictive};
-use flashraw_core::{Error, Result};
+use flashraw_core::{Error, Result, par};
 
 /// MSB-first reader over little-endian 32-bit words with lazy word fetches.
 /// Reading past the end yields all-ones words and is flagged.
@@ -242,14 +242,21 @@ fn parse_v0_row(src: &[u8], offset: usize, row: usize, width: usize, max_index: 
 ///
 /// `row_offsets[row]` is the byte offset of each row's data within `src`. Rows'
 /// bitstreams are independent, but prediction reads reconstructed pixels of the rows
-/// above, so decoding runs in two phases per band of rows: parallel bitstream parsing
-/// into residuals, then a cheap sequential reconstruction. Output is identical to
+/// above, so decoding runs in two phases: parallel bitstream parsing into residuals,
+/// then reconstruction as a wavefront over bands of rows. Output is identical to
 /// [`decode_v0_reference`].
 pub fn decode_v0(src: &[u8], row_offsets: &[u32], width: usize, height: usize, out: &mut [u16]) -> Result<()> {
     decode_v0_with(src, row_offsets, width, height, out, true)
 }
 
-/// [`decode_v0`] with explicit control over parallel parsing.
+/// [`decode_v0`] with explicit control over parallelism.
+///
+/// Rows 0 and 1 are decoded exactly as the reference does, including its edge cases:
+/// samples whose reference rows do not exist are skipped (keeping the buffer's value),
+/// and a last block running past the row end spills into the next row, where it
+/// survives only under such skipped samples. From row 2 on nothing is skipped, so the
+/// spill is always overwritten and a row's samples follow from its residuals, its block
+/// directions and the two rows above.
 pub fn decode_v0_with(
     src: &[u8],
     row_offsets: &[u32],
@@ -261,58 +268,147 @@ pub fn decode_v0_with(
     if out.len() < width * height || row_offsets.len() < height {
         return Err(Error::InvalidArgument("samsung v0: buffer/offsets too small".into()));
     }
-    let max_index = width * (height + 7);
-    let raw_len = width * height;
-    let cols = width.div_ceil(16) * 16;
-    const BAND: usize = 64;
-    let mut row0 = 0usize;
-    while row0 < height {
-        let rows: Vec<usize> = (row0..(row0 + BAND).min(height)).collect();
-        let parsed: Vec<Vec<V0Op>> = flashraw_core::par::map(rows, parallel, |row| {
-            let mut ops = vec![V0Op::default(); cols];
-            parse_v0_row(src, row_offsets[row] as usize, row, width, max_index, &mut ops);
-            ops
+    if width == 0 || height == 0 {
+        return Ok(());
+    }
+    let head = height.min(2);
+    decode_v0_head(src, row_offsets, width, height, head, out);
+    if height > head {
+        let nblk = width.div_ceil(16);
+        let (top, rest) = out[..width * height].split_at_mut(head * width);
+        // Phase 1: residuals (modulo 2^16, all reconstruction needs) and block directions.
+        let mut dirs = vec![0u8; nblk * (height - head)];
+        const ROWS: usize = 16;
+        let bounds: Vec<(usize, usize)> =
+            (0..height - head).step_by(ROWS).map(|r| (r * width, (r + ROWS).min(height - head) * width)).collect();
+        let parts = par::split_disjoint(rest, &bounds).unwrap_or_default();
+        let jobs: Vec<(usize, &mut [u16], &mut [u8])> = parts
+            .into_iter()
+            .zip(dirs.chunks_mut(ROWS * nblk))
+            .enumerate()
+            .map(|(k, (o, d))| (k * ROWS, o, d))
+            .collect();
+        par::map(jobs, parallel, |(r0, o, d)| {
+            for (i, (row, dir)) in o.chunks_exact_mut(width).zip(d.chunks_exact_mut(nblk)).enumerate() {
+                parse_v0_residuals(src, row_offsets[head + r0 + i] as usize, width, row, dir);
+            }
         });
-        for (k, ops) in parsed.iter().enumerate() {
-            let row = row0 + k;
-            let mut col = 0usize;
-            while col < width {
-                for c in 0..16 {
-                    let dest = row * width + col + c;
-                    let op = ops[col + c];
-                    let pred = match op.kind {
-                        1 => {
-                            let up = if c & 1 == 0 { 1 } else { 2 };
-                            let s = (row - up) * width + col + c;
-                            if s < raw_len { out[s] as i32 } else { 0 }
+        // Phase 2: reconstruction, as a wavefront over bands of rows (two rows of halo).
+        let block = nblk.div_ceil(4 * par::threads().max(1)).max(16) * 16;
+        let geo = par::Wavefront { row_len: width, halo: 2, margin: 0, block };
+        let dirs = &dirs;
+        par::wavefront(rest, top, geo, parallel, |first, band, above, _, a, b| {
+            let aw = b - a;
+            let na = above.len() / aw;
+            for i in 0..band.len() / width {
+                let (done, cur) = band.split_at_mut(i * width);
+                let cur = &mut cur[..width];
+                let up = |k: usize| -> &[u16] {
+                    if i >= k { &done[(i - k) * width + a..][..aw] } else { &above[(na + i - k) * aw..][..aw] }
+                };
+                let (up1, up2) = (up(1), up(2));
+                let dir = &dirs[(first + i) * nblk..][..nblk];
+                for col in (a..b).step_by(16) {
+                    let e = (col + 16).min(width);
+                    if dir[col / 16] != 0 {
+                        // Even samples from the row above, odd ones from two rows above.
+                        for x in col..e {
+                            let p = if x & 1 == 0 { up1[x - a] } else { up2[x - a] };
+                            cur[x] = cur[x].wrapping_add(p);
                         }
-                        0 => {
-                            let s = row * width + col - if c & 1 == 0 { 2 } else { 1 };
-                            if s < raw_len { out[s] as i32 } else { 0 }
+                    } else {
+                        // The previous block's last even and odd samples (128 at column 0).
+                        let (pe, po) = if col == 0 { (128, 128) } else { (cur[col - 2], cur[col - 1]) };
+                        for x in col..e {
+                            cur[x] = cur[x].wrapping_add(if x & 1 == 0 { pe } else { po });
                         }
-                        2 => 128,
-                        _ => continue,
-                    };
-                    if dest < raw_len {
-                        out[dest] = (op.diff.wrapping_add(pred)) as u16;
                     }
                 }
-                col += 16;
             }
-        }
-        row0 += BAND;
+        });
     }
     // Undo the 2x2 transposition of each even/odd row pair.
-    let mut row = 0;
-    while row + 1 < height {
-        let mut col = 0;
-        while col + 1 < width {
-            out.swap(row * width + col + 1, (row + 1) * width + col);
-            col += 2;
+    let pairs = height / 2 * 2 * width;
+    par::for_each_row_chunk(&mut out[..pairs], 2 * width, 64, parallel, |_, rows| {
+        for pair in rows.chunks_exact_mut(2 * width) {
+            let (r0, r1) = pair.split_at_mut(width);
+            for col in (0..width.saturating_sub(1)).step_by(2) {
+                std::mem::swap(&mut r0[col + 1], &mut r1[col]);
+            }
         }
-        row += 2;
-    }
+    });
     Ok(())
+}
+
+/// Parse one V0 row from row 2 on: residuals of the samples inside the row into `out`
+/// (the bits of a last block running past the row end are consumed and dropped) and
+/// each block's direction bit into `dirs`.
+fn parse_v0_residuals(src: &[u8], offset: usize, width: usize, out: &mut [u16], dirs: &mut [u8]) {
+    let mut bits = Ph1Bits::new(src, offset);
+    let mut len = [4i32; 4];
+    for (blk, col) in (0..width).step_by(16).enumerate() {
+        dirs[blk] = bits.get(1) as u8;
+        let mut op = [0u32; 4];
+        for o in op.iter_mut() {
+            *o = bits.get(2);
+        }
+        for c in 0..4 {
+            match op[c] {
+                3 => len[c] = bits.get(4) as i32,
+                2 => len[c] -= 1,
+                1 => len[c] += 1,
+                _ => {}
+            }
+        }
+        for c in (0..16).step_by(2).chain((1..16).step_by(2)) {
+            let i = len[((c & 1) << 1) | (c >> 3)];
+            let d = if i > 0 {
+                let i = i.min(32) as u32;
+                let v = bits.get(i);
+                ((v << (32 - i)) as i32) >> (32 - i)
+            } else {
+                0
+            };
+            if let Some(o) = out.get_mut(col + c) {
+                *o = d as u16;
+            }
+        }
+    }
+}
+
+/// Rows `0..head` of [`decode_v0_reference`] (no transposition): the rows whose
+/// samples may be skipped.
+fn decode_v0_head(src: &[u8], row_offsets: &[u32], width: usize, height: usize, head: usize, out: &mut [u16]) {
+    let max_index = width * (height + 7);
+    let raw_len = width * height;
+    let mut ops = vec![V0Op::default(); width.div_ceil(16) * 16];
+    for row in 0..head {
+        parse_v0_row(src, row_offsets[row] as usize, row, width, max_index, &mut ops);
+        let mut col = 0usize;
+        while col < width {
+            for c in 0..16 {
+                let dest = row * width + col + c;
+                let op = ops[col + c];
+                let pred = match op.kind {
+                    1 => {
+                        let up = if c & 1 == 0 { 1 } else { 2 };
+                        let s = (row - up) * width + col + c;
+                        if s < raw_len { out[s] as i32 } else { 0 }
+                    }
+                    0 => {
+                        let s = row * width + col - if c & 1 == 0 { 2 } else { 1 };
+                        if s < raw_len { out[s] as i32 } else { 0 }
+                    }
+                    2 => 128,
+                    _ => continue,
+                };
+                if dest < raw_len {
+                    out[dest] = (op.diff.wrapping_add(pred)) as u16;
+                }
+            }
+            col += 16;
+        }
+    }
 }
 
 /// The fixed V1 Huffman table (`code_len << 8 | diff_len`), 10-bit direct lookup.
@@ -547,29 +643,27 @@ mod tests {
     #[test]
     fn v0_two_phase_matches_reference() {
         let mut x: u64 = 0x1234_5678_9abc_def1;
-        for (width, height) in [(32usize, 6usize), (48, 9), (100, 13), (16, 2)] {
+        let sizes = [(32usize, 6usize), (48, 9), (100, 13), (16, 2), (16, 1), (7, 5), (1002, 301), (5546 / 4, 97)];
+        for (width, height) in sizes {
             let src: Vec<u8> = (0..width * height * 8 + 64)
                 .map(|_| {
                     x ^= x << 13;
                     x ^= x >> 7;
                     x ^= x << 17;
-                    x as u8
+                    // Mostly short bit lengths, like real data, with some long codes.
+                    if x % 5 == 0 { x as u8 } else { (x as u8) & 0x93 }
                 })
                 .collect();
             let row_bytes = width * 4;
             let offsets: Vec<u32> = (0..height as u32).map(|r| r * row_bytes as u32).collect();
-            let mut a = vec![0u16; width * height];
-            let mut b = vec![7u16; width * height];
-            let mut c = vec![7u16; width * height];
-            decode_v0_reference(&src, &offsets, width, height, &mut a).unwrap();
-            // Untouched samples keep their initial value in both; normalise via a zeroed buffer.
-            let mut b0 = vec![0u16; width * height];
-            decode_v0_with(&src, &offsets, width, height, &mut b0, true).unwrap();
-            let mut c0 = vec![0u16; width * height];
-            decode_v0_with(&src, &offsets, width, height, &mut c0, false).unwrap();
-            assert_eq!(a, b0, "{width}x{height} parallel");
-            assert_eq!(a, c0, "{width}x{height} sequential");
-            let _ = (&mut b, &mut c);
+            // Skipped samples keep the buffer's value: start from a non-zero one.
+            let mut want = vec![7u16; width * height];
+            decode_v0_reference(&src, &offsets, width, height, &mut want).unwrap();
+            for parallel in [true, false] {
+                let mut got = vec![7u16; width * height];
+                decode_v0_with(&src, &offsets, width, height, &mut got, parallel).unwrap();
+                assert_eq!(want, got, "{width}x{height} parallel {parallel}");
+            }
         }
     }
 

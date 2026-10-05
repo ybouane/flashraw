@@ -208,7 +208,7 @@ fn scatter_parallel(data: &[u8], jh: &LjpegHeader, p: &SrawParams, out: &mut [u1
     let mcus = slices.last().map(|s| s.0 + s.3 * p.height.div_ceil(step.max(1))).unwrap_or(0);
     let rl = jh.row_len();
     let rows = (mcus * clrs).div_ceil(rl.max(1));
-    if rows == 0 || rows > jh.height as usize || rows * rl < crate::ljpeg_par::PARALLEL_MIN_SAMPLES {
+    if rows == 0 || rows > jh.height as usize || rows * rl < crate::ljpeg_par::LJPEG_PARALLEL_MIN_SAMPLES {
         return Ok(false);
     }
     let mut frame = vec![0u16; rows * rl];

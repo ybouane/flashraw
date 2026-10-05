@@ -233,11 +233,10 @@ where
     let un = unstuff_scan(scan, hdr.restart_interval != 0);
     let mut segment = 0usize;
     let mut bits = BitPumpMsb::new(un.segment(0));
-    let clrs = hdr.clrs as usize;
     let init = 1u32 << (hdr.bits - 1);
     let mut vpred = [init as u16; 6];
     let restart = if hdr.restart_interval > 0 { hdr.restart_interval as usize } else { usize::MAX };
-    let fast = hdr.sraw == 0 && (hdr.predictor == 1 || hdr.height == 1);
+    let fast = fast_rows(hdr);
     for jrow in 0..hdr.height as usize {
         if restart != usize::MAX && (jrow * hdr.width as usize) % restart == 0 {
             vpred = [init as u16; 6];
@@ -249,19 +248,40 @@ where
                 bits = BitPumpMsb::new(un.segment(segment));
             }
         }
-        if fast {
-            decode_row_pred1(&hdr.tables, &mut bits, &mut cur, clrs, &mut vpred)?;
-        } else {
-            decode_row_generic(hdr, &mut bits, &mut cur, &prev, jrow, clrs, &mut vpred)?;
-        }
-        // Up to two bytes consumed past the end are tolerated at the very end (some
-        // encoders drop the final partial byte); anything more means truncation.
-        let slack = if jrow + 1 == hdr.height as usize { 2 } else { 64 };
-        if bits.past_end() > slack {
-            return Err(Error::corrupt(format!("lossless JPEG: data ends at row {jrow}/{}", hdr.height)));
-        }
+        decode_row(hdr, fast, &mut bits, &mut cur, &prev, jrow, &mut vpred)?;
         sink(jrow, &cur)?;
         std::mem::swap(&mut cur, &mut prev);
+    }
+    Ok(())
+}
+
+/// Rows can use the predictor-1 row decoder.
+pub(crate) fn fast_rows(hdr: &LjpegHeader) -> bool {
+    hdr.sraw == 0 && (hdr.predictor == 1 || hdr.height == 1)
+}
+
+/// Decode row `jrow` into `cur` and check the stream has not run out.
+#[inline(always)]
+pub(crate) fn decode_row(
+    hdr: &LjpegHeader,
+    fast: bool,
+    bits: &mut BitPumpMsb<'_>,
+    cur: &mut [u16],
+    prev: &[u16],
+    jrow: usize,
+    vpred: &mut [u16; 6],
+) -> Result<()> {
+    let clrs = hdr.clrs as usize;
+    if fast {
+        decode_row_pred1(&hdr.tables, bits, cur, clrs, vpred)?;
+    } else {
+        decode_row_generic(hdr, bits, cur, prev, jrow, clrs, vpred)?;
+    }
+    // Up to two bytes consumed past the end are tolerated at the very end (some
+    // encoders drop the final partial byte); anything more means truncation.
+    let slack = if jrow + 1 == hdr.height as usize { 2 } else { 64 };
+    if bits.past_end() > slack {
+        return Err(Error::corrupt(format!("lossless JPEG: data ends at row {jrow}/{}", hdr.height)));
     }
     Ok(())
 }
@@ -279,14 +299,20 @@ impl Unstuffed {
     }
 }
 
+/// Bit mask of the 0xFF bytes of `w` (the high bit of each such byte; bits above the first
+/// hit may be spurious, the lowest one is exact).
+#[inline(always)]
+fn ff_mask(w: u64) -> u64 {
+    let inv = !w;
+    inv.wrapping_sub(0x0101_0101_0101_0101) & !inv & 0x8080_8080_8080_8080
+}
+
 /// Index of the first 0xFF byte (word-at-a-time scan).
-#[inline]
+#[cfg(test)]
 fn find_ff(s: &[u8]) -> Option<usize> {
     let mut i = 0;
     while i + 8 <= s.len() {
-        let w = u64::from_le_bytes(s[i..i + 8].try_into().unwrap());
-        let inv = !w;
-        let hit = inv.wrapping_sub(0x0101_0101_0101_0101) & !inv & 0x8080_8080_8080_8080;
+        let hit = ff_mask(u64::from_le_bytes(s[i..i + 8].try_into().unwrap()));
         if hit != 0 {
             return Some(i + (hit.trailing_zeros() / 8) as usize);
         }
@@ -305,36 +331,160 @@ pub fn unstuff(scan: &[u8]) -> Unstuffed {
 /// [`unstuff`]; without `restarts` a restart marker ends the scan like any other marker
 /// (a decoder reading one restart interval must not pull in the rest of the stream).
 pub fn unstuff_scan(scan: &[u8], restarts: bool) -> Unstuffed {
-    let mut data = Vec::with_capacity(scan.len());
-    let mut segments = Vec::new();
-    let mut seg_start = 0usize;
-    let mut i = 0usize;
+    if scan.len() >= PAR_UNSTUFF_MIN && flashraw_core::par::threads() > 1 {
+        return unstuff_parallel(scan, restarts);
+    }
+    unstuff_serial(scan, restarts)
+}
+
+fn unstuff_serial(scan: &[u8], restarts: bool) -> Unstuffed {
+    // Output never outgrows the input; 8 bytes of slack let every step store a whole word.
+    let mut data = vec![0u8; scan.len() + 8];
+    let mut breaks = Vec::new();
+    let (n, _) = unstuff_into(scan, restarts, &mut data, &mut breaks);
+    data.truncate(n);
+    Unstuffed::new(data, breaks)
+}
+
+/// Scans at least this long are unstuffed on all threads.
+const PAR_UNSTUFF_MIN: usize = 2 << 20;
+
+impl Unstuffed {
+    /// From the output and the output positions of restart markers.
+    fn new(data: Vec<u8>, breaks: Vec<usize>) -> Self {
+        let mut segments = Vec::with_capacity(breaks.len() + 1);
+        let mut start = 0;
+        for b in breaks {
+            segments.push((start, b));
+            start = b;
+        }
+        segments.push((start, data.len()));
+        Unstuffed { data, segments }
+    }
+}
+
+/// Unstuff `scan` into `out`, which must hold the whole output (plus 8 bytes for the
+/// fast path to be used up to the end). Pushes the output position of each restart
+/// marker to `breaks`; returns the output length and whether a terminating marker (or
+/// a lone trailing `FF`) was met.
+fn unstuff_into(scan: &[u8], restarts: bool, out: &mut [u8], breaks: &mut Vec<usize>) -> (usize, bool) {
+    let (mut i, mut o) = (0usize, 0usize);
     loop {
-        match find_ff(&scan[i..]) {
-            None => {
-                data.extend_from_slice(&scan[i..]);
+        // Copy whole words until one holds a 0xFF; the word is stored anyway and the
+        // output cursor advances only past the bytes before the 0xFF.
+        let mut at_ff = false;
+        while i + 8 <= scan.len() && o + 8 <= out.len() {
+            let w = u64::from_le_bytes(scan[i..i + 8].try_into().unwrap());
+            out[o..o + 8].copy_from_slice(&w.to_le_bytes());
+            let hit = ff_mask(w);
+            if hit != 0 {
+                let k = (hit.trailing_zeros() / 8) as usize;
+                i += k;
+                o += k;
+                at_ff = true;
                 break;
             }
-            Some(k) => {
-                data.extend_from_slice(&scan[i..i + k]);
-                let p = i + k;
-                match scan.get(p + 1) {
-                    Some(0x00) => {
-                        data.push(0xFF);
-                        i = p + 2;
-                    }
-                    Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
-                        segments.push((seg_start, data.len()));
-                        seg_start = data.len();
-                        i = p + 2;
-                    }
-                    _ => break,
+            i += 8;
+            o += 8;
+        }
+        if !at_ff {
+            // Near the end of the input or of the output.
+            match scan[i..].iter().position(|&b| b == 0xFF) {
+                None => {
+                    let n = scan.len() - i;
+                    out[o..o + n].copy_from_slice(&scan[i..]);
+                    return (o + n, false);
+                }
+                Some(k) => {
+                    out[o..o + k].copy_from_slice(&scan[i..i + k]);
+                    i += k;
+                    o += k;
                 }
             }
         }
+        // `scan[i]` is 0xFF.
+        match scan.get(i + 1) {
+            Some(0x00) => {
+                out[o] = 0xFF;
+                o += 1;
+                i += 2;
+            }
+            Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
+                breaks.push(o);
+                i += 2;
+            }
+            _ => return (o, true),
+        }
     }
-    segments.push((seg_start, data.len()));
-    Unstuffed { data, segments }
+}
+
+/// Output length of [`unstuff_into`] and whether the scan terminates.
+fn unstuffed_len(scan: &[u8], restarts: bool) -> (usize, bool) {
+    let mut removed = 0usize;
+    let mut i = 0usize;
+    loop {
+        let mut at_ff = false;
+        while i + 8 <= scan.len() {
+            let hit = ff_mask(u64::from_le_bytes(scan[i..i + 8].try_into().unwrap()));
+            if hit != 0 {
+                i += (hit.trailing_zeros() / 8) as usize;
+                at_ff = true;
+                break;
+            }
+            i += 8;
+        }
+        if !at_ff {
+            match scan[i..].iter().position(|&b| b == 0xFF) {
+                None => return (scan.len() - removed, false),
+                Some(k) => i += k,
+            }
+        }
+        match scan.get(i + 1) {
+            Some(0x00) => removed += 1,
+            Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => removed += 2,
+            _ => return (i - removed, true),
+        }
+        i += 2;
+    }
+}
+
+/// [`unstuff_scan`] on all threads. Every `FF` starts a two-byte sequence, so the scan
+/// splits into chunks that do not start right after an `FF`, and each chunk unstuffs
+/// on its own: lengths first, then each chunk writes its own part of the output. The
+/// output is that of the first chunks up to the one that terminates.
+fn unstuff_parallel(scan: &[u8], restarts: bool) -> Unstuffed {
+    use flashraw_core::par;
+    let n = par::threads() * 2;
+    let mut cuts = vec![0usize];
+    for k in 1..n {
+        let mut b = (scan.len() * k / n).max(*cuts.last().unwrap() + 1);
+        while b < scan.len() && scan[b - 1] == 0xFF {
+            b += 1;
+        }
+        if b < scan.len() {
+            cuts.push(b);
+        }
+    }
+    cuts.push(scan.len());
+    let chunks: Vec<&[u8]> = cuts.windows(2).map(|w| &scan[w[0]..w[1]]).collect();
+    let lens = par::map(chunks.clone(), true, |c| unstuffed_len(c, restarts));
+    let used = lens.iter().position(|&(_, end)| end).map_or(lens.len(), |k| k + 1);
+    let mut bounds = Vec::with_capacity(used);
+    let mut total = 0usize;
+    for &(len, _) in &lens[..used] {
+        bounds.push((total, total + len));
+        total += len;
+    }
+    let mut data = vec![0u8; total];
+    let Some(parts) = par::split_disjoint(&mut data, &bounds) else { return unstuff_serial(scan, restarts) };
+    let jobs: Vec<(&[u8], &mut [u8], usize)> =
+        chunks.into_iter().zip(parts).zip(&bounds).map(|((c, p), &(start, _))| (c, p, start)).collect();
+    let breaks = par::map(jobs, true, |(c, p, start)| {
+        let mut b = Vec::new();
+        unstuff_into(c, restarts, p, &mut b);
+        b.into_iter().map(|x| x + start).collect::<Vec<_>>()
+    });
+    Unstuffed::new(data, breaks.into_iter().flatten().collect())
 }
 
 /// Predictor 1 (left neighbour), the overwhelmingly common case.
@@ -464,8 +614,8 @@ pub(crate) fn reconstruct_row(
     Ok(())
 }
 
-/// [`decode_rows`] that first decodes large restart-free scans on all threads
-/// ([`decode_frame_parallel`]) when `parallel` is set. Rows reach `sink` in order either
+/// [`decode_rows`] that first decodes large scans on all threads when `parallel` is set
+/// ([`decode_frame_parallel`]; scans with restart markers one interval per task). Rows reach `sink` in order either
 /// way with identical values; corrupt streams always take the sequential path, so errors
 /// are identical too.
 pub fn decode_rows_par<F>(data: &[u8], hdr: &LjpegHeader, parallel: bool, sink: F) -> Result<()>
@@ -485,7 +635,14 @@ where
     let rl = hdr.row_len();
     let rows = rows.min(hdr.height as usize);
     let total = rl * rows;
-    if parallel && total >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES {
+    // Restart intervals are decoded independently, without speculation, so they pay off
+    // on smaller frames.
+    let min = if hdr.restart_interval != 0 {
+        flashraw_core::par::PAR_MIN_SAMPLES
+    } else {
+        crate::ljpeg_par::LJPEG_PARALLEL_MIN_SAMPLES
+    };
+    if parallel && total >= min {
         let mut frame = vec![0u16; total];
         if crate::ljpeg_par::decode_frame_rows(data, hdr, rows, &mut frame)? {
             for (jrow, row) in frame.chunks_exact(rl).enumerate() {
@@ -588,6 +745,21 @@ pub mod encoder {
     /// Encode `samples` (`height` rows of `width * comps` interleaved values) as a
     /// lossless JPEG with predictor `psv` (1..=7) and a fixed Huffman table.
     pub fn encode(width: usize, height: usize, comps: usize, bits: u32, psv: u32, samples: &[u16]) -> Vec<u8> {
+        encode_with_restarts(width, height, comps, bits, psv, samples, 0)
+    }
+
+    /// [`encode`] with a restart interval of `restart` MCUs (0: none). Intervals must
+    /// start at row starts; each one resets the first-column predictors, and other
+    /// predictors keep reading the row above (as the decoder does).
+    pub fn encode_with_restarts(
+        width: usize,
+        height: usize,
+        comps: usize,
+        bits: u32,
+        psv: u32,
+        samples: &[u16],
+        restart: usize,
+    ) -> Vec<u8> {
         // Huffman table: lengths 0..=16 with simple code lengths.
         let counts: [u8; 16] = [0, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0];
         let values: Vec<u8> = (0..=16).collect();
@@ -619,6 +791,10 @@ pub mod encoder {
         out.push(0x00);
         out.extend(counts);
         out.extend(&values);
+        if restart > 0 {
+            out.extend([0xFF, 0xDD, 0, 4]);
+            out.extend((restart as u16).to_be_bytes());
+        }
         // SOS
         out.extend([0xFF, 0xDA]);
         out.extend(((6 + 2 * comps) as u16).to_be_bytes());
@@ -628,30 +804,40 @@ pub mod encoder {
         }
         out.extend([psv as u8, 0, 0]);
         // Entropy data
-        let mut acc: u64 = 0;
-        let mut n = 0u32;
+        // Bit accumulator and its fill.
+        let mut st = (0u64, 0u32);
         let mut ent = vec![];
-        let mut put = |v: u32, len: u32, ent: &mut Vec<u8>| {
+        let put = |v: u32, len: u32, ent: &mut Vec<u8>, (acc, n): &mut (u64, u32)| {
             for i in (0..len).rev() {
-                acc = (acc << 1) | ((v >> i) & 1) as u64;
-                n += 1;
-                if n == 8 {
-                    ent.push(acc as u8);
-                    if acc as u8 == 0xFF {
+                *acc = (*acc << 1) | ((v >> i) & 1) as u64;
+                *n += 1;
+                if *n == 8 {
+                    ent.push(*acc as u8);
+                    if *acc as u8 == 0xFF {
                         ent.push(0);
                     }
-                    acc = 0;
-                    n = 0;
+                    *acc = 0;
+                    *n = 0;
                 }
             }
         };
         let rl = width * comps;
         let s = |r: usize, i: usize| samples[r * rl + i] as i32;
+        let mut markers = 0u8;
         for r in 0..height {
+            let restarted = restart > 0 && (r * width) % restart == 0;
+            if restarted && r > 0 {
+                // Pad the partial byte with 1-bits and emit RSTn.
+                if st.1 > 0 {
+                    put(0x7F, 8 - st.1, &mut ent, &mut st);
+                }
+                ent.extend([0xFF, 0xD0 + markers % 8]);
+                markers += 1;
+            }
             for col in 0..width {
                 for c in 0..comps {
                     let i = col * comps + c;
-                    let pred = if r == 0 && col == 0 {
+                    let pred = if (r == 0 || restarted) && col == 0 {
                         1 << (bits - 1)
                     } else if r == 0 {
                         s(r, i - comps)
@@ -672,23 +858,23 @@ pub mod encoder {
                     let mut diff = (s(r, i) - pred) as i16 as i32;
                     if diff == -32768 {
                         let (c16, l16) = codes[16];
-                        put(c16, l16, &mut ent);
+                        put(c16, l16, &mut ent, &mut st);
                         continue;
                     }
                     let len = if diff == 0 { 0 } else { 32 - diff.unsigned_abs().leading_zeros() };
                     let (cd, l) = codes[len as usize];
-                    put(cd, l, &mut ent);
+                    put(cd, l, &mut ent, &mut st);
                     if len > 0 {
                         if diff < 0 {
                             diff -= 1;
                         }
-                        put(diff as u32 & ((1 << len) - 1), len, &mut ent);
+                        put(diff as u32 & ((1 << len) - 1), len, &mut ent, &mut st);
                     }
                 }
             }
         }
         // Pad the final partial byte with 1-bits (JPEG convention).
-        put(0x7F, 7, &mut ent);
+        put(0x7F, 7, &mut ent, &mut st);
         out.extend(ent);
         out.extend([0xFF, 0xD9]);
         out
@@ -755,6 +941,62 @@ pub(crate) mod tests {
         assert_eq!(find_ff(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0xFF]), Some(9));
         assert_eq!(find_ff(&[0xFF]), Some(0));
         assert_eq!(find_ff(&[1, 2]), None);
+    }
+
+    /// Byte-at-a-time reference for [`unstuff_scan`].
+    fn unstuff_reference(scan: &[u8], restarts: bool) -> (Vec<u8>, Vec<(usize, usize)>) {
+        let (mut data, mut segs, mut start, mut i) = (Vec::new(), Vec::new(), 0, 0);
+        while i < scan.len() {
+            if scan[i] != 0xFF {
+                data.push(scan[i]);
+                i += 1;
+                continue;
+            }
+            match scan.get(i + 1) {
+                Some(0) => data.push(0xFF),
+                Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
+                    segs.push((start, data.len()));
+                    start = data.len();
+                }
+                _ => break,
+            }
+            i += 2;
+        }
+        segs.push((start, data.len()));
+        (data, segs)
+    }
+
+    #[test]
+    fn unstuffing_matches_bytewise_reference() {
+        let mut x = 7u32;
+        for case in 0..600 {
+            let len = case * 3 % 97 + (case % 5) * 40 + if case >= 400 { 5000 } else { 0 };
+            let dense = case % 3; // how often 0xFF appears
+            let scan: Vec<u8> = (0..len)
+                .map(|_| {
+                    x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let r = (x >> 24) as u8;
+                    match (dense, r % 16) {
+                        (0, _) => r,
+                        (_, 0..=3) => 0xFF,
+                        (2, 4..=7) => 0x00,
+                        (_, 8) => 0xD0 + r % 8,
+                        (_, 9) if case % 7 == 0 => 0xD9,
+                        _ => r,
+                    }
+                })
+                .collect();
+            for restarts in [false, true] {
+                let u = unstuff_scan(&scan, restarts);
+                let (data, segs) = unstuff_reference(&scan, restarts);
+                assert_eq!(u.data, data, "case {case} restarts {restarts}");
+                assert_eq!(u.segments, segs, "case {case} restarts {restarts}");
+                let p = unstuff_parallel(&scan, restarts);
+                assert_eq!(p.data, data, "parallel: case {case} restarts {restarts}");
+                assert_eq!(p.segments, segs, "parallel: case {case} restarts {restarts}");
+                assert_eq!(unstuffed_len(&scan, restarts).0, data.len());
+            }
+        }
     }
 
     #[test]

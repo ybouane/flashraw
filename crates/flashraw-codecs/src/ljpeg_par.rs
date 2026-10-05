@@ -5,9 +5,13 @@
 //! speculation; this module adapts lossless JPEG to it (unstuffed MSB stream, one
 //! difference per symbol, table per MCU position) and rebuilds samples:
 //! predictor-1 rows by a parallel prefix sum after chaining the first sample of every
-//! row, sRAW rows in parallel after chaining the first-column predictors, other
-//! predictors row by row. Whenever speculation cannot prove the result identical to the
+//! row, sRAW rows in parallel after chaining the first-column predictors, predictors
+//! 2-7 by a wavefront over bands of rows and blocks of columns. Whenever speculation cannot prove the result identical to the
 //! sequential decoder, the caller is told to decode sequentially.
+//!
+//! Scans with restart markers need no speculation: every restart interval is its own bit
+//! stream with reset predictors, so intervals are decoded one per task
+//! ([`decode_frame_restarts`]).
 
 use crate::ljpeg::LjpegHeader;
 use crate::par_entropy::{self, EndCheck, SymbolStream};
@@ -17,6 +21,9 @@ use flashraw_core::{Error, Result, par};
 
 /// Frames smaller than this decode sequentially (speculation has a fixed cost).
 pub(crate) const PARALLEL_MIN_SAMPLES: usize = 4 << 20;
+/// [`PARALLEL_MIN_SAMPLES`] for lossless JPEG frames (CR2 incl. sRAW, DNG, Canon TIF):
+/// their unstuffing and speculation already pay off from about a million samples.
+pub(crate) const LJPEG_PARALLEL_MIN_SAMPLES: usize = 1 << 20;
 /// Sequential decoding tolerates this many bits consumed past the end of the scan
 /// (`past_end() <= 2` bytes at the last row).
 const END_SLACK_BITS: u64 = 16;
@@ -92,10 +99,17 @@ pub(crate) fn decode_frame_chunked(
     let clrs = hdr.clrs as usize;
     let rl = hdr.row_len();
     let total = rl.checked_mul(height).ok_or_else(|| Error::corrupt("lossless JPEG: frame too large"))?;
-    if hdr.restart_interval != 0 || clrs == 0 || clrs > 6 || frame.len() < total {
+    if hdr.restart_interval != 0 {
+        return decode_frame_restarts(data, hdr, height, frame);
+    }
+    if clrs == 0 || clrs > 6 || frame.len() < total {
         return Ok(false);
     }
     let Some(scan) = data.get(hdr.scan_offset..) else { return Ok(false) };
+    if chunk_bytes.is_none() && par_entropy::default_chunk(scan.len()).is_none() {
+        // Too short to split (the unstuffed stream is shorter still).
+        return Ok(false);
+    }
     let un = crate::ljpeg::unstuff_scan(scan, false);
     if un.segments.len() != 1 {
         return Ok(false);
@@ -144,9 +158,19 @@ pub(crate) fn decode_frame_chunked(
         });
         return Ok(!failed.into_inner());
     }
+    if hdr.sraw == 0 && (2..=7).contains(&hdr.predictor) && height > 1 {
+        // Two-dimensional predictors: differences go into the frame, then rows are rebuilt
+        // in place by a wavefront over bands of rows and blocks of columns.
+        let rows_per_task = height.div_ceil(par::threads().max(1) * 4).max(1);
+        par::for_each_row_chunk(&mut frame[..total], rl, rows_per_task, true, |r0, rows| {
+            diffs.copy_to(r0 * rl, rows);
+        });
+        rebuild_2d(hdr, &mut frame[..total], rl);
+        return Ok(true);
+    }
     if hdr.predictor != 1 || hdr.sraw != 0 || clrs > 4 {
-        // Other predictors and sRAW: rows depend on the previous row or on values decoded
-        // earlier in the row, so they are rebuilt in order (entropy decoding, the costly
+        // Remaining predictor/sRAW combinations: rows depend on the previous row or on
+        // values decoded earlier in the row, so they are rebuilt in order (entropy decoding, the costly
         // part, already ran in parallel).
         let init = 1u16 << (hdr.bits - 1);
         let mut vpred = [init; 6];
@@ -192,6 +216,146 @@ pub(crate) fn decode_frame_chunked(
         }
     });
     Ok(true)
+}
+
+/// Decode the first `rows` rows of a scan with restart markers, one restart interval per
+/// task. An interval starts a fresh bit stream with reset predictors, so with predictor 1
+/// (which never reads the row above) intervals are independent. Each one runs the
+/// sequential row decoder over its own segment with the same checks; any failure, or a
+/// layout outside that case, returns `Ok(false)` so the sequential decoder reports it.
+pub(crate) fn decode_frame_restarts(data: &[u8], hdr: &LjpegHeader, rows: usize, frame: &mut [u16]) -> Result<bool> {
+    let rl = hdr.row_len();
+    let rows = rows.min(hdr.height as usize);
+    let total = rl.checked_mul(rows).ok_or_else(|| Error::corrupt("lossless JPEG: frame too large"))?;
+    let fast = crate::ljpeg::fast_rows(hdr);
+    let restart = hdr.restart_interval as usize;
+    let clrs = hdr.clrs as usize;
+    if restart == 0 || rl == 0 || clrs == 0 || clrs > 6 || frame.len() < total || !(fast || hdr.predictor == 1) {
+        return Ok(false);
+    }
+    // Restarts are honoured at row starts only, exactly where the sequential decoder does.
+    let width = hdr.width as usize;
+    let starts: Vec<usize> = (0..rows).filter(|&r| (r * width) % restart == 0).collect();
+    if starts.len() < 2 {
+        return Ok(false);
+    }
+    let Some(scan) = data.get(hdr.scan_offset..) else { return Ok(false) };
+    let un = crate::ljpeg::unstuff_scan(scan, true);
+    if un.segments.len() < starts.len() {
+        return Ok(false);
+    }
+    let bounds: Vec<(usize, usize)> = starts
+        .iter()
+        .zip(starts.iter().skip(1).chain(std::iter::once(&rows)))
+        .map(|(&a, &b)| (a * rl, b * rl))
+        .collect();
+    let Some(parts) = par::split_disjoint(&mut frame[..total], &bounds) else { return Ok(false) };
+    let init = 1u16 << (hdr.bits - 1);
+    let ok = par::map(parts.into_iter().enumerate().collect(), true, |(k, part): (usize, &mut [u16])| {
+        let mut bits = BitPumpMsb::new(un.segment(k));
+        let mut vpred = [init; 6];
+        // Predictor 1 never uses the row above (only the generic decoder indexes it).
+        let zeros = if fast { Vec::new() } else { vec![0u16; rl] };
+        let mut rest = part;
+        let mut jrow = starts[k];
+        while !rest.is_empty() {
+            let (row, tail) = std::mem::take(&mut rest).split_at_mut(rl);
+            if crate::ljpeg::decode_row(hdr, fast, &mut bits, row, &zeros, jrow, &mut vpred).is_err() {
+                return false;
+            }
+            rest = tail;
+            jrow += 1;
+        }
+        true
+    });
+    Ok(ok.into_iter().all(|v| v))
+}
+
+/// Rebuild a frame of predictor 2-7 rows (no sRAW) in place from the differences it
+/// holds. Row 0 predicts from the left; later rows start from the sample above and
+/// then use the predictor. Sample `(r, i)` depends on `(r, i - clrs)`, `(r - 1, i)` and
+/// `(r - 1, i - clrs)` only, so the rows are cut into bands and the columns into
+/// blocks: block `j` of band `k` can be rebuilt once block `j - 1` of the same band and
+/// block `j` of the band above are done, which lets the bands run as a wavefront.
+fn rebuild_2d(hdr: &LjpegHeader, frame: &mut [u16], rl: usize) {
+    match hdr.predictor {
+        2 => rebuild_2d_psv::<2>(hdr, frame, rl),
+        3 => rebuild_2d_psv::<3>(hdr, frame, rl),
+        4 => rebuild_2d_psv::<4>(hdr, frame, rl),
+        5 => rebuild_2d_psv::<5>(hdr, frame, rl),
+        6 => rebuild_2d_psv::<6>(hdr, frame, rl),
+        _ => rebuild_2d_psv::<7>(hdr, frame, rl),
+    }
+}
+
+fn rebuild_2d_psv<const PSV: u32>(hdr: &LjpegHeader, frame: &mut [u16], rl: usize) {
+    let clrs = hdr.clrs as usize;
+    let init = 1u16 << (hdr.bits - 1);
+    let (row0, rest) = frame.split_at_mut(rl);
+    for c in 0..clrs {
+        row0[c] = init.wrapping_add(row0[c]);
+    }
+    for i in clrs..rl {
+        row0[i] = row0[i - clrs].wrapping_add(row0[i]);
+    }
+    // Columns `a..b` of a band's rows from the row above it (`above`, columns `lo..b`).
+    let geo = par::Wavefront { row_len: rl, halo: 1, margin: clrs, block: block_width(rl, clrs) };
+    par::wavefront(rest, row0, geo, true, |_, band, above, lo, a, b| {
+        let mut prev: &[u16] = above;
+        for row in band.chunks_exact_mut(rl) {
+            let cur = &mut row[lo..b];
+            rebuild_window::<PSV>(cur, prev, a - lo, clrs);
+            prev = cur;
+        }
+    });
+}
+
+/// Wavefront block width: about four blocks per thread, at least 64 MCUs.
+fn block_width(rl: usize, clrs: usize) -> usize {
+    (rl / clrs).div_ceil(4 * par::threads().max(1)).max(64) * clrs
+}
+
+/// Rebuild `cur[start..]` from `prev` (the same columns of the row above); both start
+/// `start` samples before the first one rebuilt, which is column 0 when `start == 0`.
+#[inline(always)]
+fn rebuild_window<const PSV: u32>(cur: &mut [u16], prev: &[u16], start: usize, clrs: usize) {
+    let n = cur.len().min(prev.len());
+    let (cur, prev) = (&mut cur[..n], &prev[..n]);
+    let mut i = start;
+    if start == 0 {
+        // Column 0 predicts from the sample above.
+        while i < clrs.min(n) {
+            cur[i] = prev[i].wrapping_add(cur[i]);
+            i += 1;
+        }
+    }
+    if i >= n {
+        return;
+    }
+    match PSV {
+        2 => {
+            for (c, &p) in cur[i..].iter_mut().zip(&prev[i..]) {
+                *c = p.wrapping_add(*c);
+            }
+        }
+        3 => {
+            for (c, &p) in cur[i..].iter_mut().zip(&prev[i - clrs..]) {
+                *c = p.wrapping_add(*c);
+            }
+        }
+        _ => {
+            for i in i..n {
+                let (ra, rb, rc) = (cur[i - clrs] as i32, prev[i] as i32, prev[i - clrs] as i32);
+                let pred = match PSV {
+                    4 => ra + rb - rc,
+                    5 => ra + ((rb - rc) >> 1),
+                    6 => rb + ((ra - rc) >> 1),
+                    _ => (ra + rb) >> 1,
+                };
+                cur[i] = (pred as u16).wrapping_add(cur[i]);
+            }
+        }
+    }
 }
 
 /// Smallest `p` with `ids[i] == ids[i % p]` (table sequence repeats every `p` symbols).
@@ -270,6 +434,88 @@ mod tests {
         let cut = &enc[..hdr.scan_offset + (enc.len() - hdr.scan_offset) / 2];
         let mut frame = vec![0u16; w * h * 2];
         assert!(!decode_frame_chunked(cut, &hdr, hdr.height as usize, &mut frame, Some(100)).unwrap());
+    }
+
+    #[test]
+    fn wavefront_rebuild_matches_sequential() {
+        // Wide enough for many column blocks, tall enough for one band per thread.
+        for (w, h) in [(700usize, 61usize), (300, 2), (129, 5)] {
+            for comps in 1..=4 {
+                for psv in 2..=7 {
+                    let samples = pseudo(w * h * comps, 16, comps as u32 * 3 + psv);
+                    let enc = encode(w, h, comps, 16, psv, &samples);
+                    let hdr = LjpegHeader::parse(&enc, LjpegOptions::default()).unwrap();
+                    let want = sequential(&enc, &hdr);
+                    assert_eq!(want, samples);
+                    let mut frame = vec![0u16; want.len()];
+                    let ok = decode_frame_chunked(&enc, &hdr, h, &mut frame, Some(500)).unwrap();
+                    assert!(ok, "{w}x{h} comps {comps} psv {psv}");
+                    assert_eq!(frame, want, "{w}x{h} comps {comps} psv {psv}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn restart_intervals_match_sequential() {
+        let (w, h) = (53usize, 61usize);
+        for comps in 1..=4 {
+            for psv in 1..=7u32 {
+                // One row, three rows, and an interval that does not divide the height.
+                for rows_per_interval in [1usize, 3, 8] {
+                    let samples = pseudo(w * h * comps, 14, comps as u32 * 13 + psv);
+                    let enc =
+                        ljpeg::encoder::encode_with_restarts(w, h, comps, 14, psv, &samples, w * rows_per_interval);
+                    let hdr = LjpegHeader::parse(&enc, LjpegOptions::default()).unwrap();
+                    assert_eq!(hdr.restart_interval as usize, w * rows_per_interval);
+                    let want = sequential(&enc, &hdr);
+                    assert_eq!(want, samples, "comps {comps} psv {psv} interval {rows_per_interval}");
+                    let mut frame = vec![0u16; want.len()];
+                    let ok = decode_frame_restarts(&enc, &hdr, h, &mut frame).unwrap();
+                    // Only predictor 1 rows are independent of the interval before.
+                    assert_eq!(ok, psv == 1, "comps {comps} psv {psv}");
+                    if ok {
+                        assert_eq!(frame, want, "comps {comps} interval {rows_per_interval}");
+                        // A row limit decodes only the intervals it needs.
+                        let mut part = vec![0u16; 20 * w * comps];
+                        assert!(decode_frame_restarts(&enc, &hdr, 20, &mut part).unwrap());
+                        assert_eq!(part[..], want[..part.len()]);
+                    }
+                    let mut via_rows = Vec::new();
+                    ljpeg::decode_rows_par(&enc, &hdr, true, |_, r| {
+                        via_rows.extend_from_slice(r);
+                        Ok(())
+                    })
+                    .unwrap();
+                    assert_eq!(via_rows, want);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn damaged_restart_interval_is_left_to_the_sequential_decoder() {
+        let (w, h) = (64usize, 48usize);
+        let samples = pseudo(w * h * 2, 12, 5);
+        let enc = ljpeg::encoder::encode_with_restarts(w, h, 2, 12, 1, &samples, w * 4);
+        let hdr = LjpegHeader::parse(&enc, LjpegOptions::default()).unwrap();
+        let rst: Vec<usize> = (hdr.scan_offset..enc.len() - 1)
+            .filter(|&i| enc[i] == 0xFF && (0xD0..=0xD7).contains(&enc[i + 1]))
+            .collect();
+        assert_eq!(rst.len(), h / 4 - 1);
+        // Drop the middle of one interval: it runs short and the frame must fall back.
+        let mut cut = enc[..(rst[3] + rst[4]) / 2].to_vec();
+        cut.extend_from_slice(&enc[rst[4]..]);
+        let mut frame = vec![0u16; w * h * 2];
+        assert!(!decode_frame_restarts(&cut, &hdr, h, &mut frame).unwrap());
+        assert!(ljpeg::decode_rows_par(&cut, &hdr, true, |_, _| Ok(())).is_err());
+        // A missing marker (fewer segments than intervals) falls back too.
+        let mut merged = enc[..rst[2]].to_vec();
+        merged.extend_from_slice(&enc[rst[2] + 2..]);
+        assert!(!decode_frame_restarts(&merged, &hdr, h, &mut frame).unwrap());
+        let seq = ljpeg::decode_rows(&merged, &hdr, |_, _| Ok(()));
+        let par = ljpeg::decode_rows_par(&merged, &hdr, true, |_, _| Ok(()));
+        assert_eq!(seq.is_err(), par.is_err());
     }
 
     #[test]
