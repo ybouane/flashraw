@@ -54,6 +54,9 @@ First complete release of FlashRaw.
   Sony ARW1.
 - Lossless JPEG scans with restart markers (Samsung Galaxy DNGs) decode one restart
   interval per task: a 12.5 MP Galaxy S24 DNG drops from 282 to 26 ms (M1 Ultra).
+- OpcodeList1 made of MapTable and bad-pixel repairs (Leica, LG, CHDK, Lumia DNGs) runs on
+  the stored u16 samples instead of an f32 copy, with a block-wise search for the bad-pixel
+  constant: Leica Q2 opcode stage 8.6 → 1.0 ms.
 - Fuji compressed: branch-free predictions, pass-local decoder state (bit pump in
   registers, bounds-check-free line windows and level tables, packed statistics with
   precomputed Rice parameters); Samsung V2: staged block decoding.

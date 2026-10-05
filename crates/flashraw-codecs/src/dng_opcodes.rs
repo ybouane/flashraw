@@ -5,7 +5,9 @@
 //! polynomials, per-row/column offsets and scales, and geometric corrections.
 //!
 //! FlashRaw parses all lists and applies the pixel-value opcodes to f32 planes (the
-//! high-level API does so by default, each list in its own domain); geometric opcodes
+//! high-level API does so by default, each list in its own domain; lists of tables and
+//! bad-pixel repairs on stored integers run on the u16 samples directly, with the same
+//! result); geometric opcodes
 //! (WarpRectilinear, WarpFisheye, TrimBounds) are parsed and reported but not applied.
 
 use flashraw_core::bytes::Cursor;
@@ -283,12 +285,39 @@ pub fn parse_entries(data: &[u8]) -> Result<Vec<OpcodeEntry>> {
     Ok(out)
 }
 
-/// A mutable f32 image the opcodes operate on: a `width x height` window (rows
+/// Sample types the opcodes run on: f32 for every opcode, u16 (stored integer values)
+/// for the lists [`apply_u16`] accepts.
+pub trait Sample: Copy + Send + Sync + 'static {
+    fn to_f32(self) -> f32;
+    /// A repaired value (mean of neighbours) as stored.
+    fn from_mean(v: f32) -> Self;
+}
+
+impl Sample for f32 {
+    fn to_f32(self) -> f32 {
+        self
+    }
+    fn from_mean(v: f32) -> f32 {
+        v
+    }
+}
+
+impl Sample for u16 {
+    fn to_f32(self) -> f32 {
+        self as f32
+    }
+    /// Rounded as stored values are after an f32 pass.
+    fn from_mean(v: f32) -> u16 {
+        v.round().clamp(0.0, 65535.0) as u16
+    }
+}
+
+/// A mutable image the opcodes operate on: a `width x height` window (rows
 /// `stride` pixels apart, `planes` interleaved samples per pixel) placed at
 /// `(x0, y0)` in the coordinate system of the whole image the list describes, which is
 /// `full_width x full_height` (GainMap positions are relative to it).
-pub struct PlaneImage<'a> {
-    pub data: &'a mut [f32],
+pub struct PlaneImage<'a, T = f32> {
+    pub data: &'a mut [T],
     pub width: usize,
     pub height: usize,
     pub planes: usize,
@@ -299,15 +328,15 @@ pub struct PlaneImage<'a> {
     pub full_height: usize,
 }
 
-impl<'a> PlaneImage<'a> {
+impl<'a, T: Sample> PlaneImage<'a, T> {
     /// A whole, tightly packed image.
-    pub fn new(data: &'a mut [f32], width: usize, height: usize, planes: usize) -> Self {
+    pub fn new(data: &'a mut [T], width: usize, height: usize, planes: usize) -> Self {
         PlaneImage { data, width, height, planes, stride: width, x0: 0, y0: 0, full_width: width, full_height: height }
     }
 
     /// Run `f(y, row)` for every row `y` (whole-image coordinates) of the window that
     /// `r` selects; `row` is the window row (first pixel at `x0`).
-    fn rows(&mut self, r: &Region, parallel: bool, f: impl Fn(usize, &mut [f32]) + Sync + Send) {
+    fn rows(&mut self, r: &Region, parallel: bool, f: impl Fn(usize, &mut [T]) + Sync + Send) {
         let (w, h, p, stride) = (self.width, self.height, self.planes, self.stride);
         let y0 = self.y0;
         let top = r.top as usize;
@@ -346,7 +375,7 @@ impl<'a> PlaneImage<'a> {
     }
 
     /// Apply `f(x, y, plane_index_within_region, sample)` to every selected sample.
-    fn for_region(&mut self, r: &Region, parallel: bool, f: impl Fn(usize, usize, usize, &mut f32) + Sync + Send) {
+    fn for_region(&mut self, r: &Region, parallel: bool, f: impl Fn(usize, usize, usize, &mut T) + Sync + Send) {
         let cols: Vec<(usize, usize)> = self.columns(r).collect();
         let np = self.plane_count(r);
         if cols.is_empty() || np == 0 {
@@ -501,7 +530,7 @@ pub fn apply(
             }
             Opcode::FixBadPixelsConstant { constant, bayer_phase } => {
                 let c = *constant as f32 / value_scale;
-                fix_bad_pixels(img, cfa_period, *bayer_phase, |v| v == c, &[], &[], parallel);
+                fix_bad_pixels(img, cfa_period, *bayer_phase, |v: f32| v == c, &[], &[], parallel);
             }
             Opcode::FixBadPixelsList { bayer_phase, points, rects } => {
                 fix_bad_pixels(img, cfa_period, *bayer_phase, |_| false, points, rects, parallel);
@@ -512,13 +541,82 @@ pub fn apply(
     skipped
 }
 
+/// Whether [`apply_u16`] gives exactly what [`apply`] gives on the same values converted
+/// to f32 (value scale 1) and rounded back: tables look up rounded values and repairs
+/// produce means that only a final rounding (or a table) reads afterwards.
+pub fn u16_exact(ops: &[Opcode]) -> bool {
+    let mut repaired = false;
+    for op in ops {
+        match op {
+            Opcode::MapTable { .. } => {}
+            _ if !op.is_pixel_opcode() => {}
+            Opcode::FixBadPixelsConstant { .. } | Opcode::FixBadPixelsList { .. } if !repaired => repaired = true,
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// [`apply`] on stored integer samples (value scale 1), for lists made of tables and
+/// bad-pixel repairs: no f32 copy of the image is needed and the result is identical
+/// to the f32 pass rounded back to u16. Returns `None` (leaving `img` untouched) for
+/// lists it does not cover.
+pub fn apply_u16(
+    ops: &[Opcode],
+    img: &mut PlaneImage<u16>,
+    cfa_period: usize,
+    parallel: bool,
+) -> Option<Vec<&'static str>> {
+    if !u16_exact(ops) {
+        return None;
+    }
+    let mut skipped = Vec::new();
+    for op in ops {
+        match op {
+            Opcode::MapTable { region, table } if !table.is_empty() => {
+                let last = table.len() - 1;
+                img.for_region(region, parallel, |_, _, _, v| *v = table[(*v as usize).min(last)]);
+            }
+            Opcode::FixBadPixelsConstant { constant, bayer_phase } => {
+                let c = *constant;
+                fix_bad_pixels(img, cfa_period, *bayer_phase, |v: u16| v as u32 == c, &[], &[], parallel);
+            }
+            Opcode::FixBadPixelsList { bayer_phase, points, rects } => {
+                fix_bad_pixels(img, cfa_period, *bayer_phase, |_| false, points, rects, parallel);
+            }
+            op if !op.is_pixel_opcode() => skipped.push(op.name()),
+            _ => {}
+        }
+    }
+    Some(skipped)
+}
+
+/// Indices `x < w` of `row` (`p` samples per pixel) whose first sample is bad. Rows are
+/// tested in blocks first: bad values are rare.
+fn bad_in_row<T: Sample>(row: &[T], w: usize, p: usize, is_bad: &impl Fn(T) -> bool) -> impl Iterator<Item = usize> {
+    const BLOCK: usize = 64;
+    let mut out = Vec::new();
+    for b in (0..w).step_by(BLOCK) {
+        let e = (b + BLOCK).min(w);
+        let hit = if p == 1 {
+            row[b..e].iter().fold(false, |a, &v| a | is_bad(v))
+        } else {
+            (b..e).fold(false, |a, x| a | is_bad(row[x * p]))
+        };
+        if hit {
+            out.extend((b..e).filter(|&x| is_bad(row[x * p])));
+        }
+    }
+    out.into_iter()
+}
+
 /// Replace bad pixels by the mean of the nearest same-colour neighbours (distance =
 /// CFA period) that are not themselves bad. Coordinates are whole-image ones.
-fn fix_bad_pixels(
-    img: &mut PlaneImage,
+fn fix_bad_pixels<T: Sample>(
+    img: &mut PlaneImage<T>,
     period: usize,
     _phase: u32,
-    is_bad_value: impl Fn(f32) -> bool + Sync,
+    is_bad_value: impl Fn(T) -> bool + Sync,
     points: &[(u32, u32)],
     rects: &[(u32, u32, u32, u32)],
     parallel: bool,
@@ -533,7 +631,8 @@ fn fix_bad_pixels(
     // Bad pixels are sparse: collect their window indices (y * w + x), sorted.
     let data = &*img.data;
     let per_row: Vec<Vec<usize>> = par::map((0..h).collect(), parallel, |y| {
-        (0..w).filter(|&x| is_bad_value(data[at(x, y)])).map(|x| y * w + x).collect()
+        let row = &data[at(0, y)..at(w - 1, y) + 1];
+        bad_in_row(row, w, p, &is_bad_value).map(|x| y * w + x).collect()
     });
     let mut bad: Vec<usize> = per_row.into_iter().flatten().collect();
     let mut mark = |row: usize, col: usize| {
@@ -571,7 +670,7 @@ fn fix_bad_pixels(
                     && (yy as usize) < h
                     && !is_bad(yy as usize * w + xx as usize)
                 {
-                    s += img.data[at(xx as usize, yy as usize) + pl];
+                    s += img.data[at(xx as usize, yy as usize) + pl].to_f32();
                     n += 1.0;
                 }
             }
@@ -581,7 +680,7 @@ fn fix_bad_pixels(
         }
     }
     for (i, v) in fixes {
-        img.data[i] = v;
+        img.data[i] = T::from_mean(v);
     }
 }
 
@@ -721,6 +820,51 @@ mod tests {
             .fold(0.0, f64::max);
         let r2 = ((x - cx).powi(2) + (y - cy).powi(2)) / m2;
         (1.0 + 0.3 * r2 - 0.1 * r2 * r2) as f32
+    }
+
+    #[test]
+    fn u16_path_matches_f32_path() {
+        let (w, h) = (150usize, 23usize);
+        let table: Vec<u16> = (0..3000u32).map(|i| (i * 7 / 3 + 5) as u16).collect();
+        let pitched =
+            Region { top: 1, left: 3, bottom: 20, right: 140, plane: 0, planes: 1, row_pitch: 2, col_pitch: 2 };
+        let map = |region: Region| Opcode::MapTable { region, table: table.clone() };
+        let all =
+            |planes| Region { top: 0, left: 0, bottom: 100, right: 1000, plane: 0, planes, row_pitch: 1, col_pitch: 1 };
+        let constant = Opcode::FixBadPixelsConstant { constant: 0, bayer_phase: 1 };
+        let list =
+            Opcode::FixBadPixelsList { bayer_phase: 0, points: vec![(4, 7), (0, 0)], rects: vec![(10, 60, 13, 66)] };
+        let warp = Opcode::WarpRectilinear { planes: vec![], cx: 0.5, cy: 0.5 };
+        let lists: Vec<Vec<Opcode>> = vec![
+            vec![constant.clone()],
+            vec![list.clone()],
+            vec![map(pitched.clone()), map(all(1)), constant.clone(), map(pitched.clone())],
+            vec![warp.clone(), list.clone(), map(all(3))],
+        ];
+        for planes in [1usize, 3] {
+            for ops in &lists {
+                assert!(u16_exact(ops));
+                let mut x = 99u32;
+                let base: Vec<u16> = (0..w * h * planes)
+                    .map(|_| {
+                        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                        // Some zeros (bad for the constant), values past the table's end.
+                        if x >> 27 == 0 { 0 } else { (x >> 20) as u16 % 3500 }
+                    })
+                    .collect();
+                let mut f: Vec<f32> = base.iter().map(|&v| v as f32).collect();
+                let skipped_f = apply(ops, &mut PlaneImage::new(&mut f, w, h, planes), 2, 1.0, true);
+                let want: Vec<u16> = f.iter().map(|v| v.round().clamp(0.0, 65535.0) as u16).collect();
+                let mut got = base.clone();
+                let skipped = apply_u16(ops, &mut PlaneImage::new(&mut got, w, h, planes), 2, true).unwrap();
+                assert_eq!(skipped, skipped_f);
+                assert_eq!(got, want, "planes {planes} ops {ops:?}");
+                assert_ne!(got, base);
+            }
+        }
+        // Repairs read by a later repair (or by a non-table opcode) need the f32 pass.
+        assert!(!u16_exact(&[constant.clone(), list]));
+        assert!(!u16_exact(&[constant, Opcode::ScalePerRow { region: all(1), scales: vec![1.0] }]));
     }
 
     #[test]

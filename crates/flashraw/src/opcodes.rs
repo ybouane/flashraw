@@ -107,6 +107,21 @@ impl Lists {
             return;
         }
         let skipped = match &mut img.data {
+            PixelData::U16(v) if dng_opcodes::u16_exact(ops) => {
+                // Tables and bad-pixel repairs work on the stored integers directly.
+                let mut pi = PlaneImage {
+                    data: &mut v[..],
+                    width: w,
+                    height: h,
+                    planes: cpp,
+                    stride: w,
+                    x0: origin.0 as usize,
+                    y0: origin.1 as usize,
+                    full_width: info.width as usize,
+                    full_height: info.height as usize,
+                };
+                dng_opcodes::apply_u16(ops, &mut pi, period, parallel).unwrap_or_default()
+            }
             PixelData::U16(v) => {
                 let mut f = vec![0f32; v.len()];
                 par::for_each_row_chunk(&mut f, w * cpp, 64, parallel, |y0, rows| {
