@@ -38,6 +38,13 @@ with a clear error (unsupported codecs, mislabelled files).
 buffer (sensor data as stored, without DNG opcode lists). The test decodes each listed
 file and fails on any change. It is skipped when the corpus is absent.
 
+`crates/flashraw/tests/orientation.rs` checks orientation records (standard tag, vendor
+record, Auto Rotate setting), the resolved orientation, its source and each preview's
+orientation on corpus files, and on files whose records disagree (Canon EOS 40D/6D/T3i/
+T4i/SL1/T6/5D Mark II/1D Mark III, Nikon D70/E5700, Kodak Z980 and Ektra) when
+`FLASHRAW_ORIENTATION_SAMPLES` points at a local copy of them (they are not
+redistributable); each set is skipped when absent.
+
 ## 4. Robustness
 
 - `crates/flashraw/tests/malformed.rs`: synthetic DNG/BMFF files with truncated

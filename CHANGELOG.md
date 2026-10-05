@@ -35,6 +35,16 @@ First complete release of FlashRaw.
   tag presence: ProfileName, HueSatMap dims/count, LookTable dims, ToneCurve, EmbedPolicy,
   BaselineExposureOffset) and `metadata.opcodes` (every DNG opcode with id, flags, whether it
   is applied, and WarpRectilinear / FixVignetteRadial parameters).
+- Orientation from vendor records: `RawMetadata::orientation_info` (`orientationInfo` in JS,
+  `orientation_info` in `flashraw info/verify --json`) keeps the standard TIFF/EXIF tag, the
+  vendor record and the camera's Auto Rotate setting next to the resolved value, its source
+  and the per-camera policy. Canon CameraInfo orientation sensor and Auto Rotate setting
+  (EXIF Normal stays authoritative unless the tag is missing/invalid or Auto Rotate was on),
+  rotation saved by Nikon's software in the NEF edit record (D70, E5700 samples now open
+  rotated), Kodak EasyShare orientation from the camera's embedded JPEG (Z980). Invalid
+  Orientation values (0) are reported as missing instead of Normal. Preview orientation is
+  resolved per preview for these formats: a preview's own EXIF orientation is used, and
+  previews already rendered rotated are not rotated again.
 
 ### Fixes
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):
@@ -61,8 +71,9 @@ First complete release of FlashRaw.
 ### Camera database
 - Single JSON database (`camera-db/cameras.json`): 1,624 camera entries, 814 fallback
   matrices, 71 model-alias groups, 25 size rules.
-- Entries checked against FlashRaw's decodes of the corpus; 44 colour-matrix and 13
-  white-level corrections, 24 cameras added from the corpus.
+- Entries are checked against FlashRaw's decodes of the corpus; 24 cameras come from corpus files.
+- Orientation policies per make (`orientation_rules`) and per camera (`orientation`: policy
+  override, Canon CameraInfo orientation / Auto Rotate offsets for 25 EOS bodies).
 
 ### Platforms
 - `flashraw` CLI: info, decode, preview, thumbnail, benchmark, verify,
