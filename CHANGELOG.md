@@ -57,6 +57,12 @@ First complete release of FlashRaw.
 - OpcodeList1 made of MapTable and bad-pixel repairs (Leica, LG, CHDK, Lumia DNGs) runs on
   the stored u16 samples instead of an f32 copy, with a block-wise search for the bad-pixel
   constant: Leica Q2 opcode stage 8.6 → 1.0 ms.
+- Lossless JPEG: byte unstuffing in parallel (it was up to 40% of a parallel decode),
+  predictors 2-7 rebuilt as a band/block wavefront instead of row by row (DJI 51 → 16 ms,
+  Raspberry Pi 33 → 10 ms), and frames parallel from 1M samples instead of 4M (Canon
+  EOS-1D TIF 27 → 3.6 ms).
+- Samsung V0 (NX30/NX300/NX2000): residuals parsed straight into the output and
+  reconstruction run as a wavefront, 58 → 11 ms for 20.6 MP.
 - Fuji compressed: branch-free predictions, pass-local decoder state (bit pump in
   registers, bounds-check-free line windows and level tables, packed statistics with
   precomputed Rice parameters); Samsung V2: staged block decoding.

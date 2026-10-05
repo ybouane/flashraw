@@ -101,7 +101,10 @@ a parallel prefix sum. Any case the speculation cannot prove identical — no
 synchronisation, an invalid code, truncation — falls back to the sequential decoder,
 so results and errors never differ. Lossless JPEG scans with restart markers (common
 in phone DNGs) need no speculation: each restart interval is an independent bit stream
-with reset predictors and is decoded as its own task.
+with reset predictors and is decoded as its own task. Where samples depend on rows
+above (lossless JPEG predictors 2-7, Samsung V0), reconstruction runs as a wavefront
+(`par::wavefront`): rows are cut into bands and columns into blocks, and a block starts
+as soon as its left neighbour and the block above it are done.
 
 **Camera knowledge as data.** `camera-db/cameras.json` — one database for the whole
 library — holds camera entries (aliases, modes, crops, masked areas, per-ISO levels,
