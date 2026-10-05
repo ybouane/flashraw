@@ -97,6 +97,12 @@ for (const file of fixtures) {
         assert.equal(m.previews.length, ref.previews);
         assert.ok(m.width > 0 && m.height > 0);
         assert.ok([1, 2, 3, 4, 5, 6, 7, 8].includes(m.orientation));
+        const oi = m.orientationInfo;
+        assert.equal(oi.resolved, m.orientation);
+        assert.ok(['exif', 'maker-note', 'camera-profile', 'default'].includes(oi.source));
+        assert.ok(['exif-only', 'makernote-preferred', 'makernote-when-exif-normal', 'canon-auto-rotate-aware'].includes(oi.policy));
+        for (const v of [oi.exif, oi.makerNote]) assert.ok(v === null || [1, 2, 3, 4, 5, 6, 7, 8].includes(v));
+        assert.ok(oi.autoRotate === null || typeof oi.autoRotate === 'boolean');
         assert.equal(typeof m.compression, 'string');
         assert.ok(Array.isArray(m.colorMatrices.color));
         // JSON-compatible: survives a round trip unchanged.

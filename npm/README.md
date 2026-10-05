@@ -224,11 +224,15 @@ m.format;                  // "DNG"
 m.camera;                  // { name, make, model, canonicalMake, canonicalModel, uniqueModel, serial, firmware }
 m.lens;                    // { make, model, focalRange, apertureRange, serial }
 m.exposure;                // { iso, exposureTime, fNumber, focalLength, focalLength35mm, exposureBias, ... }
-m.captureTime; m.gps; m.orientation;           // EXIF orientation 1..8
+m.captureTime; m.gps; m.orientation;           // orientation to apply, EXIF code 1..8
+m.orientationInfo;         // { exif, makerNote, autoRotate, resolved, source, policy }: the standard tag,
+                           //   the vendor record (Canon CameraOrientation, Nikon edit rotation, Kodak camera
+                           //   JPEG), the Auto Rotate setting, and which one `orientation` came from
 m.width; m.height; m.rawWidth; m.rawHeight; m.bitsPerSample; m.compression;
 m.cfa;                     // { pattern: "RGGB", width: 2, height: 2, colors: [...] } | null
 m.blackLevel; m.whiteLevel; m.whiteBalance; m.colorMatrices;
 m.previews;                // [{ index, kind, encoding, mimeType, width, height, byteLength, offset, orientation }]
+                           //   (each preview's orientation is resolved on its own: it can differ from m.orientation)
 m.extra;                   // vendor extras { key: value }
 m.dng;                     // DNG only (else null): { baselineExposure, baselineNoise, baselineSharpness,
                            //   linearResponseLimit, asShotNeutral, asShotWhiteXY, defaultUserCrop,

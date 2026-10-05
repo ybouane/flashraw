@@ -5,9 +5,9 @@
 //! `JSON.parse` once per call instead of crossing the WASM boundary per field.
 
 use flashraw::{
-    BlackLevel, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, DecodeUnit, FlashRaw, FrameInfo, PreviewEncoding,
-    PreviewInfo, PreviewKind, RandomAccess, RawFrame, RawMetadata, Rect, SampleFormat, SensorLayout, Stage,
-    WhiteBalance, WhiteLevel,
+    BlackLevel, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, DecodeUnit, FlashRaw, FrameInfo,
+    OrientationMetadata, PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFrame, RawMetadata, Rect,
+    SampleFormat, SensorLayout, Stage, WhiteBalance, WhiteLevel,
 };
 use serde_json::{Map, Value, json};
 
@@ -181,6 +181,18 @@ fn opt_f32(v: Option<f32>) -> Value {
     v.map(f32v).unwrap_or(Value::Null)
 }
 
+/// Orientation records and how `orientation` was chosen (`RawMetadata.orientationInfo`).
+pub fn orientation_info(o: &OrientationMetadata) -> Value {
+    json!({
+        "exif": o.exif.map(|v| v.exif()),
+        "makerNote": o.maker_note.map(|v| v.exif()),
+        "autoRotate": o.auto_rotate,
+        "resolved": o.resolved.exif(),
+        "source": o.source.name(),
+        "policy": o.policy.name(),
+    })
+}
+
 /// The full metadata object (`FlashRaw.metadata` in JS).
 pub fn metadata(raw: &FlashRaw<'_>) -> Value {
     let m = raw.metadata();
@@ -231,6 +243,7 @@ pub fn metadata(raw: &FlashRaw<'_>) -> Value {
             "timestamp": opt_str(&g.timestamp),
         })).unwrap_or(Value::Null),
         "orientation": m.orientation.exif(),
+        "orientationInfo": orientation_info(&m.orientation_info),
         "width": m.width,
         "height": m.height,
         "rawWidth": m.raw_width,
@@ -425,4 +438,46 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
         "outputBytes": s.output_bytes,
         "opcodes": s.opcodes,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flashraw::{Orientation, OrientationPolicy};
+
+    #[test]
+    fn orientation_info_fields() {
+        let o = OrientationMetadata::resolve(
+            Some(Orientation::Normal),
+            Some(Orientation::Rotate90),
+            None,
+            OrientationPolicy::MakerNoteWhenExifNormal,
+        );
+        let v = orientation_info(&o);
+        assert_eq!(v["exif"], 1);
+        assert_eq!(v["makerNote"], 6);
+        assert_eq!(v["autoRotate"], Value::Null);
+        assert_eq!(v["resolved"], 6);
+        assert_eq!(v["source"], "maker-note");
+        assert_eq!(v["policy"], "makernote-when-exif-normal");
+        let v = orientation_info(&OrientationMetadata::default());
+        assert_eq!(v["exif"], Value::Null);
+        assert_eq!(v["resolved"], 1);
+        assert_eq!(v["source"], "default");
+    }
+
+    #[test]
+    fn metadata_carries_orientation_info() {
+        let root = std::env::var("FLASHRAW_CORPUS").unwrap_or_else(|_| "../../corpus".into());
+        let path = std::path::Path::new(&root).join("Canon/EOS Digital Rebel XS/RAW_CANON_1000D.CR2");
+        let Ok(bytes) = std::fs::read(path) else { return };
+        let raw = FlashRaw::open(bytes).unwrap();
+        let m = metadata(&raw);
+        assert_eq!(m["orientation"], 8);
+        let o = &m["orientationInfo"];
+        assert_eq!((&o["exif"], &o["makerNote"], &o["resolved"]), (&json!(8), &json!(8), &json!(8)));
+        assert_eq!(o["source"], "exif");
+        assert_eq!(o["policy"], "canon-auto-rotate-aware");
+        assert!(m["previews"].as_array().unwrap().iter().all(|p| p["orientation"] == 8));
+    }
 }

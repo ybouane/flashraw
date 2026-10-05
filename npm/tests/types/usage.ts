@@ -18,6 +18,10 @@ import {
   type FlashRawGPUBuffer,
   type GpuOutputFormat,
   type WasmBinary,
+  type Orientation,
+  type OrientationInfo,
+  type OrientationPolicy,
+  type OrientationSource,
   type RawMetadata,
   type DecodedFrame,
   type DecodeOptions,
@@ -37,6 +41,14 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const cfa: string | undefined = raw.metadata.cfa?.pattern;
   const wb: [number, number, number, number] | null = raw.metadata.whiteBalance;
   const iso: number | null = raw.metadata.exposure.iso;
+  const oi: OrientationInfo = raw.metadata.orientationInfo;
+  const resolved: Orientation = oi.resolved;
+  const mnOrientation: Orientation | null = oi.makerNote;
+  const autoRotate: boolean | null = oi.autoRotate;
+  const source: OrientationSource = oi.source;
+  const policy: OrientationPolicy = oi.policy;
+  // @ts-expect-error source is a closed set
+  const badSource: OrientationSource = 'xmp';
 
   const preview = await raw.preview();
   if (preview) {

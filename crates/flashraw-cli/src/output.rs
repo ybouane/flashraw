@@ -1,6 +1,9 @@
 //! Output helpers for the CLI.
 
-use flashraw::{DecodeOptions, FlashRaw, FrameInfo, OutputFormat, PreviewEncoding, PreviewInfo, RawFrame, Rect, Stage};
+use flashraw::{
+    DecodeOptions, FlashRaw, FrameInfo, OrientationMetadata, OutputFormat, PreviewEncoding, PreviewInfo, RawFrame,
+    Rect, Stage,
+};
 use serde_json::{Value, json};
 use std::io::Write;
 use std::path::Path;
@@ -25,6 +28,18 @@ pub fn frame_info_json(i: &FrameInfo) -> Value {
         "orientation": i.orientation,
         "compression": i.compression.name(),
         "opcodes": opcode_lists_json(i),
+    })
+}
+
+/// Orientation records and how the resolved value was chosen (EXIF codes 1-8).
+pub fn orientation_info_json(o: &OrientationMetadata) -> Value {
+    json!({
+        "exif": o.exif.map(|v| v.exif()),
+        "maker_note": o.maker_note.map(|v| v.exif()),
+        "auto_rotate": o.auto_rotate,
+        "resolved": o.resolved.exif(),
+        "source": o.source.name(),
+        "policy": o.policy.name(),
     })
 }
 
@@ -61,6 +76,8 @@ pub fn info_json(path: &Path, raw: &FlashRaw) -> Value {
         "raw_height": m.raw_height,
         "width": m.width,
         "height": m.height,
+        "orientation": m.orientation.exif(),
+        "orientation_info": orientation_info_json(&m.orientation_info),
         "frame": frame_info_json(raw.frame_info()),
         "iso": m.exposure.iso,
         "exposure_time": m.exposure.exposure_time,
@@ -113,7 +130,17 @@ pub fn print_info(path: &Path, raw: &FlashRaw) {
     if let Some(cm) = i.color_matrices.preferred() {
         println!("  Color matrix:  {:?} illuminant {} ({:?})", cm.values, cm.illuminant.0, i.color_matrices.source);
     }
-    println!("  Orientation:   {:?}", i.orientation);
+    let o = &m.orientation_info;
+    let rec = |v: Option<flashraw::Orientation>| v.map(|v| v.exif().to_string()).unwrap_or("-".into());
+    println!(
+        "  Orientation:   {:?} (from {}; EXIF {}, maker note {}{}; policy {})",
+        i.orientation,
+        o.source.name(),
+        rec(o.exif),
+        rec(o.maker_note),
+        o.auto_rotate.map(|a| format!(", auto-rotate {}", if a { "on" } else { "off" })).unwrap_or_default(),
+        o.policy.name()
+    );
     let x = &m.exposure;
     println!(
         "  Exposure:      ISO {} {} f/{} {}mm",
@@ -454,6 +481,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Valu
         "wb": info.white_balance.map(|w| w.coeffs),
         "color_matrix": info.color_matrices.preferred().map(|c| c.values.clone()),
         "orientation": info.orientation.exif(),
+        "orientation_info": orientation_info_json(&m.orientation_info),
+        "preview_orientations": m.previews.iter().map(|p| p.orientation.exif()).collect::<Vec<_>>(),
         "bits": info.bits_per_sample,
         "iso": m.exposure.iso,
         "previews": m.previews.len(),

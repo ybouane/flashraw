@@ -128,6 +128,30 @@ export interface ColorMatrices {
 /** EXIF orientation code: 1 = normal, 3 = 180°, 6 = 90° CW, 8 = 270° CW, 2/4/5/7 = mirrored. */
 export type Orientation = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
+/** Which record `RawMetadata.orientation` was taken from. */
+export type OrientationSource = 'exif' | 'maker-note' | 'camera-profile' | 'default';
+
+/** How a camera's standard and vendor orientation records are combined (from the camera database). */
+export type OrientationPolicy =
+  | 'exif-only'
+  | 'makernote-preferred'
+  | 'makernote-when-exif-normal'
+  | 'canon-auto-rotate-aware';
+
+/** The orientation records found in the file and how `orientation` was resolved from them. */
+export interface OrientationInfo {
+  /** Standard TIFF/EXIF Orientation; `null` when missing or invalid (e.g. 0). */
+  exif: Orientation | null;
+  /** Vendor record: MakerNote (Canon CameraOrientation, Nikon edit rotation) or the EXIF of the camera's own embedded JPEG (Kodak). */
+  makerNote: Orientation | null;
+  /** Camera Auto Rotate setting (`true` = on), when recorded. */
+  autoRotate: boolean | null;
+  /** The orientation to apply; equal to `RawMetadata.orientation`. */
+  resolved: Orientation;
+  source: OrientationSource;
+  policy: OrientationPolicy;
+}
+
 export type PreviewKind = 'thumbnail' | 'preview' | 'full-size';
 export type PreviewEncoding = 'jpeg' | 'rgb8' | 'ycbcr422' | 'jpeg-xl' | 'heif';
 
@@ -142,6 +166,10 @@ export interface PreviewDescriptor {
   byteLength: number;
   /** Byte offset inside the RAW file. */
   offset: number;
+  /**
+   * Orientation to apply to this preview's stored pixels, resolved independently of the RAW
+   * image (a preview with its own EXIF orientation, or one already rendered rotated, differs).
+   */
   orientation: Orientation;
 }
 
@@ -205,7 +233,10 @@ export interface RawMetadata {
   /** `YYYY-MM-DDTHH:MM:SS[.sss][±HH:MM]` when available. */
   captureTime: string | null;
   gps: GpsInfo | null;
+  /** Orientation to apply to the RAW image (resolved; see `orientationInfo`). */
   orientation: Orientation;
+  /** Standard and vendor orientation records and how `orientation` was chosen. */
+  orientationInfo: OrientationInfo;
   /** Image size after the default crop. */
   width: number;
   height: number;
