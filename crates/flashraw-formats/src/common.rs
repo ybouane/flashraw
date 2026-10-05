@@ -189,14 +189,84 @@ pub fn tiles(ifd: &Ifd) -> Vec<(usize, usize)> {
     offs.iter().zip(lens.iter().chain(std::iter::repeat(&0))).map(|(&o, &l)| (o as usize, l as usize)).collect()
 }
 
-/// The payload of an IFD as one slice when strips are contiguous (the common case),
-/// from the first strip offset to the end of the last strip (clamped to the file).
-pub fn contiguous_payload<'a>(data: &'a [u8], ifd: &Ifd) -> Result<&'a [u8]> {
+/// An IFD's payload as one byte range (strips are contiguous in the common case): from
+/// the first strip offset to the end of the last strip. Resolved leniently when the file
+/// is opened; decoders check the bytes they need with [`PayloadRange::require`] or
+/// [`PayloadRange::rows`], so a truncated payload fails (or is recovered) when it is
+/// decoded, not when the file is parsed.
+#[derive(Debug, Clone, Copy)]
+pub struct PayloadRange<'a> {
+    /// File offset of the first strip.
+    pub offset: usize,
+    /// Declared length (to the end of the last strip; to the end of the file when the
+    /// strips declare no length).
+    pub declared: usize,
+    /// The declared range as far as the file holds it (empty when `offset` is past EOF).
+    pub bytes: &'a [u8],
+    /// `Strip(0)` for a single strip, [`DataUnit::Payload`] for several.
+    pub unit: DataUnit,
+}
+
+impl<'a> PayloadRange<'a> {
+    /// The first `needed` bytes of the payload in `data` (the whole file), under the
+    /// context's corruption policy (see [`DecodeContext::sensor_bytes`]). The geometry
+    /// decides what is needed: a declared length beyond it may run past the end of the
+    /// file, and one short of it is read on when the file holds the bytes.
+    pub fn require(&self, data: &'a [u8], ctx: &DecodeContext, needed: usize) -> Result<SensorBytes<'a>> {
+        ctx.sensor_bytes(data, self.unit, self.offset, needed)
+    }
+
+    /// [`PayloadRange::require`] for rows; a recovered truncation is reported with the
+    /// samples the available bytes do not cover.
+    pub fn rows(&self, data: &'a [u8], ctx: &DecodeContext, geometry: RowGeometry) -> Result<&'a [u8]> {
+        ctx.sensor_rows(data, self.unit, self.offset, geometry)
+    }
+}
+
+/// The payload range of an IFD's strips (see [`PayloadRange`]). Fails only when the
+/// IFD has no strip offsets.
+pub fn contiguous_payload<'a>(data: &'a [u8], ifd: &Ifd) -> Result<PayloadRange<'a>> {
     let s = strips(ifd);
     let (first, _) = *s.first().ok_or_else(|| Error::invalid_metadata("image without strip offsets"))?;
     let end = s.iter().map(|&(o, l)| o.saturating_add(l)).max().unwrap_or(first);
-    let end = if end <= first { data.len() } else { end };
-    flashraw_core::bytes::slice_at_lenient(data, first, end - first)
+    let declared = if end <= first { data.len().saturating_sub(first) } else { end - first };
+    let start = first.min(data.len());
+    let stop = first.saturating_add(declared).min(data.len()).max(start);
+    let unit = if s.len() == 1 { DataUnit::Strip(0) } else { DataUnit::Payload };
+    Ok(PayloadRange { offset: first, declared, bytes: &data[start..stop], unit })
+}
+
+/// Decode a compressed strip or tile (`(offset, length)` in `data`) under the context's
+/// corruption policy. Strict: a range past the end of the file fails with a structured
+/// truncation before decoding. Recover: `decode` runs on the bytes present; a unit that
+/// is truncated or fails with [`Error::CorruptFile`] is zero-filled (`clear`) and
+/// reported with its `samples`; a truncated unit whose stream still decodes is reported
+/// with none filled.
+pub fn compressed_unit(
+    data: &[u8],
+    ctx: &DecodeContext,
+    unit: DataUnit,
+    (offset, len): (usize, usize),
+    samples: u64,
+    decode: impl FnOnce(&[u8]) -> Result<()>,
+    clear: impl FnOnce(),
+) -> Result<()> {
+    let src = ctx.sensor_bytes(data, unit, offset, len)?;
+    let res = decode(src.bytes);
+    let reason = match (res, src.truncation) {
+        (Ok(()), None) => return Ok(()),
+        (Ok(()), Some(t)) => {
+            ctx.recovered(CorruptReason::Truncated(t), 0);
+            return Ok(());
+        }
+        (Err(e), _) if !matches!(e, Error::CorruptFile { .. }) => return Err(e),
+        (Err(_), Some(t)) => CorruptReason::Truncated(t),
+        (Err(e), None) if ctx.recover => CorruptReason::InvalidUnit { unit, message: e.to_string() },
+        (Err(e), None) => return Err(e),
+    };
+    clear();
+    ctx.recovered(reason, samples);
+    Ok(())
 }
 
 /// Discover embedded JPEG / RGB previews in a TIFF structure.

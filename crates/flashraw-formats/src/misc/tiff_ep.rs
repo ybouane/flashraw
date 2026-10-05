@@ -63,19 +63,26 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
         if compression == 7 {
             // One lossless-JPEG stream per strip, each covering `rows_per_strip` rows.
             ctx.profiler.time(Stage::EntropyDecode, || -> Result<()> {
-                for (s, &(o, l)) in units.iter().enumerate() {
-                    let src = flashraw_core::bytes::slice_at_lenient(data, o, l)?;
-                    let hdr = ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions::default())?;
-                    let base = s * rows_per_strip * wu;
-                    let mut pos = 0usize;
-                    ljpeg::decode_rows_par(src, &hdr, ctx.parallel, |_, v| {
-                        let end = (base + pos + v.len()).min(out.len());
-                        if base + pos < end {
-                            out[base + pos..end].copy_from_slice(&v[..end - base - pos]);
-                        }
-                        pos += v.len();
-                        Ok(())
-                    })?;
+                for (s, &range) in units.iter().enumerate() {
+                    let base = (s * rows_per_strip * wu).min(out.len());
+                    let end = (base + rows_per_strip * wu).min(out.len());
+                    let out = std::cell::RefCell::new(&mut *out);
+                    let decode = |src: &[u8]| -> Result<()> {
+                        let mut out = out.borrow_mut();
+                        let hdr = ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions::default())?;
+                        let mut pos = 0usize;
+                        ljpeg::decode_rows_par(src, &hdr, ctx.parallel, |_, v| {
+                            let end = (base + pos + v.len()).min(out.len());
+                            if base + pos < end {
+                                out[base + pos..end].copy_from_slice(&v[..end - base - pos]);
+                            }
+                            pos += v.len();
+                            Ok(())
+                        })
+                    };
+                    let clear = || out.borrow_mut()[base..end].fill(0);
+                    let unit = DataUnit::Strip(s as u32);
+                    compressed_unit(data, ctx, unit, range, (end - base) as u64, decode, clear)?;
                 }
                 Ok(())
             })?;
@@ -85,17 +92,19 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
             let layout = flashraw_codecs::PackedLayout::tight(wu, hu, bps, porder);
             ctx.profiler.time(Stage::Unpack, || -> Result<()> {
                 if contiguous {
-                    flashraw_codecs::unpack(payload, layout, out, wu, ctx.parallel, ctx.simd, true)
+                    let src = payload.rows(data, ctx, RowGeometry::tight(hu, wu, bps))?;
+                    flashraw_codecs::unpack(src, layout, out, wu, ctx.parallel, ctx.simd, ctx.recover)
                 } else {
-                    for (s, &(o, l)) in units.iter().enumerate() {
-                        let src = flashraw_core::bytes::slice_at_lenient(data, o, l)?;
+                    for (s, &(o, _)) in units.iter().enumerate() {
                         let y0 = s * rows_per_strip;
                         let rows = rows_per_strip.min(hu.saturating_sub(y0));
                         if rows == 0 {
                             break;
                         }
+                        let g = RowGeometry::tight(rows, wu, bps);
+                        let src = ctx.sensor_rows(data, DataUnit::Strip(s as u32), o, g)?;
                         let l2 = flashraw_codecs::PackedLayout::tight(wu, rows, bps, porder);
-                        flashraw_codecs::unpack(src, l2, &mut out[y0 * wu..], wu, false, ctx.simd, true)?;
+                        flashraw_codecs::unpack(src, l2, &mut out[y0 * wu..], wu, false, ctx.simd, ctx.recover)?;
                     }
                     Ok(())
                 }
@@ -177,5 +186,47 @@ mod tests {
         let file = tiff_file(&entries(w, h, probe_len - 12, false), &payload);
         let tiff = Tiff::parse(&file).unwrap();
         assert!(open(&file, tiff, &OpenOptions::default()).is_err());
+    }
+
+    fn decode_with(file: &[u8], recover: bool) -> (Result<RawImage>, Vec<DecodeWarning>) {
+        let dec = open(file, Tiff::parse(file).unwrap(), &OpenOptions::default()).expect("metadata opens");
+        let p = Profiler::default();
+        let mut ctx = DecodeContext::new(&p);
+        ctx.recover = recover;
+        let img = dec.decode(&ctx);
+        (img, ctx.take_warnings())
+    }
+
+    #[test]
+    fn truncated_payload_fails_or_recovers() {
+        let (w, h) = (4u32, 2u32);
+        let payload: Vec<u8> = (1..=(w * h) as u16).flat_map(|i| (i * 100).to_le_bytes()).collect();
+        let probe_len = tiff_file(&entries(w, h, 0, true), &[]).len() as u32;
+        // Last row cut by 3 bytes: the first 6 samples survive.
+        let file = tiff_file(&entries(w, h, probe_len, true), &payload[..payload.len() - 3]);
+        let (img, _) = decode_with(&file, false);
+        let t = img.unwrap_err().truncation().cloned().expect("structured truncation");
+        assert_eq!((t.unit, t.expected, t.available), (DataUnit::Strip(0), 16, 13));
+        let (img, warnings) = decode_with(&file, true);
+        assert_eq!(img.unwrap().u16(), &[100, 200, 300, 400, 500, 600, 0, 0]);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].samples_filled, 2);
+    }
+
+    #[test]
+    fn strip_offset_past_eof_with_zero_byte_count() {
+        // Regression (fuzzing): a zero byte count and an offset past the end of the file
+        // must not underflow when the payload range is resolved.
+        let (w, h) = (4u32, 2u32);
+        let mut e = entries(w, h, 1_000_000, true);
+        for x in e.iter_mut().filter(|x| x.0 == tags::STRIP_BYTE_COUNTS) {
+            x.3 = 0u32.to_le_bytes().to_vec();
+        }
+        let file = tiff_file(&e, &[]);
+        let (img, _) = decode_with(&file, false);
+        assert!(img.unwrap_err().truncation().is_some_and(|t| t.starts_beyond_eof()));
+        let (img, warnings) = decode_with(&file, true);
+        assert!(img.unwrap().u16().iter().all(|&v| v == 0));
+        assert_eq!(warnings[0].samples_filled, 8);
     }
 }
