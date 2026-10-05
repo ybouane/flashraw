@@ -151,6 +151,19 @@ First complete release of FlashRaw.
   multithreaded build (shared-memory rayon pool, chosen automatically when available),
   opt-in WebGPU build with GPU-resident frames; worker pool with a shared request
   queue and `AbortSignal` cancellation.
+- C API (`crates/flashraw-capi`): stable C ABI with a cbindgen-generated `flashraw.h`
+  (opaque file/frame handles, open from path/borrowed/copied memory, metadata and
+  calibration getters, zero-copy previews, every output format, regions, threads,
+  corruption policy, frame warnings and timings, a JSON escape hatch for full metadata,
+  status codes matching the error kinds with a thread-local last error, caught panics,
+  size-versioned option structs), a header-only C++17 wrapper `flashraw.hpp` (RAII
+  handles, exception per error kind, span views), CMake install with
+  `find_package(flashraw)` and pkg-config, C and C++ examples built in CI on
+  Linux/macOS/Windows. See `docs/c-api.md` for the ABI stability policy.
+- `crates/flashraw-libraw-compat`: a source-compatible implementation of a documented
+  subset of a widely used RAW library's C API (and the common members of its C++ class) on
+  top of FlashRaw, so existing clients can switch by recompiling and relinking; see
+  `docs/libraw-compat.md`.
 
 ### API
 - Semver-ready surface: growable enums and result/metadata structs are

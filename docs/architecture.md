@@ -34,6 +34,8 @@ RawFrame  (+ optional fused post-processing: normalise / demosaic / WB / colour 
 | `flashraw-gpu` | optional wgpu/WebGPU compute backend (WGSL in `shaders/`) | core |
 | `flashraw-cli` | `flashraw` binary | flashraw |
 | `flashraw-wasm` | wasm-bindgen bindings for the npm package | flashraw |
+| `flashraw-capi` | stable C ABI (`flashraw.h`) and header-only C++ wrapper ([c-api.md](c-api.md)) | flashraw |
+| `flashraw-libraw-compat` | compatibility C API for existing clients ([libraw-compat.md](libraw-compat.md)) | flashraw |
 
 The split keeps codecs independent of containers (each codec is fuzzed and
 benchmarked alone) and keeps the camera database out of the codec crates (WASM
@@ -117,8 +119,9 @@ cameras still decode when the file is self-describing (DNG always is).
 **Safety.** All parsing is bounds-checked; offsets use checked arithmetic; IFD
 traversal tracks visited offsets and depth; allocations are limit-checked before they
 happen; entropy decoders stop on overrun. `unsafe` is confined to: zeroed allocation,
-`GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook and the
-mmap call — each with a `SAFETY:` justification and tests. Nine fuzz targets plus a
+`GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook, the
+mmap call and the pointer handling at the C ABI boundary (`flashraw-capi`,
+`flashraw-libraw-compat`) — each with a `SAFETY:` justification and tests. Nine fuzz targets plus a
 malformed-file suite run in CI.
 
 **Profiling built in.** Decoders record stage timings (`Stage::ContainerParse`,
