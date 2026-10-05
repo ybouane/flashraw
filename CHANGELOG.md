@@ -63,6 +63,10 @@ First complete release of FlashRaw.
   samples as stored with the stored-grid CFA (`OtherCfa`), like native SuperCCD buffers,
   and an extra `cfa_layout`. Layouts 6-9 fail with `CameraUnsupported` instead of
   `UnsupportedCompression`.
+- Canonical model names for cameras without a database entry: the make prefix is removed
+  only at a word boundary (whitespace, or a hyphen/underscore followed by a letter), so
+  "LG-H815" gives "H815" instead of "-H815" and "OM-1" stays whole; a trailing Kodak
+  "FILE VERSION n" signature and whitespace padding are dropped ("DCS460B").
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 
