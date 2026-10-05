@@ -3,7 +3,7 @@
 //! Processing is FlashRaw's fused develop kernel (black subtraction, white-level scaling,
 //! bilinear or half-size demosaic, white balance, colour matrix), fed from the unpacked
 //! raw data so caller edits to `rawdata.raw_image` are honoured. The output stage follows
-//! the dcraw conventions: optional automatic brightness from the histogram (1% of pixels
+//! the documented conventions of the API: optional automatic brightness from the histogram (1% of pixels
 //! clipped by default), a power-law curve with a linear toe (`params.gamm`), 8 or 16 bits,
 //! and the `flip` orientation.
 
