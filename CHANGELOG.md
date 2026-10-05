@@ -50,6 +50,8 @@ First complete release of FlashRaw.
   WhiteLevel LONG holding the bits of 1.0f (one HDR-merge writer) decode instead of
   producing noise: the samples are read little-endian (when they are plausible that way)
   and white is 1.0.
+- `flashraw verify` reports the white level of the decoded frame, in the same units as the
+  black level (floating-point DNGs reported the file's white next to a rescaled black).
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 

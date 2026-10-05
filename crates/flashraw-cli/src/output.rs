@@ -450,7 +450,9 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Valu
         // 2x2 black pattern at the active-area origin (row-major), for positional comparison.
         "black_visible": (0..4).map(|i| frame.black_level.at(info.active_area.x as usize + i % 2, info.active_area.y as usize + i / 2, 0)).collect::<Vec<_>>(),
         "black_level": frame.black_level,
-        "white": info.white_level.max(),
+        // From the frame, like the black level: float data converted to integers report
+        // both in the converted units.
+        "white": frame.white_level.max(),
         "wb": info.white_balance.map(|w| w.coeffs),
         "color_matrix": info.color_matrices.preferred().map(|c| c.values.clone()),
         "orientation": info.orientation.exif(),
@@ -510,4 +512,78 @@ pub fn maxrss_kb() -> i64 {
         }
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Little-endian 8x6 RGGB DNG with 32-bit float samples in [0, 0.47], white 1.0 and
+    /// black 0.01.
+    fn float_dng() -> Vec<u8> {
+        let (w, h) = (8u32, 6u32);
+        let payload: Vec<u8> = (0..w * h).flat_map(|i| (i as f32 / 100.0).to_le_bytes()).collect();
+        let short = |v: u16| (3u16, 1u32, (v as u32).to_le_bytes().to_vec());
+        let long = |v: u32| (4u16, 1u32, v.to_le_bytes().to_vec());
+        let mut entries = vec![
+            (0x00FEu16, long(0)),
+            (0x0100, long(w)),
+            (0x0101, long(h)),
+            (0x0102, short(32)),
+            (0x0103, short(1)),
+            (0x0106, short(32803)),
+            (0x0115, short(1)),
+            (0x0116, long(h)),
+            (0x0117, long(payload.len() as u32)),
+            (0x0153, short(3)),
+            (0x828D, (3, 2, [2u16.to_le_bytes(), 2u16.to_le_bytes()].concat())),
+            (0x828E, (1, 4, vec![0, 1, 1, 2])),
+            (0xC612, (1, 4, vec![1, 4, 0, 0])),
+            (0xC61A, (5, 1, [1u32.to_le_bytes(), 100u32.to_le_bytes()].concat())),
+            (0xC61D, long(1)),
+        ];
+        let ifd_len = 2 + (entries.len() + 1) * 12 + 4;
+        let extra: Vec<u8> = entries.iter().filter(|e| e.1.2.len() > 4).flat_map(|e| e.1.2.clone()).collect();
+        let strip = (8 + ifd_len + extra.len()) as u32;
+        entries.push((0x0111, long(strip)));
+        entries.sort_by_key(|e| e.0);
+        let mut out = b"II*\0\x08\0\0\0".to_vec();
+        out.extend((entries.len() as u16).to_le_bytes());
+        let mut at = 8 + ifd_len;
+        for (tag, (typ, count, data)) in &entries {
+            out.extend(tag.to_le_bytes());
+            out.extend(typ.to_le_bytes());
+            out.extend(count.to_le_bytes());
+            if data.len() <= 4 {
+                let mut d = data.clone();
+                d.resize(4, 0);
+                out.extend(d);
+            } else {
+                out.extend((at as u32).to_le_bytes());
+                at += data.len();
+            }
+        }
+        out.extend(0u32.to_le_bytes());
+        out.extend(extra);
+        assert_eq!(out.len(), strip as usize);
+        out.extend(payload);
+        out
+    }
+
+    #[test]
+    fn verify_reports_float_levels_in_frame_units() {
+        let dir = std::env::temp_dir().join(format!("flashraw-cli-verify-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("float.dng");
+        std::fs::write(&path, float_dng()).unwrap();
+        let v = verify(&path, None, false);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(v.get("error").is_none(), "{v}");
+        // Floats in [0, 1] are scaled to 16383 for the integer output; white and black follow.
+        let white = v["white"].as_u64().unwrap();
+        assert_eq!(white, 16383, "{v}");
+        let black = v["black4"][0].as_f64().unwrap();
+        assert!((black - 163.0).abs() <= 1.0, "{v}");
+        assert!(v["max"].as_u64().unwrap() <= white, "{v}");
+    }
 }
