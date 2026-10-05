@@ -120,10 +120,11 @@ package (no extra dependency; `npm/src/threads.js`, `crates/flashraw-wasm/src/li
 ```
  main thread                  coordinator worker                 N rayon workers
  ───────────                  ──────────────────                 ───────────────
- compile module, instantiate  instantiate (same module,          instantiate (same module,
- with shared memory           same memory)                       same memory)
+ compile module, instantiate  instantiate (same module,          started at the same time:
+ with shared memory           same memory)                       instantiate (same module,
+                                                                 same memory)
  ── job 'build' ────────────▶ threadPoolBuild(n, onSpawn):
-                              rayon calls onSpawn per thread ──▶ spawn worker(ptr)
+                              rayon calls onSpawn per thread ──▶ 'run' ptr to the next worker:
                               (blocks until all are primed)       threadRun(ptr)  (never returns)
  ── job 'open'/'decode' ────▶ jobOpen / jobDecode (may block,
     (await, never blocks)     rayon join/par_iter fan out) ────▶ work stealing
