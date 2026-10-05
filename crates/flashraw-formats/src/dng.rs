@@ -44,6 +44,8 @@ struct DngRaw<'a> {
     predictor: u32,
     tile_w: u32,
     tile_h: u32,
+    /// Units are TIFF tiles (strips otherwise).
+    tiled: bool,
     /// Byte ranges per grid tile (row-major).
     units: Vec<(usize, usize)>,
     linearization: Option<Vec<u16>>,
@@ -109,6 +111,9 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
         let bits = raw.bps;
         let order =
             if bits == 16 && raw.order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
+        // Addressed by geometry (see `unit_geometry`); a truncated payload is not complete
+        // and decodes on the CPU under the corruption policy.
+        let l = l.max(raw.unit_geometry(0, raw.height as usize).needed());
         if let Ok(d) = flashraw_core::bytes::slice_at_lenient(data, o, l) {
             dec.packed = Some(PackedPayload {
                 data: d,
@@ -464,6 +469,7 @@ fn parse_raw<'a>(
         predictor: raw.u32(tags::PREDICTOR).unwrap_or(1),
         tile_w,
         tile_h,
+        tiled: raw.has(tags::TILE_OFFSETS),
         units,
         linearization,
         dng_bug16,
@@ -510,18 +516,27 @@ impl DngRaw<'_> {
             let mut full_img = RawImage::new_u16(self.width, self.height, 1, &ctx.limits)?;
             let phase =
                 self.vc5_phase.ok_or_else(|| Error::unsupported_compression("DNG", "VC-5 without a Bayer CFA"))?;
-            let src = self.unit_bytes(0)?;
-            ctx.profiler.time(Stage::EntropyDecode, || {
-                flashraw_codecs::vc5::decode(
-                    src,
-                    self.width as usize,
-                    self.height as usize,
-                    self.vc5_white,
-                    phase,
-                    full_img.u16_mut(),
-                    ctx.parallel,
-                )
-            })?;
+            let src = self.compressed_bytes(ctx, 0)?;
+            let res = match &src.truncation {
+                Some(t) => Err(Error::truncated(t.clone())),
+                None => ctx.profiler.time(Stage::EntropyDecode, || {
+                    flashraw_codecs::vc5::decode(
+                        src.bytes,
+                        self.width as usize,
+                        self.height as usize,
+                        self.vc5_white,
+                        phase,
+                        full_img.u16_mut(),
+                        ctx.parallel,
+                    )
+                }),
+            };
+            if let Err(e) = res {
+                // One unit: recovering leaves the whole image zero.
+                let samples = full_img.u16().len() as u64;
+                self.recover_unit(ctx, 0, src.truncation, e, samples)?;
+                full_img.u16_mut().fill(0);
+            }
             return if region == full { Ok(full_img) } else { full_img.crop(region) };
         }
         if self.payload == Payload::Uncompressed && self.units.len() == 1 && !self.float && self.bps < 32 {
@@ -536,7 +551,6 @@ impl DngRaw<'_> {
         let n = (tx * ty) as usize;
         let errors = std::sync::Mutex::new(Vec::<Error>::new());
         let mut float_max = None;
-        let simd = ctx.simd;
         // Parallelise across units when there are several; a single unit parallelises inside (uncompressed rows).
         let par_units = ctx.parallel && n > 1;
         ctx.profiler.time(stage, || match &mut img.data {
@@ -556,7 +570,7 @@ impl DngRaw<'_> {
                 par::for_each_index(n, par_units, |i| {
                     let (x, y) = (i as u32 % tx, i as u32 / tx);
                     if let Some(t) = g.claim(x, y) {
-                        if let Err(e) = self.decode_unit_u16(i, t, simd, ctx.parallel && !par_units) {
+                        if let Err(e) = self.decode_unit_u16(ctx, i, t, ctx.parallel && !par_units) {
                             errors.lock().unwrap().push(e);
                         }
                     }
@@ -580,7 +594,7 @@ impl DngRaw<'_> {
                 par::for_each_index(n, par_units, |i| {
                     let (x, y) = (i as u32 % tx, i as u32 / tx);
                     if let Some(t) = g.claim(x, y) {
-                        match self.decode_unit_f32(i, t) {
+                        match self.decode_unit_f32(ctx, i, t) {
                             Ok(m) => {
                                 max.fetch_max(m, std::sync::atomic::Ordering::Relaxed);
                             }
@@ -601,7 +615,10 @@ impl DngRaw<'_> {
 
     /// Uncompressed single-strip images: unpack rows in parallel directly into `out`.
     fn unpack_single_strip(&self, ctx: &DecodeContext, region: Rect, out: &mut [u16]) -> Result<()> {
-        let src = self.unit_bytes(0)?;
+        let src = self.uncompressed_bytes(ctx, 0, region.bottom() as usize)?;
+        let truncation = src.truncation;
+        let src = src.bytes;
+        let filled = std::sync::atomic::AtomicU64::new(0);
         let cpp = self.cpp as usize;
         let bits = self.bps;
         let order =
@@ -616,34 +633,87 @@ impl DngRaw<'_> {
             let mut tmp = if x0 == 0 && out_rl == full_rl { Vec::new() } else { vec![0u16; full_rl] };
             for (i, row) in chunk.chunks_mut(out_rl).enumerate() {
                 let y = region.y as usize + first + i;
-                let Some(s) = src.get(y * row_bytes..) else { break };
+                let s = src.get(y * row_bytes..).unwrap_or(&[]);
                 let s = &s[..row_bytes.min(s.len())];
-                if tmp.is_empty() {
-                    packed::unpack_row(s, row, bits, order, simd);
+                let n = if s.len() == row_bytes {
+                    if tmp.is_empty() {
+                        packed::unpack_row(s, row, bits, order, simd);
+                    } else {
+                        packed::unpack_row(s, &mut tmp, bits, order, simd);
+                        row.copy_from_slice(&tmp[x0..x0 + out_rl]);
+                    }
+                    out_rl
                 } else {
-                    packed::unpack_row(s, &mut tmp, bits, order, simd);
-                    row.copy_from_slice(&tmp[x0..x0 + out_rl]);
-                }
+                    // Short final row: its samples within the region are complete unless
+                    // recovering truncated data (the rest stay zero).
+                    let (n, lost) = unpack_short_row(s, row, &mut tmp, x0, bits, order, simd);
+                    filled.fetch_add(lost, std::sync::atomic::Ordering::Relaxed);
+                    n
+                };
                 if let Some(l) = lin {
                     let last = *l.last().unwrap();
-                    for v in row.iter_mut() {
+                    for v in row[..n].iter_mut() {
                         *v = l.get(*v as usize).copied().unwrap_or(last);
                     }
                 }
             }
         });
+        if let Some(t) = truncation {
+            ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
+        }
         Ok(())
     }
 
-    fn unit_bytes(&self, i: usize) -> Result<&[u8]> {
-        let (o, mut l) = *self.units.get(i).ok_or_else(|| Error::corrupt(format!("missing DNG tile {i}")))?;
-        if self.payload == Payload::Uncompressed {
-            // Some writers (e.g. DJI) understate StripByteCounts; uncompressed data is
-            // addressed by geometry, so read what the geometry needs if the file has it.
-            let needed = (self.tile_row_len() * self.bps as usize).div_ceil(8) * self.tile_h as usize;
-            l = l.max(needed);
+    fn data_unit(&self, i: usize) -> DataUnit {
+        if self.tiled { DataUnit::Tile(i as u32) } else { DataUnit::Strip(i as u32) }
+    }
+
+    /// Byte layout of uncompressed unit `i` up to its row `rows` (exclusive): rows hold
+    /// `tile_w` samples, but only the columns and rows inside the image are needed (edge
+    /// tiles and the last strip may stop after their last needed sample).
+    fn unit_geometry(&self, i: usize, rows: usize) -> RowGeometry {
+        let tx = self.tiles_x() as usize;
+        let (x0, y0) = ((i % tx) * self.tile_w as usize, (i / tx) * self.tile_h as usize);
+        let cols = (self.width as usize).saturating_sub(x0).min(self.tile_w as usize);
+        let rows = (self.height as usize).saturating_sub(y0).min(self.tile_h as usize).min(rows);
+        let cpp = self.cpp as usize;
+        let stride = (self.tile_row_len() * self.bps as usize).div_ceil(8);
+        RowGeometry::packed(rows, cols * cpp, self.bps, stride)
+    }
+
+    /// Uncompressed unit `i`, rows `0..rows`. Some writers (e.g. DJI) understate
+    /// StripByteCounts; uncompressed data is addressed by geometry, so the geometry's
+    /// bytes are read when the file has them.
+    fn uncompressed_bytes(&self, ctx: &DecodeContext, i: usize, rows: usize) -> Result<SensorBytes<'_>> {
+        let (o, _) = *self.units.get(i).ok_or_else(|| Error::corrupt(format!("missing DNG tile {i}")))?;
+        ctx.sensor_bytes(self.data, self.data_unit(i), o, self.unit_geometry(i, rows).needed())
+    }
+
+    /// Compressed unit `i`: its declared byte range.
+    fn compressed_bytes(&self, ctx: &DecodeContext, i: usize) -> Result<SensorBytes<'_>> {
+        let (o, l) = *self.units.get(i).ok_or_else(|| Error::corrupt(format!("missing DNG tile {i}")))?;
+        ctx.sensor_bytes(self.data, self.data_unit(i), o, l)
+    }
+
+    /// Recover policy: a compressed unit that is truncated or failed to decode is
+    /// reported (its `samples` are left zero by the caller). Fails otherwise.
+    fn recover_unit(
+        &self,
+        ctx: &DecodeContext,
+        i: usize,
+        truncation: Option<Truncation>,
+        e: Error,
+        samples: u64,
+    ) -> Result<()> {
+        if !ctx.recover || !matches!(e, Error::CorruptFile { .. }) {
+            return Err(e);
         }
-        flashraw_core::bytes::slice_at_lenient(self.data, o, l)
+        let reason = match truncation {
+            Some(t) => CorruptReason::Truncated(t),
+            None => CorruptReason::InvalidUnit { unit: self.data_unit(i), message: e.to_string() },
+        };
+        ctx.recovered(reason, samples);
+        Ok(())
     }
 
     /// Samples per tile row.
@@ -651,8 +721,84 @@ impl DngRaw<'_> {
         self.tile_w as usize * self.cpp as usize
     }
 
-    fn decode_unit_u16(&self, i: usize, mut t: TileMut<'_, '_, u16>, simd: bool, parallel_rows: bool) -> Result<()> {
-        let src = self.unit_bytes(i)?;
+    fn decode_unit_u16(
+        &self,
+        ctx: &DecodeContext,
+        i: usize,
+        mut t: TileMut<'_, '_, u16>,
+        parallel_rows: bool,
+    ) -> Result<()> {
+        if self.payload == Payload::Uncompressed {
+            return self.unpack_unit_u16(ctx, i, t);
+        }
+        let src = self.compressed_bytes(ctx, i)?;
+        let res = self.decode_compressed_u16(src.bytes, &mut t, parallel_rows);
+        match (res, src.truncation) {
+            (Ok(()), None) => Ok(()),
+            // Recovering: the available bytes held the whole stream.
+            (Ok(()), Some(tr)) => self.recover_unit(ctx, i, Some(tr.clone()), Error::truncated(tr), 0),
+            (Err(e), tr) => {
+                let (w, h) = t.size();
+                self.recover_unit(ctx, i, tr, e, (w * h * self.cpp as usize) as u64)?;
+                (0..h).for_each(|y| t.row(y).fill(0));
+                Ok(())
+            }
+        }
+    }
+
+    /// Uncompressed unit: rows straight from the file (missing data only when recovering).
+    fn unpack_unit_u16(&self, ctx: &DecodeContext, i: usize, mut t: TileMut<'_, '_, u16>) -> Result<()> {
+        let bits = self.bps;
+        if bits == 32 {
+            // 32-bit integer samples: keep the high 16 bits is lossy; reject explicitly.
+            return Err(Error::unsupported_compression("DNG", "32-bit integer samples"));
+        }
+        let (w, h) = t.size();
+        let cpp = self.cpp as usize;
+        let (sx, sy) = (t.skip_x as usize * cpp, t.skip_y as usize);
+        let src = self.uncompressed_bytes(ctx, i, sy + h)?;
+        let trl = self.tile_row_len();
+        let order =
+            if bits == 16 && self.order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
+        let row_bytes = (trl * bits as usize).div_ceil(8);
+        let mut tmp = vec![0u16; trl];
+        let mut filled = 0u64;
+        for y in 0..h {
+            let off = (sy + y) * row_bytes;
+            let s = src.bytes.get(off..).unwrap_or(&[]);
+            let s = &s[..row_bytes.min(s.len())];
+            let row = t.row(y);
+            let n = if s.len() == row_bytes {
+                if sx == 0 && w * cpp == trl {
+                    packed::unpack_row(s, row, bits, order, ctx.simd);
+                } else {
+                    packed::unpack_row(s, &mut tmp, bits, order, ctx.simd);
+                    row.copy_from_slice(&tmp[sx..sx + w * cpp]);
+                }
+                w * cpp
+            } else {
+                let (n, lost) = unpack_short_row(s, row, &mut tmp, sx, bits, order, ctx.simd);
+                filled += lost;
+                n
+            };
+            self.linearize(&mut row[..n]);
+        }
+        if let Some(tr) = src.truncation {
+            ctx.recovered(CorruptReason::Truncated(tr), filled);
+        }
+        Ok(())
+    }
+
+    fn linearize(&self, row: &mut [u16]) {
+        if let Some(l) = self.linearization.as_deref() {
+            let last = *l.last().unwrap();
+            for v in row.iter_mut() {
+                *v = l.get(*v as usize).copied().unwrap_or(last);
+            }
+        }
+    }
+
+    fn decode_compressed_u16(&self, src: &[u8], t: &mut TileMut<'_, '_, u16>, parallel_rows: bool) -> Result<()> {
         let (w, h) = t.size();
         let cpp = self.cpp as usize;
         let (sx, sy) = (t.skip_x as usize * cpp, t.skip_y as usize);
@@ -667,42 +813,12 @@ impl DngRaw<'_> {
         };
         let trl = self.tile_row_len();
         match self.payload {
-            Payload::Uncompressed => {
-                let bits = self.bps;
-                if bits == 32 {
-                    // 32-bit integer samples: keep the high 16 bits is lossy; reject explicitly.
-                    return Err(Error::unsupported_compression("DNG", "32-bit integer samples"));
-                }
-                let order = if bits == 16 && self.order == ByteOrder::Little {
-                    PackOrder::LsbBytes
-                } else {
-                    PackOrder::MsbBytes
-                };
-                let row_bytes = (trl * bits as usize).div_ceil(8);
-                let _ = parallel_rows;
-                let mut tmp = vec![0u16; trl];
-                for y in 0..h {
-                    let off = (sy + y) * row_bytes;
-                    let s = src.get(off..).unwrap_or(&[]);
-                    if s.is_empty() {
-                        break; // truncated: remaining rows stay zero
-                    }
-                    let row = t.row(y);
-                    if sx == 0 && w * cpp == trl {
-                        packed::unpack_row(&s[..row_bytes.min(s.len())], row, bits, order, simd);
-                    } else {
-                        packed::unpack_row(&s[..row_bytes.min(s.len())], &mut tmp, bits, order, simd);
-                        row.copy_from_slice(&tmp[sx..sx + w * cpp]);
-                    }
-                    finish(row);
-                }
-                Ok(())
-            }
+            Payload::Uncompressed => Err(Error::corrupt("uncompressed DNG unit decoded as compressed")),
             Payload::Ljpeg => {
                 let hdr = match ljpeg::LjpegHeader::parse(src, ljpeg::LjpegOptions { dng_bug16: self.dng_bug16 }) {
                     Ok(h) => h,
                     Err(Error::UnsupportedCompression { .. }) if cpp == 1 => {
-                        return self.decode_dct12_tile(src, &mut t, sx, sy, finish);
+                        return self.decode_dct12_tile(src, t, sx, sy, finish);
                     }
                     Err(e) => return Err(e),
                 };
@@ -734,6 +850,13 @@ impl DngRaw<'_> {
                 let bytes_ps = self.bps.div_ceil(8) as usize;
                 let row_bytes = trl * bytes_ps;
                 let raw = deflate::inflate_zlib(src, row_bytes * self.tile_h as usize)?;
+                if raw.len() < (sy + h) * row_bytes {
+                    return Err(Error::corrupt(format!(
+                        "deflate data decodes to {} bytes, {} rows of {row_bytes} needed",
+                        raw.len(),
+                        sy + h
+                    )));
+                }
                 for y in 0..h {
                     let off = (sy + y) * row_bytes;
                     let Some(rb) = raw.get(off..off + row_bytes) else { break };
@@ -782,7 +905,7 @@ impl DngRaw<'_> {
                 }
                 Ok(())
             }
-            Payload::JpegXl => decode_jxl_u16(src, &mut t, sx, sy, cpp, finish),
+            Payload::JpegXl => decode_jxl_u16(src, t, sx, sy, cpp, finish),
             Payload::Vc5 => Err(Error::corrupt("VC-5 is decoded as a whole image")),
         }
     }
@@ -826,8 +949,37 @@ impl DngRaw<'_> {
     }
 
     /// Decode one float tile; returns the largest non-negative sample written (as bits).
-    fn decode_unit_f32(&self, i: usize, mut t: TileMut<'_, '_, f32>) -> Result<u32> {
-        let src = self.unit_bytes(i)?;
+    fn decode_unit_f32(&self, ctx: &DecodeContext, i: usize, mut t: TileMut<'_, '_, f32>) -> Result<u32> {
+        let (w, h) = t.size();
+        let cpp = self.cpp as usize;
+        let sy = t.skip_y as usize;
+        let src = match self.payload {
+            Payload::Uncompressed => self.uncompressed_bytes(ctx, i, sy + h)?,
+            _ => self.compressed_bytes(ctx, i)?,
+        };
+        let truncation = src.truncation.clone();
+        match self.decode_f32_rows(src.bytes, &mut t, truncation.is_some()) {
+            Ok((max, filled)) => {
+                if let Some(tr) = truncation {
+                    if self.payload == Payload::Uncompressed {
+                        ctx.recovered(CorruptReason::Truncated(tr), filled);
+                    } else {
+                        self.recover_unit(ctx, i, Some(tr.clone()), Error::truncated(tr), filled)?;
+                    }
+                }
+                Ok(max)
+            }
+            Err(e) => {
+                self.recover_unit(ctx, i, truncation, e, (w * h * cpp) as u64)?;
+                (0..h).for_each(|y| t.row(y).fill(0.0));
+                Ok(0)
+            }
+        }
+    }
+
+    /// Float rows of one unit. Returns the largest non-negative sample written (as bits)
+    /// and, when `partial` (recovering truncated data), the samples left zero.
+    fn decode_f32_rows(&self, src: &[u8], t: &mut TileMut<'_, '_, f32>, partial: bool) -> Result<(u32, u64)> {
         let (w, h) = t.size();
         let cpp = self.cpp as usize;
         let (sx, sy) = (t.skip_x as usize * cpp, t.skip_y as usize);
@@ -860,9 +1012,35 @@ impl DngRaw<'_> {
         let mut rowbuf = vec![0u8; row_bytes];
         let mut vals = vec![0f32; if sx == 0 && w * cpp == trl { 0 } else { trl }];
         let mut max = 0u32;
+        let mut filled = 0u64;
         for y in 0..h {
             let off = (sy + y) * row_bytes;
-            let Some(rb) = raw.get(off..off + row_bytes) else { break };
+            let rb = raw.get(off..).unwrap_or(&[]);
+            let rb = &rb[..row_bytes.min(rb.len())];
+            if rb.len() < row_bytes {
+                // Short final row. Complete unless recovering: decode it whole (the
+                // predictors run over full rows) from zero-padded bytes, then zero the
+                // samples the data did not cover.
+                let n = rb.len() / bytes_ps;
+                if !partial && n < sx + w * cpp {
+                    return Err(Error::corrupt(format!("DNG float row {} truncated", sy + y)));
+                }
+                rowbuf.fill(0);
+                rowbuf[..rb.len()].copy_from_slice(rb);
+                if vals.is_empty() {
+                    vals = vec![0f32; trl];
+                }
+                deflate::decode_float_row(&mut rowbuf, trl, bytes_ps, factor, little, &mut vals);
+                let row = t.row(y);
+                row.copy_from_slice(&vals[sx..sx + w * cpp]);
+                let keep = n.saturating_sub(sx).min(w * cpp);
+                row[keep..].fill(0.0);
+                filled += (w * cpp - keep) as u64;
+                max = max.max(max_nonneg_bits(&row[..keep]));
+                (y + 1..h).for_each(|yy| t.row(yy).fill(0.0));
+                filled += ((h - y - 1) * w * cpp) as u64;
+                break;
+            }
             rowbuf.copy_from_slice(rb);
             if vals.is_empty() {
                 deflate::decode_float_row(&mut rowbuf, trl, bytes_ps, factor, little, t.row(y));
@@ -875,8 +1053,31 @@ impl DngRaw<'_> {
         }
         // Return the per-thread scratch buffer for the next tile.
         SCRATCH.with(|c| *c.borrow_mut() = scratch);
-        Ok(max)
+        Ok((max, filled))
     }
+}
+
+/// Unpack a row whose source `s` is shorter than a full row: `out` receives the samples
+/// `x0..x0 + out.len()` of the row (`tmp` is a full-row scratch buffer). Samples not
+/// entirely within `s` are zero. Returns how many leading samples of `out` were decoded
+/// and how many were left zero.
+fn unpack_short_row(
+    s: &[u8],
+    out: &mut [u16],
+    tmp: &mut Vec<u16>,
+    x0: usize,
+    bits: u32,
+    order: PackOrder,
+    simd: bool,
+) -> (usize, u64) {
+    let need = x0 + out.len();
+    if tmp.len() < need {
+        tmp.resize(need, 0);
+    }
+    let complete = packed::unpack_row_partial(s, &mut tmp[..need], bits, order, simd);
+    out.copy_from_slice(&tmp[x0..need]);
+    let n = complete.saturating_sub(x0).min(out.len());
+    (n, (out.len() - n) as u64)
 }
 
 #[cfg(feature = "jpegxl")]
