@@ -1,0 +1,132 @@
+# Python bindings (crates/flashraw-python): abi3 wheels (CPython >= 3.9) for Linux
+# (manylinux x86_64 + aarch64), macOS (x86_64 + arm64) and Windows, plus an sdist. Every wheel
+# is installed and tested with pytest on the oldest and newest supported Python. Nothing is
+# published: wheels and the sdist are uploaded as workflow artifacts.
+name: python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "npm/tests/fixtures/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/python.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "npm/tests/fixtures/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/python.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wheels:
+    name: wheel ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64, os: ubuntu-latest, target: x86_64, manylinux: "2_28" }
+          - { platform: linux-aarch64, os: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28" }
+          - { platform: macos-x86_64, os: macos-15-intel, target: x86_64 }
+          - { platform: macos-arm64, os: macos-latest, target: aarch64 }
+          - { platform: windows-x64, os: windows-latest, target: x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build abi3 wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: crates/flashraw-python
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          args: --release --out dist
+          sccache: "true"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: crates/flashraw-python/dist/*.whl
+
+  test:
+    name: test ${{ matrix.platform }} py${{ matrix.python }}
+    needs: wheels
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux-x86_64, linux-aarch64, macos-x86_64, macos-arm64, windows-x64]
+        python: ["3.9", "3.13"]
+        include:
+          - { platform: linux-x86_64, os: ubuntu-latest }
+          - { platform: linux-aarch64, os: ubuntu-24.04-arm }
+          - { platform: macos-x86_64, os: macos-15-intel }
+          - { platform: macos-arm64, os: macos-latest }
+          - { platform: windows-x64, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist
+      - name: Install the wheel
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: dist/*.whl
+          python -m pip install pytest pillow
+      - name: pytest
+        shell: bash
+        # Run from outside the source tree so the installed wheel (not python/) is imported.
+        working-directory: ${{ runner.temp }}
+        run: python -m pytest -v "$GITHUB_WORKSPACE/crates/flashraw-python/tests" -p no:cacheprovider
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # flashraw-camera-db's build script reads ../../camera-db/cameras.json, falling back to
+      # data/cameras.json (packaged with the crate): put the database where the sdist picks it up.
+      - name: Package the camera database with its crate
+        run: mkdir -p crates/flashraw-camera-db/data && cp camera-db/cameras.json crates/flashraw-camera-db/data/
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: crates/flashraw-python
+          command: sdist
+          args: --out dist
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and test from the sdist
+        run: |
+          python -m pip install crates/flashraw-python/dist/*.tar.gz pytest pillow
+          cd "$RUNNER_TEMP" && python -m pytest -q "$GITHUB_WORKSPACE/crates/flashraw-python/tests" -p no:cacheprovider
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: crates/flashraw-python/dist/*.tar.gz
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Type-check the package (strict)
+        run: |
+          python -m pip install mypy numpy pillow
+          python -m mypy --strict crates/flashraw-python/python/flashraw
