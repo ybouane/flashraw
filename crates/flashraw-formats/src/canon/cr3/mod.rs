@@ -24,11 +24,11 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     let (_, track, hdr) = cr3.main_raw().ok_or_else(|| Error::unsupported_compression("CR3", "no CRX raw track"))?;
     let hdr = hdr.clone();
     let (offset, size) = track.sample(0).ok_or_else(|| Error::corrupt("CR3 raw track without samples"))?;
-    let offset = usize::try_from(offset)
-        .ok()
-        .filter(|&o| o < data.len())
-        .ok_or_else(|| Error::corrupt("CR3 raw sample offset beyond end of file"))?;
-    if size < hdr.mdat_header_size as u64 {
+    // A sample past the end of the file fails when decoded (metadata and previews stay
+    // available).
+    let offset = usize::try_from(offset).unwrap_or(usize::MAX);
+    let size = usize::try_from(size).unwrap_or(usize::MAX);
+    if size < hdr.mdat_header_size as usize {
         return Err(Error::corrupt("CR3 raw sample smaller than its header"));
     }
     opts.limits.check_dims(hdr.width, hdr.height, 1)?;
@@ -109,7 +109,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
 
     meta.previews = previews(data, &cr3, info.orientation);
 
-    let decode = move |ctx: &DecodeContext| -> Result<RawImage> { decode_sample(data, offset, &hdr, ctx) };
+    let decode = move |ctx: &DecodeContext| -> Result<RawImage> { decode_sample(data, offset, size, &hdr, ctx) };
     Ok(Box::new(SimpleDecoder::new(RawFormat::Cr3, meta, info, Box::new(decode))))
 }
 
@@ -242,10 +242,19 @@ fn ctmd_makernotes(data: &[u8], cr3: &Cr3) -> Vec<CanonMakernote> {
     out
 }
 
-fn decode_sample(data: &[u8], offset: usize, hdr: &CrxHeader, ctx: &DecodeContext) -> Result<RawImage> {
+/// Decode the CRX sample of `size` bytes at `offset`. One entropy-coded stream: it fails
+/// under either corruption policy; a failure over a range past the end of the file is
+/// reported as truncation.
+fn decode_sample(data: &[u8], offset: usize, size: usize, hdr: &CrxHeader, ctx: &DecodeContext) -> Result<RawImage> {
+    let unit = DataUnit::Payload;
+    if offset >= data.len() {
+        return Err(Error::truncated(Truncation::new(unit, offset as u64, size as u64, data.len() as u64)));
+    }
     let mut img = RawImage::new_u16(hdr.width, hdr.height, 1, &ctx.limits)?;
     let sample = &data[offset..];
-    ctx.profiler.time(Stage::EntropyDecode, || canon_crx::decode(hdr, sample, img.u16_mut(), ctx.parallel))?;
+    ctx.profiler
+        .time(Stage::EntropyDecode, || canon_crx::decode(hdr, sample, img.u16_mut(), ctx.parallel))
+        .map_err(|e| e.or_truncated(data.len(), unit, offset, size))?;
     Ok(img)
 }
 

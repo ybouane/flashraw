@@ -863,11 +863,10 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
     let dec = match payload {
         Payload::Compressed { lowbits } => {
             let low_len = if lowbits { total / 4 } else { 0 };
-            let start = raw_off
-                .checked_add(COMPRESSED_SKIP + low_len)
-                .filter(|&s| s < data.len())
-                .ok_or_else(|| Error::corrupt("CRW: compressed data beyond end of file"))?;
-            let stream = &data[start..];
+            // Data past the end of the file fails when decoded (metadata and previews stay
+            // available).
+            let start = raw_off.saturating_add(COMPRESSED_SKIP + low_len);
+            let stream = data.get(start..).unwrap_or(&[]);
             let low = lowbits.then(|| slice_upto(data, raw_off, low_len));
             let params = canon_crw::CrwParams {
                 width: w,
@@ -879,13 +878,20 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
             let unit = DecodeUnit {
                 rect: Rect::full(raw_w, raw_h),
                 offset: raw_off as u64,
-                length: (data.len() - raw_off) as u64,
+                length: data.len().saturating_sub(raw_off) as u64,
             };
             let mut d = SimpleDecoder::new(
                 RawFormat::Crw,
                 meta,
                 info,
                 Box::new(move |ctx: &DecodeContext| {
+                    // One entropy-coded stream (its length is not stored): fails under
+                    // either corruption policy; data starting past the end of the file is
+                    // reported as truncation.
+                    if stream.is_empty() {
+                        let t = Truncation::new(DataUnit::Payload, start as u64, 1, data.len() as u64);
+                        return Err(Error::truncated(t));
+                    }
                     let mut img = RawImage::new_u16(raw_w, raw_h, 1, &ctx.limits)?;
                     ctx.profiler.time(Stage::EntropyDecode, || canon_crw::decode(stream, &params, img.u16_mut()))?;
                     Ok(img)
@@ -902,9 +908,11 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
                 meta,
                 info,
                 Box::new(move |ctx: &DecodeContext| {
+                    let geometry = RowGeometry::packed(h, w, 10, layout.row_stride);
+                    let src = ctx.sensor_rows(data, DataUnit::Payload, raw_off, geometry)?;
                     let mut img = RawImage::new_u16(raw_w, raw_h, 1, &ctx.limits)?;
                     ctx.profiler.time(Stage::Unpack, || {
-                        packed::unpack(src, layout, img.u16_mut(), w, ctx.parallel, ctx.simd, false)
+                        packed::unpack(src, layout, img.u16_mut(), w, ctx.parallel, ctx.simd, ctx.recover)
                     })?;
                     Ok(img)
                 }),
@@ -922,12 +930,15 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
         }
         Payload::Canon600 => {
             let rows = height as usize;
-            let src = slice_upto(data, raw_off, rows * CANON600_ROW_BYTES);
             let mut d = SimpleDecoder::new(
                 RawFormat::Crw,
                 meta,
                 info,
                 Box::new(move |ctx: &DecodeContext| {
+                    // Rows are whole 10-byte groups; a missing row stays zero when recovering.
+                    let geometry =
+                        RowGeometry { rows, stride: CANON600_ROW_BYTES, row_bytes: CANON600_ROW_BYTES, samples: w };
+                    let src = ctx.sensor_rows(data, DataUnit::Payload, raw_off, geometry)?;
                     let mut img = RawImage::new_u16(raw_w, raw_h, 1, &ctx.limits)?;
                     ctx.profiler.time(Stage::Unpack, || canon600_unpack(src, w, rows, img.u16_mut()))?;
                     Ok(img)
@@ -964,9 +975,11 @@ fn canon600_row_samples(src: &[u8], dst: &mut [u16]) {
     }
 }
 
+/// Unpack the rows present in `src` (the caller checks the range; rows missing from a
+/// recovered truncated payload stay zero).
 fn canon600_unpack(src: &[u8], w: usize, rows: usize, out: &mut [u16]) -> Result<()> {
-    if src.len() < rows * CANON600_ROW_BYTES || w * 10 / 8 < CANON600_ROW_BYTES {
-        return Err(Error::corrupt("PowerShot 600 data truncated"));
+    if w * 10 / 8 < CANON600_ROW_BYTES {
+        return Err(Error::corrupt("PowerShot 600 row narrower than its data"));
     }
     for (irow, s) in src.chunks_exact(CANON600_ROW_BYTES).take(rows).enumerate() {
         let row = canon600_row(irow, rows);
