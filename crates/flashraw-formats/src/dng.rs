@@ -782,7 +782,7 @@ impl DngRaw<'_> {
                 }
                 Ok(())
             }
-            Payload::JpegXl => decode_jxl_u16(src, &mut t, sx, sy, cpp, finish),
+            Payload::JpegXl => decode_jxl_u16(src, self.bps, &mut t, sx, sy, cpp, finish),
             Payload::Vc5 => Err(Error::corrupt("VC-5 is decoded as a whole image")),
         }
     }
@@ -882,13 +882,15 @@ impl DngRaw<'_> {
 #[cfg(feature = "jpegxl")]
 fn decode_jxl_u16(
     src: &[u8],
+    bits: u32,
     t: &mut TileMut<'_, '_, u16>,
     sx: usize,
     sy: usize,
     cpp: usize,
     finish: impl Fn(&mut [u16]),
 ) -> Result<()> {
-    let img = flashraw_codecs::jxl::decode(src)?;
+    // Samples are scaled to the DNG's BitsPerSample, not the codestream's bit depth.
+    let img = flashraw_codecs::jxl::decode(src, bits)?;
     let (w, h) = t.size();
     for y in 0..h {
         let yy = sy + y;
@@ -911,6 +913,7 @@ fn decode_jxl_u16(
 #[cfg(not(feature = "jpegxl"))]
 fn decode_jxl_u16(
     _src: &[u8],
+    _bits: u32,
     _t: &mut TileMut<'_, '_, u16>,
     _sx: usize,
     _sy: usize,

@@ -42,6 +42,8 @@ First complete release of FlashRaw.
   `std::thread::scope`.
 - Truncated Nikon Huffman NEFs fail with `CorruptFile` instead of decoding with frozen
   rows (a stream may only run dry within its last row, for unflushed encoders).
+- JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
+  bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
