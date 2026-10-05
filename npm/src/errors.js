@@ -6,16 +6,20 @@ export class FlashRawError extends Error {
   /**
    * @param {string} message
    * @param {string} [kind]
-   * @param {{ cause?: unknown }} [options]
+   * @param {{ cause?: unknown, corrupt?: object | null }} [options]
    */
   constructor(message, kind = 'Internal', options) {
     super(message, options);
     this.name = 'FlashRawError';
     /** @type {string} */
     this.kind = kind;
+    // Structured cause of a CorruptFile error (e.g. which strip is truncated), when known.
+    if (options?.corrupt) this.corrupt = options.corrupt;
   }
   toJSON() {
-    return { name: this.name, kind: this.kind, message: this.message };
+    const o = { name: this.name, kind: this.kind, message: this.message };
+    if (this.corrupt) o.corrupt = this.corrupt;
+    return o;
   }
 }
 
@@ -73,6 +77,8 @@ export function errorFromKind(kind, message, options) {
 
 /** Rebuild an error serialised with `toJSON()` (used across worker boundaries). */
 export function errorFromJSON(o) {
-  if (o && typeof o === 'object' && typeof o.kind === 'string') return errorFromKind(o.kind, String(o.message ?? ''));
+  if (o && typeof o === 'object' && typeof o.kind === 'string') {
+    return errorFromKind(o.kind, String(o.message ?? ''), o.corrupt ? { corrupt: o.corrupt } : undefined);
+  }
   return new InternalError(String(o?.message ?? o));
 }

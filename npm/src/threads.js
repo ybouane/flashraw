@@ -131,7 +131,7 @@ export class ThreadPool {
         p.reject(
           e.trap
             ? new InternalError(`FlashRaw WASM trap: ${e.panic ? `panic: ${e.panic}` : `${e.message} (likely out of memory)`}`)
-            : errorFromKind(e.kind ?? 'Internal', e.message ?? 'unknown error'),
+            : errorFromKind(e.kind ?? 'Internal', e.message ?? 'unknown error', e.corrupt ? { corrupt: e.corrupt } : undefined),
         );
       } else {
         p.resolve(m.ok);
@@ -237,7 +237,13 @@ export function runThreadWorker(glue, port) {
       port.post({
         type: 'result',
         id,
-        err: { kind: trap ? 'Internal' : (e?.kind ?? 'Internal'), message: String(e?.message ?? e), trap, panic: trap ? panicOf() : null },
+        err: {
+          kind: trap ? 'Internal' : (e?.kind ?? 'Internal'),
+          message: String(e?.message ?? e),
+          corrupt: e?.corrupt ?? null,
+          trap,
+          panic: trap ? panicOf() : null,
+        },
       });
     }
   });

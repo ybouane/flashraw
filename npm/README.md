@@ -252,6 +252,7 @@ const f = await raw.decode({
   demosaic: 'bilinear',     // RGB outputs: 'bilinear' | 'half-size'
   crop: true,               // RGB outputs: apply the default crop; raw outputs: 'active' = active area only
   sampleType: 'f32',        // normalized only: 'f16' = half floats (Uint16Array bits, half the memory)
+  corruptionPolicy: 'recover', // truncated sensor data: 'recover' (zero-fill + warnings) | 'strict' (throw)
   limits: { maxSamples: 4e8 },
 });
 f.data;            // Uint16Array (raw-u16, normalized + f16) | Float32Array (raw-f32, normalized, linear-rgb) | Uint8ClampedArray (rgba8)
@@ -260,6 +261,8 @@ f.channels;        // 1 (CFA), 3 (linear-rgb / linear DNG), 4 (rgba8)
 f.cfa; f.blackLevel; f.whiteLevel; f.whiteBalance; f.colorMatrices; f.activeArea; f.crop; f.origin;
 f.backend;         // { requested, kind: 'cpu', decode: 'CPU WASM SIMD128 x1 thread', simd, fallbackReason }
 f.timings;         // { totalMs, stages: { containerParse, entropyDecode, postprocess, ... }, copyMs, wallMs }
+f.incomplete;      // true when some samples hold no data (truncated/corrupt input recovered)
+f.warnings;        // [{ kind: 'truncated', unit: 'strip', index, offset, expected, available, fileLength, samplesFilled, message }]
 
 // For an editor that demosaics on its own GPU: black-subtracted, white-normalised CFA (DNG
 // opcode lists 1 and 2 applied) as half floats, cropped to the active area. `f.origin` is the
@@ -270,6 +273,16 @@ using cfa = await raw.decode({ output: 'normalized', sampleType: 'f16', crop: 'a
 const region = await raw.decodeRegion({ x: 0, y: 0, width: 512, height: 512 });
 const tile = await raw.decodeTile(3); // see raw.tiles
 ```
+
+**Truncated files.** Sensor data that runs past the end of the file is never silently
+zero-filled. By default (`corruptionPolicy: 'recover'`) every complete sample is decoded, the
+missing ones are zero, and `f.incomplete` / `f.warnings` say which strip or tile lost how many
+bytes and samples. With `corruptionPolicy: 'strict'` the decode throws a `CorruptFileError`
+whose `corrupt` field holds the same details (`{ kind: 'truncated', unit, index, offset,
+expected, available, fileLength }`). Metadata, previews and regions that do not touch the
+missing data are unaffected. Recovery covers uncompressed/packed data and compressed DNG
+strips/tiles (a unit that is truncated or fails to decode is zero-filled with an
+`invalid-unit` or `truncated` warning); other compressed streams throw under both policies.
 
 **Memory.** By default `f.data` is a standalone copy (the WASM buffer is freed immediately), so it
 can be kept, transferred to a worker, or wrapped in `ImageData`. For large frames you can skip
@@ -365,7 +378,8 @@ try {
 Kinds: `UnsupportedFormat`, `UnsupportedCompression`, `CorruptFile`, `InvalidMetadata`,
 `CameraUnsupported`, `GpuUnavailable`, `OutOfMemory`, `LimitExceeded`, `NotAvailable`,
 `InvalidArgument`, `Io`, `Closed`, `Internal` (a WASM trap; the handle becomes unusable).
-Errors survive worker boundaries with the same classes.
+Errors survive worker boundaries with the same classes. `CorruptFile` errors about truncated
+sensor data also carry `e.corrupt` (see *Truncated files* above).
 
 ## Bundlers
 

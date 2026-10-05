@@ -64,6 +64,10 @@ mod bindings {
     fn to_js(e: ApiError) -> JsValue {
         let err = js_sys::Error::new(&e.message);
         let _ = js_sys::Reflect::set(&err, &"kind".into(), &e.kind.into());
+        if let Some(c) = &e.corrupt {
+            let c = js_sys::JSON::parse(&c.to_string()).unwrap_or(JsValue::NULL);
+            let _ = js_sys::Reflect::set(&err, &"corrupt".into(), &c);
+        }
         err.into()
     }
 
@@ -141,7 +145,11 @@ mod bindings {
         pub fn new(len: usize) -> Result<InputBuffer, JsValue> {
             let mut buf = Vec::new();
             buf.try_reserve_exact(len).map_err(|_| {
-                to_js(ApiError { kind: "OutOfMemory", message: format!("cannot allocate {len} bytes for the input") })
+                to_js(ApiError {
+                    corrupt: None,
+                    kind: "OutOfMemory",
+                    message: format!("cannot allocate {len} bytes for the input"),
+                })
             })?;
             // SAFETY: capacity is at least `len`, and `MaybeUninit` needs no initialisation.
             unsafe { buf.set_len(len) };
@@ -289,7 +297,7 @@ mod bindings {
         pub(super) static THREADS: AtomicUsize = AtomicUsize::new(0);
 
         fn internal(message: String) -> JsValue {
-            to_js(ApiError { kind: "Internal", message })
+            to_js(ApiError { corrupt: None, kind: "Internal", message })
         }
 
         /// Configure rayon's global pool with `n` threads. For each thread, `on_spawn(ptr)` is
@@ -478,7 +486,7 @@ mod bindings {
         }
 
         fn closed(what: &str) -> JsValue {
-            to_js(ApiError { kind: "Closed", message: format!("the GPU buffer was {what}") })
+            to_js(ApiError { corrupt: None, kind: "Closed", message: format!("the GPU buffer was {what}") })
         }
 
         impl GpuOutput {
@@ -500,13 +508,14 @@ mod bindings {
         fn webgpu_buffer(b: Option<&flashraw::gpu::wgpu::Buffer>) -> Result<JsValue, JsValue> {
             let b = b.ok_or_else(|| {
                 to_js(ApiError {
+                    corrupt: None,
                     kind: "NotAvailable",
                     message: "the frame exceeds the adapter's buffer limits and is stored in bands; use download() or createTexture()".into(),
                 })
             })?;
-            b.as_webgpu()
-                .map(|b| JsValue::from(b.clone()))
-                .ok_or_else(|| to_js(ApiError { kind: "GpuUnavailable", message: "not a WebGPU buffer".into() }))
+            b.as_webgpu().map(|b| JsValue::from(b.clone())).ok_or_else(|| {
+                to_js(ApiError { corrupt: None, kind: "GpuUnavailable", message: "not a WebGPU buffer".into() })
+            })
         }
 
         #[wasm_bindgen]
@@ -535,9 +544,9 @@ mod bindings {
             #[wasm_bindgen(js_name = createTexture)]
             pub fn create_texture(&self) -> Result<JsValue, JsValue> {
                 let tex = self.image()?.to_texture().map_err(|e| to_js(e.into()))?;
-                tex.as_webgpu()
-                    .map(|t| JsValue::from(t.clone()))
-                    .ok_or_else(|| to_js(ApiError { kind: "GpuUnavailable", message: "not a WebGPU texture".into() }))
+                tex.as_webgpu().map(|t| JsValue::from(t.clone())).ok_or_else(|| {
+                    to_js(ApiError { corrupt: None, kind: "GpuUnavailable", message: "not a WebGPU texture".into() })
+                })
             }
             /// Read the pixels back into WASM memory; resolves to a [`Frame`].
             pub fn download(&self) -> Result<js_sys::Promise, JsValue> {

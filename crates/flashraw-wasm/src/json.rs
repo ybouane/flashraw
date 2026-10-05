@@ -5,9 +5,9 @@
 //! `JSON.parse` once per call instead of crossing the WASM boundary per field.
 
 use flashraw::{
-    BlackLevel, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, DecodeUnit, FlashRaw, FrameInfo, PreviewEncoding,
-    PreviewInfo, PreviewKind, RandomAccess, RawFrame, RawMetadata, Rect, SampleFormat, SensorLayout, Stage,
-    WhiteBalance, WhiteLevel,
+    BlackLevel, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, CorruptReason, DecodeUnit, DecodeWarning,
+    FlashRaw, FrameInfo, PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFrame, RawMetadata, Rect,
+    SampleFormat, SensorLayout, Stage, WhiteBalance, WhiteLevel,
 };
 use serde_json::{Map, Value, json};
 
@@ -424,5 +424,38 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
         "inputBytes": s.input_bytes,
         "outputBytes": s.output_bytes,
         "opcodes": s.opcodes,
+        "incomplete": f.is_incomplete(),
+        "warnings": f.warnings().iter().map(warning).collect::<Vec<_>>(),
     })
+}
+
+/// A structured corruption cause: `kind` (`truncated` or `invalid-unit`), `unit` (`strip`,
+/// `tile`, `plane` or `payload`), `index`, and for truncation the byte range (`offset`,
+/// `expected`, `available`, `fileLength`).
+pub fn corrupt_reason(r: &CorruptReason) -> Value {
+    let u = r.unit();
+    let mut v = json!({ "unit": u.kind(), "index": u.index() });
+    match r {
+        CorruptReason::Truncated(t) => {
+            v["kind"] = json!("truncated");
+            v["offset"] = json!(t.offset);
+            v["expected"] = json!(t.expected);
+            v["available"] = json!(t.available);
+            v["fileLength"] = json!(t.file_len);
+        }
+        CorruptReason::InvalidUnit { message, .. } => {
+            v["kind"] = json!("invalid-unit");
+            v["message"] = json!(message);
+        }
+        _ => v["kind"] = json!("other"),
+    }
+    v
+}
+
+/// A recovery warning: the cause plus `samplesFilled` and a readable `message`.
+pub fn warning(w: &DecodeWarning) -> Value {
+    let mut v = corrupt_reason(&w.reason);
+    v["samplesFilled"] = json!(w.samples_filled);
+    v["message"] = json!(w.to_string());
+    v
 }
