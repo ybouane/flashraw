@@ -18,6 +18,7 @@ pub mod exif;
 pub mod huffman;
 pub mod image;
 pub mod metadata;
+pub mod orientation;
 pub mod par;
 pub mod profile;
 pub mod simd;
@@ -33,5 +34,6 @@ pub use image::{Limits, PixelData, RawImage, alloc_zeroed, max_nonneg_bits};
 pub use metadata::{
     DngExtras, DngProfileInfo, ExposureInfo, GpsInfo, LensInfo, PreviewEncoding, PreviewInfo, PreviewKind, RawMetadata,
 };
+pub use orientation::{OrientationMetadata, OrientationPolicy, OrientationSource};
 pub use profile::{Profiler, Stage};
 pub use types::*;

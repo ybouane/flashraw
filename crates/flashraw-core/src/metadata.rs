@@ -1,5 +1,6 @@
 //! Normalised camera/capture metadata and embedded preview descriptors.
 
+use crate::orientation::OrientationMetadata;
 use crate::types::{Compression, Orientation, RawFormat};
 
 /// Lens information.
@@ -91,7 +92,10 @@ pub struct PreviewInfo {
     pub height: u32,
     /// How the preview bytes are encoded.
     pub encoding: PreviewEncoding,
-    /// Orientation that applies to this preview (usually the file orientation).
+    /// Orientation to apply to the preview's stored pixels: usually the file orientation.
+    /// Where vendor orientation records are resolved (Canon CR2, Nikon, Kodak) it is
+    /// resolved per preview: a preview carrying its own EXIF orientation uses it, and a
+    /// preview that was rendered already rotated is `Normal` even when the RAW image is not.
     pub orientation: Orientation,
     /// What the container labels this image as.
     pub kind: PreviewKind,
@@ -207,8 +211,11 @@ pub struct RawMetadata {
     pub capture_time: Option<String>,
     /// GPS position; `None` unless a latitude or longitude is recorded.
     pub gps: Option<GpsInfo>,
-    /// Image orientation.
+    /// Image orientation (the resolved value of [`RawMetadata::orientation_info`]).
     pub orientation: Orientation,
+    /// The orientation records found in the file (standard tag and vendor record) and
+    /// how the resolved [`RawMetadata::orientation`] was chosen.
+    pub orientation_info: OrientationMetadata,
     /// Container format, when identified.
     pub format: Option<RawFormat>,
     /// Payload compression of the main RAW image, when identified.

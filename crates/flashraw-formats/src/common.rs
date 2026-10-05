@@ -301,6 +301,11 @@ pub fn finish_metadata(meta: &mut RawMetadata, info: &FrameInfo, format: RawForm
     if info.orientation != Orientation::Normal || meta.orientation == Orientation::Normal {
         meta.orientation = info.orientation;
     }
+    // Formats that resolve vendor orientation records fill `orientation_info` themselves;
+    // otherwise only the container's standard field is known.
+    if meta.orientation_info.resolved != meta.orientation {
+        meta.orientation_info = OrientationMetadata::from_container(meta.orientation);
+    }
 }
 
 type DecodeFn<'a> = dyn Fn(&DecodeContext) -> Result<RawImage> + Send + Sync + 'a;

@@ -45,8 +45,8 @@ mod source;
 pub use flashraw_core::{
     BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, DecodeUnit, DngExtras,
     DngProfileInfo, Error, ExposureInfo, FrameInfo, GpsInfo, Illuminant, LensInfo, Limits, Orientation,
-    PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result, SampleFormat,
-    SensorLayout, Stage, WhiteBalance, WhiteLevel,
+    OrientationMetadata, OrientationPolicy, OrientationSource, PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess,
+    RawFormat, RawMetadata, Rect, Result, SampleFormat, SensorLayout, Stage, WhiteBalance, WhiteLevel,
 };
 pub use frame::{BackendReport, DecodeStatistics, RawFrame, RawPixelData};
 pub use options::{Backend, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};

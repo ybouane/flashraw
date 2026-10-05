@@ -606,6 +606,10 @@ impl Orientation {
             _ => Orientation::Normal,
         }
     }
+    /// From an EXIF `Orientation` value; `None` for values outside 1-8.
+    pub fn from_exif_checked(v: u32) -> Option<Self> {
+        (1..=8).contains(&v).then(|| Self::from_exif(v))
+    }
     /// The EXIF `Orientation` value (1-8).
     pub fn exif(self) -> u32 {
         self as u32

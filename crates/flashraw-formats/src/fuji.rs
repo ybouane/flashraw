@@ -602,6 +602,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if rmeta.raf_gen == 0 && geo_w == 2944 || raw_w == 5504 {
         // S2Pro and the DBP back are mounted rotated.
         info.orientation = Orientation::Rotate90;
+        meta.orientation_info = meta.orientation_info.camera_override(Orientation::Rotate90);
     }
 
     // CFA.

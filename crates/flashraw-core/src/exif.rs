@@ -4,6 +4,7 @@
 //! parsed by the per-format modules.
 
 use crate::metadata::{GpsInfo, RawMetadata};
+use crate::orientation::{OrientationMetadata, OrientationPolicy};
 use crate::tiff::{Ifd, tags};
 use crate::types::Orientation;
 
@@ -21,6 +22,8 @@ pub fn read_ifd0(ifd: &Ifd, meta: &mut RawMetadata) {
     }
     if let Some(o) = ifd.u32(tags::ORIENTATION) {
         meta.orientation = Orientation::from_exif(o);
+        meta.orientation_info =
+            OrientationMetadata::resolve(Orientation::from_exif_checked(o), None, None, OrientationPolicy::ExifOnly);
     }
     if meta.software.is_none() {
         meta.software = ifd.string(tags::SOFTWARE);
