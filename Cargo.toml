@@ -9,7 +9,9 @@ members = [
     "crates/flashraw-gpu",
     "crates/flashraw-cli",
     "crates/flashraw-wasm",
+    "crates/flashraw-python",
 ]
+# The Python extension (crates/flashraw-python) is built with maturin, not by default.
 default-members = [
     "crates/flashraw",
     "crates/flashraw-core",

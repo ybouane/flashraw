@@ -11,3 +11,12 @@ node_modules/
 /fuzz/target/
 /npm/.tools/
 /npm/node_modules/
+
+# Python bindings (crates/flashraw-python)
+__pycache__/
+.pytest_cache/
+.venv/
+/crates/flashraw-python/python/flashraw/*.so
+/crates/flashraw-python/python/flashraw/*.pyd
+/crates/flashraw-python/dist/
+/crates/flashraw-camera-db/data/

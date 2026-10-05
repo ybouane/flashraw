@@ -1,0 +1,40 @@
+[package]
+name = "flashraw-python"
+description = "Python bindings for FlashRaw (the `flashraw` package on PyPI)"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+publish = false
+
+[lib]
+name = "flashraw_python"
+crate-type = ["cdylib"]
+# The extension module only links inside a Python process: the Python test suite
+# (`crates/flashraw-python/tests`, run by pytest against the built wheel) covers it.
+test = false
+doctest = false
+
+[features]
+default = ["extension-module"]
+# Do not link libpython: the interpreter that loads the module provides it. On by default so
+# `cargo build --workspace` works without a Python development library.
+extension-module = ["pyo3/extension-module"]
+# GPU backend (`backend="gpu"`), forwarding to flashraw/gpu.
+gpu = ["flashraw/gpu"]
+# JPEG XL compressed DNG (DNG 1.7).
+jpegxl = ["flashraw/jpegxl"]
+
+[dependencies]
+flashraw = { workspace = true, features = ["rayon", "simd", "mmap"] }
+memmap2.workspace = true
+rayon.workspace = true
+serde_json.workspace = true
+# abi3: one wheel per platform for CPython >= 3.9.
+pyo3 = { version = "0.29", features = ["abi3-py39"] }
+numpy = "0.29"
+
+[lints]
+workspace = true
