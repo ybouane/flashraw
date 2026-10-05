@@ -104,7 +104,12 @@ enum Layout {
 }
 
 struct Raf<'a> {
-    payload: &'a [u8],
+    /// The whole file.
+    data: &'a [u8],
+    /// File offset of the payload.
+    offset: usize,
+    /// Declared payload length (the bytes of `payload` the container states).
+    declared: usize,
     width: u32,
     height: u32,
     layout: Layout,
@@ -476,7 +481,9 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         m.strip_prefix("FinePix").map(|s| s.trim().to_string()).unwrap_or(m)
     };
     let rmeta = parse_meta(data, meta_off, &model);
-    let cfa_sec = data.get(cfa_off..).ok_or_else(|| Error::corrupt("RAF CFA section beyond end of file"))?;
+    // A CFA section past the end of the file leaves only the meta directory's geometry;
+    // missing sensor data is reported when decoding.
+    let cfa_sec = data.get(cfa_off..).unwrap_or(&[]);
     let ctiff = parse_cfa_tiff(cfa_sec);
     let (fuji_layout, fuji_width) = rmeta.layout.unwrap_or((false, false));
 
@@ -485,6 +492,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     let mut raw_h;
     let bps;
     let payload: &[u8];
+    let payload_offset: usize;
+    let declared: usize;
     let mut layout;
     let mut packed_flag = false;
     let xtrans = rmeta.xtrans.is_some();
@@ -493,7 +502,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         raw_h = c.height;
         bps = c.bps;
         let start = cfa_off.checked_add(c.offset).ok_or_else(|| Error::corrupt("RAF payload offset overflow"))?;
-        payload = flashraw_core::bytes::slice_at_lenient(data, start, c.bytes)?;
+        payload = lenient_range(data, start, c.bytes);
+        (payload_offset, declared) = (start, c.bytes);
         let size = c.bytes as u64;
         let (w, h) = (raw_w as u64, raw_h as u64);
         layout = Layout::Words { order: ByteOrder::Little, stride: raw_w as usize };
@@ -522,7 +532,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         // Dual-frame bodies store the second frame after the first: the section length
         // covers only one frame, so the samples run to the end of the file.
         let _ = cfa_len;
-        payload = data.get(cfa_off..).filter(|p| !p.is_empty()).ok_or_else(|| Error::corrupt("RAF without payload"))?;
+        payload = data.get(cfa_off.min(data.len())..).unwrap_or(&[]);
+        (payload_offset, declared) = (cfa_off, payload.len());
         let order = exif.order.unwrap_or(ByteOrder::Little);
         if fuji_layout && second_frame {
             raw_w *= 2;
@@ -707,11 +718,11 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     push_jpeg(data, jpeg_off, jpeg_len, info.orientation, &mut meta.previews);
     classify_previews(&mut meta.previews);
 
-    let raf = Arc::new(Raf { payload, width: raw_w, height: raw_h, layout, colors });
+    let raf = Arc::new(Raf { data, offset: payload_offset, declared, width: raw_w, height: raw_h, layout, colors });
     let units = match &fc {
         Some(f) => {
             let ranges = f.block_ranges(payload);
-            let base = payload.as_ptr() as usize - data.as_ptr() as usize;
+            let base = payload_offset;
             ranges
                 .iter()
                 .enumerate()
@@ -734,9 +745,12 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         Box::new(move |ctx| {
             let mut img = RawImage::new_u16(r1.width, r1.height, 1, &ctx.limits)?;
             match (&r1.layout, &fc) {
-                (Layout::Compressed, Some(f)) => ctx.profiler.time(Stage::EntropyDecode, || {
-                    f.decode(img.u16_mut(), r1.width, r1.height, &r1.colors, ctx.parallel)
-                })?,
+                (Layout::Compressed, Some(f)) => ctx
+                    .profiler
+                    .time(Stage::EntropyDecode, || {
+                        f.decode(img.u16_mut(), r1.width, r1.height, &r1.colors, ctx.parallel)
+                    })
+                    .map_err(|e| r1.compressed_error(e))?,
                 _ => ctx.profiler.time(Stage::Unpack, || r1.unpack(img.u16_mut(), ctx))?,
             }
             Ok(img)
@@ -752,7 +766,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
             (Layout::Compressed, Some(f)) => {
                 let mut img = RawImage::new_u16(rect.width, rect.height, 1, &ctx.limits)?;
                 ctx.profiler
-                    .time(Stage::EntropyDecode, || f.decode_region(img.u16_mut(), rect, &r2.colors, ctx.parallel))?;
+                    .time(Stage::EntropyDecode, || f.decode_region(img.u16_mut(), rect, &r2.colors, ctx.parallel))
+                    .map_err(|e| r2.compressed_error(e))?;
                 Ok(img)
             }
             (Layout::Words { .. } | Layout::Packed { .. }, _) => {
@@ -847,76 +862,43 @@ impl Raf<'_> {
         }
     }
 
+    /// A compressed-stream failure, reported as truncation when the declared payload runs
+    /// past the end of the file. (Compressed data is strict under every policy: the
+    /// decoder only learns that data is missing when a stripe runs out.)
+    fn compressed_error(&self, e: Error) -> Error {
+        e.or_truncated(self.data.len(), DataUnit::Payload, self.offset, self.declared)
+    }
+
     /// Unpack only the rows/columns of `rect` (row-addressable layouts).
     fn unpack_region(&self, out: &mut [u16], rect: Rect, ctx: &DecodeContext) -> Result<()> {
         let (row_bytes, bits, order) =
             self.row_layout().ok_or_else(|| Error::InvalidArgument("layout is not row addressable".into()))?;
-        let (w, rw) = (self.width as usize, rect.width as usize);
-        let needed = (rect.bottom() as usize).saturating_sub(1) * row_bytes + (w * bits as usize).div_ceil(8);
-        if self.payload.len() < needed {
-            return Err(Error::corrupt("RAF payload truncated"));
+        let w = self.width as usize;
+        // Rows are addressed by geometry; the last row needs only its samples.
+        let geometry = RowGeometry::packed(rect.bottom() as usize, w, bits, row_bytes);
+        let src = ctx.sensor_bytes(self.data, DataUnit::Payload, self.offset, geometry.needed())?;
+        let filled = unpack_rows(src.bytes, row_bytes, w, bits, order, rect, out, ctx);
+        if let Some(t) = src.truncation {
+            ctx.recovered(CorruptReason::Truncated(t), filled);
         }
-        let simd = ctx.simd;
-        par::for_each_row_chunk_bounded(
-            &mut out[..rw * rect.height as usize],
-            rw,
-            par::memory_bound_workers(),
-            ctx.parallel,
-            |first, chunk| {
-                let mut tmp = vec![0u16; w];
-                for (i, row) in chunk.chunks_mut(rw).enumerate() {
-                    let y = rect.y as usize + first + i;
-                    let src = &self.payload[y * row_bytes..];
-                    let src = &src[..(w * bits as usize).div_ceil(8).min(src.len())];
-                    packed::unpack_row(src, &mut tmp, bits, order, simd);
-                    row.copy_from_slice(&tmp[rect.x as usize..rect.x as usize + rw]);
-                }
-            },
-        );
         Ok(())
     }
 
     fn unpack(&self, out: &mut [u16], ctx: &DecodeContext) -> Result<()> {
         let (w, h) = (self.width as usize, self.height as usize);
         match self.layout {
-            Layout::Words { order, stride } => {
-                let row_bytes = stride * 2;
-                let rows = (self.payload.len() / row_bytes.max(1)).min(h);
-                if rows == 0 {
-                    return Err(Error::corrupt("RAF payload truncated"));
-                }
-                let po = if order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
-                let simd = ctx.simd;
-                let src = self.payload;
-                par::for_each_row_chunk_bounded(
-                    &mut out[..w * h],
-                    w,
-                    par::memory_bound_workers(),
-                    ctx.parallel,
-                    |first, chunk| {
-                        for (i, row) in chunk.chunks_mut(w).enumerate() {
-                            let y = first + i;
-                            if y >= rows {
-                                break;
-                            }
-                            let s = &src[y * row_bytes..y * row_bytes + w * 2];
-                            packed::unpack_row(s, row, 16, po, simd);
-                        }
-                    },
-                );
-                if rows < h {
-                    return Err(Error::corrupt(format!("RAF payload truncated: {rows}/{h} rows")));
-                }
-                Ok(())
-            }
+            Layout::Words { .. } => self.unpack_region(out, Rect::full(self.width, self.height), ctx),
             Layout::TiledWords { tiles, order } => {
                 let po = if order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
                 let tw = w / tiles;
-                let need = tw * tiles * h * 2;
-                if self.payload.len() < need || tw == 0 {
-                    return Err(Error::corrupt("RAF tiled payload truncated"));
+                if tw == 0 {
+                    return Err(Error::corrupt("RAF tiled payload narrower than its tile count"));
                 }
-                let (src, simd) = (self.payload, ctx.simd);
+                // `tiles` column strips of `tw x h` words, one after another.
+                let need = tw * tiles * h * 2;
+                let src = ctx.sensor_bytes(self.data, DataUnit::Payload, self.offset, need)?;
+                let (simd, truncation, src) = (ctx.simd, src.truncation, src.bytes);
+                let filled = std::sync::atomic::AtomicU64::new(0);
                 par::for_each_row_chunk_bounded(
                     &mut out[..w * h],
                     w,
@@ -927,20 +909,88 @@ impl Raf<'_> {
                             let y = first + i;
                             for (t, seg) in row.chunks_exact_mut(tw).enumerate().take(tiles) {
                                 let base = (t * h + y) * tw * 2;
-                                packed::unpack_row(&src[base..base + tw * 2], seg, 16, po, simd);
+                                match src.get(base..base + tw * 2) {
+                                    Some(s) => packed::unpack_row(s, seg, 16, po, simd),
+                                    None => {
+                                        // Recovering truncated data: complete samples only.
+                                        let s = src.get(base..).unwrap_or(&[]);
+                                        let n = packed::unpack_row_partial(s, seg, 16, po, simd);
+                                        filled.fetch_add((tw - n) as u64, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                }
                             }
                         }
                     },
                 );
+                if let Some(t) = truncation {
+                    ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
+                }
                 Ok(())
             }
             Layout::Packed { bits, order } => {
                 let lay = packed::PackedLayout::tight(w, h, bits, order);
-                packed::unpack(self.payload, lay, out, w, ctx.parallel, ctx.simd, false)
+                let geometry = RowGeometry::packed(h, w, bits, lay.row_stride);
+                let src = ctx.sensor_rows(self.data, DataUnit::Payload, self.offset, geometry)?;
+                packed::unpack(src, lay, out, w, ctx.parallel, ctx.simd, ctx.recover)
             }
             Layout::Compressed => Err(Error::corrupt("RAF compressed payload without header")),
         }
     }
+}
+
+/// The declared range `[offset, offset + len)` clamped to the file (empty past the end).
+fn lenient_range(data: &[u8], offset: usize, len: usize) -> &[u8] {
+    let start = offset.min(data.len());
+    &data[start..offset.saturating_add(len).min(data.len())]
+}
+
+/// Unpack the rows and columns of `rect` from rows `row_bytes` apart in `src` (`w`
+/// samples of `bits` each per row) into `out`. Rows `src` does not fully hold (only when
+/// recovering truncated data) keep their complete samples; the rest stay zero. Returns
+/// the number of samples of `rect` left zero.
+#[allow(clippy::too_many_arguments)]
+fn unpack_rows(
+    src: &[u8],
+    row_bytes: usize,
+    w: usize,
+    bits: u32,
+    order: PackOrder,
+    rect: Rect,
+    out: &mut [u16],
+    ctx: &DecodeContext,
+) -> u64 {
+    let rw = rect.width as usize;
+    let (x0, need) = (rect.x as usize, (w * bits as usize).div_ceil(8));
+    let simd = ctx.simd;
+    let filled = std::sync::atomic::AtomicU64::new(0);
+    par::for_each_row_chunk_bounded(
+        &mut out[..rw * rect.height as usize],
+        rw,
+        par::memory_bound_workers(),
+        ctx.parallel,
+        |first, chunk| {
+            let mut tmp = vec![0u16; w];
+            for (i, row) in chunk.chunks_mut(rw).enumerate() {
+                let y = rect.y as usize + first + i;
+                let s = src.get(y * row_bytes..).unwrap_or(&[]);
+                if s.len() >= need {
+                    if x0 == 0 && rw == w {
+                        packed::unpack_row(&s[..need], row, bits, order, simd);
+                    } else {
+                        packed::unpack_row(&s[..need], &mut tmp, bits, order, simd);
+                        row.copy_from_slice(&tmp[x0..x0 + rw]);
+                    }
+                } else {
+                    let n = packed::unpack_row_partial(s, &mut tmp, bits, order, simd);
+                    let keep = n.saturating_sub(x0).min(rw);
+                    row[..keep].copy_from_slice(&tmp[x0..x0 + keep]);
+                    row[keep..].fill(0);
+                    filled.fetch_add((rw - keep) as u64, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        },
+    );
+    filled.into_inner()
 }
 
 #[cfg(test)]
@@ -1018,11 +1068,41 @@ mod tests {
         f
     }
 
+    /// Strict decode (truncated data fails).
     fn decode(data: &[u8]) -> Result<(FrameInfo, Vec<u16>)> {
+        decode_with(data, false).map(|(i, px, _)| (i, px))
+    }
+
+    fn decode_with(data: &[u8], recover: bool) -> Result<(FrameInfo, Vec<u16>, Vec<DecodeWarning>)> {
         let d = open(data, &OpenOptions::default())?;
         let p = Profiler::new();
-        let img = d.decode(&DecodeContext::new(&p))?;
-        Ok((d.frame_info().clone(), img.u16().to_vec()))
+        let mut ctx = DecodeContext::new(&p);
+        ctx.recover = recover;
+        let img = d.decode(&ctx)?;
+        Ok((d.frame_info().clone(), img.u16().to_vec(), ctx.take_warnings()))
+    }
+
+    #[test]
+    fn truncated_payload_strict_and_recover() {
+        let (w, h) = (48u16, 36u16);
+        let samples: Vec<u16> = (0..w as u32 * h as u32).map(|i| (i % 4000 + 1) as u16).collect();
+        let f = synthetic_raf(w, h, &samples, false);
+        // Cut 10 rows and 3 bytes off the end: 10 * 48 + 2 samples are missing.
+        let cut = &f[..f.len() - 10 * 96 - 3];
+        let e = decode(cut).unwrap_err();
+        let t = e.truncation().expect("structured truncation");
+        assert_eq!(t.expected, 48 * 36 * 2);
+        assert_eq!(t.available, t.expected - 10 * 96 - 3);
+        let (_, px, warn) = decode_with(cut, true).unwrap();
+        assert_eq!(warn.len(), 1);
+        assert_eq!(warn[0].samples_filled, 10 * 48 + 2);
+        let kept = samples.len() - 10 * 48 - 2;
+        assert_eq!(&px[..kept], &samples[..kept]);
+        assert!(px[kept..].iter().all(|&v| v == 0));
+        // Metadata survives a payload offset past the end of the file.
+        let head = &f[..f.len() - 48 * 36 * 2 - 10];
+        assert!(open(head, &OpenOptions::default()).is_ok());
+        assert!(decode(head).unwrap_err().truncation().is_some());
     }
 
     #[test]

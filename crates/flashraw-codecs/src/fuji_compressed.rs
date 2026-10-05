@@ -146,11 +146,11 @@ impl<'a> FujiCompressed<'a> {
         for b in 0..nb {
             let size =
                 u32::from_be_bytes([sizes[4 * b], sizes[4 * b + 1], sizes[4 * b + 2], sizes[4 * b + 3]]) as usize;
-            if pos > body.len() {
-                return Err(Error::corrupt(format!("Fuji block {b} starts beyond end of file")));
-            }
+            // A block past the end of the file is empty: its decode fails (and is
+            // reported as truncation by the container), while opening still succeeds.
+            let start = pos.min(body.len());
             let end = pos.saturating_add(size).min(body.len());
-            blocks.push(&body[pos..end]);
+            blocks.push(&body[start..end]);
             pos = pos.saturating_add(size);
         }
         Ok(FujiCompressed { header, blocks, q_bases })
