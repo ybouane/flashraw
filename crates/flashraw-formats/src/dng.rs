@@ -549,7 +549,7 @@ impl DngRaw<'_> {
         };
         let (tx, ty) = (self.tiles_x(), self.height.div_ceil(self.tile_h));
         let n = (tx * ty) as usize;
-        let errors = std::sync::Mutex::new(Vec::<Error>::new());
+        let errors = std::sync::Mutex::new(Vec::<(usize, Error)>::new());
         let mut float_max = None;
         // Parallelise across units when there are several; a single unit parallelises inside (uncompressed rows).
         let par_units = ctx.parallel && n > 1;
@@ -571,7 +571,7 @@ impl DngRaw<'_> {
                     let (x, y) = (i as u32 % tx, i as u32 / tx);
                     if let Some(t) = g.claim(x, y) {
                         if let Err(e) = self.decode_unit_u16(ctx, i, t, ctx.parallel && !par_units) {
-                            errors.lock().unwrap().push(e);
+                            errors.lock().unwrap().push((i, e));
                         }
                     }
                 });
@@ -598,7 +598,7 @@ impl DngRaw<'_> {
                             Ok(m) => {
                                 max.fetch_max(m, std::sync::atomic::Ordering::Relaxed);
                             }
-                            Err(e) => errors.lock().unwrap().push(e),
+                            Err(e) => errors.lock().unwrap().push((i, e)),
                         }
                     }
                 });
@@ -606,7 +606,7 @@ impl DngRaw<'_> {
                 Ok(())
             }
         })?;
-        if let Some(e) = errors.into_inner().unwrap().into_iter().next() {
+        if let Some(e) = errors.into_inner().unwrap().into_iter().min_by_key(|(i, _)| *i).map(|(_, e)| e) {
             return Err(e);
         }
         img.float_max = float_max;
