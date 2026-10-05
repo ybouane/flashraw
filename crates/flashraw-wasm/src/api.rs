@@ -308,7 +308,8 @@ pub fn preview_span(raw: &FlashRaw<'_>, which: &str) -> ApiResult<(usize, usize,
 pub fn decode_preview_rgba(raw: &FlashRaw<'_>, which: &str) -> ApiResult<Decoded> {
     let t0 = flashraw::low_level::core::profile::now_ms();
     let (i, p) = select_preview(raw, which)?;
-    let (w, h, rgb) = raw.decode_preview_rgb(p)?;
+    let img = raw.decode_preview_rgb(p)?;
+    let (w, h, rgb) = (img.width, img.height, img.rgb);
     let n = w as usize * h as usize;
     if rgb.len() < n * 3 {
         return Err(Error::corrupt(format!("preview has {} bytes for {w}x{h} RGB", rgb.len())).into());

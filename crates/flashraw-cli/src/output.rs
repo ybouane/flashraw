@@ -269,7 +269,8 @@ pub fn write_preview(raw: &FlashRaw, p: &PreviewInfo, out: &Path) -> Result<(), 
             std::fs::write(out, b).map_err(|e| e.to_string())
         }
         PreviewEncoding::Rgb8 | PreviewEncoding::Ycbcr422 => {
-            let (w, h, rgb) = raw.decode_preview_rgb(p).map_err(|e| e.to_string())?;
+            let img = raw.decode_preview_rgb(p).map_err(|e| e.to_string())?;
+            let (w, h, rgb) = (img.width, img.height, img.rgb);
             let f = std::fs::File::create(out).map_err(|e| e.to_string())?;
             let enc = jpeg_encoder::Encoder::new(std::io::BufWriter::new(f), 92);
             enc.encode(&rgb, w as u16, h as u16, jpeg_encoder::ColorType::Rgb).map_err(|e| e.to_string())

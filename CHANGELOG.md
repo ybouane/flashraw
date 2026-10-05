@@ -59,8 +59,8 @@ First complete release of FlashRaw.
 ### API
 - Semver-ready surface: growable enums and result/metadata structs are
   `#[non_exhaustive]`; `RawMetadata::new`, `PreviewInfo::new`, `Limits::with_*`
-  builders; `FromStr`/`Display` for `Backend`, `OutputFormat` and `Demosaic`
-  (`ParseOptionError`); internals (`low_level`, `process`, `decode_raw_image`) are
+  builders; `decode_preview_rgb` returns a `PreviewImage`; `FromStr`/`Display` for
+  `Backend`, `OutputFormat` and `Demosaic` (`ParseOptionError`); internals (`low_level`, `process`, `decode_raw_image`) are
   hidden from the documented API; the `RawFile` alias is gone (use `FlashRaw`).
 
 ### Quality

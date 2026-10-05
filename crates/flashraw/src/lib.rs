@@ -163,16 +163,17 @@ impl<'a> FlashRaw<'a> {
         flashraw_core::bytes::slice_at(self.bytes(), p.offset as usize, p.length as usize)
     }
 
-    /// Decode a preview to 8-bit RGB (`(width, height, rgb)`).
-    pub fn decode_preview_rgb(&self, p: &PreviewInfo) -> Result<(u32, u32, Vec<u8>)> {
+    /// Decode a JPEG or uncompressed RGB preview to 8-bit RGB. Orientation is not
+    /// applied (see [`PreviewInfo::orientation`]).
+    pub fn decode_preview_rgb(&self, p: &PreviewInfo) -> Result<PreviewImage> {
         let b = self.preview_bytes(p)?;
         match p.encoding {
             PreviewEncoding::Jpeg => {
                 let d = flashraw_codecs::jpeg::decode(b)?;
                 let rgb = if d.components == 1 { d.data.iter().flat_map(|&v| [v, v, v]).collect() } else { d.data };
-                Ok((d.width as u32, d.height as u32, rgb))
+                Ok(PreviewImage { width: d.width as u32, height: d.height as u32, rgb })
             }
-            PreviewEncoding::Rgb8 => Ok((p.width, p.height, b.to_vec())),
+            PreviewEncoding::Rgb8 => Ok(PreviewImage { width: p.width, height: p.height, rgb: b.to_vec() }),
             e => Err(Error::NotAvailable(format!("preview encoding {e:?} cannot be decoded"))),
         }
     }
@@ -483,6 +484,18 @@ pub struct Capabilities {
     pub gpu_unpack: bool,
     /// The sensor data is floating-point (e.g. floating-point DNG).
     pub float: bool,
+}
+
+/// A decoded embedded preview ([`FlashRaw::decode_preview_rgb`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PreviewImage {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// Interleaved 8-bit RGB, `width * height * 3` bytes, row-major.
+    pub rgb: Vec<u8>,
 }
 
 /// Cheap check whether bytes look like a supported RAW file.
