@@ -212,10 +212,13 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
         model: meta.model.clone(),
         reason: "no lossless-JPEG raw stream found".into(),
     })?;
-    let orientation = orientation(&tiff, &mn);
+    let orientation = orientation(&tiff, &mn, &mut meta);
     let mut previews = tiff_previews(data, 0, &tiff, orientation);
     previews.retain(|p| p.offset != stream.offset as u64);
     classify_previews(&mut previews);
+    // EOS sensors are landscape; sRAW frames may be stored portrait.
+    let (w, h) = jpeg_raw_dims(&stream.hdr);
+    crate::orientation::resolve_previews(data, &mut previews, orientation, w.max(h), w.min(h));
     meta.previews = previews;
 
     if stream.hdr.sraw != 0 {
@@ -243,14 +246,17 @@ fn fill_makernote_metadata(meta: &mut RawMetadata, mn: &CanonMakernote) {
     }
 }
 
-/// Orientation: the first IFD with a non-default orientation tag.
-fn orientation(tiff: &Tiff, _mn: &CanonMakernote) -> Orientation {
-    tiff.ifds
-        .iter()
-        .filter_map(|i| i.u32(tags::ORIENTATION))
-        .map(Orientation::from_exif)
-        .find(|o| *o != Orientation::Normal)
-        .unwrap_or(Orientation::Normal)
+/// Orientation from the standard tag (the first IFD with a non-default value) and the
+/// CameraInfo orientation sensor / Auto Rotate setting, combined under the camera's
+/// policy (see [`OrientationPolicy::CanonAutoRotateAware`]).
+fn orientation(tiff: &Tiff, mn: &CanonMakernote, meta: &mut RawMetadata) -> Orientation {
+    let exif = crate::orientation::tiff_orientation(&tiff.ifds);
+    let cam = flashraw_camera_db::find(&meta.make, &meta.model, "");
+    let layout = cam.and_then(|c| c.orientation);
+    let (sensor, auto_rotate) =
+        mn.camera_orientation(layout.and_then(|l| l.maker_note_offset), layout.and_then(|l| l.auto_rotate_offset));
+    let policy = crate::orientation::policy_for(meta, cam);
+    crate::orientation::apply(meta, exif, sensor, auto_rotate, policy)
 }
 
 /// Saturation level: the per-model value from the camera database, else the full bit depth.

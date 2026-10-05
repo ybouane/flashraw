@@ -11,7 +11,8 @@
 //! serial, `0x003D` black level (RGGB, 14-bit units), `0x0093` NEF compression,
 //! `0x0096`/`0x008C` linearisation table / Huffman metadata, `0x0097` colour balance
 //! (encrypted for versions 2xx), `0x00A7` shutter count (decryption key), `0x0011`
-//! preview IFD, `0x0084` lens specification.
+//! preview IFD, `0x0084` lens specification, `0x0E01` edit record (rotation saved by
+//! Nikon's own software).
 
 use super::crypt;
 use flashraw_core::bytes::{ByteOrder, ReadAt};
@@ -39,6 +40,9 @@ pub struct MakerNote {
     /// Lens min/max focal length and max aperture at those (0x0084).
     pub lens_spec: Option<[f32; 4]>,
     pub serial: Option<String>,
+    /// Image rotation in degrees (clockwise) saved by Nikon's own software in the edit
+    /// record (tag 0x0E01).
+    pub edit_rotation: Option<u16>,
 }
 
 /// Parse the makernote stored in `entry` (an entry of the file's EXIF IFD, parsed from
@@ -161,6 +165,7 @@ pub fn parse(data: &[u8], entry: &Entry, file_order: ByteOrder, model: &str) -> 
                     cb_data = slice.get(p..p + 324).map(|s| s.to_vec());
                 }
             }
+            0x0e01 => mn.edit_rotation = edit_rotation(v),
             0x00a7 => {
                 // Encrypted colour balance (versions 200..=217): decrypt with the
                 // serial/shutter-count keystream and read the four multipliers.
@@ -185,6 +190,27 @@ pub fn parse(data: &[u8], entry: &Entry, file_order: ByteOrder, model: &str) -> 
         }
     }
     mn
+}
+
+/// Rotation record of the edit data (tag 0x0E01). The tag holds a 22-byte header and
+/// then records of `id: u32 LE, 14 reserved bytes, size: u32 LE (including itself),
+/// data[size - 4]`; record `0x76A43207` is the rotation in degrees (u16 LE).
+fn edit_rotation(v: &[u8]) -> Option<u16> {
+    let le32 = |o: usize| v.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let mut o = 22usize;
+    for _ in 0..1024 {
+        if o + 22 > v.len() {
+            break;
+        }
+        let id = le32(o)?;
+        let size = (le32(o + 18)? as usize).checked_sub(4)?;
+        if id == 0x76A4_3207 {
+            let d = v.get(o + 22..o + 24)?;
+            return Some(u16::from_le_bytes([d[0], d[1]]));
+        }
+        o = o.checked_add(22 + size)?;
+    }
+    None
 }
 
 /// Tag 0x0014: Coolpix colour block (E5400/E8x00, E5700, NRW cameras).
@@ -222,5 +248,35 @@ fn parse_color_block(e: &Entry, order: ByteOrder, model: &str, mn: &mut MakerNot
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod edit_record_tests {
+    use super::edit_rotation;
+
+    fn record(id: u32, data: &[u8]) -> Vec<u8> {
+        let mut r = id.to_le_bytes().to_vec();
+        r.extend([0u8; 14]);
+        r.extend(((data.len() + 4) as u32).to_le_bytes());
+        r.extend(data);
+        r
+    }
+
+    #[test]
+    fn reads_the_rotation_record() {
+        let mut v = vec![0u8; 22];
+        v.extend(record(0x76A4_3200, &[1]));
+        v.extend(record(0x007D_DC9D, &[0; 40]));
+        v.extend(record(0x76A4_3207, &90u16.to_le_bytes()));
+        v.extend(record(0x7E08_5351, &[0]));
+        assert_eq!(edit_rotation(&v), Some(90));
+        // No rotation record, truncated or inconsistent sizes: nothing.
+        let mut w = vec![0u8; 22];
+        w.extend(record(0x76A4_3200, &[1]));
+        assert_eq!(edit_rotation(&w), None);
+        v.truncate(60);
+        assert_eq!(edit_rotation(&v), None);
+        assert_eq!(edit_rotation(&[0xff; 64]), None);
     }
 }

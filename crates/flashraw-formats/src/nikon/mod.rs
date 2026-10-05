@@ -25,7 +25,7 @@ mod crypt;
 mod makernote;
 
 use crate::common::*;
-use conventions::{file_orientation, select_raw_ifd, wb_from_cam_mul};
+use conventions::{select_raw_ifd, wb_from_cam_mul};
 use flashraw_codecs::nikon_huffman::{self, NikonMeta};
 use flashraw_codecs::nikon_packed::{self, PackedSpec};
 use flashraw_codecs::packed::{self, PackedLayout};
@@ -360,7 +360,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     info.active_area = Rect::new(geo.left, geo.top, geo.width, geo.height);
     info.crop = info.active_area;
     info.white_level = WhiteLevel::uniform(maximum);
-    info.orientation = file_orientation(&tiff);
+    info.orientation = resolve_orientation(&tiff, &mn, &mut meta, cam);
     if let Some(l) = layout_override {
         info.layout = l;
         info.cfa = None;
@@ -392,6 +392,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         push_jpeg(data, o, l, info.orientation, &mut previews);
     }
     classify_previews(&mut previews);
+    let (w, h) = (info.active_area.width, info.active_area.height);
+    crate::orientation::resolve_previews(data, &mut previews, info.orientation, w, h);
     meta.previews = previews;
     if let Some(c) = mn.nef_compression {
         meta.set_extra("nef_compression", c);
@@ -433,6 +435,26 @@ struct Geometry {
 }
 
 /// Normalised model name ("NIKON D850" → "D850", "COOLPIX P7700" → "Coolpix P7700").
+/// Orientation from the standard tag and the rotation saved by Nikon's software in the
+/// edit record, combined under the camera's policy.
+fn resolve_orientation(
+    tiff: &Tiff,
+    mn: &makernote::MakerNote,
+    meta: &mut RawMetadata,
+    cam: Option<&flashraw_camera_db::Camera>,
+) -> Orientation {
+    let exif = crate::orientation::tiff_orientation(tiff.all_ifds());
+    let edit = mn.edit_rotation.and_then(|deg| match deg % 360 {
+        0 => Some(Orientation::Normal),
+        90 => Some(Orientation::Rotate90),
+        180 => Some(Orientation::Rotate180),
+        270 => Some(Orientation::Rotate270),
+        _ => None,
+    });
+    let policy = crate::orientation::policy_for(meta, cam);
+    crate::orientation::apply(meta, exif, edit, None, policy)
+}
+
 fn table_model_name(model: &str) -> String {
     let m = model.trim();
     if m.len() > 8 && m[..8].eq_ignore_ascii_case("COOLPIX ") { format!("Coolpix {}", &m[8..]) } else { m.to_string() }

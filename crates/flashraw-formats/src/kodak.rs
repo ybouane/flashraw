@@ -571,8 +571,10 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         info.cfa = Some(p);
         info.layout = layout_for(&p);
     }
-    let orient = raw.and_then(|r| r.u32(tags::ORIENTATION)).or(ifd0.u32(tags::ORIENTATION)).unwrap_or(1);
-    info.orientation = Orientation::from_exif(if (1..=8).contains(&orient) { orient } else { 1 });
+    let exif = raw
+        .and_then(|r| r.u32(tags::ORIENTATION))
+        .or(ifd0.u32(tags::ORIENTATION))
+        .and_then(Orientation::from_exif_checked);
     if let Some(m) = kifd.wb {
         info.white_balance = WhiteBalance::from_multipliers(m[0], m[1], m[2], m[3]);
     }
@@ -590,7 +592,19 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         cam,
         Known { cfa: true, crop: true, active_area: true, black: true, white: true, color: true, masked: true },
     );
-    meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
+    // EasyShare bodies write their orientation sensor into the EXIF block of the
+    // embedded full-size JPEG (the largest preview) rather than the KDC's own IFDs.
+    let mut previews = tiff_previews(data, 0, &tiff, Orientation::Normal);
+    let camera_jpeg = previews
+        .iter()
+        .filter(|p| p.encoding == PreviewEncoding::Jpeg)
+        .max_by_key(|p| p.width as u64 * p.height as u64)
+        .and_then(|p| data.get(p.offset as usize..(p.offset + p.length) as usize))
+        .and_then(crate::orientation::jpeg_exif_orientation);
+    let policy = crate::orientation::policy_for(&meta, cam);
+    info.orientation = crate::orientation::apply(&mut meta, exif, camera_jpeg, None, policy);
+    crate::orientation::resolve_previews(data, &mut previews, info.orientation, info.crop.width, info.crop.height);
+    meta.previews = previews;
     meta.set_extra("kodak_model", norm);
     let format = match plan_kind_format(&kind) {
         Some(f) => f,

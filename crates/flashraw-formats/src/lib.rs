@@ -25,6 +25,7 @@ pub mod minolta;
 pub mod misc;
 pub mod nikon;
 pub mod olympus;
+pub mod orientation;
 pub mod panasonic;
 pub mod pentax;
 pub mod phaseone;

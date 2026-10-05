@@ -10,6 +10,7 @@
 //! | `0x0004` | ShotInfo        | white-balance index (`wbi`) for old WB tables             |
 //! | `0x0007` | FirmwareVersion | sRAW hue offset selection (5D Mark II firmware split)      |
 //! | `0x000c` | SerialNumber    | metadata                                                  |
+//! | `0x000d` | CameraInfo      | orientation sensor and Auto Rotate setting (per model)    |
 //! | `0x0010` | ModelID         | camera identification (sRAW colour formulas, quirks)      |
 //! | `0x0029` | G9 WB table     | as-shot WB of the PowerShot G9                            |
 //! | `0x0081` | 1D raw pointer  | raw data location of EOS-1D / 1Ds TIFF raws               |
@@ -21,8 +22,8 @@
 //! ColorData has many layouts, identified by the number of
 //! 16-bit words in the tag; see [`ColorData::parse`].
 
-use flashraw_core::ByteOrder;
 use flashraw_core::tiff::{Entry, Ifd};
+use flashraw_core::{ByteOrder, Orientation};
 
 /// Rectangle in Canon's inclusive `left, top, right, bottom` convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -102,6 +103,12 @@ pub struct CanonMakernote {
     pub raw_1d: Option<u32>,
     /// Tag 0x4021 marks an in-camera multi-shot composite whose data is already white balanced.
     pub multishot: bool,
+    /// CameraInfo (tag 0x000d) bytes; the layout depends on the model.
+    pub camera_info: Vec<u8>,
+    /// CameraInfo is stored as UNDEFINED bytes (EOS bodies) rather than LONGs (PowerShots).
+    pub camera_info_bytes: bool,
+    /// Byte order of the maker note.
+    pub order: Option<ByteOrder>,
 }
 
 fn u16s(e: &Entry) -> Vec<u16> {
@@ -255,6 +262,11 @@ impl CanonMakernote {
                 }
                 0x0007 => mn.firmware = Some(e.string()).filter(|s| !s.is_empty()),
                 0x000c => mn.serial = e.u32(0),
+                0x000d => {
+                    mn.camera_info = e.data.to_vec();
+                    mn.camera_info_bytes = e.typ == flashraw_core::tiff::types::UNDEFINED;
+                    mn.order = Some(e.order);
+                }
                 0x0010 => mn.model_id = e.u32(0),
                 0x0095 => mn.lens_model = Some(e.string()).filter(|s| !s.is_empty()),
                 0x00e0 => {
@@ -322,6 +334,50 @@ impl CanonMakernote {
             if m.iter().all(|&v| v > 0) {
                 return Some(m.map(|v| v as f32));
             }
+        }
+        None
+    }
+
+    /// The orientation sensor reading and Auto Rotate setting from CameraInfo.
+    ///
+    /// `orientation_offset` / `auto_rotate_offset` are the model's byte offsets (from the
+    /// camera database). Without an orientation offset, EOS CameraInfo records that start
+    /// with the `0xAAAA` / `0xBBBB` markers are searched for the orientation record
+    /// (a 32-bit `0x101` word whose value byte follows 8 bytes later). Sensor values:
+    /// 0 = horizontal, 1 = rotate 90° CW, 2 = rotate 270° CW; Auto Rotate: 0 = off,
+    /// 1 = on, 2 = on (computer only).
+    pub fn camera_orientation(
+        &self,
+        orientation_offset: Option<u32>,
+        auto_rotate_offset: Option<u32>,
+    ) -> (Option<Orientation>, Option<bool>) {
+        let ci = &self.camera_info;
+        let byte = |off: Option<u32>| off.and_then(|o| ci.get(o as usize).copied()).filter(|&v| v < 3);
+        let sensor = match orientation_offset {
+            Some(_) => byte(orientation_offset),
+            None => self.scan_orientation_record(),
+        };
+        let orientation = sensor.map(|v| match v {
+            1 => Orientation::Rotate90,
+            2 => Orientation::Rotate270,
+            _ => Orientation::Normal,
+        });
+        (orientation, byte(auto_rotate_offset).map(|v| v != 0))
+    }
+
+    fn scan_orientation_record(&self) -> Option<u8> {
+        let ci = &self.camera_info;
+        let order = self.order?;
+        if !self.camera_info_bytes || ci.get(..2) != Some(&[0xAA, 0xAA][..]) {
+            return None;
+        }
+        let mut i = (2..ci.len().saturating_sub(1)).find(|&i| ci[i] == 0xBB && ci[i + 1] == 0xBB)? + 2;
+        while i + 9 <= ci.len() {
+            let w = order.u32([ci[i], ci[i + 1], ci[i + 2], ci[i + 3]]);
+            if w == 0x101 && ci[i + 8] < 3 {
+                return Some(ci[i + 8]);
+            }
+            i += 4;
         }
         None
     }
@@ -411,6 +467,45 @@ mod tests {
         let cd = ColorData::parse(&[7u16; 999], 999).unwrap();
         assert_eq!(cd.version, 0);
         assert!(cd.as_shot.is_none());
+    }
+
+    #[test]
+    fn camera_info_orientation_at_model_offsets() {
+        let mut ci = vec![0u8; 0x400];
+        ci[0x83] = 2;
+        ci[0x3b2] = 0;
+        let mn = CanonMakernote { camera_info: ci.clone(), camera_info_bytes: true, ..Default::default() };
+        assert_eq!(mn.camera_orientation(Some(0x83), Some(0x3b2)), (Some(Orientation::Rotate270), Some(false)));
+        ci[0x83] = 1;
+        ci[0x3b2] = 1;
+        let mn = CanonMakernote { camera_info: ci.clone(), camera_info_bytes: true, ..Default::default() };
+        assert_eq!(mn.camera_orientation(Some(0x83), Some(0x3b2)), (Some(Orientation::Rotate90), Some(true)));
+        // Out-of-range values and offsets are ignored.
+        ci[0x83] = 7;
+        let mn = CanonMakernote { camera_info: ci, camera_info_bytes: true, ..Default::default() };
+        assert_eq!(mn.camera_orientation(Some(0x83), Some(0x900)), (None, None));
+        assert_eq!(CanonMakernote::default().camera_orientation(Some(0x30), None), (None, None));
+    }
+
+    #[test]
+    fn camera_info_orientation_record_scan() {
+        let mut ci = vec![0u8; 0x200];
+        ci[..2].copy_from_slice(&[0xAA, 0xAA]);
+        ci[0x10..0x12].copy_from_slice(&[0xBB, 0xBB]);
+        // Records start after the marker, 4-byte aligned from there.
+        let rec = 0x12 + 4 * 7;
+        ci[rec..rec + 4].copy_from_slice(&0x101u32.to_le_bytes());
+        ci[rec + 8] = 2;
+        let mut mn = CanonMakernote {
+            camera_info: ci,
+            camera_info_bytes: true,
+            order: Some(ByteOrder::Little),
+            ..Default::default()
+        };
+        assert_eq!(mn.camera_orientation(None, None), (Some(Orientation::Rotate270), None));
+        // Only EOS-style byte records are searched.
+        mn.camera_info_bytes = false;
+        assert_eq!(mn.camera_orientation(None, None), (None, None));
     }
 
     #[test]
