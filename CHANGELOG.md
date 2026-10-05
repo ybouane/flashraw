@@ -46,6 +46,10 @@ First complete release of FlashRaw.
   and scanners) get their as-shot white balance: the camera neutral of that chromaticity
   through the colour matrices interpolated for its temperature (including a third
   calibration described by IlluminantData). D75 maps to 7500 K instead of 6500 K.
+- Floating-point DNGs written as big-endian TIFFs with little-endian 32-bit samples and a
+  WhiteLevel LONG holding the bits of 1.0f (one HDR-merge writer) decode instead of
+  producing noise: the samples are read little-endian (when they are plausible that way)
+  and white is 1.0.
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 

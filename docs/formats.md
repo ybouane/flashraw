@@ -111,7 +111,7 @@ Status counts: experimental: 17, partial: 7, supported: 1, unsupported: 20, veri
 | DNG | CFA / LinearRaw / mono, 8-16 bit | uncompressed (strips, tiles; MSB-packed 10/12/14) | verified | all corpus files decode (Leica, Pentax, Ricoh, Sigma fp, smartphones, converter-produced DNGs); StripByteCounts understatement tolerated (DJI) |
 | DNG | CFA / LinearRaw, 1-4 components | lossless JPEG (predictors 1-7, restart markers, 2-component tile rows) | verified | all corpus files decode incl. smartphones with per-row restarts and Pentax Pixel Shift (frame 0) |
 | DNG | CFA, 12-bit | SOF1 12-bit DCT tiles (Blackmagic) | verified | bit-exact with the scalar float IDCT |
-| DNG | CFA, float 16/24/32 | deflate + floating-point predictors 3/34894/34895 | verified | merged-HDR files; RawU16 output: when max(white, data maximum) lies outside 4096..32767 it is scaled to 16383, then clamped at 0 and truncated |
+| DNG | CFA, float 16/24/32 | deflate + floating-point predictors 3/34894/34895 | verified | merged-HDR files; RawU16 output: when max(white, data maximum) lies outside 4096..32767 it is scaled to 16383, then clamped at 0 and truncated; big-endian files whose WhiteLevel LONG holds the bits of 1.0f and whose samples are little-endian (one HDR-merge writer) are read little-endian with white 1.0; float data whose integer Black/WhiteLevel tags are in another unit than the samples (e.g. samples below 0.08 with white 1023) decode as stored and render dark |
 | DNG | CFALayout != 1 | staggered layouts | unsupported | no corpus samples; explicit error |
 | DNG | LinearRaw | lossy JPEG (34892) | verified | converter-produced lossy files |
 | DNG | any | deflate + integer predictors 1/2/34892/34893 | verified |  |

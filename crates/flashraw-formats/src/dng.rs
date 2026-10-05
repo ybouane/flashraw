@@ -40,6 +40,8 @@ struct DngRaw<'a> {
     cpp: u32,
     bps: u32,
     float: bool,
+    /// Byte order of float samples (the TIFF's, except for one writer's quirk).
+    float_order: ByteOrder,
     payload: Payload,
     predictor: u32,
     tile_w: u32,
@@ -180,6 +182,15 @@ fn dng_extras(ifd0: &Ifd, raw: &Ifd) -> flashraw_core::DngExtras {
 fn rational_pair(ifd: &Ifd, tag: u16) -> Option<(f64, f64)> {
     let e = ifd.get(tag)?;
     Some((e.f64(0)?, e.f64(1)?))
+}
+
+/// How many of the 32-bit float samples in `s` read in `order` look like image data
+/// (zero, or finite with a magnitude in [1e-8, 1e4]).
+fn float_plausibility(s: &[u8], order: ByteOrder) -> usize {
+    s.chunks_exact(4)
+        .map(|c| f32::from_bits(order.u32([c[0], c[1], c[2], c[3]])))
+        .filter(|v| *v == 0.0 || (1e-8..=1e4).contains(&v.abs()))
+        .count()
 }
 
 /// One calibration of the camera profile: an XYZ -> camera matrix (`rows` x 3) and an
@@ -554,8 +565,26 @@ fn parse_raw<'a>(
         }
         info.black_level = b;
     }
+    // Writer quirk: a big-endian TIFF whose 32-bit float samples are little-endian, with
+    // WhiteLevel written as a LONG holding the bit pattern of 1.0f. Confirmed against the
+    // samples themselves so a file that is only odd in its WhiteLevel keeps its order.
+    let float_order = if float
+        && tiff.order == ByteOrder::Big
+        && bps == 32
+        && payload == Payload::Uncompressed
+        && raw.get(tags::WHITE_LEVEL).is_some_and(|e| e.typ == 4 && e.u32s() == [0x3F80_0000])
+        && units
+            .first()
+            .and_then(|&(o, l)| data.get(o..o.saturating_add(l.min(1 << 16))))
+            .is_some_and(|s| float_plausibility(s, ByteOrder::Little) > float_plausibility(s, ByteOrder::Big))
+    {
+        ByteOrder::Little
+    } else {
+        tiff.order
+    };
     // White level.
     info.white_level = match raw.get(tags::WHITE_LEVEL) {
+        _ if float_order != tiff.order => WhiteLevel::uniform(1),
         Some(e) if !e.is_empty() => WhiteLevel { values: e.u32s() },
         _ => {
             let max = if float {
@@ -643,6 +672,7 @@ fn parse_raw<'a>(
         cpp,
         bps,
         float,
+        float_order,
         payload,
         predictor: raw.u32(tags::PREDICTOR).unwrap_or(1),
         tile_w,
@@ -1039,7 +1069,7 @@ impl DngRaw<'_> {
             (Payload::Deflate, 34895) => cpp * 4,
             _ => 0,
         };
-        let little = self.order == ByteOrder::Little;
+        let little = self.float_order == ByteOrder::Little;
         let mut rowbuf = vec![0u8; row_bytes];
         let mut vals = vec![0f32; if sx == 0 && w * cpp == trl { 0 } else { trl }];
         let mut max = 0u32;
@@ -1312,6 +1342,42 @@ mod tests {
         let own = cal(xy_to_cct(x, y), &own_m, None);
         let n = white_xy_neutral(&[warm, cool, own], &[], x, y).unwrap();
         assert!(close(&n, &neutral(&own_m, x, y)), "{n:?}");
+    }
+
+    fn decode_dng(data: &[u8]) -> Result<RawImage> {
+        let p = Profiler::new();
+        open_dng(data)?.decode(&DecodeContext::new(&p))
+    }
+
+    fn float_samples() -> Vec<f32> {
+        (0..8 * 6).map(|i| i as f32 / 64.0).collect()
+    }
+
+    /// Big-endian 32-bit float DNG with the samples written in `samples_big` order.
+    fn float_dng(samples_big: bool, white: u32) -> Dng {
+        let s =
+            float_samples().iter().flat_map(|v| if samples_big { v.to_be_bytes() } else { v.to_le_bytes() }).collect();
+        let mut d = Dng::new(true, 8, 6, 32, s);
+        d.shorts(tags::SAMPLE_FORMAT, &[3]);
+        d.longs(tags::WHITE_LEVEL, &[white]);
+        d
+    }
+
+    #[test]
+    fn big_endian_tiff_with_little_endian_floats() {
+        // WhiteLevel holds the bits of 1.0f and the samples are little-endian.
+        let f = float_dng(false, 0x3F80_0000).build();
+        let d = open_dng(&f).unwrap();
+        assert_eq!(d.frame_info().white_level.values, vec![1]);
+        let img = decode_dng(&f).unwrap();
+        assert_eq!(img.data.as_f32().unwrap(), &float_samples()[..]);
+        // The same odd WhiteLevel with genuinely big-endian samples keeps the TIFF order.
+        let f = float_dng(true, 0x3F80_0000).build();
+        assert_eq!(decode_dng(&f).unwrap().data.as_f32().unwrap(), &float_samples()[..]);
+        // Ordinary big-endian float DNGs are untouched.
+        let f = float_dng(true, 1).build();
+        assert_eq!(open_dng(&f).unwrap().frame_info().white_level.values, vec![1]);
+        assert_eq!(decode_dng(&f).unwrap().data.as_f32().unwrap(), &float_samples()[..]);
     }
 
     #[test]
