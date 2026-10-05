@@ -158,6 +158,9 @@ pub struct RawFrame {
     pub metadata: RawMetadata,
     /// Timings and backends of this decode.
     pub stats: DecodeStatistics,
+    /// Repairs made under [`crate::CorruptionPolicy::Recover`] (truncated strips/tiles
+    /// zero-filled, ...), in unit order. Always empty under the default strict policy.
+    pub warnings: Vec<DecodeWarning>,
 }
 
 impl RawFrame {
@@ -172,6 +175,15 @@ impl RawFrame {
     /// Timings and backends of this decode.
     pub fn stats(&self) -> &DecodeStatistics {
         &self.stats
+    }
+    /// Repairs made under [`crate::CorruptionPolicy::Recover`]; empty for a complete decode.
+    pub fn warnings(&self) -> &[DecodeWarning] {
+        &self.warnings
+    }
+    /// True when some samples hold no decoded data (recovered from corrupt or truncated
+    /// input, see [`RawFrame::warnings`]).
+    pub fn is_incomplete(&self) -> bool {
+        !self.warnings.is_empty()
     }
     /// Normalised file metadata.
     pub fn metadata(&self) -> &RawMetadata {

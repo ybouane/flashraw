@@ -43,13 +43,13 @@ pub mod process;
 mod source;
 
 pub use flashraw_core::{
-    BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, DecodeUnit, DngExtras,
-    DngProfileInfo, Error, ExposureInfo, FrameInfo, GpsInfo, Illuminant, LensInfo, Limits, Orientation,
-    PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result, SampleFormat,
-    SensorLayout, Stage, WhiteBalance, WhiteLevel,
+    BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, CorruptReason, DataUnit,
+    DecodeUnit, DecodeWarning, DngExtras, DngProfileInfo, Error, ExposureInfo, FrameInfo, GpsInfo, Illuminant,
+    LensInfo, Limits, Orientation, PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata,
+    Rect, Result, SampleFormat, SensorLayout, Stage, Truncation, WhiteBalance, WhiteLevel,
 };
 pub use frame::{BackendReport, DecodeStatistics, RawFrame, RawPixelData};
-pub use options::{Backend, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};
+pub use options::{Backend, CorruptionPolicy, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};
 pub use source::Source;
 
 /// Low-level access for advanced users and tooling: the internal crates. Not covered
@@ -260,7 +260,7 @@ impl<'a> FlashRaw<'a> {
             )));
         }
         // ---- end GPU hook ----
-        let ctx = DecodeContext { limits: opts.limits, parallel: threads > 1, simd: use_simd, profiler: &profiler };
+        let ctx = decode_context(opts, &profiler, threads > 1, use_simd);
         let full = Rect::full(info.width, info.height);
         let region = match opts.region {
             Some(r) => {
@@ -415,6 +415,7 @@ impl<'a> FlashRaw<'a> {
             orientation: if opts.output == OutputFormat::Rgba8 { Orientation::Normal } else { info.orientation },
             metadata: self.metadata().clone(),
             stats,
+            warnings: ctx.take_warnings(),
         })
     }
 
@@ -423,14 +424,25 @@ impl<'a> FlashRaw<'a> {
     #[doc(hidden)]
     pub fn decode_raw_image(&self, opts: &DecodeOptions) -> Result<RawImage> {
         let profiler = Profiler::new();
-        let ctx = DecodeContext {
-            limits: opts.limits,
-            parallel: flashraw_core::par::threads() > 1,
-            simd: !matches!(opts.backend, Backend::Cpu),
-            profiler: &profiler,
-        };
+        let ctx =
+            decode_context(opts, &profiler, flashraw_core::par::threads() > 1, !matches!(opts.backend, Backend::Cpu));
         self.decoder.decode(&ctx)
     }
+}
+
+/// The decoder context for `opts`.
+pub(crate) fn decode_context<'p>(
+    opts: &DecodeOptions,
+    profiler: &'p Profiler,
+    parallel: bool,
+    simd: bool,
+) -> DecodeContext<'p> {
+    let mut ctx = DecodeContext::new(profiler);
+    ctx.limits = opts.limits;
+    ctx.parallel = parallel;
+    ctx.simd = simd;
+    ctx.recover = opts.corruption_policy == CorruptionPolicy::Recover;
+    ctx
 }
 
 impl FlashRaw<'static> {

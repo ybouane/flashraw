@@ -17,6 +17,7 @@ mod error;
 pub mod exif;
 pub mod huffman;
 pub mod image;
+pub mod integrity;
 pub mod metadata;
 pub mod par;
 pub mod profile;
@@ -30,6 +31,7 @@ pub use decoder::{
 };
 pub use error::{Error, Result};
 pub use image::{Limits, PixelData, RawImage, alloc_zeroed, max_nonneg_bits};
+pub use integrity::{CorruptReason, DataUnit, DecodeWarning, RowGeometry, SensorBytes, Truncation};
 pub use metadata::{
     DngExtras, DngProfileInfo, ExposureInfo, GpsInfo, LensInfo, PreviewEncoding, PreviewInfo, PreviewKind, RawMetadata,
 };

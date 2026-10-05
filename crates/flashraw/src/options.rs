@@ -115,6 +115,44 @@ pub enum Demosaic {
     HalfSize,
 }
 
+/// What a decode does when the sensor data is corrupt or truncated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum CorruptionPolicy {
+    /// Decode every complete sample that is present, zero-fill the rest, and report each
+    /// repair in [`crate::RawFrame::warnings`] ([`crate::RawFrame::is_incomplete`] is then
+    /// true): never silent. Applies to truncated strips, tiles and other uncompressed or
+    /// packed payloads, and to compressed DNG strips/tiles (a unit that is truncated or
+    /// fails to decode is zero-filled). Other compressed streams (single entropy-coded
+    /// streams such as NEF, CR2/CR3, ARW, RAF compressed data) fail as under `Strict`.
+    /// The default.
+    #[default]
+    Recover,
+    /// Fail with [`crate::Error::CorruptFile`] (with a structured
+    /// [`crate::CorruptReason`]) when any sensor data needed for the output is missing.
+    Strict,
+}
+
+impl CorruptionPolicy {
+    /// Parse a policy name (`strict`, `recover`; case-insensitive).
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.to_ascii_lowercase().as_str() {
+            "strict" => CorruptionPolicy::Strict,
+            "recover" => CorruptionPolicy::Recover,
+            _ => return None,
+        })
+    }
+
+    /// Canonical name, accepted by [`CorruptionPolicy::parse`].
+    pub fn name(self) -> &'static str {
+        match self {
+            CorruptionPolicy::Strict => "strict",
+            CorruptionPolicy::Recover => "recover",
+        }
+    }
+}
+
 /// Options for [`crate::FlashRaw::decode`].
 #[derive(Debug, Clone)]
 pub struct DecodeOptions {
@@ -135,6 +173,10 @@ pub struct DecodeOptions {
     pub apply_opcodes: bool,
     /// Safety limits for untrusted input.
     pub limits: Limits,
+    /// Truncated or corrupt sensor data: decode what is there and report it in
+    /// [`crate::RawFrame::warnings`] ([`CorruptionPolicy::Recover`], the default) or fail
+    /// ([`CorruptionPolicy::Strict`]).
+    pub corruption_policy: CorruptionPolicy,
 }
 
 impl Default for DecodeOptions {
@@ -148,6 +190,7 @@ impl Default for DecodeOptions {
             demosaic: Demosaic::Bilinear,
             apply_opcodes: true,
             limits: Limits::default(),
+            corruption_policy: CorruptionPolicy::Recover,
         }
     }
 }
@@ -235,6 +278,7 @@ macro_rules! name_traits {
 name_traits!(Backend, "backend");
 name_traits!(OutputFormat, "output format");
 name_traits!(Demosaic, "demosaic");
+name_traits!(CorruptionPolicy, "corruption policy");
 
 #[cfg(test)]
 mod tests {
@@ -260,6 +304,9 @@ mod tests {
         }
         for d in [Demosaic::Bilinear, Demosaic::HalfSize] {
             assert_eq!(d.to_string().parse::<Demosaic>(), Ok(d));
+        }
+        for p in [CorruptionPolicy::Strict, CorruptionPolicy::Recover] {
+            assert_eq!(p.to_string().parse::<CorruptionPolicy>(), Ok(p));
         }
         assert_eq!("nope".parse::<Backend>().unwrap_err().to_string(), "unknown backend \"nope\"");
     }

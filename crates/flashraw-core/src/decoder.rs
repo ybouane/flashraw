@@ -135,12 +135,24 @@ pub struct DecodeContext<'p> {
     pub simd: bool,
     /// Receives per-stage timings.
     pub profiler: &'p Profiler,
+    /// Recover from truncated sensor data (zero-fill and warn) instead of failing.
+    /// Default: true (the high-level API's default policy). See [`crate::integrity`].
+    pub recover: bool,
+    /// Problems repaired under `recover` (see [`DecodeContext::recovered`]).
+    pub(crate) warnings: std::sync::Mutex<Vec<crate::DecodeWarning>>,
 }
 
 impl<'p> DecodeContext<'p> {
     /// A context with default limits, parallelism and SIMD enabled.
     pub fn new(profiler: &'p Profiler) -> Self {
-        DecodeContext { limits: Limits::default(), parallel: true, simd: true, profiler }
+        DecodeContext {
+            limits: Limits::default(),
+            parallel: true,
+            simd: true,
+            profiler,
+            recover: true,
+            warnings: std::sync::Mutex::new(Vec::new()),
+        }
     }
 }
 
@@ -210,6 +222,15 @@ pub struct PackedPayload<'a> {
     pub order: PackOrder,
     /// Bytes from the start of one row to the next.
     pub row_stride: usize,
+}
+
+impl PackedPayload<'_> {
+    /// True when `data` holds every sample (only complete payloads take the GPU unpack
+    /// path; truncated ones are decoded on the CPU under the corruption policy).
+    pub fn is_complete(&self) -> bool {
+        let g = crate::RowGeometry::packed(self.height as usize, self.width as usize, self.bits, self.row_stride);
+        self.data.len() >= g.needed()
+    }
 }
 
 /// A parsed RAW file ready for decoding.

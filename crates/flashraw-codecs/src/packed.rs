@@ -29,8 +29,10 @@ impl PackedLayout {
     }
 }
 
-/// Unpack `src` into `dst` rows of `dst_stride` samples. Rows beyond the available
-/// source data are left untouched and reported as an error unless `lenient`.
+/// Unpack `src` into `dst` rows of `dst_stride` samples. A source too short for every
+/// row is an error unless `lenient` (recovering truncated data): then complete rows and
+/// the complete samples of a partial final row are unpacked, and the remaining samples
+/// are left untouched (callers pass zeroed buffers).
 pub fn unpack(
     src: &[u8],
     layout: PackedLayout,
@@ -60,6 +62,10 @@ pub fn unpack(
         for (i, row) in chunk.chunks_mut(dst_stride).enumerate() {
             let y = first + i;
             if y >= avail_rows {
+                // Recovering: the complete samples of a partial row (rows below have no data).
+                if let Some(s) = src.get(y * row_stride..).filter(|s| y == avail_rows && !s.is_empty()) {
+                    unpack_row_partial(s, &mut row[..width], bits, layout.order, simd);
+                }
                 break;
             }
             let s = &src[y * row_stride..];
@@ -86,6 +92,28 @@ pub fn unpack_row(src: &[u8], dst: &mut [u16], bits: u32, order: PackOrder, simd
         (10, PackOrder::LsbBytes) => unpack10_lsb(src, dst),
         _ => unpack_row_scalar(src, dst, bits, order),
     }
+}
+
+/// Samples of `bits` bits whose bits lie entirely within the first `len` bytes of a
+/// row packed in `order` (word orders need whole words).
+pub fn complete_samples(len: usize, bits: u32, order: PackOrder) -> usize {
+    let usable = match order {
+        PackOrder::Msb16 => len / 2 * 2,
+        PackOrder::Msb32 => len / 4 * 4,
+        PackOrder::MsbBytes | PackOrder::LsbBytes => len,
+    };
+    if bits == 0 { 0 } else { usable * 8 / bits as usize }
+}
+
+/// [`unpack_row`] for a row cut short by truncated input: samples not entirely within
+/// `src` are set to zero instead of being decoded from padding. Returns the number of
+/// complete samples.
+pub fn unpack_row_partial(src: &[u8], dst: &mut [u16], bits: u32, order: PackOrder, simd: bool) -> usize {
+    let n = complete_samples(src.len(), bits, order).min(dst.len());
+    let (done, rest) = dst.split_at_mut(n);
+    unpack_row(src, done, bits, order, simd);
+    rest.fill(0);
+    n
 }
 
 /// Reference implementation for every packing (bit pump based).
@@ -419,5 +447,30 @@ mod tests {
         }
         assert!(unpack(&src[..160 * 10], layout, &mut dst, w, true, true, false).is_err());
         assert!(unpack(&src[..160 * 10], layout, &mut dst, w, true, true, true).is_ok());
+        // Recovering a partial row: its complete samples are kept, the rest are zero.
+        let mut part = vec![0u16; w * h];
+        unpack(&src[..160 * 10 + 7], layout, &mut part, w, true, true, true).unwrap();
+        assert_eq!(&part[..w * 10], &dst[..w * 10]);
+        assert_eq!(&part[w * 10..w * 10 + 4], &dst[w * 10..w * 10 + 4]);
+        assert!(part[w * 10 + 4..].iter().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn partial_rows_zero_incomplete_samples() {
+        let src = pseudo(16, 3);
+        for (bits, order, len, complete) in [
+            (12, PackOrder::MsbBytes, 5, 3),
+            (14, PackOrder::LsbBytes, 7, 4),
+            (14, PackOrder::MsbBytes, 6, 3),
+            (16, PackOrder::Msb16, 5, 2),
+            (12, PackOrder::Msb32, 7, 2),
+        ] {
+            let mut full = vec![0u16; 8];
+            unpack_row_scalar(&src, &mut full, bits, order);
+            let mut part = vec![0xFFFFu16; 8];
+            assert_eq!(unpack_row_partial(&src[..len], &mut part, bits, order, true), complete);
+            assert_eq!(&part[..complete], &full[..complete], "{bits} {order:?}");
+            assert!(part[complete..].iter().all(|&v| v == 0), "{bits} {order:?}");
+        }
     }
 }

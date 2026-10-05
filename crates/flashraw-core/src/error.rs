@@ -1,5 +1,6 @@
 //! Structured error type shared by every FlashRaw crate.
 
+use crate::integrity::{CorruptReason, Truncation};
 use std::fmt;
 
 /// Result alias used throughout FlashRaw.
@@ -26,12 +27,18 @@ pub enum Error {
     },
 
     /// The file is structurally invalid (truncated, bad offsets, corrupt entropy data...).
-    #[error("corrupt file: {what}{}", .offset.map(|o| format!(" (at offset {o:#x})")).unwrap_or_default())]
+    ///
+    /// Truncated sensor data carries a structured [`CorruptReason`] (see
+    /// [`Error::corrupt_reason`] and [`Error::truncation`]).
+    #[error("corrupt file: {what}{}", fmt_offset(.offset, .reason))]
+    #[non_exhaustive]
     CorruptFile {
         /// What was being parsed or what was wrong.
         what: String,
         /// Byte offset in the input where the problem was found, when known.
         offset: Option<u64>,
+        /// Structured cause, when known (e.g. which strip is truncated and by how much).
+        reason: Option<Box<CorruptReason>>,
     },
 
     /// Metadata required for decoding is missing or nonsensical.
@@ -74,6 +81,14 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
+fn fmt_offset(offset: &Option<u64>, reason: &Option<Box<CorruptReason>>) -> String {
+    match (offset, reason) {
+        // Structured reasons state their offsets themselves.
+        (Some(o), None) => format!(" (at offset {o:#x})"),
+        _ => String::new(),
+    }
+}
+
 fn fmt_ctx(s: &str) -> String {
     if s.is_empty() { String::new() } else { format!(": {s}") }
 }
@@ -82,13 +97,61 @@ impl Error {
     /// Shorthand for a [`Error::CorruptFile`] without an offset.
     #[cold]
     pub fn corrupt(what: impl fmt::Display) -> Self {
-        Error::CorruptFile { what: what.to_string(), offset: None }
+        Error::CorruptFile { what: what.to_string(), offset: None, reason: None }
     }
 
     /// Shorthand for a [`Error::CorruptFile`] with an offset.
     #[cold]
     pub fn corrupt_at(what: impl fmt::Display, offset: u64) -> Self {
-        Error::CorruptFile { what: what.to_string(), offset: Some(offset) }
+        Error::CorruptFile { what: what.to_string(), offset: Some(offset), reason: None }
+    }
+
+    /// A [`Error::CorruptFile`] for sensor data that extends past the end of the input.
+    #[cold]
+    pub fn truncated(t: Truncation) -> Self {
+        Error::CorruptFile {
+            what: t.to_string(),
+            offset: Some(t.offset),
+            reason: Some(Box::new(CorruptReason::Truncated(t))),
+        }
+    }
+
+    /// A [`Error::CorruptFile`] with a structured reason.
+    #[cold]
+    pub fn corrupt_with(reason: CorruptReason) -> Self {
+        let offset = reason.truncation().map(|t| t.offset);
+        Error::CorruptFile { what: reason.to_string(), offset, reason: Some(Box::new(reason)) }
+    }
+
+    /// Attribute a failure to decode a compressed range to truncation when that range
+    /// (`declared` bytes at `offset`) runs past the end of a `file_len`-byte input: the
+    /// error becomes a structured [`CorruptReason::Truncated`] report. Other errors, and
+    /// ranges inside the file, are returned unchanged. (Compressed streams are only
+    /// known to be short when the decoder runs out of data, so the range is not checked
+    /// up front.)
+    pub fn or_truncated(self, file_len: usize, unit: crate::DataUnit, offset: usize, declared: usize) -> Self {
+        match self {
+            Error::CorruptFile { reason: None, .. } => {
+                match crate::integrity::check_range(file_len, unit, offset, declared) {
+                    Ok(()) => self,
+                    Err(t) => Error::truncated(t),
+                }
+            }
+            e => e,
+        }
+    }
+
+    /// The structured cause of a [`Error::CorruptFile`], when known.
+    pub fn corrupt_reason(&self) -> Option<&CorruptReason> {
+        match self {
+            Error::CorruptFile { reason, .. } => reason.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Details of truncated sensor data (a [`CorruptReason::Truncated`] corruption).
+    pub fn truncation(&self) -> Option<&Truncation> {
+        self.corrupt_reason().and_then(CorruptReason::truncation)
     }
 
     /// Shorthand for an [`Error::InvalidMetadata`].

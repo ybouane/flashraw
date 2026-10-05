@@ -11,8 +11,8 @@
 use crate::options::{Backend, DecodeOptions, OutputFormat};
 use crate::{FlashRaw, RawFrame, RawPixelData, process};
 use flashraw_core::{
-    DecodeContext, Error, FrameInfo, Orientation, PackedPayload, PixelData, Profiler, RawImage, Rect, Result,
-    SampleFormat, SensorLayout, Stage,
+    Error, FrameInfo, Orientation, PackedPayload, PixelData, Profiler, RawImage, Rect, Result, SampleFormat,
+    SensorLayout, Stage,
 };
 use flashraw_gpu::policy::{self, CpuCosts, Decision, WorkOutput, Workload};
 use flashraw_gpu::{DevelopOutput, DevelopSpec, GpuFrame, GpuOp, HostPixels};
@@ -61,6 +61,7 @@ fn gpu_packed<'a>(raw: &'a FlashRaw<'_>) -> Option<PackedPayload<'a>> {
             && info.sample_format == SampleFormat::U16
             && p.width == info.width
             && p.height == info.height
+            && p.is_complete()
     })
 }
 
@@ -227,11 +228,10 @@ async fn run(
     let mut black = info.black_level.clone();
     let packed = gpu_packed(raw);
     let img: Option<RawImage>;
+    let dctx = crate::decode_context(opts, profiler, threads > 1, cfg!(feature = "simd"));
     let (frame, decode_backend) = match &packed {
         Some(p) => (GpuFrame::from_packed(p).with_window(win), format!("GPU unpack ({})", ctx.info().name)),
         None => {
-            let dctx =
-                DecodeContext { limits: opts.limits, parallel: threads > 1, simd: cfg!(feature = "simd"), profiler };
             let (decoded, measured) = raw.decode_window(&dctx, win, profiler)?;
             if let Some(b) = measured {
                 black = b;
@@ -353,6 +353,7 @@ async fn run(
         orientation: if base == OutputFormat::Rgba8 { Orientation::Normal } else { info.orientation },
         metadata: raw.metadata().clone(),
         stats,
+        warnings: dctx.take_warnings(),
     })
 }
 

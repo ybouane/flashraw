@@ -55,8 +55,10 @@ fn corpus_regression() {
                             })
                         })
                         .map(|f| {
+                            // Complete files decode without recovery warnings.
+                            let warn = f.warnings().iter().map(|w| format!(" [warning: {w}]")).collect::<String>();
                             f.hash_u16(flashraw::Rect::full(f.width, f.height))
-                                .map(|h| format!("{h:016x}"))
+                                .map(|h| format!("{h:016x}{warn}"))
                                 .unwrap_or_default()
                         });
                     match got {
