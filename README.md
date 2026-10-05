@@ -100,7 +100,9 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
   with backwards-compatible defaults).
 - `Backend`, `OutputFormat` and `Demosaic` implement `FromStr`/`Display` with the names
   the CLI and the JS bindings use.
-- The minimum supported Rust version is 1.85; raising it is a minor-version change.
+- Minimum supported Rust version: 1.85 for the library with default features and
+  `serde`; 1.87 with `gpu` (and for the CLI and WASM crates); 1.88 with `jpegxl`.
+  Raising it is a minor-version change.
 - Hidden items (`low_level`, `process`, `decode_raw_image`) expose internals for
   tooling and carry no stability guarantee.
 

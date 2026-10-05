@@ -23,6 +23,17 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy -p flashraw --all-features -- -D warnings
 
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Library (default features + serde): 1.85.
+      - uses: dtolnay/rust-toolchain@1.85
+      - run: cargo check -p flashraw --features serde
+      # gpu feature, CLI, WASM bindings: 1.87; jpegxl feature: 1.88.
+      - uses: dtolnay/rust-toolchain@1.88
+      - run: cargo check --workspace --all-targets --all-features
+
   test:
     strategy:
       fail-fast: false
