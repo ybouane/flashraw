@@ -81,7 +81,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         return Err(Error::unsupported_compression("Sinar", "multi-tile layout"));
     }
     let (off, len) = units[0];
-    let src = bytes::slice_at_lenient(data, off, len.max(w as usize * h as usize * 2))?;
+    let unit = if raw.has(tags::TILE_OFFSETS) { DataUnit::Tile(0) } else { DataUnit::Strip(0) };
+    // Addressed by geometry; a payload past the end of the file fails when decoded.
+    let src = bytes::slice_at_lenient(data, off, len.max(w as usize * h as usize * 2)).unwrap_or(&[]);
     let mut info = FrameInfo::new(w, h, 14);
     info.white_level = WhiteLevel::uniform(0x3fff);
     let p = cfa(raw).unwrap_or(CfaPattern::RGGB);
@@ -102,7 +104,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let decode = move |ctx: &DecodeContext| -> Result<RawImage> {
         let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
         ctx.profiler.time(Stage::Unpack, || {
-            crate::medium::unpack_u16_rows(src, order, w as usize, img.u16_mut(), w as usize * 2, ctx.parallel)
+            let wu = w as usize;
+            crate::medium::decode_u16_rows(ctx, data, unit, off, order, wu, wu * 2, img.u16_mut())
         })?;
         Ok(img)
     };

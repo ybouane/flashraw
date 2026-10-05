@@ -108,6 +108,11 @@ enum Payload {
 }
 
 struct PefRaw<'a> {
+    /// The whole file.
+    data: &'a [u8],
+    /// File offset of the payload.
+    offset: usize,
+    /// Payload bytes from `offset` to the end of the file (empty if past it).
     src: &'a [u8],
     /// Payload length the strip declares (`src` may run on).
     declared: usize,
@@ -134,7 +139,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     opts.limits.check_dims(w, h, 1)?;
     let bps = raw.bps();
     let (offset, bytes) = *strips(raw).first().ok_or_else(|| Error::invalid_metadata("PEF raw IFD without strips"))?;
-    let src = data.get(offset..).filter(|s| !s.is_empty()).ok_or_else(|| Error::corrupt("PEF payload beyond EOF"))?;
+    // A payload past the end of the file fails when decoded (metadata stays available).
+    let src = data.get(offset..).unwrap_or(&[]);
     let (w64, h64) = (w as u64, h as u64);
     let payload = match raw.compression() {
         65535 => {
@@ -262,7 +268,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     info.color_matrices = conventions::color_from_table(table, &meta, cam);
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
 
-    let pef = Arc::new(PefRaw { src, declared: bytes, width: w as usize, height: h as usize, payload });
+    let pef = Arc::new(PefRaw { data, offset, src, declared: bytes, width: w as usize, height: h as usize, payload });
     let p2 = pef.clone();
     let packed = match &pef.payload {
         Payload::Packed(s) => s.fast_layout().map(|l| PackedPayload {
@@ -292,7 +298,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     dec.units = vec![DecodeUnit { rect: Rect::full(w, h), offset: offset as u64, length: bytes as u64 }];
     dec.packed = packed;
     if let Some(rl) = row_layout {
-        dec.region = Some(Box::new(move |ctx, r| conventions::decode_rows_region(src, rl, r, ctx)));
+        dec.region =
+            Some(Box::new(move |ctx, r| conventions::decode_rows_region(data, offset, DataUnit::Strip(0), rl, r, ctx)));
     }
     Ok(Box::new(dec))
 }
@@ -302,21 +309,27 @@ impl PefRaw<'_> {
         let (w, h) = (self.width, self.height);
         let mut img = RawImage::new_u16(w as u32, h as u32, 1, &ctx.limits)?;
         let out = img.u16_mut();
+        let unit = DataUnit::Strip(0);
         match &self.payload {
             Payload::Huffman(t) => {
-                ctx.profiler.time(Stage::EntropyDecode, || {
-                    pentax_huffman::decode(self.src, t, w, h, out, w, ctx.parallel, self.declared)
-                })?;
+                ctx.profiler
+                    .time(Stage::EntropyDecode, || {
+                        pentax_huffman::decode(self.src, t, w, h, out, w, ctx.parallel, self.declared)
+                    })
+                    .map_err(|e| e.or_truncated(self.data.len(), unit, self.offset, self.declared))?;
             }
             Payload::Packed(spec) => {
-                ctx.profiler
-                    .time(Stage::Unpack, || nikon_packed::decode(self.src, spec, out, w, ctx.parallel, ctx.simd))?;
+                let src = ctx.sensor_rows(self.data, unit, self.offset, crate::nikon::packed_geometry(spec))?;
+                ctx.profiler.time(Stage::Unpack, || {
+                    nikon_packed::decode(src, spec, out, w, ctx.parallel, ctx.simd, ctx.recover)
+                })?;
             }
             Payload::Words(order) => {
                 let po = if *order == ByteOrder::Little { PackOrder::LsbBytes } else { PackOrder::MsbBytes };
                 let layout = PackedLayout::tight(w, h, 16, po);
+                let src = ctx.sensor_rows(self.data, unit, self.offset, conventions::row_geometry(&layout, h))?;
                 ctx.profiler
-                    .time(Stage::Unpack, || packed::unpack(self.src, layout, out, w, ctx.parallel, ctx.simd, false))?;
+                    .time(Stage::Unpack, || packed::unpack(src, layout, out, w, ctx.parallel, ctx.simd, ctx.recover))?;
             }
         }
         Ok(img)

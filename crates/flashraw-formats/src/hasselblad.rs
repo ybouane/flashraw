@@ -286,19 +286,28 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let (off, len) = *strips(raw).first().ok_or_else(|| Error::invalid_metadata("Hasselblad: no strips"))?;
     let order = tiff.order;
     let (wu, hu) = (w as usize, h as usize);
+    // A payload past the end of the file fails when decoded (metadata and previews stay
+    // available). Raw16 is addressed by geometry; the lossless JPEG stream may run past
+    // its declared length and sees the rest of the file.
     let src = match payload {
-        Payload::Raw16 => bytes::slice_at_lenient(data, off, len.max(wu * hu * 2))?,
-        Payload::Ljpeg { .. } => bytes::slice_at_lenient(data, off, data.len().saturating_sub(off))?,
+        Payload::Raw16 => bytes::slice_at_lenient(data, off, len.max(wu * hu * 2)).unwrap_or(&[]),
+        Payload::Ljpeg { .. } => data.get(off..).unwrap_or(&[]),
     };
     let decode_fn = move |ctx: &DecodeContext| -> Result<RawImage> {
         let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
+        let unit = DataUnit::Strip(0);
         match payload {
-            Payload::Ljpeg { base } => ctx.profiler.time(Stage::EntropyDecode, || {
-                let hdr = HasselbladHeader::parse(src)?;
-                decode_par(src, &hdr, img.u16_mut(), wu, hu, base, ctx.parallel)
-            })?,
+            // One entropy-coded stream: fails under either policy; a failure over a
+            // declared range past the end of the file is reported as truncation.
+            Payload::Ljpeg { base } => ctx
+                .profiler
+                .time(Stage::EntropyDecode, || {
+                    let hdr = HasselbladHeader::parse(src)?;
+                    decode_par(src, &hdr, img.u16_mut(), wu, hu, base, ctx.parallel)
+                })
+                .map_err(|e| e.or_truncated(data.len(), unit, off, len))?,
             Payload::Raw16 => ctx.profiler.time(Stage::Unpack, || {
-                crate::medium::unpack_u16_rows(src, order, wu, img.u16_mut(), wu * 2, ctx.parallel)
+                crate::medium::decode_u16_rows(ctx, data, unit, off, order, wu, wu * 2, img.u16_mut())
             })?,
         }
         Ok(img)

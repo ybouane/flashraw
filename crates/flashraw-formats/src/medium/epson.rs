@@ -32,6 +32,19 @@ fn row_bytes(width: usize) -> usize {
     width.div_ceil(10) * 16
 }
 
+/// Bytes holding a padded row's `width` samples (the final group's padding is not needed).
+fn padded_row_need(width: usize) -> usize {
+    match width % 10 {
+        0 => (width / 10 * 16).saturating_sub(1),
+        r => width / 10 * 16 + (r * 12).div_ceil(8),
+    }
+}
+
+/// Samples of a padded row entirely within its first `len` bytes.
+fn padded_complete(len: usize) -> usize {
+    len / 16 * 10 + (len % 16).min(15) * 8 / 12
+}
+
 struct Maker {
     black: Option<[u32; 4]>,
     wb: Option<(f32, f32)>,
@@ -92,7 +105,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     };
     let (off, len) = *strips(raw).first().ok_or_else(|| Error::invalid_metadata("ERF: no strips"))?;
     let rb = if padded { row_bytes(w as usize) } else { (w as usize * 12).div_ceil(8) };
-    let src = bytes::slice_at_lenient(data, off, len.max(rb * h as usize))?;
+    let need = if padded { padded_row_need(w as usize) } else { rb };
+    let _ = len; // addressed by geometry: the declared length does not matter
 
     let mut info = FrameInfo::new(w, h, 12);
     info.compression = Compression::Uncompressed;
@@ -127,9 +141,10 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let (wu, hu) = (w as usize, h as usize);
     let decode = move |ctx: &DecodeContext| -> Result<RawImage> {
         let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
-        if src.len() < rb {
-            return Err(Error::corrupt("ERF: raw data truncated"));
-        }
+        let geometry = RowGeometry { rows: hu, stride: rb, row_bytes: need, samples: wu };
+        let src = ctx.sensor_bytes(data, DataUnit::Strip(0), off, geometry.needed())?;
+        let (truncation, src) = (src.truncation, src.bytes);
+        let filled = std::sync::atomic::AtomicU64::new(0);
         ctx.profiler.time(Stage::Unpack, || {
             par::for_each_row_chunk_bounded(
                 img.u16_mut(),
@@ -139,18 +154,28 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
                 |first, chunk| {
                     for (i, row) in chunk.chunks_mut(wu).enumerate() {
                         let y = first + i;
-                        let Some(s) = src.get(y * rb..) else { break };
+                        let s = src.get(y * rb..).unwrap_or(&[]);
                         let s = &s[..rb.min(s.len())];
+                        // Samples not entirely within the data (recovering) stay zero.
+                        let n = if padded { padded_complete(s.len()) } else { s.len() * 8 / 12 }.min(wu);
+                        if n < wu {
+                            filled.fetch_add((wu - n) as u64, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        if n == 0 {
+                            continue;
+                        }
                         if padded {
-                            unpack_row_12_padded(s, row);
+                            unpack_row_12_padded(s, &mut row[..n]);
                         } else {
-                            flashraw_codecs::packed::unpack_row(s, row, 12, PackOrder::MsbBytes, ctx.simd);
+                            flashraw_codecs::packed::unpack_row(s, &mut row[..n], 12, PackOrder::MsbBytes, ctx.simd);
                         }
                     }
                 },
             );
         });
-        let _ = hu;
+        if let Some(t) = truncation {
+            ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
+        }
         Ok(img)
     };
     let mut dec = SimpleDecoder::new(RawFormat::Erf, meta, info, Box::new(decode));
@@ -161,6 +186,16 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn padded_row_needs() {
+        assert_eq!(padded_row_need(20), 31);
+        assert_eq!(padded_row_need(12), 16 + 3);
+        assert_eq!(padded_row_need(13), 16 + 5);
+        assert_eq!(padded_complete(31), 20);
+        assert_eq!(padded_complete(30), 19);
+        assert_eq!(padded_complete(16 + 3), 12);
+    }
 
     #[test]
     fn padded_groups() {

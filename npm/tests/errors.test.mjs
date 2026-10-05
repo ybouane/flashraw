@@ -63,14 +63,15 @@ describe('structured errors', () => {
             try {
               raw.metadata;
               await raw.preview();
-              await raw.decode();
+              // Recovered by default: a truncated payload is reported on the frame.
+              if ((await raw.decode()).incomplete) kinds.add('incomplete');
             } finally {
               raw.close();
             }
           }, `cut ${frac}`),
         );
       }
-      assert.ok([...kinds].some((k) => k !== 'ok'), 'some truncation must be reported');
+      assert.ok([...kinds].some((k) => k !== 'ok'), 'some truncation must be reported (error or incomplete frame)');
     });
   }
 

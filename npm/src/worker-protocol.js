@@ -113,7 +113,7 @@ export function serve(api, port) {
       const result = await fn(args);
       port.post({ id, ok: true, result }, transferablesOf(result));
     } catch (e) {
-      const error = { kind: e?.kind ?? 'Internal', message: e?.message ?? String(e) };
+      const error = { kind: e?.kind ?? 'Internal', message: e?.message ?? String(e), corrupt: e?.corrupt ?? null };
       port.post({ id, ok: false, error });
     }
   });

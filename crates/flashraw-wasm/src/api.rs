@@ -5,7 +5,9 @@
 //! description; the JS layer decides whether to copy the pixels out or hand back a view.
 
 use crate::json;
-use flashraw::{Backend, DecodeOptions, Demosaic, Error, FlashRaw, Limits, OutputFormat, PreviewInfo, Rect};
+use flashraw::{
+    Backend, CorruptionPolicy, DecodeOptions, Demosaic, Error, FlashRaw, Limits, OutputFormat, PreviewInfo, Rect,
+};
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;
@@ -20,17 +22,20 @@ pub const DEFAULT_MAX_SAMPLES: u64 = 400_000_000;
 pub struct ApiError {
     pub kind: &'static str,
     pub message: String,
+    /// Structured cause of a `CorruptFile` error ([`json::corrupt_reason`]), set on the JS
+    /// error as `corrupt`.
+    pub corrupt: Option<Value>,
 }
 
 impl ApiError {
     pub fn invalid(msg: impl Into<String>) -> Self {
-        ApiError { kind: "InvalidArgument", message: msg.into() }
+        ApiError { corrupt: None, kind: "InvalidArgument", message: msg.into() }
     }
 }
 
 impl From<Error> for ApiError {
     fn from(e: Error) -> Self {
-        ApiError { kind: e.kind(), message: e.to_string() }
+        ApiError { kind: e.kind(), message: e.to_string(), corrupt: e.corrupt_reason().map(json::corrupt_reason) }
     }
 }
 
@@ -215,6 +220,10 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
         }
         Some(t) => return Err(ApiError::invalid(format!("unknown sampleType `{t}` (expected f32 or f16)"))),
     }
+    if let Some(p) = str_opt(&v, "corruptionPolicy")? {
+        o.corruption_policy = CorruptionPolicy::parse(p)
+            .ok_or_else(|| ApiError::invalid(format!("unknown corruptionPolicy `{p}` (expected recover or strict)")))?;
+    }
     match v.get("applyOpcodes") {
         None | Some(Value::Null) => {}
         Some(Value::Bool(b)) => o.apply_opcodes = *b,
@@ -329,6 +338,7 @@ fn into_decoded_x(frame: flashraw::RawFrame, backend: &str, x: ApiExtras) -> Api
         #[allow(unreachable_patterns)]
         _ => {
             return Err(ApiError {
+                corrupt: None,
                 kind: "NotAvailable",
                 message: "GPU-resident outputs require the asynchronous GPU decode (WebGPU build)".into(),
             });
@@ -403,7 +413,7 @@ pub fn decode_tile(raw: &FlashRaw<'_>, index: u32, options_json: &str) -> ApiRes
 /// Resolve a preview selector: `"largest"`, `"smallest"` or an index.
 pub fn select_preview<'r>(raw: &'r FlashRaw<'_>, which: &str) -> ApiResult<(usize, &'r PreviewInfo)> {
     let all = raw.previews();
-    let none = || ApiError { kind: "NotAvailable", message: "the file has no embedded preview".into() };
+    let none = || ApiError { corrupt: None, kind: "NotAvailable", message: "the file has no embedded preview".into() };
     let pick = |p: Option<&PreviewInfo>| -> ApiResult<(usize, &'r PreviewInfo)> {
         let p = p.ok_or_else(none)?;
         let i = all.iter().position(|x| std::ptr::eq(x, p)).unwrap_or(0);
@@ -415,6 +425,7 @@ pub fn select_preview<'r>(raw: &'r FlashRaw<'_>, which: &str) -> ApiResult<(usiz
         s => {
             let i: usize = s.parse().map_err(|_| ApiError::invalid(format!("unknown preview selector `{s}`")))?;
             let p = all.get(i).ok_or_else(|| ApiError {
+                corrupt: None,
                 kind: "NotAvailable",
                 message: format!("preview {i} out of range ({} previews)", all.len()),
             })?;
@@ -446,7 +457,11 @@ pub fn decode_preview_rgba(raw: &FlashRaw<'_>, which: &str) -> ApiResult<Decoded
         return Err(Error::corrupt(format!("preview has {} bytes for {w}x{h} RGB", rgb.len())).into());
     }
     let mut rgba = Vec::new();
-    rgba.try_reserve_exact(n * 4).map_err(|_| ApiError { kind: "OutOfMemory", message: "preview buffer".into() })?;
+    rgba.try_reserve_exact(n * 4).map_err(|_| ApiError {
+        corrupt: None,
+        kind: "OutOfMemory",
+        message: "preview buffer".into(),
+    })?;
     for px in rgb[..n * 3].chunks_exact(3) {
         rgba.extend_from_slice(&[px[0], px[1], px[2], 255]);
     }
@@ -500,6 +515,73 @@ mod tests {
             assert_eq!(parse_decode_options(bad).unwrap_err().kind, "InvalidArgument", "{bad}");
         }
         assert_eq!(parse_open_options(r#"{"limits":{"maxSamples":10,"maxDimension":5}}"#).unwrap().max_dimension, 5);
+    }
+
+    /// A 16x8 16-bit uncompressed DNG missing the last `missing` bytes of its strip.
+    fn truncated_dng(missing: usize) -> Vec<u8> {
+        let e: [(u16, u16, u32, u32); 12] = [
+            (0x0100, 4, 1, 16),
+            (0x0101, 4, 1, 8),
+            (0x0102, 3, 1, 16),
+            (0x0103, 3, 1, 1),
+            (0x0106, 3, 1, 32803),
+            (0x0111, 4, 1, 8 + 2 + 12 * 12 + 4),
+            (0x0115, 3, 1, 1),
+            (0x0116, 4, 1, 8),
+            (0x0117, 4, 1, 256),
+            (0x828D, 3, 2, 2 | (2 << 16)),
+            (0x828E, 1, 4, u32::from_le_bytes([0, 1, 1, 2])),
+            (0xC612, 1, 4, u32::from_le_bytes([1, 4, 0, 0])),
+        ];
+        let mut out = b"II*\0\x08\0\0\0".to_vec();
+        out.extend((e.len() as u16).to_le_bytes());
+        for (tag, typ, count, v) in e {
+            out.extend(tag.to_le_bytes());
+            out.extend(typ.to_le_bytes());
+            out.extend(count.to_le_bytes());
+            out.extend(v.to_le_bytes());
+        }
+        out.extend(0u32.to_le_bytes());
+        out.extend((0..128u16).flat_map(|i| (i * 31 + 1).to_le_bytes()));
+        out.truncate(out.len() - missing);
+        out
+    }
+
+    #[test]
+    fn corruption_policy() {
+        assert_eq!(parse_decode_options("{}").unwrap().0.corruption_policy, CorruptionPolicy::Recover);
+        let strict = parse_decode_options(r#"{"corruptionPolicy":"strict"}"#).unwrap().0;
+        assert_eq!(strict.corruption_policy, CorruptionPolicy::Strict);
+        assert_eq!(parse_decode_options(r#"{"corruptionPolicy":"lax"}"#).unwrap_err().kind, "InvalidArgument");
+
+        let raw = open(truncated_dng(6), "").unwrap();
+        let d = decode(&raw, "{}").unwrap();
+        let info: Value = serde_json::from_str(&d.info).unwrap();
+        assert_eq!(info["incomplete"], true);
+        let w = &info["warnings"][0];
+        assert_eq!(
+            (w["kind"].as_str(), w["unit"].as_str(), w["index"].as_u64()),
+            (Some("truncated"), Some("strip"), Some(0))
+        );
+        assert_eq!(
+            (w["expected"].as_u64(), w["available"].as_u64(), w["samplesFilled"].as_u64()),
+            (Some(256), Some(250), Some(3))
+        );
+
+        let e = decode(&raw, r#"{"corruptionPolicy":"strict"}"#).unwrap_err();
+        assert_eq!(e.kind, "CorruptFile");
+        let c = e.corrupt.unwrap();
+        assert_eq!(
+            (c["kind"].as_str(), c["available"].as_u64(), c["fileLength"].as_u64()),
+            (Some("truncated"), Some(250), Some(408))
+        );
+
+        let ok = open(truncated_dng(0), "").unwrap();
+        let info: Value = serde_json::from_str(&decode(&ok, r#"{"corruptionPolicy":"strict"}"#).unwrap().info).unwrap();
+        assert_eq!(
+            (info["incomplete"].as_bool(), info["warnings"].as_array().map(|a| a.len())),
+            (Some(false), Some(0))
+        );
     }
 
     #[test]

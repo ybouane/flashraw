@@ -1,8 +1,8 @@
 //! Output helpers for the CLI.
 
 use flashraw::{
-    DecodeOptions, FlashRaw, FrameInfo, OrientationMetadata, OutputFormat, PreviewEncoding, PreviewInfo, RawFrame,
-    Rect, Stage,
+    CorruptReason, CorruptionPolicy, DecodeOptions, DecodeWarning, FlashRaw, FrameInfo, OrientationMetadata,
+    OutputFormat, PreviewEncoding, PreviewInfo, RawFrame, Rect, Stage,
 };
 use serde_json::{Value, json};
 use std::io::Write;
@@ -378,11 +378,56 @@ pub fn benchmark(path: &Path, opts: &DecodeOptions, iterations: usize, as_json: 
 }
 
 /// Hashes and geometry of the decoded data, for regression testing.
-pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Value {
+/// A structured corruption cause as JSON (`kind`, `unit`, `index`, and for truncation the
+/// byte range: `offset`, `expected`, `available`, `file_len`).
+pub fn reason_json(r: &CorruptReason) -> Value {
+    let u = r.unit();
+    let mut v = json!({"unit": u.kind(), "index": u.index()});
+    match r {
+        CorruptReason::Truncated(t) => {
+            v["kind"] = json!("truncated");
+            v["offset"] = json!(t.offset);
+            v["expected"] = json!(t.expected);
+            v["available"] = json!(t.available);
+            v["file_len"] = json!(t.file_len);
+        }
+        CorruptReason::InvalidUnit { message, .. } => {
+            v["kind"] = json!("invalid-unit");
+            v["message"] = json!(message);
+        }
+        _ => v["kind"] = json!("other"),
+    }
+    v
+}
+
+/// Recovery warnings as JSON: the reason fields plus `samples_filled` and `message`.
+pub fn warnings_json(w: &[DecodeWarning]) -> Value {
+    Value::Array(
+        w.iter()
+            .map(|w| {
+                let mut v = reason_json(&w.reason);
+                v["samples_filled"] = json!(w.samples_filled);
+                v["message"] = json!(w.to_string());
+                v
+            })
+            .collect(),
+    )
+}
+
+/// Error JSON: `error`, `error_kind`, and `corrupt` (the structured cause) when known.
+fn error_json(path: &Path, e: &flashraw::Error) -> Value {
+    let mut v = json!({"file": path, "error": e.to_string(), "error_kind": e.kind()});
+    if let Some(r) = e.corrupt_reason() {
+        v["corrupt"] = reason_json(r);
+    }
+    v
+}
+
+pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool, policy: CorruptionPolicy) -> Value {
     let t0 = std::time::Instant::now();
     let raw = match FlashRaw::open_path(path) {
         Ok(r) => r,
-        Err(e) => return json!({"file": path, "error": e.to_string(), "error_kind": e.kind()}),
+        Err(e) => return error_json(path, &e),
     };
     let open_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let m = raw.metadata().clone();
@@ -390,11 +435,15 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Valu
     let t1 = std::time::Instant::now();
     // By default sensor data as stored, without DNG opcode lists applied, so the hashes
     // describe the payload decode alone.
-    let frame = match raw.decode(DecodeOptions { apply_opcodes, ..Default::default() }) {
+    let frame = match raw.decode(DecodeOptions { apply_opcodes, corruption_policy: policy, ..Default::default() }) {
         Ok(f) => f,
         Err(e) => {
-            return json!({"file": path, "error": e.to_string(), "error_kind": e.kind(), "format": raw.format().name(),
-                "make": m.make, "model": m.model, "frame": frame_info_json(&info)});
+            let mut v = error_json(path, &e);
+            v["format"] = json!(raw.format().name());
+            v["make"] = json!(m.make);
+            v["model"] = json!(m.model);
+            v["frame"] = frame_info_json(&info);
+            return v;
         }
     };
     let decode_ms = t1.elapsed().as_secs_f64() * 1000.0;
@@ -492,6 +541,8 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool) -> Valu
         "hash_full": frame.hash_u16(full).map(|h| format!("{h:016x}")),
         "hash_active": frame.hash_u16(info.active_area).map(|h| format!("{h:016x}")),
         "open_ms": open_ms, "decode_ms": decode_ms,
+        "incomplete": frame.is_incomplete(),
+        "warnings": warnings_json(frame.warnings()),
     })
 }
 
@@ -605,7 +656,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("float.dng");
         std::fs::write(&path, float_dng()).unwrap();
-        let v = verify(&path, None, false);
+        let v = verify(&path, None, false, CorruptionPolicy::default());
         let _ = std::fs::remove_dir_all(&dir);
         assert!(v.get("error").is_none(), "{v}");
         // Floats in [0, 1] are scaled to 16383 for the integer output; white and black follow.

@@ -36,7 +36,8 @@ with a clear error (unsupported codecs, mislabelled files).
 
 `tests/regression/*.tsv` lists 1,965 corpus files with the hash of their full decoded
 buffer (sensor data as stored, without DNG opcode lists). The test decodes each listed
-file and fails on any change. It is skipped when the corpus is absent.
+file and fails on any change. It is skipped when the corpus is absent. A listed file that
+decodes with a recovery warning (see below) also fails: complete files never warn.
 
 `crates/flashraw/tests/orientation.rs` checks orientation records (standard tag, vendor
 record, Auto Rotate setting), the resolved orientation, its source and each preview's
@@ -54,10 +55,22 @@ redistributable); each set is skipped when absent.
   pointers, invalid BMFF sizes, garbage with every magic prefix; plus mutations of a
   real file of every extension in the corpus (truncation at 1–99.9%, header
   corruption, payload overwrite). Each must finish without panicking within a time
-  bound; decodes of truncated entropy streams must fail rather than return garbage.
-- `fuzz/`: cargo-fuzz targets `open_decode` (whole pipeline, all formats),
-  `tiff_parse`, `bmff_parse`, `bit_pumps` (with a model check), `huffman`, `ljpeg`,
-  `packed_unpack` (fast path ≡ reference), `deflate_float`, `dct12`. Crash inputs are
+  bound; decodes of truncated data must fail under `CorruptionPolicy::Strict` and be
+  flagged incomplete with warnings under the default `Recover`, never return silent
+  garbage.
+- `crates/flashraw/tests/truncation.rs`: synthetic DNGs cut at exact points: exact-length
+  files, EOF at the end of the final strip, the final strip one byte short, a strip
+  truncated by half, a tile past EOF, a strip offset past EOF, an offset + length that
+  overflows, 12/14-bit packed data with an incomplete final sample group, one truncated
+  strip among complete ones, every cut point of a multi-strip file, compressed vs.
+  uncompressed consistency, region decodes and previews of truncated files. Each case
+  checks the structured `Truncation` (unit, expected/available bytes) under Strict and
+  the zero-filled samples and `DecodeWarning` under Recover. `crates/flashraw-cli/tests/`
+  and `npm/tests/truncation.test.mjs` check the same through the CLI JSON and the JS API.
+- `fuzz/`: cargo-fuzz targets `open_decode` (whole pipeline, all formats,
+  decoding under both corruption policies with consistency checks), `tiff_parse`,
+  `bmff_parse`, `bit_pumps` (with a model check), `huffman`, `ljpeg`, `packed_unpack`
+  (fast path ≡ reference, partial rows), `deflate_float`, `dct12`. Crash inputs are
   kept in `fuzz/regressions/<target>/` and replayed in CI.
 
 ```sh

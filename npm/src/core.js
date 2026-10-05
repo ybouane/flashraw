@@ -255,7 +255,9 @@ function heap(Ctor, ptr, len) {
 /** Convert anything thrown by wasm-bindgen / the WASM module into a FlashRawError. */
 function toError(e, context) {
   if (e instanceof FlashRawError) return e;
-  if (e && typeof e === 'object' && typeof e.kind === 'string') return errorFromKind(e.kind, e.message);
+  if (e && typeof e === 'object' && typeof e.kind === 'string') {
+    return errorFromKind(e.kind, e.message, e.corrupt ? { corrupt: e.corrupt } : undefined);
+  }
   if (typeof WebAssembly === 'object' && e instanceof WebAssembly.RuntimeError) {
     let panic = null;
     try {

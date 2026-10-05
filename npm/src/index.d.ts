@@ -423,6 +423,37 @@ export type FlashRawGPUDevice = WebGpuType<'GPUDevice'>;
  */
 export type Backend = 'auto' | 'cpu' | 'scalar' | 'cpu-simd' | 'simd' | 'gpu' | 'webgpu';
 
+/** See `DecodeOptions.corruptionPolicy`. */
+export type CorruptionPolicy = 'recover' | 'strict';
+
+/** Structured cause of corrupt sensor data (`CorruptFileError.corrupt`, `DecodeWarning`). */
+export interface CorruptInfo {
+  /** `truncated`: the data runs past the end of the file; `invalid-unit`: a compressed strip/tile failed to decode. */
+  kind: 'truncated' | 'invalid-unit';
+  /** Which part of the payload. */
+  unit: 'strip' | 'tile' | 'plane' | 'payload';
+  /** Strip/tile/plane index (null for `payload`). */
+  index: number | null;
+  /** `truncated`: file offset where the unit starts. */
+  offset?: number;
+  /** `truncated`: bytes the unit needs. */
+  expected?: number;
+  /** `truncated`: bytes present before the end of the file. */
+  available?: number;
+  /** `truncated`: length of the input. */
+  fileLength?: number;
+  /** `invalid-unit`: what the decoder reported. */
+  message?: string;
+}
+
+/** A repair made under `corruptionPolicy: 'recover'`. */
+export interface DecodeWarning extends Omit<CorruptInfo, 'message'> {
+  /** Output samples left zero because their data is missing or invalid. */
+  samplesFilled: number;
+  /** Readable description, e.g. "recovered truncated strip 17: 48291 / 131072 bytes available; ...". */
+  message: string;
+}
+
 export interface DecodeOptions {
   backend?: Backend;
   /** What to do when `backend: "gpu"` / a `gpu-*` output is unavailable: decode on the CPU (default) or throw. */
@@ -451,6 +482,14 @@ export interface DecodeOptions {
    * specified stages. Geometric opcodes are never applied. Default true.
    */
   applyOpcodes?: boolean;
+  /**
+   * Truncated or corrupt sensor data. `'recover'` (default): decode every complete sample,
+   * zero-fill the rest and report it in `frame.warnings` (`frame.incomplete` is then true).
+   * `'strict'`: throw a `CorruptFileError` whose `corrupt` field describes the problem.
+   * Recovery covers uncompressed/packed strips, tiles and payloads and compressed DNG
+   * strips/tiles; other compressed streams throw under both policies.
+   */
+  corruptionPolicy?: CorruptionPolicy;
   /** Decode only this region (sensor-buffer coordinates). */
   region?: Rect;
   limits?: Limits;
@@ -537,6 +576,10 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   outputBytes: number;
   /** DNG opcode lists: what was applied and what was not (empty without lists). */
   opcodes: string[];
+  /** True when some samples hold no decoded data (recovered from truncated or corrupt input). */
+  incomplete: boolean;
+  /** Repairs made under `corruptionPolicy: 'recover'`; empty for a complete decode. */
+  warnings: DecodeWarning[];
 }
 
 /** A decoded frame as returned by `FlashRaw#decode`. */
@@ -565,6 +608,10 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat, S exten
   readonly outputBytes: number;
   /** DNG opcode lists: what was applied and what was not (empty without lists). */
   readonly opcodes: string[];
+  /** True when some samples hold no decoded data (recovered from truncated or corrupt input). */
+  readonly incomplete: boolean;
+  /** Repairs made under `corruptionPolicy: 'recover'` (the default); empty for a complete decode. */
+  readonly warnings: DecodeWarning[];
   /** Pixels, row-major, `channels` interleaved samples per pixel. */
   readonly data: FrameDataFor<O, S>;
   /** True while `data` is a view into WASM memory (`zeroCopy: true`). */
@@ -607,6 +654,10 @@ export declare class GpuFrame<O extends GpuOutputFormat = GpuOutputFormat> {
   readonly outputBytes: number;
   /** DNG opcode lists: what was applied and what was not (empty without lists). */
   readonly opcodes: string[];
+  /** True when some samples hold no decoded data (recovered from truncated or corrupt input). */
+  readonly incomplete: boolean;
+  /** Repairs made under `corruptionPolicy: 'recover'` (the default); empty for a complete decode. */
+  readonly warnings: DecodeWarning[];
   readonly gpuResident: true;
   /**
    * Storage buffer (`STORAGE | COPY_SRC`) holding the pixels; may be larger than `byteLength`.
@@ -804,12 +855,14 @@ export type ErrorKind =
 
 /** Base class of every error thrown by flashraw. */
 export declare class FlashRawError extends Error {
-  constructor(message: string, kind?: ErrorKind, options?: { cause?: unknown });
+  constructor(message: string, kind?: ErrorKind, options?: { cause?: unknown; corrupt?: CorruptInfo });
   readonly kind: ErrorKind;
-  toJSON(): { name: string; kind: ErrorKind; message: string };
+  /** `CorruptFile` errors with a known cause (e.g. truncated sensor data): the details. */
+  readonly corrupt?: CorruptInfo;
+  toJSON(): { name: string; kind: ErrorKind; message: string; corrupt?: CorruptInfo };
 }
 declare class KindError<K extends ErrorKind> extends FlashRawError {
-  constructor(message: string, options?: { cause?: unknown });
+  constructor(message: string, options?: { cause?: unknown; corrupt?: CorruptInfo });
   readonly kind: K;
 }
 export declare class UnsupportedFormatError extends KindError<'UnsupportedFormat'> {}

@@ -29,9 +29,6 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     };
     let (w, h) = (le32(data, 20), le32(data, 24));
     opts.limits.check_dims(w, h, 1)?;
-    if offset >= data.len() {
-        return Err(Error::corrupt("ARRI payload offset beyond end of file"));
-    }
     let model = flashraw_core::bytes::ascii_field(data.get(668..732).unwrap_or(&[]));
     let mut meta = RawMetadata::new("ARRI", model);
     let cam = db_lookup(&mut meta, "");
@@ -50,8 +47,20 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         info,
         Box::new(move |ctx| {
             let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
+            // 12-bit samples gathered from 24-bit words: rows of `w * 3 / 2` bytes.
+            let geometry = RowGeometry::packed(h as usize, w as usize, 12, p.row_bytes());
+            let src = ctx.sensor_bytes(data, DataUnit::Payload, offset, geometry.needed())?;
+            let file = &data[..offset.min(data.len()) + src.bytes.len()];
             ctx.profiler
-                .time(Stage::Unpack, || misc_packed::packed_rows(data, offset, p, img.u16_mut(), ctx.parallel))?;
+                .time(Stage::Unpack, || misc_packed::packed_rows(file, offset, p, img.u16_mut(), ctx.parallel))?;
+            if let Some(t) = src.truncation {
+                // Keep whole 24-bit words (sample pairs) only; the rest stays zero.
+                let rows = geometry.complete_rows(src.bytes.len());
+                let rest = src.bytes.len().saturating_sub(rows * geometry.stride).min(geometry.row_bytes);
+                let keep = (rows * w as usize + rest / 3 * 2).min(img.u16().len());
+                img.u16_mut()[keep..].fill(0);
+                ctx.recovered(CorruptReason::Truncated(t), geometry.total() - keep as u64);
+            }
             Ok(img)
         }),
     );

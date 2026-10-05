@@ -15,6 +15,13 @@
 //!   `offset`/`bits`/`order` hints, uniformly packed rows.
 //!
 //! The size table wins when both describe the same size (its entries carry the full geometry).
+//!
+//! Truncation: the layout's rows must lie in the file (the last row needs its samples,
+//! not its padding). A truncated dump normally no longer matches any size; when a layout
+//! still reads past the end, decoding fails (strict) or keeps the complete rows and
+//! zero-fills the rest with a warning (recover). The interlaced/padded load-flag layouts
+//! (flags 1, 2, 4), the RD-175 interleave and the Kodak YCbCr dumps address their data
+//! irregularly and are sized by the file itself: they are not range-checked.
 //! Size identification can only be trusted because this
 //! path runs after every signature-based format has declined the file.
 
@@ -273,15 +280,43 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
 }
 
 impl Naked<'_> {
+    /// Byte geometry of row-structured loaders (`None`: not range-checked, see the
+    /// module docs).
+    fn geometry(&self) -> Option<RowGeometry> {
+        let (w, h) = (self.raw_w, self.raw_h);
+        Some(match &self.loader {
+            Loader::Packed(p) if p.flags & 7 == 0 => RowGeometry::packed(h, w, p.bits, p.row_bytes()),
+            Loader::Words { .. } => RowGeometry::tight(h, w, 16),
+            Loader::Tight10 => RowGeometry::packed(h, w, 10, (5 * w).div_ceil(32) * 8),
+            Loader::Loose10 => {
+                let rb = w.div_ceil(6) * 8;
+                RowGeometry { rows: h, stride: rb, row_bytes: rb, samples: w }
+            }
+            Loader::EightBit(_) if self.cpp == 1 => RowGeometry::tight(h, w, 8),
+            _ => return None,
+        })
+    }
+
     fn decode(&self, ctx: &DecodeContext) -> Result<RawImage> {
         let mut img = RawImage::new_u16(self.out_w, self.out_h, self.cpp, &ctx.limits)?;
         let (w, h) = (self.raw_w, self.raw_h);
-        let src = self.data.get(self.offset..).unwrap_or(&[]);
+        let mut src = self.data.get(self.offset..).unwrap_or(&[]);
+        let mut truncation = None;
+        if let Some(g) = self.geometry() {
+            let s = ctx.sensor_bytes(self.data, DataUnit::Payload, self.offset, g.needed())?;
+            if let Some(t) = s.truncation {
+                // Recovering: whole rows only (a partial row would decode padding).
+                let rows = g.complete_rows(s.bytes.len());
+                src = &s.bytes[..(rows * g.stride).min(s.bytes.len())];
+                truncation = Some((t, rows));
+            }
+        }
+        let file = &self.data[..(self.offset + src.len()).min(self.data.len())];
         let out = img.u16_mut();
         let par = ctx.parallel;
         ctx.profiler.time(Stage::Unpack, || -> Result<()> {
             match &self.loader {
-                Loader::Packed(p) => misc_packed::packed_rows(self.data, self.offset, *p, out, par)?,
+                Loader::Packed(p) => misc_packed::packed_rows(file, self.offset, *p, out, par)?,
                 Loader::Words { big_endian, shift, bottom_up } => {
                     misc_packed::u16_rows(src, w, h, *big_endian, *shift, *bottom_up, out, par)
                 }
@@ -307,6 +342,12 @@ impl Naked<'_> {
             }
             Ok(())
         })?;
+        if let Some((t, rows)) = truncation {
+            let out = img.u16_mut();
+            let n = out.len();
+            out[(rows * w).min(n)..].fill(0);
+            ctx.recovered(CorruptReason::Truncated(t), ((h - rows) * w) as u64);
+        }
         Ok(img)
     }
 }
@@ -452,15 +493,28 @@ fn open_size_matched<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOption
     let layout = flashraw_codecs::PackedLayout::tight(w as usize, h as usize, bits, order);
     let payload = &data[offset..];
     let simd_payload = PackedPayload { data: payload, width: w, height: h, bits, order, row_stride: layout.row_stride };
+    // Word orders read whole words: a row needs its full stride.
+    let geometry = match order {
+        PackOrder::Msb16 | PackOrder::Msb32 => RowGeometry::packed(h as usize, layout.row_stride, 8, layout.row_stride),
+        _ => RowGeometry::packed(h as usize, w as usize, bits, layout.row_stride),
+    };
     let mut dec = SimpleDecoder::new(
         RawFormat::Nakedraw,
         meta,
         info,
         Box::new(move |ctx| {
             let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
+            let src = ctx.sensor_bytes(data, DataUnit::Payload, offset, geometry.needed())?;
             ctx.profiler.time(Stage::Unpack, || {
-                flashraw_codecs::unpack(payload, layout, img.u16_mut(), w as usize, ctx.parallel, ctx.simd, true)
+                let lenient = src.truncation.is_some();
+                flashraw_codecs::unpack(src.bytes, layout, img.u16_mut(), w as usize, ctx.parallel, ctx.simd, lenient)
             })?;
+            if let Some(t) = src.truncation {
+                let rows = geometry.complete_rows(src.bytes.len());
+                let out = img.u16_mut();
+                out[rows * w as usize..].fill(0);
+                ctx.recovered(CorruptReason::Truncated(t), ((h as usize - rows) * w as usize) as u64);
+            }
             Ok(img)
         }),
     );

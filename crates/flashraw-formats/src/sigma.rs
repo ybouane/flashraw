@@ -81,6 +81,11 @@ impl Section {
     fn bytes<'a>(&self, data: &'a [u8]) -> Result<&'a [u8]> {
         flashraw_core::bytes::slice_at(data, self.offset, self.size)
     }
+
+    /// True when the whole section is inside the file.
+    fn complete(&self, data: &[u8]) -> bool {
+        self.offset.checked_add(self.size).is_some_and(|end| end <= data.len())
+    }
 }
 
 fn le32(d: &[u8], o: usize) -> Result<u32> {
@@ -102,9 +107,10 @@ fn parse_directory(data: &[u8]) -> Result<Vec<Section>> {
         let e = dir + 12 + i * 12;
         let offset = le32(data, e)? as usize;
         let size = le32(data, e + 4)? as usize;
-        if offset.checked_add(size).is_none_or(|end| end > data.len()) {
-            // Sections past the end of the file are ignored (truncated files keep
-            // their remaining sections usable).
+        // Sections cut short by the end of the file stay listed while their header is
+        // readable: their metadata is usable and decoding the raw image reports the
+        // truncation. Sections whose header is missing are ignored.
+        if offset.checked_add(size.min(IMAGE_HEADER)).is_none_or(|end| end > data.len()) {
             continue;
         }
         let mut ident = [0u8; 4];
@@ -248,6 +254,11 @@ fn quattro_model(data: &[u8], w: u32, h: u32) -> Option<String> {
 /// Parsed raw image description.
 #[derive(Clone)]
 struct X3fRaw<'a> {
+    /// The whole file.
+    data: &'a [u8],
+    /// Declared `(offset, size)` of the raw image section.
+    section_range: (usize, usize),
+    /// The section's bytes the file holds.
     section: &'a [u8],
     type_format: u32,
     width: u32,
@@ -279,8 +290,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     opts.limits.check_dims(width, height, 3)?;
 
     let mut meta = RawMetadata::default();
-    if let Some(p) = sections.iter().find(|s| &s.ident == SEC_PROP) {
-        apply_properties(&parse_properties(p.bytes(data)?), &mut meta);
+    if let Some(Ok(p)) = sections.iter().find(|s| &s.ident == SEC_PROP).map(|p| p.bytes(data)) {
+        apply_properties(&parse_properties(p), &mut meta);
     }
     if meta.make.is_empty() && meta.model.is_empty() {
         meta.make = "SIGMA".into();
@@ -301,7 +312,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
             Some((THUMB_JPEG, ..)) => {
                 push_jpeg(data, s.offset + IMAGE_HEADER, s.size - IMAGE_HEADER, orientation, &mut meta.previews)
             }
-            Some((THUMB_PLAIN, w, h, stride)) if w > 0 && h > 0 && stride == w * 3 => {
+            Some((THUMB_PLAIN, w, h, stride)) if w > 0 && h > 0 && stride == w * 3 && s.complete(data) => {
                 let len = w as usize * h as usize * 3;
                 if len <= s.size - IMAGE_HEADER {
                     meta.previews.push(PreviewInfo::new(
@@ -346,7 +357,9 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
 
     let swap_rb = meta.make.eq_ignore_ascii_case("Polaroid") && meta.model.eq_ignore_ascii_case("x530");
     let raw = X3fRaw {
-        section: raw_sec.bytes(data)?,
+        data,
+        section_range: (raw_sec.offset, raw_sec.size),
+        section: &data[raw_sec.offset..raw_sec.offset.saturating_add(raw_sec.size).min(data.len())],
         type_format,
         width,
         height,
@@ -365,6 +378,13 @@ fn is_quattro(t: u32) -> bool {
 
 impl X3fRaw<'_> {
     fn decode(&self, ctx: &DecodeContext) -> Result<RawImage> {
+        // The image section is entropy-coded throughout (row offsets and plane sizes sit
+        // at its end), so a section cut short is always incomplete: reported before
+        // decoding under every policy.
+        let (o, l) = self.section_range;
+        if let Err(t) = flashraw_core::integrity::check_range(self.data.len(), DataUnit::Payload, o, l) {
+            return Err(Error::truncated(t));
+        }
         let mut img = RawImage::new_u16(self.width, self.height, 3, &ctx.limits)?;
         let payload = self.section.get(IMAGE_HEADER..).unwrap_or(&[]);
         match self.type_format {
@@ -775,6 +795,17 @@ mod tests {
         let d = out.u16();
         // Row 0, pixel 1: running sums R: 0+1, G: 0+1, B: 1+1; swapped R/B for the x530.
         assert_eq!(&d[3..6], &[2, 1, 1]);
+        // A raw section running past the end of the file (directory intact): metadata
+        // opens, decoding reports the truncation.
+        let mut cut = file.clone();
+        let dir = u32::from_le_bytes(cut[cut.len() - 4..].try_into().unwrap()) as usize;
+        let size_pos = dir + 12 + 4;
+        let declared = u32::from_le_bytes(cut[size_pos..size_pos + 4].try_into().unwrap());
+        cut[size_pos..size_pos + 4].copy_from_slice(&(declared + 1_000_000).to_le_bytes());
+        let dec = open(&cut, &OpenOptions::default()).unwrap();
+        assert_eq!(dec.metadata().make, "Polaroid");
+        let e = dec.decode(&DecodeContext::new(&p)).unwrap_err();
+        assert_eq!(e.truncation().unwrap().expected, declared as u64 + 1_000_000);
         // Truncated payload must error, not panic.
         let short = build_x3f(&[(b"IMAG", image_header(3, 5, w, h, w * 4))]);
         if let Ok(dec) = open(&short, &OpenOptions::default()) {

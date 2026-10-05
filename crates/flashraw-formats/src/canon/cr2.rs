@@ -48,6 +48,10 @@ mod ids {
 struct RawStream<'a> {
     data: &'a [u8],
     offset: usize,
+    /// Declared stream length (0 when only the offset is known).
+    declared: usize,
+    /// Length of the whole file.
+    file_len: usize,
     hdr: LjpegHeader,
     slices: Slices,
     /// Linearisation curve of the raw IFD (tag 0x0123, Kodak-built EOS D2000/D6000).
@@ -95,7 +99,7 @@ fn parse_stream(data: &[u8], offset: usize, len: Option<usize>) -> Option<(&[u8]
 /// ties), or the EOS-1D maker-note pointer.
 fn find_stream<'a>(data: &'a [u8], tiff: &Tiff<'a>, mn: &CanonMakernote) -> Option<RawStream<'a>> {
     let mut best: Option<(u64, RawStream<'a>)> = None;
-    let mut consider = |src: Option<(&'a [u8], LjpegHeader)>, offset: usize, ifd: Option<&Ifd>| {
+    let mut consider = |src: Option<(&'a [u8], LjpegHeader)>, offset: usize, declared: usize, ifd: Option<&Ifd>| {
         let Some((s, hdr)) = src else { return };
         if hdr.clrs == 3 && hdr.sraw == 0 {
             return; // three-component JPEGs are RGB previews, not sensor data
@@ -110,7 +114,11 @@ fn find_stream<'a>(data: &'a [u8], tiff: &Tiff<'a>, mn: &CanonMakernote) -> Opti
                 .map(|e| e.u32s().into_iter().take(0x10000).map(|v| v.min(65535) as u16).collect::<Vec<_>>())
                 .filter(|c| !c.is_empty());
             let cfa = ifd.and_then(tiff_ep_cfa);
-            best = Some((score, RawStream { data: s, offset, hdr, slices, curve, cfa, from_makernote: ifd.is_none() }));
+            let from_makernote = ifd.is_none();
+            best = Some((
+                score,
+                RawStream { data: s, offset, declared, file_len: data.len(), hdr, slices, curve, cfa, from_makernote },
+            ));
         }
     };
     for ifd in tiff.all_ifds() {
@@ -119,10 +127,10 @@ fn find_stream<'a>(data: &'a [u8], tiff: &Tiff<'a>, mn: &CanonMakernote) -> Opti
             continue;
         }
         let (o, l) = st[0];
-        consider(parse_stream(data, o, Some(l)), o, Some(ifd));
+        consider(parse_stream(data, o, Some(l)), o, l, Some(ifd));
     }
     if let Some(o) = mn.raw_1d {
-        consider(parse_stream(data, o as usize, None), o as usize, None);
+        consider(parse_stream(data, o as usize, None), o as usize, 0, None);
     }
     best.map(|(_, s)| s)
 }
@@ -420,25 +428,30 @@ fn open_bayer<'a>(
 
     let shift = raw_w == 3984;
     let (offset, len) = (stream.offset as u64, stream.data.len() as u64);
-    let RawStream { data: sdata, hdr, slices, curve, .. } = stream;
+    let file_len = stream.file_len;
+    let RawStream { data: sdata, hdr, slices, curve, declared, .. } = stream;
     let mut dec = SimpleDecoder::new(
         RawFormat::Cr2,
         meta,
         info,
         Box::new(move |ctx: &DecodeContext| {
             let mut img = RawImage::new_u16(raw_w, raw_h, 1, &ctx.limits)?;
-            ctx.profiler.time(Stage::EntropyDecode, || {
-                canon_cr2::decode(
-                    sdata,
-                    &hdr,
-                    raw_w as usize,
-                    raw_h as usize,
-                    slices,
-                    shift,
-                    ctx.parallel,
-                    img.u16_mut(),
-                )
-            })?;
+            // One lossless JPEG stream: fails under either corruption policy; a failure
+            // over a declared range past the end of the file is reported as truncation.
+            ctx.profiler
+                .time(Stage::EntropyDecode, || {
+                    canon_cr2::decode(
+                        sdata,
+                        &hdr,
+                        raw_w as usize,
+                        raw_h as usize,
+                        slices,
+                        shift,
+                        ctx.parallel,
+                        img.u16_mut(),
+                    )
+                })
+                .map_err(|e| e.or_truncated(file_len, DataUnit::Strip(0), offset as usize, declared))?;
             if let Some(c) = &curve {
                 // Extend the table with its last value so out-of-range codes saturate.
                 let mut full = c.clone();
@@ -539,7 +552,8 @@ fn open_sraw<'a>(
     meta.set_extra("sraw_subsampling", if hdr.sraw >= 3 { "4:2:0" } else { "4:2:2" });
 
     let (offset, len) = (stream.offset as u64, stream.data.len() as u64);
-    let RawStream { data: sdata, hdr, .. } = stream;
+    let file_len = stream.file_len;
+    let RawStream { data: sdata, hdr, declared, .. } = stream;
     let mut dec = SimpleDecoder::new(
         RawFormat::Cr2,
         meta,
@@ -547,7 +561,8 @@ fn open_sraw<'a>(
         Box::new(move |ctx: &DecodeContext| {
             let mut img = RawImage::new_u16(out_w, out_h, 3, &ctx.limits)?;
             ctx.profiler
-                .time(Stage::EntropyDecode, || canon_sraw::decode(sdata, &hdr, &params, ctx.parallel, img.u16_mut()))?;
+                .time(Stage::EntropyDecode, || canon_sraw::decode(sdata, &hdr, &params, ctx.parallel, img.u16_mut()))
+                .map_err(|e| e.or_truncated(file_len, DataUnit::Strip(0), offset as usize, declared))?;
             Ok(img)
         }),
     );

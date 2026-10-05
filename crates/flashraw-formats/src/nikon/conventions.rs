@@ -17,15 +17,31 @@ pub(crate) struct RowLayout {
     pub shift: u32,
 }
 
-/// Decode only `region` of a row-addressable payload (rows are unpacked in parallel
-/// straight from the source; unrelated rows are never touched).
-pub(crate) fn decode_rows_region(src: &[u8], rl: RowLayout, region: Rect, ctx: &DecodeContext) -> Result<RawImage> {
+/// Geometry of a row-addressable payload's rows `0..rows` (for truncation checks).
+pub(crate) fn row_geometry(l: &PackedLayout, rows: usize) -> RowGeometry {
+    RowGeometry::packed(rows.min(l.height), l.width, l.bits, l.row_stride)
+}
+
+/// Decode only `region` of a row-addressable payload starting at `offset` of `data` (rows
+/// are unpacked in parallel straight from the source; unrelated rows are never touched).
+/// Rows the file does not hold fail (strict) or stay zero with a warning (recover).
+pub(crate) fn decode_rows_region(
+    data: &[u8],
+    offset: usize,
+    unit: DataUnit,
+    rl: RowLayout,
+    region: Rect,
+    ctx: &DecodeContext,
+) -> Result<RawImage> {
     let l = rl.layout;
     let full = Rect::full(l.width as u32, l.height as u32);
     let r = region.intersect(&full).ok_or_else(|| Error::InvalidArgument(format!("region {region} outside image")))?;
+    let src = ctx.sensor_bytes(data, unit, offset, row_geometry(&l, r.bottom() as usize).needed())?;
+    let (truncation, src) = (src.truncation, src.bytes);
     let mut img = RawImage::new_u16(r.width, r.height, 1, &ctx.limits)?;
     let (row_bytes, out_w, x0) = (l.row_bytes(), r.width as usize, r.x as usize);
     let truncated = AtomicBool::new(false);
+    let filled = std::sync::atomic::AtomicU64::new(0);
     let (simd, shift) = (ctx.simd, rl.shift);
     ctx.profiler.time(Stage::Unpack, || {
         par::for_each_row_chunk_bounded(
@@ -37,9 +53,24 @@ pub(crate) fn decode_rows_region(src: &[u8], rl: RowLayout, region: Rect, ctx: &
                 let mut tmp = vec![0u16; l.width];
                 for (i, row) in chunk.chunks_mut(out_w).enumerate() {
                     let y = r.y as usize + first + i;
-                    let Some(s) = src.get(y * l.row_stride..y * l.row_stride + row_bytes) else {
-                        truncated.store(true, Ordering::Relaxed);
-                        break;
+                    let s = match src.get(y * l.row_stride..y * l.row_stride + row_bytes) {
+                        Some(s) => s,
+                        None if truncation.is_some() => {
+                            // Recovering: complete samples of a partial row, then zeros.
+                            let s = src.get(y * l.row_stride..).unwrap_or(&[]);
+                            let n = packed::unpack_row_partial(s, &mut tmp, l.bits, l.order, simd);
+                            let keep = n.saturating_sub(x0).min(out_w);
+                            for (o, &v) in row[..keep].iter_mut().zip(&tmp[x0..]) {
+                                *o = v >> shift;
+                            }
+                            let rows_left = (chunk.len() / out_w - i - 1) as u64;
+                            filled.fetch_add((out_w - keep) as u64 + rows_left * out_w as u64, Ordering::Relaxed);
+                            break;
+                        }
+                        None => {
+                            truncated.store(true, Ordering::Relaxed);
+                            break;
+                        }
                     };
                     packed::unpack_row(s, &mut tmp, l.bits, l.order, simd);
                     for (o, &v) in row.iter_mut().zip(&tmp[x0..x0 + out_w]) {
@@ -51,6 +82,9 @@ pub(crate) fn decode_rows_region(src: &[u8], rl: RowLayout, region: Rect, ctx: &
     });
     if truncated.into_inner() {
         return Err(Error::corrupt("packed data truncated inside the requested region"));
+    }
+    if let Some(t) = truncation {
+        ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());
     }
     Ok(img)
 }

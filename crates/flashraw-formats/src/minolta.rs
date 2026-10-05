@@ -215,16 +215,18 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     }
 
     let row_bytes = if packed { (w as usize * 12).div_ceil(8) } else { w as usize * 2 };
-    let src = data.get(blocks.data_offset..).ok_or_else(|| Error::corrupt("MRW: data offset beyond file"))?;
+    // The payload runs from the end of the header; a payload past the end of the file is
+    // reported when decoding (metadata and previews stay available).
+    let data_offset = blocks.data_offset;
+    let src = data.get(data_offset..).unwrap_or(&[]);
     let rows_needed = h as usize * row_bytes;
     let mut dec = SimpleDecoder::new(
         RawFormat::Mrw,
         meta,
         info,
         Box::new(move |ctx| {
-            if src.len() < rows_needed {
-                return Err(Error::corrupt(format!("MRW: payload truncated ({} of {rows_needed} bytes)", src.len())));
-            }
+            let geometry = RowGeometry::tight(h as usize, w as usize, if packed { 12 } else { 16 });
+            let src = ctx.sensor_rows(data, DataUnit::Payload, data_offset, geometry)?;
             let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
             let pack_order = match (packed, order) {
                 (true, _) => PackOrder::MsbBytes,
@@ -239,7 +241,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
                 row_stride: row_bytes,
             };
             ctx.profiler.time(Stage::Unpack, || {
-                flashraw_codecs::unpack(src, layout, img.u16_mut(), w as usize, ctx.parallel, ctx.simd, false)
+                flashraw_codecs::unpack(src, layout, img.u16_mut(), w as usize, ctx.parallel, ctx.simd, ctx.recover)
             })?;
             Ok(img)
         }),
@@ -439,9 +441,19 @@ mod tests {
         assert_eq!(d.frame_info().cfa, Some(CfaPattern::GBRG));
         let img = d.decode(&DecodeContext::new(&p)).unwrap();
         assert_eq!(img.u16(), &vals[..]);
-        // Truncated payload errors.
+        // Truncated payload: a structured error when strict, recovered with a warning
+        // (complete samples kept, 100 bytes = 66 samples + a partial one zero) otherwise.
         let d = open(&f[..f.len() - 100], &OpenOptions::default()).unwrap();
-        assert!(d.decode(&DecodeContext::new(&p)).is_err());
+        let mut strict = DecodeContext::new(&p);
+        strict.recover = false;
+        let t = d.decode(&strict).unwrap_err().truncation().cloned().unwrap();
+        assert_eq!((t.expected - t.available, t.unit), (100, DataUnit::Payload));
+        let ctx = DecodeContext::new(&p);
+        let img = d.decode(&ctx).unwrap();
+        let kept = vals.len() - 67;
+        assert_eq!(&img.u16()[..kept], &vals[..kept]);
+        assert!(img.u16()[kept..].iter().all(|&v| v == 0));
+        assert_eq!(ctx.take_warnings()[0].samples_filled, 67);
     }
 
     #[test]

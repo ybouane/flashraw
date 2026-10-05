@@ -1,5 +1,6 @@
-//! Malformed-input suite: hostile files must produce errors, never panics, hangs or
-//! unbounded allocations.
+//! Malformed-input suite: hostile files must produce errors (or, for truncated sensor
+//! data under the default recover policy, frames flagged incomplete with warnings),
+//! never panics, hangs or unbounded allocations.
 //!
 //! Part 1 builds synthetic DNGs and corrupts them in targeted ways (truncated payload,
 //! invalid offsets, recursive IFDs, huge dimensions, invalid bit depth, bad Huffman
@@ -8,7 +9,7 @@
 //! format when the corpus is available. The DNG opcode-list test also checks that
 //! lists apply in their stages and that unparsable lists are reported and ignored.
 
-use flashraw::{DecodeOptions, FlashRaw, Limits, OutputFormat, RawPixelData};
+use flashraw::{CorruptionPolicy, DecodeOptions, FlashRaw, Limits, OutputFormat, RawPixelData};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
 
@@ -158,14 +159,14 @@ fn truncated_payload() {
         for cut in [8, 20, 100, full.len() / 3, full.len() / 2, full.len() - 50, full.len() - 1] {
             exercise(&full[..cut.min(full.len())]).unwrap();
         }
-        // The ljpeg payload truncated mid-stream must be an error (not silent garbage).
-        let raw = FlashRaw::open(&full[..full.len() - 200]);
-        if let Ok(raw) = raw {
-            let r = raw.decode(DecodeOptions::default());
-            if d.payload.len() > 1000 && d.entries.iter().any(|e| e.0 == 0x0103 && e.3[0] == 7) {
-                assert!(r.is_err(), "truncated lossless JPEG must fail");
-            }
-        }
+        // A payload truncated mid-stream is never silent garbage: an error under the
+        // strict policy, a frame flagged incomplete (with warnings) under the default.
+        let raw = FlashRaw::open(&full[..full.len() - 200]).expect("metadata parses without the payload");
+        let strict = DecodeOptions { corruption_policy: CorruptionPolicy::Strict, ..Default::default() };
+        let e = raw.decode(strict).expect_err("truncated payload must fail under Strict");
+        assert!(e.truncation().is_some(), "{e}");
+        let f = raw.decode(DecodeOptions::default()).expect("recovered by default");
+        assert!(f.is_incomplete() && !f.warnings().is_empty());
     }
 }
 
@@ -173,8 +174,11 @@ fn truncated_payload() {
 fn invalid_offsets_and_counts() {
     let mut d = uncompressed_dng();
     d.set(0x0111, 4, 1, longs(&[0xFFFF_FFF0]));
-    let r = FlashRaw::open(&d.build()[..]).and_then(|r| r.decode(DecodeOptions::default()));
-    assert!(r.is_err());
+    let strict = DecodeOptions { corruption_policy: CorruptionPolicy::Strict, ..Default::default() };
+    let r = FlashRaw::open(&d.build()[..]).and_then(|r| r.decode(strict));
+    assert!(r.is_err_and(|e| e.truncation().is_some_and(|t| t.starts_beyond_eof())));
+    let f = FlashRaw::open(&d.build()[..]).and_then(|r| r.decode(DecodeOptions::default())).unwrap();
+    assert!(f.is_incomplete());
     let mut d = uncompressed_dng();
     d.set(0x0117, 4, 1, longs(&[u32::MAX]));
     exercise(&d.build()).unwrap();

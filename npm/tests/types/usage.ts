@@ -27,6 +27,8 @@ import {
   type DecodeOptions,
   type Capabilities,
   type ErrorKind,
+  type CorruptInfo,
+  type DecodeWarning,
 } from 'flashraw';
 import { createWorkerPool, type WorkerFrame } from 'flashraw/worker';
 
@@ -146,6 +148,20 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
 
   const m: RawMetadata = await readMetadata(file);
   const f: DecodedFrame<'rgba8'> = await decodeRaw(new Uint8Array(buffer), { output: 'rgba8' });
+  const strict = await decodeRaw(new Uint8Array(buffer), { corruptionPolicy: 'strict' });
+  const incomplete: boolean = strict.incomplete;
+  const filled: number = strict.warnings.map((w: DecodeWarning) => w.samplesFilled).reduce((a, b) => a + b, 0);
+  const unitIndex: number | null = strict.warnings[0]?.index ?? null;
+  try {
+    await decodeRaw(new Uint8Array(buffer), { corruptionPolicy: 'recover' });
+  } catch (e) {
+    if (e instanceof FlashRawError && e.corrupt) {
+      const info: CorruptInfo = e.corrupt;
+      const avail: number | undefined = info.available;
+      void avail;
+    }
+  }
+  void [incomplete, filled, unitIndex];
   const p = await extractPreview(buffer);
   const t = await extractThumbnail(buffer, { format: 'rgba8' });
   const ok: boolean = await supportsFile(buffer);
@@ -177,3 +193,5 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
 new FlashRaw();
 // @ts-expect-error unknown output
 void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { output: 'png' });
+// @ts-expect-error unknown corruption policy
+void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { corruptionPolicy: 'lenient' });

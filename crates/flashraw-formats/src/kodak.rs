@@ -221,6 +221,7 @@ impl Plan<'_> {
         } else {
             &self.curve
         };
+        let unit = DataUnit::Payload;
         match self.kind {
             Kind::K65000 { offset } => {
                 let rows = ctx.profiler.time(Stage::ContainerParse, || kc::scan_65000_rows(data, offset, w, h))?;
@@ -244,18 +245,22 @@ impl Plan<'_> {
                 .profiler
                 .time(Stage::EntropyDecode, || decode_65000_color(data, offset, w, h, curve, out, true, bits))?,
             Kind::Ljpeg { offset, len } => ctx.profiler.time(Stage::EntropyDecode, || {
-                let src = bytes::slice_at_lenient(data, offset, len)?;
-                flashraw_codecs::ljpeg::decode_into_par(src, Default::default(), out, w, w, h, ctx.parallel)?;
+                let out = std::cell::RefCell::new(&mut *out);
+                let decode = |src: &[u8]| -> Result<()> {
+                    let mut out = out.borrow_mut();
+                    flashraw_codecs::ljpeg::decode_into_par(src, Default::default(), &mut out, w, w, h, ctx.parallel)
+                        .map(|_| ())
+                };
+                let samples = (w * h) as u64;
+                compressed_unit(data, ctx, unit, (offset, len), samples, decode, || out.borrow_mut().fill(0))?;
                 if !self.curve.is_empty() {
-                    apply_curve(out, curve, ctx.parallel);
+                    apply_curve(&mut out.borrow_mut(), curve, ctx.parallel);
                 }
                 Ok::<(), Error>(())
             })?,
             Kind::Eight { offset, stride } => ctx.profiler.time(Stage::Unpack, || {
-                let src = data.get(offset..).unwrap_or(&[]);
-                if src.len() < w {
-                    return Err(Error::corrupt("Kodak: 8-bit data truncated"));
-                }
+                let src = ctx.sensor_rows(data, unit, offset, RowGeometry::packed(h, w, 8, stride))?;
+                // Samples missing from truncated data (recover) stay zero.
                 par::for_each_row_chunk(out, w, 64, ctx.parallel, |first, chunk| {
                     for (i, row) in chunk.chunks_mut(w).enumerate() {
                         let Some(s) = src.get((first + i) * stride..) else { break };
@@ -264,10 +269,10 @@ impl Plan<'_> {
                         }
                     }
                 });
-                Ok(())
+                Ok::<(), Error>(())
             })?,
             Kind::Packed12 { offset } => ctx.profiler.time(Stage::Unpack, || {
-                let src = data.get(offset..).unwrap_or(&[]);
+                let src = ctx.sensor_rows(data, unit, offset, RowGeometry::tight(h, w, 12))?;
                 flashraw_codecs::packed::unpack(
                     src,
                     flashraw_codecs::PackedLayout::tight(w, h, 12, PackOrder::MsbBytes),
@@ -275,22 +280,23 @@ impl Plan<'_> {
                     w,
                     ctx.parallel,
                     ctx.simd,
-                    true,
+                    ctx.recover,
                 )
             })?,
             Kind::Raw16 { offset } => ctx.profiler.time(Stage::Unpack, || {
-                let src = data.get(offset..).unwrap_or(&[]);
-                crate::medium::unpack_u16_rows(src, ByteOrder::Little, w, out, w * 2, ctx.parallel)
+                crate::medium::decode_u16_rows(ctx, data, unit, offset, ByteOrder::Little, w, w * 2, out)
             })?,
             Kind::Dc120 { offset } => ctx.profiler.time(Stage::Unpack, || {
+                // Rows of 848 bytes, usable only whole: missing rows stay zero (recover).
+                let src = ctx.sensor_bytes(data, unit, offset, 848 * h)?;
                 for (row, o) in out.chunks_mut(w).enumerate() {
-                    let start = offset + row * 848;
-                    let Some(s) = data.get(start..start + 848) else {
-                        return Err(Error::corrupt("DC120: data truncated"));
-                    };
+                    let Some(s) = src.bytes.get(row * 848..row * 848 + 848) else { break };
                     kc::dc120_row(s, row, o);
                 }
-                Ok(())
+                if let Some(t) = src.truncation {
+                    ctx.recovered(CorruptReason::Truncated(t), ((h - src.bytes.len() / 848) * w) as u64);
+                }
+                Ok::<(), Error>(())
             })?,
             Kind::Radc { offset, cbpp } => ctx.profiler.time(Stage::EntropyDecode, || {
                 let src = data.get(offset..).ok_or_else(|| Error::corrupt("RADC: offset beyond file"))?;
@@ -300,30 +306,39 @@ impl Plan<'_> {
                 // Rows of 2 * raw_width bytes (raw_width = width + 16); the 24-bit
                 // variant inserts 32 extra rows after every 32 rows.
                 let rw = w + 16;
-                let mut pos = offset;
+                let row_pos = |row: usize| row * rw * 2 + if skip32 { row / 32 * rw * 32 } else { 0 };
+                // Rows are usable only whole: missing rows stay zero (recover).
+                let src = ctx.sensor_bytes(data, unit, offset, row_pos(h - 1) + rw * 2)?;
+                let mut lost = 0;
                 for (row, o) in out.chunks_mut(w * 3).enumerate() {
-                    let px = data.get(pos..pos + rw * 2).ok_or_else(|| Error::corrupt("C330: data truncated"))?;
+                    let Some(px) = src.bytes.get(row_pos(row)..row_pos(row) + rw * 2) else {
+                        lost += w * 3;
+                        continue;
+                    };
                     kc::c330_row(px, w, curve, o);
-                    pos += rw * 2;
-                    if skip32 && row & 31 == 31 {
-                        pos += rw * 32;
-                    }
+                }
+                if let Some(t) = src.truncation {
+                    ctx.recovered(CorruptReason::Truncated(t), lost as u64);
                 }
                 Ok::<(), Error>(())
             })?,
             Kind::C603 { offset } => ctx.profiler.time(Stage::Unpack, || {
+                // One record of `w * 3` bytes per row pair, usable only whole: missing
+                // pairs stay zero (recover).
+                let src = ctx.sensor_bytes(data, unit, offset, h.div_ceil(2) * w * 3)?;
                 par::for_each_row_chunk(out, w * 3, 2, ctx.parallel, |first, chunk| {
-                    let rec = offset + (first / 2) * w * 3;
-                    if let Some(px) = data.get(rec..rec + w * 3) {
+                    let rec = (first / 2) * w * 3;
+                    if let Some(px) = src.bytes.get(rec..rec + w * 3) {
                         for (i, o) in chunk.chunks_mut(w * 3).enumerate() {
                             kc::c603_row(px, w, (first + i) & 1 == 1, curve, o);
                         }
                     }
                 });
-                if data.len() < offset + h.div_ceil(2) * w * 3 {
-                    return Err(Error::corrupt("C603: data truncated"));
+                if let Some(t) = src.truncation {
+                    let rows = (src.bytes.len() / (w * 3) * 2).min(h);
+                    ctx.recovered(CorruptReason::Truncated(t), ((h - rows) * w * 3) as u64);
                 }
-                Ok(())
+                Ok::<(), Error>(())
             })?,
         }
         Ok(img)

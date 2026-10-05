@@ -23,7 +23,7 @@
 //! horizontal uncompressed bands.
 
 use crate::common::*;
-use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from, read_u16s};
+use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from};
 use flashraw_codecs::phaseone::{IiqLParams, decode_l_row, decode_s_row, unscramble_pairs};
 use flashraw_core::bits::{BitPumpMsb, BitPumpMsb32};
 use flashraw_core::tiff::{Tiff, tags};
@@ -150,7 +150,8 @@ struct IiqRaw<'a> {
     height: u32,
     payload: IiqPayload,
     data_offset: usize,
-    data_end: usize,
+    /// The row offset table could not be read (compressed formats): decoding fails.
+    missing_rows: Option<Truncation>,
     /// Absolute start of every row (compressed formats).
     rows: Vec<usize>,
     /// Absolute end of every row's data (next row start in file order).
@@ -166,20 +167,24 @@ impl IiqRaw<'_> {
         match self.payload {
             IiqPayload::Raw { format } => {
                 ctx.profiler.time(Stage::Unpack, || {
+                    // Rows are addressed by geometry from the payload start.
                     let start = self.data_offset.saturating_add(y0 as usize * w * 2);
-                    let src = self.data.get(start..self.data_end.max(start)).unwrap_or(&[]);
-                    if src.len() < w * 2 {
-                        return Err(Error::corrupt("IIQ: uncompressed payload truncated"));
-                    }
-                    crate::medium::unpack_u16_rows(src, self.order, w, out, w * 2, ctx.parallel)?;
+                    let unit = DataUnit::Payload;
+                    crate::medium::decode_u16_rows(ctx, self.data, unit, start, self.order, w, w * 2, out)?;
                     if format != 0 {
                         // Pairs run over the flat raster; a region starting on an odd sample
                         // index never happens for even widths, and odd widths are decoded
                         // from row 0 (see `region`).
                         unscramble_pairs(out, self.key.0, self.key.1, format);
                     }
-                    Ok(())
+                    Ok::<(), Error>(())
                 })?;
+            }
+            // Compressed rows (IIQ L and S) are independent units, but a short or corrupt
+            // row fails the decode under either policy (only its row table entry and the
+            // file end delimit it, so truncation is reported when a row starts past EOF).
+            _ if self.missing_rows.is_some() => {
+                return Err(Error::truncated(self.missing_rows.clone().expect("checked")));
             }
             IiqPayload::L(params) => {
                 let errs = ErrorSlot::default();
@@ -224,7 +229,13 @@ impl IiqRaw<'_> {
     fn row_bytes(&self, y: usize) -> Result<&[u8]> {
         let (s, e) = (self.rows[y], self.row_ends[y]);
         if s >= self.data.len() {
-            return Err(Error::corrupt_at(format!("IIQ: row {y} starts beyond end of file"), s as u64));
+            let len = self.data.len() as u64;
+            return Err(Error::truncated(Truncation::new(
+                DataUnit::Strip(y as u32),
+                s as u64,
+                e.saturating_sub(s).max(1) as u64,
+                len,
+            )));
         }
         Ok(&self.data[s..e.clamp(s, self.data.len())])
     }
@@ -309,17 +320,27 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         f => return Err(Error::unsupported_compression("IIQ", format!("payload format {f}"))),
     };
     let data_e = dir.get(0x010f).ok_or_else(|| Error::invalid_metadata("IIQ: missing data offset"))?;
-    let data_offset = base + data_e.data as usize;
-    if data_offset >= data.len() {
-        return Err(Error::corrupt_at("IIQ: payload beyond end of file", data_offset as u64));
-    }
+    // A payload past the end of the file fails when decoded (metadata and previews stay
+    // available).
+    let data_offset = base.saturating_add(data_e.data as usize);
     let data_end = data_offset.saturating_add(data_e.len as usize).min(data.len());
 
     // Row offset table for compressed formats.
     let (mut rows, mut row_ends) = (Vec::new(), Vec::new());
-    if !matches!(payload, IiqPayload::Raw { .. }) {
+    let mut missing_rows = None;
+    let table = if matches!(payload, IiqPayload::Raw { .. }) {
+        None
+    } else {
         let so = dir.offset(0x021c).ok_or_else(|| Error::invalid_metadata("IIQ: missing row offset table"))?;
-        let table = bytes::slice_at(data, so, h as usize * 4)?;
+        match flashraw_core::integrity::check_range(data.len(), DataUnit::Payload, so, h as usize * 4) {
+            Ok(()) => Some(&data[so..so + h as usize * 4]),
+            Err(t) => {
+                missing_rows = Some(t);
+                None
+            }
+        }
+    };
+    if let Some(table) = table {
         rows = (0..h as usize)
             .map(|i| table.u32_at(dir.order, i * 4).map(|o| data_offset.saturating_add(o as usize)))
             .collect::<Result<Vec<_>>>()?;
@@ -442,7 +463,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         height: h,
         payload,
         data_offset,
-        data_end,
+        missing_rows,
         rows,
         row_ends,
         key,
@@ -454,6 +475,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     dec.random_access = RandomAccess::Rows;
     dec.units = raw.units();
     if let IiqPayload::Raw { format: 0 } = payload {
+        // Addressed by geometry; a truncated payload is not complete (see `is_complete`).
         if let Ok(d) = bytes::slice_at_lenient(data, data_offset, w as usize * h as usize * 2) {
             dec.packed = Some(PackedPayload {
                 data: d,
@@ -780,70 +802,39 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
         classify_previews(&mut meta.previews);
     }
     let order = tiff.order;
+    let tiled = raw.has(tags::TILE_OFFSETS);
     let interleaved = pk.rows_flags & 1 != 0;
     let vis_h = aa.height as usize;
     let decode = move |ctx: &DecodeContext| -> Result<RawImage> {
         let mut img = RawImage::new_u16(w, h, 1, &ctx.limits)?;
         let out = img.u16_mut();
         match payload {
+            // One lossless JPEG stream: Strict under either policy; a failure over a range
+            // past the end of the file is reported as truncation.
             MosPayload::Ljpeg => ctx.profiler.time(Stage::EntropyDecode, || {
                 let &(o, l) = units.first().ok_or_else(|| Error::corrupt("MOS: no tiles"))?;
-                let src = bytes::slice_at_lenient(data, o, l)?;
-                let hdr = flashraw_codecs::ljpeg::LjpegHeader::parse(src, Default::default())?;
-                if !interleaved {
-                    return flashraw_codecs::leaf::decode_linear(src, &hdr, out, ctx.parallel);
-                }
-                // Interleaved rows: decode the stream, then scatter JPEG row j to raw row
-                // j/2 (even j) or vis_h - 1 - j/2 (odd j).
-                let wu = w as usize;
-                let mut tmp = alloc_zeroed::<u16>(out.len())?;
-                flashraw_codecs::leaf::decode_linear(src, &hdr, &mut tmp, ctx.parallel)?;
-                let tmp = &tmp;
-                par::for_each_row_chunk_bounded(out, wu, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
-                    for (i, row) in chunk.chunks_mut(wu).enumerate() {
-                        let r = first + i;
-                        // Inverse mapping: raw row r came from JPEG row j.
-                        let j = if r < vis_h.div_ceil(2) {
-                            Some(2 * r)
-                        } else if r < vis_h {
-                            Some(2 * (vis_h - 1 - r) + 1)
-                        } else {
-                            None
-                        };
-                        if let Some(src_row) = j.and_then(|j| tmp.get(j * wu..(j + 1) * wu)) {
-                            row.copy_from_slice(src_row);
-                        }
-                    }
-                });
-                Ok(())
+                let unit = if tiled { DataUnit::Tile(0) } else { DataUnit::Strip(0) };
+                decode_mos_ljpeg(data, o, l, interleaved, vis_h, w, out, ctx)
+                    .map_err(|e| e.or_truncated(data.len(), unit, o, l))
             })?,
             MosPayload::Raw16 { band } => ctx.profiler.time(Stage::Unpack, || {
-                let rows_per = band as usize * w as usize;
+                // Bands are addressed by geometry from their offsets.
+                let wu = w as usize;
+                let unit = |i: usize| if tiled { DataUnit::Tile(i as u32) } else { DataUnit::Strip(i as u32) };
                 if units.len() == 1 {
-                    let (o, l) = units[0];
-                    let src = bytes::slice_at_lenient(data, o, l.max(rows_per * 2))?;
-                    return crate::medium::unpack_u16_rows(src, order, w as usize, out, w as usize * 2, ctx.parallel);
+                    return crate::medium::decode_u16_rows(ctx, data, unit(0), units[0].0, order, wu, wu * 2, out);
                 }
                 let errs = ErrorSlot::default();
-                par::for_each_row_chunk_bounded(
-                    out,
-                    w as usize,
-                    par::memory_bound_workers(),
-                    ctx.parallel,
-                    |first, chunk| {
-                        let i = first / band as usize;
-                        let Some(&(o, l)) = units.get(i) else {
-                            errs.set(Error::corrupt(format!("MOS: missing band {i}")));
-                            return;
-                        };
-                        match bytes::slice_at_lenient(data, o, l.max(chunk.len() * 2)) {
-                            Ok(src) => {
-                                read_u16s(src, order, chunk);
-                            }
-                            Err(e) => errs.set(e),
-                        }
-                    },
-                );
+                par::for_each_row_chunk(out, wu, band as usize, ctx.parallel, |first, chunk| {
+                    let i = first / band as usize;
+                    let Some(&(o, _)) = units.get(i) else {
+                        errs.set(Error::corrupt(format!("MOS: missing band {i}")));
+                        return;
+                    };
+                    if let Err(e) = crate::medium::decode_u16_rows(ctx, data, unit(i), o, order, wu, wu * 2, chunk) {
+                        errs.set(e);
+                    }
+                });
                 errs.into_result()
             })?,
         }
@@ -856,6 +847,48 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
         MosPayload::Ljpeg => RandomAccess::Sequential,
     };
     Ok(Box::new(dec))
+}
+
+/// Decode a Leaf lossless JPEG stream of `declared` bytes at `o` into `out`.
+#[allow(clippy::too_many_arguments)]
+fn decode_mos_ljpeg(
+    data: &[u8],
+    o: usize,
+    declared: usize,
+    interleaved: bool,
+    vis_h: usize,
+    w: u32,
+    out: &mut [u16],
+    ctx: &DecodeContext,
+) -> Result<()> {
+    let src = bytes::slice_at_lenient(data, o, declared)?;
+    let hdr = flashraw_codecs::ljpeg::LjpegHeader::parse(src, Default::default())?;
+    if !interleaved {
+        return flashraw_codecs::leaf::decode_linear(src, &hdr, out, ctx.parallel);
+    }
+    // Interleaved rows: decode the stream, then scatter JPEG row j to raw row
+    // j/2 (even j) or vis_h - 1 - j/2 (odd j).
+    let wu = w as usize;
+    let mut tmp = alloc_zeroed::<u16>(out.len())?;
+    flashraw_codecs::leaf::decode_linear(src, &hdr, &mut tmp, ctx.parallel)?;
+    let tmp = &tmp;
+    par::for_each_row_chunk_bounded(out, wu, par::memory_bound_workers(), ctx.parallel, |first, chunk| {
+        for (i, row) in chunk.chunks_mut(wu).enumerate() {
+            let r = first + i;
+            // Inverse mapping: raw row r came from JPEG row j.
+            let j = if r < vis_h.div_ceil(2) {
+                Some(2 * r)
+            } else if r < vis_h {
+                Some(2 * (vis_h - 1 - r) + 1)
+            } else {
+                None
+            };
+            if let Some(src_row) = j.and_then(|j| tmp.get(j * wu..(j + 1) * wu)) {
+                row.copy_from_slice(src_row);
+            }
+        }
+    });
+    Ok(())
 }
 
 #[cfg(test)]
