@@ -190,7 +190,8 @@ fn decode_standard(stream: &[u8], out: &mut [u16], width: usize, height: usize, 
     if width == 0 || height == 0 {
         return Ok(());
     }
-    #[cfg(feature = "rayon")]
+    // Two OS threads; `std::thread` cannot spawn on wasm32 (its threads are rayon's pool).
+    #[cfg(all(feature = "rayon", not(target_arch = "wasm32")))]
     if parallel && height > BAND {
         use std::sync::mpsc;
         return std::thread::scope(|s| {

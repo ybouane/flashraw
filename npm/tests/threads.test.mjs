@@ -13,13 +13,14 @@ const script = fileURLToPath(new URL('./variant-child.mjs', import.meta.url));
 const expected = JSON.parse(readFileSync(`${fixturesDir}/expected.json`, 'utf8'));
 
 // Formats whose decoders use rayon differently: CRX planes, Nikon Huffman, Sony ARW2 rows,
-// uncompressed RAF, Panasonic v4 blocks.
+// uncompressed RAF, Panasonic v4 blocks, Olympus (its native two-thread pipeline is off on wasm32).
 const CORPUS = [
   'Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_crop_nodual.CR3',
   'Nikon/Z 7/8-Nikon-Z7-RAW-12bit-lossless-compressed-S.NEF',
   'Sony/ILCE-7M4/ILCE-7M4_DSC06681_APS-C-Raw-Compressed.ARW',
   'Fujifilm/X-T3/AFXT2720.RAF',
   'Panasonic/DC-GH5/_T012010.RW2',
+  'OM System/OM-1/OM_Systems_OM1_RAW_Image_20mpx_P1010025.ORF',
 ]
   .map(corpusFile)
   .filter(Boolean);
