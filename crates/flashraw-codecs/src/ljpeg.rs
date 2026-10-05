@@ -299,14 +299,20 @@ impl Unstuffed {
     }
 }
 
+/// Bit mask of the 0xFF bytes of `w` (the high bit of each such byte; bits above the first
+/// hit may be spurious, the lowest one is exact).
+#[inline(always)]
+fn ff_mask(w: u64) -> u64 {
+    let inv = !w;
+    inv.wrapping_sub(0x0101_0101_0101_0101) & !inv & 0x8080_8080_8080_8080
+}
+
 /// Index of the first 0xFF byte (word-at-a-time scan).
-#[inline]
+#[cfg(test)]
 fn find_ff(s: &[u8]) -> Option<usize> {
     let mut i = 0;
     while i + 8 <= s.len() {
-        let w = u64::from_le_bytes(s[i..i + 8].try_into().unwrap());
-        let inv = !w;
-        let hit = inv.wrapping_sub(0x0101_0101_0101_0101) & !inv & 0x8080_8080_8080_8080;
+        let hit = ff_mask(u64::from_le_bytes(s[i..i + 8].try_into().unwrap()));
         if hit != 0 {
             return Some(i + (hit.trailing_zeros() / 8) as usize);
         }
@@ -325,36 +331,160 @@ pub fn unstuff(scan: &[u8]) -> Unstuffed {
 /// [`unstuff`]; without `restarts` a restart marker ends the scan like any other marker
 /// (a decoder reading one restart interval must not pull in the rest of the stream).
 pub fn unstuff_scan(scan: &[u8], restarts: bool) -> Unstuffed {
-    let mut data = Vec::with_capacity(scan.len());
-    let mut segments = Vec::new();
-    let mut seg_start = 0usize;
-    let mut i = 0usize;
+    if scan.len() >= PAR_UNSTUFF_MIN && flashraw_core::par::threads() > 1 {
+        return unstuff_parallel(scan, restarts);
+    }
+    unstuff_serial(scan, restarts)
+}
+
+fn unstuff_serial(scan: &[u8], restarts: bool) -> Unstuffed {
+    // Output never outgrows the input; 8 bytes of slack let every step store a whole word.
+    let mut data = vec![0u8; scan.len() + 8];
+    let mut breaks = Vec::new();
+    let (n, _) = unstuff_into(scan, restarts, &mut data, &mut breaks);
+    data.truncate(n);
+    Unstuffed::new(data, breaks)
+}
+
+/// Scans at least this long are unstuffed on all threads.
+const PAR_UNSTUFF_MIN: usize = 2 << 20;
+
+impl Unstuffed {
+    /// From the output and the output positions of restart markers.
+    fn new(data: Vec<u8>, breaks: Vec<usize>) -> Self {
+        let mut segments = Vec::with_capacity(breaks.len() + 1);
+        let mut start = 0;
+        for b in breaks {
+            segments.push((start, b));
+            start = b;
+        }
+        segments.push((start, data.len()));
+        Unstuffed { data, segments }
+    }
+}
+
+/// Unstuff `scan` into `out`, which must hold the whole output (plus 8 bytes for the
+/// fast path to be used up to the end). Pushes the output position of each restart
+/// marker to `breaks`; returns the output length and whether a terminating marker (or
+/// a lone trailing `FF`) was met.
+fn unstuff_into(scan: &[u8], restarts: bool, out: &mut [u8], breaks: &mut Vec<usize>) -> (usize, bool) {
+    let (mut i, mut o) = (0usize, 0usize);
     loop {
-        match find_ff(&scan[i..]) {
-            None => {
-                data.extend_from_slice(&scan[i..]);
+        // Copy whole words until one holds a 0xFF; the word is stored anyway and the
+        // output cursor advances only past the bytes before the 0xFF.
+        let mut at_ff = false;
+        while i + 8 <= scan.len() && o + 8 <= out.len() {
+            let w = u64::from_le_bytes(scan[i..i + 8].try_into().unwrap());
+            out[o..o + 8].copy_from_slice(&w.to_le_bytes());
+            let hit = ff_mask(w);
+            if hit != 0 {
+                let k = (hit.trailing_zeros() / 8) as usize;
+                i += k;
+                o += k;
+                at_ff = true;
                 break;
             }
-            Some(k) => {
-                data.extend_from_slice(&scan[i..i + k]);
-                let p = i + k;
-                match scan.get(p + 1) {
-                    Some(0x00) => {
-                        data.push(0xFF);
-                        i = p + 2;
-                    }
-                    Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
-                        segments.push((seg_start, data.len()));
-                        seg_start = data.len();
-                        i = p + 2;
-                    }
-                    _ => break,
+            i += 8;
+            o += 8;
+        }
+        if !at_ff {
+            // Near the end of the input or of the output.
+            match scan[i..].iter().position(|&b| b == 0xFF) {
+                None => {
+                    let n = scan.len() - i;
+                    out[o..o + n].copy_from_slice(&scan[i..]);
+                    return (o + n, false);
+                }
+                Some(k) => {
+                    out[o..o + k].copy_from_slice(&scan[i..i + k]);
+                    i += k;
+                    o += k;
                 }
             }
         }
+        // `scan[i]` is 0xFF.
+        match scan.get(i + 1) {
+            Some(0x00) => {
+                out[o] = 0xFF;
+                o += 1;
+                i += 2;
+            }
+            Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
+                breaks.push(o);
+                i += 2;
+            }
+            _ => return (o, true),
+        }
     }
-    segments.push((seg_start, data.len()));
-    Unstuffed { data, segments }
+}
+
+/// Output length of [`unstuff_into`] and whether the scan terminates.
+fn unstuffed_len(scan: &[u8], restarts: bool) -> (usize, bool) {
+    let mut removed = 0usize;
+    let mut i = 0usize;
+    loop {
+        let mut at_ff = false;
+        while i + 8 <= scan.len() {
+            let hit = ff_mask(u64::from_le_bytes(scan[i..i + 8].try_into().unwrap()));
+            if hit != 0 {
+                i += (hit.trailing_zeros() / 8) as usize;
+                at_ff = true;
+                break;
+            }
+            i += 8;
+        }
+        if !at_ff {
+            match scan[i..].iter().position(|&b| b == 0xFF) {
+                None => return (scan.len() - removed, false),
+                Some(k) => i += k,
+            }
+        }
+        match scan.get(i + 1) {
+            Some(0x00) => removed += 1,
+            Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => removed += 2,
+            _ => return (i - removed, true),
+        }
+        i += 2;
+    }
+}
+
+/// [`unstuff_scan`] on all threads. Every `FF` starts a two-byte sequence, so the scan
+/// splits into chunks that do not start right after an `FF`, and each chunk unstuffs
+/// on its own: lengths first, then each chunk writes its own part of the output. The
+/// output is that of the first chunks up to the one that terminates.
+fn unstuff_parallel(scan: &[u8], restarts: bool) -> Unstuffed {
+    use flashraw_core::par;
+    let n = par::threads() * 2;
+    let mut cuts = vec![0usize];
+    for k in 1..n {
+        let mut b = (scan.len() * k / n).max(*cuts.last().unwrap() + 1);
+        while b < scan.len() && scan[b - 1] == 0xFF {
+            b += 1;
+        }
+        if b < scan.len() {
+            cuts.push(b);
+        }
+    }
+    cuts.push(scan.len());
+    let chunks: Vec<&[u8]> = cuts.windows(2).map(|w| &scan[w[0]..w[1]]).collect();
+    let lens = par::map(chunks.clone(), true, |c| unstuffed_len(c, restarts));
+    let used = lens.iter().position(|&(_, end)| end).map_or(lens.len(), |k| k + 1);
+    let mut bounds = Vec::with_capacity(used);
+    let mut total = 0usize;
+    for &(len, _) in &lens[..used] {
+        bounds.push((total, total + len));
+        total += len;
+    }
+    let mut data = vec![0u8; total];
+    let Some(parts) = par::split_disjoint(&mut data, &bounds) else { return unstuff_serial(scan, restarts) };
+    let jobs: Vec<(&[u8], &mut [u8], usize)> =
+        chunks.into_iter().zip(parts).zip(&bounds).map(|((c, p), &(start, _))| (c, p, start)).collect();
+    let breaks = par::map(jobs, true, |(c, p, start)| {
+        let mut b = Vec::new();
+        unstuff_into(c, restarts, p, &mut b);
+        b.into_iter().map(|x| x + start).collect::<Vec<_>>()
+    });
+    Unstuffed::new(data, breaks.into_iter().flatten().collect())
 }
 
 /// Predictor 1 (left neighbour), the overwhelmingly common case.
@@ -811,6 +941,62 @@ pub(crate) mod tests {
         assert_eq!(find_ff(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0xFF]), Some(9));
         assert_eq!(find_ff(&[0xFF]), Some(0));
         assert_eq!(find_ff(&[1, 2]), None);
+    }
+
+    /// Byte-at-a-time reference for [`unstuff_scan`].
+    fn unstuff_reference(scan: &[u8], restarts: bool) -> (Vec<u8>, Vec<(usize, usize)>) {
+        let (mut data, mut segs, mut start, mut i) = (Vec::new(), Vec::new(), 0, 0);
+        while i < scan.len() {
+            if scan[i] != 0xFF {
+                data.push(scan[i]);
+                i += 1;
+                continue;
+            }
+            match scan.get(i + 1) {
+                Some(0) => data.push(0xFF),
+                Some(&m) if restarts && (0xD0..=0xD7).contains(&m) => {
+                    segs.push((start, data.len()));
+                    start = data.len();
+                }
+                _ => break,
+            }
+            i += 2;
+        }
+        segs.push((start, data.len()));
+        (data, segs)
+    }
+
+    #[test]
+    fn unstuffing_matches_bytewise_reference() {
+        let mut x = 7u32;
+        for case in 0..600 {
+            let len = case * 3 % 97 + (case % 5) * 40 + if case >= 400 { 5000 } else { 0 };
+            let dense = case % 3; // how often 0xFF appears
+            let scan: Vec<u8> = (0..len)
+                .map(|_| {
+                    x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let r = (x >> 24) as u8;
+                    match (dense, r % 16) {
+                        (0, _) => r,
+                        (_, 0..=3) => 0xFF,
+                        (2, 4..=7) => 0x00,
+                        (_, 8) => 0xD0 + r % 8,
+                        (_, 9) if case % 7 == 0 => 0xD9,
+                        _ => r,
+                    }
+                })
+                .collect();
+            for restarts in [false, true] {
+                let u = unstuff_scan(&scan, restarts);
+                let (data, segs) = unstuff_reference(&scan, restarts);
+                assert_eq!(u.data, data, "case {case} restarts {restarts}");
+                assert_eq!(u.segments, segs, "case {case} restarts {restarts}");
+                let p = unstuff_parallel(&scan, restarts);
+                assert_eq!(p.data, data, "parallel: case {case} restarts {restarts}");
+                assert_eq!(p.segments, segs, "parallel: case {case} restarts {restarts}");
+                assert_eq!(unstuffed_len(&scan, restarts).0, data.len());
+            }
+        }
     }
 
     #[test]
