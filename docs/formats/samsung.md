@@ -15,7 +15,7 @@ are handled by the DNG decoder.
 | 32770 + tag 40976 | V0 | NX300, NX300M, NX30, NX2000, EK-GN120 (NX U family) | per-row offset table (tag 40976, little-endian); 16-sample blocks with a direction bit (predict from 1–2 rows above or from the block's left neighbours) and four adaptive bit lengths; MSB-first bits in LE 32-bit words; rows stored as transposed 2×2 pairs |
 | 32772 | V1 | NX mini, NX3000, NX3300 | single predictive Huffman stream with a fixed 10-bit table |
 | 32773 | V2 | NX1, NX500 | 128-bit header (bit depth, option flags, initial value); rows aligned to 16 bytes; 16-sample blocks with motion-compensated prediction from previous rows, per-colour adaptive bit lengths and a quantisation scale |
-| 32770 without tag 40976 | packed | NX5/NX10/NX11/NX100 (MSB first), NX20/NX200/NX210/NX1000/NX1100 (LSB first) | 12-bit packed |
+| 32770 without tag 40976 | packed | NX5/NX10/NX11/NX100 (MSB first), NX20/NX200/NX210/NX1000/NX1100 (LSB first) | 12-bit packed; NX20-family frames of 16-bit words (BitsPerSample 14 in the header) hold little-endian words with 12 significant bits |
 | 32769 | uncompressed | EX1, WB2000 (14-bit LE words), EX2F (12-bit in LE words, shifted right by one) | 16-bit words |
 
 ## Metadata

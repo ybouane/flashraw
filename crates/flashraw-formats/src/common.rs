@@ -30,7 +30,7 @@ pub fn db_lookup(meta: &mut RawMetadata, mode: &str) -> Option<&'static Camera> 
             }
         }
         if meta.canonical_model.is_empty() {
-            meta.canonical_model = strip_make_prefix(&meta.model, &meta.canonical_make);
+            meta.canonical_model = tidy_model(&strip_make_prefix(&meta.model, &meta.canonical_make));
         }
     }
     if !mode.is_empty() {
@@ -39,15 +39,46 @@ pub fn db_lookup(meta: &mut RawMetadata, mode: &str) -> Option<&'static Camera> 
     cam
 }
 
-/// "NIKON D850" → "D850" when the make is Nikon, etc.
+/// "NIKON D850" → "D850" when the make is Nikon, etc. The make must end at a word
+/// boundary: whitespace, or a hyphen/underscore followed by a letter ("LG-H815" → "H815",
+/// "SAMSUNG-SM-G930A" → "SM-G930A"; "OM-1" keeps its make-like prefix, "LGE" never
+/// matches "LG-...").
 pub fn strip_make_prefix(model: &str, make: &str) -> String {
     let m = model.trim();
     for prefix in [make, make.split_whitespace().next().unwrap_or(make)] {
-        if !prefix.is_empty() && m.len() > prefix.len() && m[..prefix.len()].eq_ignore_ascii_case(prefix) {
-            return m[prefix.len()..].trim().to_string();
+        let (Some(head), Some(rest)) = (m.get(..prefix.len()), m.get(prefix.len()..)) else { continue };
+        if prefix.is_empty() || rest.is_empty() || !head.eq_ignore_ascii_case(prefix) {
+            continue;
+        }
+        let mut chars = rest.chars();
+        let boundary = match chars.next() {
+            Some(c) if c.is_whitespace() => true,
+            Some('-' | '_') => chars.next().is_some_and(|c| c.is_ascii_alphabetic()),
+            _ => false,
+        };
+        if boundary {
+            let rest = rest.trim_start();
+            return rest.strip_prefix(['-', '_']).unwrap_or(rest).trim().to_string();
         }
     }
     m.to_string()
+}
+
+/// Model name for display when the camera database has no entry: whitespace runs
+/// collapsed and a trailing firmware signature ("DCS460B         FILE VERSION 3") cut.
+pub fn tidy_model(model: &str) -> String {
+    let words: Vec<&str> = model.split_whitespace().collect();
+    let n = words.len();
+    let keep = if n >= 3
+        && words[n - 3] == "FILE"
+        && words[n - 2] == "VERSION"
+        && words[n - 1].bytes().all(|b| b.is_ascii_digit())
+    {
+        n - 3
+    } else {
+        n
+    };
+    if keep == 0 { words.join(" ") } else { words[..keep].join(" ") }
 }
 
 /// Which `FrameInfo` fields the file itself already provided (the database only fills gaps).
@@ -395,6 +426,30 @@ mod tests {
         assert_eq!(strip_make_prefix("NIKON D850", "Nikon"), "D850");
         assert_eq!(strip_make_prefix("Canon EOS R5", "Canon"), "EOS R5");
         assert_eq!(strip_make_prefix("ILCE-7RM5", "Sony"), "ILCE-7RM5");
+        assert_eq!(strip_make_prefix("NIKON D1 ", "NIKON"), "D1");
+        // Word boundaries only.
+        assert_eq!(strip_make_prefix("LG-H815", "LG"), "H815");
+        assert_eq!(strip_make_prefix("LG-H815", "LGE"), "LG-H815");
+        assert_eq!(strip_make_prefix("SAMSUNG-SM-G930A", "samsung"), "SM-G930A");
+        assert_eq!(strip_make_prefix("ASUS_I01WD", "asus"), "I01WD");
+        assert_eq!(strip_make_prefix("OM-1", "OM System"), "OM-1");
+        assert_eq!(strip_make_prefix("OM-1MarkII", "OM"), "OM-1MarkII");
+        assert_eq!(strip_make_prefix("PENTAXK-5", "PENTAX"), "PENTAXK-5");
+        assert_eq!(strip_make_prefix("Canon", "Canon"), "Canon");
+        assert_eq!(strip_make_prefix("LG-", "LG"), "LG-");
+        // Multi-byte text next to the prefix never splits a character.
+        assert_eq!(strip_make_prefix("Ünï X", "U"), "Ünï X");
+    }
+
+    #[test]
+    fn tidy_models() {
+        assert_eq!(tidy_model("DCS460B         FILE VERSION 3"), "DCS460B");
+        assert_eq!(tidy_model("Kodak Digital Science DC50 Zoom "), "Kodak Digital Science DC50 Zoom");
+        assert_eq!(tidy_model(" CFV-50c/Flash Sync"), "CFV-50c/Flash Sync");
+        assert_eq!(tidy_model("E-M10 Mark III  "), "E-M10 Mark III");
+        assert_eq!(tidy_model("FILE VERSION 3"), "FILE VERSION 3");
+        assert_eq!(tidy_model("X FILE VERSION 3b"), "X FILE VERSION 3b");
+        assert_eq!(tidy_model(""), "");
     }
 
     #[test]

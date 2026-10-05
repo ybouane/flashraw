@@ -52,6 +52,35 @@ First complete release of FlashRaw.
   `std::thread::scope`.
 - Truncated Nikon Huffman NEFs fail with `CorruptFile` instead of decoding with frozen
   rows (a stream may only run dry within its last row, for unflushed encoders).
+- DNGs with AsShotWhiteXY but no AsShotNeutral (recent Pixel phones, several converters
+  and scanners) get their as-shot white balance: the camera neutral of that chromaticity
+  through the colour matrices interpolated for its temperature (including a third
+  calibration described by IlluminantData). D75 maps to 7500 K instead of 6500 K.
+- Floating-point DNGs written as big-endian TIFFs with little-endian 32-bit samples and a
+  WhiteLevel LONG holding the bits of 1.0f (one HDR-merge writer) decode instead of
+  producing noise: the samples are read little-endian (when they are plausible that way)
+  and white is 1.0.
+- `flashraw verify` reports the white level of the decoded frame, in the same units as the
+  black level (floating-point DNGs reported the file's white next to a rescaled black).
+- Samsung NX20/NX200/NX210/NX1000/NX1100 SRWs stored as unpacked 16-bit words (header
+  BitsPerSample 14, no row table) are read as little-endian words with 12 significant
+  bits and white 4095 (previously big-endian with white 16383).
+- Sony ARWs from pre-production firmware whose IFD0 Model is a placeholder ("MODEL-NAME",
+  or a model whose digits are all zeros) are identified by the maker-note model id (tag
+  0xB001): camera-database entry, colour matrix and visible area of the production body
+  (the IFD0 string is kept as the `ifd0_model` extra).
+- DNGs with a staggered CFA (CFALayout 2-5, e.g. converted Fujifilm S2Pro files) decode:
+  samples as stored with the stored-grid CFA (`OtherCfa`), like native SuperCCD buffers,
+  and an extra `cfa_layout`. Layouts 6-9 fail with `CameraUnsupported` instead of
+  `UnsupportedCompression`.
+- Canonical model names for cameras without a database entry: the make prefix is removed
+  only at a word boundary (whitespace, or a hyphen/underscore followed by a letter), so
+  "LG-H815" gives "H815" instead of "-H815" and "OM-1" stays whole; a trailing Kodak
+  "FILE VERSION n" signature and whitespace padding are dropped ("DCS460B").
+- JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
+  bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark), and JPEG XL tiles
+  with RowInterleaveFactor/ColumnInterleaveFactor are de-interleaved (they decoded as four
+  quadrant sub-images).
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
