@@ -1,0 +1,33 @@
+[package]
+name = "flashraw-capi"
+description = "Stable C ABI (and header-only C++ wrapper) for FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# `libflashraw_capi.{so,dylib,a}` / `flashraw_capi.dll`. The rlib is only used by the
+# Rust-side tests of the C ABI.
+name = "flashraw_capi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = []
+# GPU backend (FLASHRAW_BACKEND_GPU); host outputs only.
+gpu = ["flashraw/gpu"]
+# JPEG XL compressed DNG.
+jpegxl = ["flashraw/jpegxl"]
+
+[dependencies]
+flashraw = { workspace = true, features = ["serde", "rayon", "simd", "mmap"] }
+serde_json.workspace = true
+memmap2.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

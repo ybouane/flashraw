@@ -9,6 +9,7 @@ members = [
     "crates/flashraw-gpu",
     "crates/flashraw-cli",
     "crates/flashraw-wasm",
+    "crates/flashraw-capi",
 ]
 default-members = [
     "crates/flashraw",

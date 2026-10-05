@@ -471,6 +471,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "flashraw-capi"
+version = "0.1.0"
+dependencies = [
+ "flashraw",
+ "memmap2",
+ "serde_json",
+]
+
+[[package]]
 name = "flashraw-cli"
 version = "0.1.0"
 dependencies = [
