@@ -146,9 +146,27 @@ fn open_brcm<'a>(data: &'a [u8], mut b: Brcm, opts: &OpenOptions) -> Result<Box<
         Box::new(move |ctx| {
             let (w, h) = (b.raw_width, b.height);
             let mut img = RawImage::new_u16(w as u32, h as u32, 1, &ctx.limits)?;
-            let src = data.get(b.data_offset..).unwrap_or(&[]);
+            // Rows hold `w` samples within their stride (wider rows wrap around in it).
+            let row_bytes = match b.bits {
+                8 => w,
+                10 => w.div_ceil(4) * 5,
+                12 => w.div_ceil(2) * 3,
+                14 => w.div_ceil(4) * 7,
+                _ => w * 2,
+            }
+            .min(b.stride);
+            let geometry = RowGeometry { rows: h, stride: b.stride, row_bytes, samples: w };
+            let src = ctx.sensor_bytes(data, DataUnit::Payload, b.data_offset, geometry.needed())?;
+            // Recovering: only whole rows decode (partial ones would read padding).
+            let rows = geometry.complete_rows(src.bytes.len());
+            let bytes =
+                if src.truncation.is_some() { &src.bytes[..(rows * b.stride).min(src.bytes.len())] } else { src.bytes };
             let out = img.u16_mut();
-            ctx.profiler.time(Stage::Unpack, || decode_rows(src, b, out, ctx.parallel));
+            ctx.profiler.time(Stage::Unpack, || decode_rows(bytes, b, out, ctx.parallel));
+            if let Some(t) = src.truncation {
+                out[rows * w..].fill(0);
+                ctx.recovered(CorruptReason::Truncated(t), ((h - rows) * w) as u64);
+            }
             Ok(img)
         }),
     );
