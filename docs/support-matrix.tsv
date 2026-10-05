@@ -40,7 +40,7 @@ DNG	CFALayout 2-5	staggered layouts A-D	experimental	converted SuperCCD (S2Pro) 
 DNG	CFALayout 6-9	staggered layouts E-H	unsupported	no samples; `CameraUnsupported` error
 DNG	LinearRaw	lossy JPEG (34892)	verified	converter-produced lossy files
 DNG	any	deflate + integer predictors 1/2/34892/34893	verified	
-DNG	any	JPEG XL (52546, DNG 1.7)	experimental	`jpegxl` feature; corpus sample verified visually only
+DNG	any	JPEG XL (52546, DNG 1.7)	experimental	`jpegxl` feature; samples scaled to BitsPerSample (a codestream may use fewer bits); corpus samples verified visually only
 DNG	opcode lists	OpcodeList1/2/3	supported	applied by default, each list in its stage (1: stored values; 2: normalised active area; 3: demosaiced camera RGB): GainMap, MapTable, MapPolynomial, per-row/column delta and scale, FixBadPixelsConstant/List, FixVignetteRadial; geometric opcodes (WarpRectilinear, WarpFisheye, TrimBounds) are reported, not applied; `DecodeOptions::apply_opcodes = false` / `--no-opcodes` disables
 ERF	12-bit padded packed (32769)	uncompressed	verified	R-D1, R-D1s, R-D1x: decode; maker-note black and WB
 FFF	Hasselblad lossless JPEG	hasselblad	verified	H4D-40/50, H5D-40/50c, H6D-100c MS (1-shot), CFV-50/50c, X1D II, X2D: decode
