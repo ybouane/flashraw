@@ -21,6 +21,9 @@ use flashraw_core::{Error, Result, par};
 
 /// Frames smaller than this decode sequentially (speculation has a fixed cost).
 pub(crate) const PARALLEL_MIN_SAMPLES: usize = 4 << 20;
+/// [`PARALLEL_MIN_SAMPLES`] for lossless JPEG frames (CR2 incl. sRAW, DNG, Canon TIF):
+/// their unstuffing and speculation already pay off from about a million samples.
+pub(crate) const LJPEG_PARALLEL_MIN_SAMPLES: usize = 1 << 20;
 /// Sequential decoding tolerates this many bits consumed past the end of the scan
 /// (`past_end() <= 2` bytes at the last row).
 const END_SLACK_BITS: u64 = 16;
@@ -103,6 +106,10 @@ pub(crate) fn decode_frame_chunked(
         return Ok(false);
     }
     let Some(scan) = data.get(hdr.scan_offset..) else { return Ok(false) };
+    if chunk_bytes.is_none() && par_entropy::default_chunk(scan.len()).is_none() {
+        // Too short to split (the unstuffed stream is shorter still).
+        return Ok(false);
+    }
     let un = crate::ljpeg::unstuff_scan(scan, false);
     if un.segments.len() != 1 {
         return Ok(false);

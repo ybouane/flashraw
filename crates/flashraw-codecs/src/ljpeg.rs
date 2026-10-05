@@ -640,7 +640,7 @@ where
     let min = if hdr.restart_interval != 0 {
         flashraw_core::par::PAR_MIN_SAMPLES
     } else {
-        crate::ljpeg_par::PARALLEL_MIN_SAMPLES
+        crate::ljpeg_par::LJPEG_PARALLEL_MIN_SAMPLES
     };
     if parallel && total >= min {
         let mut frame = vec![0u16; total];

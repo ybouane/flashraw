@@ -161,7 +161,10 @@ pub fn decode(
     }
     let out = &mut out[..total];
     let mut place = Placement::new(raw_width, raw_height, slices)?;
-    if parallel && total >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES && decode_parallel(data, hdr, &place, out, None)? {
+    if parallel
+        && total >= crate::ljpeg_par::LJPEG_PARALLEL_MIN_SAMPLES
+        && decode_parallel(data, hdr, &place, out, None)?
+    {
         if shift_left_2 && total > 2 {
             out.copy_within(2.., 0);
             out[total - 2..].fill(0);
