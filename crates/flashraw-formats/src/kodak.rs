@@ -284,8 +284,7 @@ impl Plan<'_> {
                 )
             })?,
             Kind::Raw16 { offset } => ctx.profiler.time(Stage::Unpack, || {
-                let src = ctx.sensor_rows(data, unit, offset, RowGeometry::tight(h, w, 16))?;
-                crate::medium::unpack_u16_rows(src, ByteOrder::Little, w, out, w * 2, ctx.parallel)
+                crate::medium::decode_u16_rows(ctx, data, unit, offset, ByteOrder::Little, w, w * 2, out)
             })?,
             Kind::Dc120 { offset } => ctx.profiler.time(Stage::Unpack, || {
                 // Rows of 848 bytes, usable only whole: missing rows stay zero (recover).

@@ -74,35 +74,6 @@ pub fn read_u16s(src: &[u8], order: ByteOrder, out: &mut [u16]) -> usize {
     n
 }
 
-/// Fill a full `width x height` buffer from uncompressed 16-bit samples in parallel.
-/// Rows past the end of `src` stay zero (short final strips are common in the wild);
-/// an error is returned only when not even one row is present.
-pub fn unpack_u16_rows(
-    src: &[u8],
-    order: ByteOrder,
-    width: usize,
-    out: &mut [u16],
-    row_stride_bytes: usize,
-    parallel: bool,
-) -> Result<()> {
-    if width == 0 {
-        return Ok(());
-    }
-    if src.len() < width * 2 {
-        return Err(Error::corrupt("uncompressed raw data truncated before the first row"));
-    }
-    // Plain 16-bit copies are memory-bound: more than a few workers only add contention.
-    par::for_each_row_chunk_bounded(out, width, par::memory_bound_workers(), parallel, |first, chunk| {
-        for (i, row) in chunk.chunks_mut(width).enumerate() {
-            let off = (first + i) * row_stride_bytes;
-            if let Some(s) = src.get(off..) {
-                read_u16s(s, order, row);
-            }
-        }
-    });
-    Ok(())
-}
-
 /// Fill `out` (zeroed, whole rows of `width` samples) from uncompressed 16-bit samples of
 /// sensor-data `unit`, `stride` bytes per row from `offset` of `data` (the whole file).
 /// The payload is addressed by geometry: the rows' bytes must be in the file (the last
@@ -284,14 +255,5 @@ mod tests {
         let e = decode_u16_rows(&ctx, &data[..13], DataUnit::Strip(0), 2, ByteOrder::Little, 2, 4, &mut out);
         let t = e.unwrap_err().truncation().cloned().unwrap();
         assert_eq!((t.offset, t.expected, t.available), (2, 12, 11));
-    }
-
-    #[test]
-    fn u16_rows_truncated() {
-        let src = [1u8, 0, 2, 0, 3, 0];
-        let mut out = vec![0u16; 4];
-        unpack_u16_rows(&src, ByteOrder::Little, 2, &mut out, 4, false).unwrap();
-        assert_eq!(out, vec![1, 2, 3, 0]);
-        assert!(unpack_u16_rows(&src[..2], ByteOrder::Little, 2, &mut out, 4, false).is_err());
     }
 }
