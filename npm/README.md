@@ -8,7 +8,7 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **Instant previews**: embedded JPEG previews/thumbnails as bytes (zero decoding), or as RGBA.
 - **Sensor data**: `raw-u16`, `raw-f32`, `normalized`, `linear-rgb`, or display-ready `rgba8`
   (`ImageData`-compatible), bit-identical to the native FlashRaw decoder.
-- **WASM SIMD128** binary with automatic scalar fallback; ~500 KiB brotli (all decoders).
+- **WASM SIMD128** binary with automatic scalar fallback; ~560 KiB brotli (all decoders).
 - **Multithreaded**: on cross-origin isolated pages and in Node.js a threaded build decodes one
   image on all cores (shared memory + Web Workers); single-threaded everywhere else, same API.
 - **WebGPU** (opt-in build): GPU develop/unpack, results read back or left in a `GPUBuffer` /
@@ -112,15 +112,17 @@ export function useRaw(file) {
   const [state, setState] = useState(null);
   useEffect(() => {
     if (!file) return;
+    const ac = new AbortController(); // a new file (or unmount) cancels the pending work
     let raw;
-    let cancelled = false;
     (async () => {
-      raw = await pool.open(file);
-      const frame = await raw.decode({ output: 'rgba8', demosaic: 'half-size' });
-      if (!cancelled) setState({ metadata: raw.metadata, frame });
-    })();
+      raw = await pool.open(file, { signal: ac.signal });
+      const frame = await raw.decode({ output: 'rgba8', demosaic: 'half-size', signal: ac.signal });
+      setState({ metadata: raw.metadata, frame });
+    })()
+      .catch((e) => ac.signal.aborted || console.error(e))
+      .finally(() => ac.signal.aborted && raw?.close());
     return () => {
-      cancelled = true;
+      ac.abort();
       raw?.close();
     };
   }, [file]);
@@ -153,6 +155,22 @@ await raw.close();
 
 pool.terminate();
 ```
+
+Requests queue in the pool and each worker runs one at a time (whichever worker is free picks
+up the next request; calls on a remote handle wait for the worker holding it). Every method
+takes a `signal` to cancel:
+
+```js
+const ac = new AbortController();
+const frame = pool.decode(file, { output: 'rgba8', signal: ac.signal });
+ac.abort(); // rejects with an AbortError (or the reason given to abort())
+await pool.decode(file, { signal: AbortSignal.timeout(10_000) }); // bound the decode time
+```
+
+A request that has not started is dropped. A running one cannot be interrupted inside WASM, so
+its worker is terminated (and replaced on demand); remote handles opened in that worker are
+closed (`raw.closed`, later calls reject with `ClosedError`). `FlashRaw` on the calling thread
+has no cancellation: use the pool when a decode must be stoppable.
 
 In Node.js the same import gives a `worker_threads` pool (paths are opened by the workers).
 Results arrive as transferred buffers (no copy). Each pool worker runs the single-threaded build
@@ -279,7 +297,7 @@ const jpeg = await extractPreview(fileOrBytes);      // one-shot
 
 ## GPU decoding
 
-The WebGPU backend ships as a separate, opt-in binary (`flashraw_simd_gpu.wasm`, +51 KiB brotli
+The WebGPU backend ships as a separate, opt-in binary (`flashraw_simd_gpu.wasm`, +55 KiB brotli
 and +52 KiB of JS bindings; single-threaded). Load it before any other call:
 
 ```js

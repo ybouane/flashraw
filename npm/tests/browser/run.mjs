@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Headless Chromium test (Playwright): loads dist/ in a real browser, decodes DNG fixtures to
+// Headless browser test (Playwright): loads dist/ in a real browser, decodes DNG fixtures to
 // raw-u16 (hash vs native) and RGBA8 (ImageData on a canvas), and checks binary selection:
 //   - cross-origin isolated page (COOP/COEP)  -> multithreaded build, output == single-threaded
 //   - same page without isolation             -> single-threaded SIMD build, with the reason
@@ -10,14 +10,17 @@
 //
 //   node tests/browser/run.mjs          (after `npx playwright install chromium`)
 //
-// Environment: FLASHRAW_CHROME=<path> runs an installed Chrome instead of Playwright's
-// Chromium (e.g. for real WebGPU); FLASHRAW_CHROME_ARGS adds command-line flags (space separated).
+// Environment: FLASHRAW_BROWSERS=chromium,firefox,webkit picks the Playwright engines (default:
+// chromium); FLASHRAW_CHROME=<path> runs an installed Chrome instead of Playwright's Chromium
+// (e.g. for a hardware WebGPU adapter); FLASHRAW_CHROME_ARGS sets its command-line flags (space
+// separated; default --enable-unsafe-webgpu, a SwiftShader adapter on GPU-less Linux hosts);
+// FLASHRAW_WEBKIT / FLASHRAW_FIREFOX=<path> override the other engines' executables.
 
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { chromium } from 'playwright';
+import * as playwright from 'playwright';
 import { serve } from '../../scripts/serve.mjs';
 
 const expected = JSON.parse(readFileSync(new URL('../fixtures/expected.json', import.meta.url), 'utf8'));
@@ -33,11 +36,9 @@ const env = existsSync(libs)
 const isolated = await serve({ isolated: true });
 const plain = await serve({ isolated: false });
 const url = (server) => `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch({
-  env,
-  executablePath: process.env.FLASHRAW_CHROME || undefined,
-  args: (process.env.FLASHRAW_CHROME_ARGS ?? '').split(' ').filter(Boolean),
-});
+const ENGINES = (process.env.FLASHRAW_BROWSERS ?? 'chromium').split(',').filter(Boolean);
+let browser;
+let engine;
 let failed = 0;
 
 async function load(query, server = isolated) {
@@ -54,6 +55,7 @@ async function load(query, server = isolated) {
 }
 
 async function check(name, fn) {
+  name = `${engine}: ${name}`;
   try {
     await fn();
     console.log(`ok - ${name}`);
@@ -88,114 +90,140 @@ function checkFiles(r, label) {
   assert.deepEqual(r.garbage, { name: 'UnsupportedFormatError', kind: 'UnsupportedFormat', isFlashRawError: true });
 }
 
-const results = {};
-await check('cross-origin isolated page: multithreaded build, raw-u16 + RGBA8 + worker pool', async () => {
-  const r = await load(`files=${FILES.join(',')}&worker=1`);
-  results.threads = r;
-  assert.equal(r.caps.threads.crossOriginIsolated, true);
-  assert.equal(r.info.binary, 'threads', r.caps.threads.reason);
-  assert.equal(r.info.variant, 'simd');
-  assert.equal(r.caps.simd.level, 'WASM SIMD128');
-  assert.equal(r.caps.platform, 'browser');
-  assert.equal(r.caps.threads.wasmThreads, true);
-  assert.ok(r.caps.threads.count >= 1);
-  checkFiles(r, 'threads');
-  for (const name of FILES) {
-    assert.match(r.files[name].raw.backend.decode, /WASM SIMD128 x\d+ thread/);
-    assert.equal(r.files[name].raw.backend.threads, r.caps.threads.count);
+for (engine of ENGINES) {
+  const type = playwright[engine];
+  if (!type) throw new Error(`unknown browser engine ${engine} (chromium, firefox, webkit)`);
+  const exe = { chromium: process.env.FLASHRAW_CHROME, firefox: process.env.FLASHRAW_FIREFOX, webkit: process.env.FLASHRAW_WEBKIT }[engine];
+  browser = await type.launch({
+    // Firefox ships its own NSS: the extracted Chromium libraries would shadow it.
+    env: engine === 'firefox' ? process.env : env,
+    executablePath: exe || undefined,
+    args: engine === 'chromium' ? (process.env.FLASHRAW_CHROME_ARGS ?? '--enable-unsafe-webgpu').split(' ').filter(Boolean) : [],
+  });
+  console.log(`# ${engine} ${browser.version()}`);
+  const results = {};
+  await check('cross-origin isolated page: multithreaded build, raw-u16 + RGBA8 + worker pool', async () => {
+    const r = await load(`files=${FILES.join(',')}&worker=1`);
+    results.threads = r;
+    assert.equal(r.caps.threads.crossOriginIsolated, true);
+    assert.equal(r.info.binary, 'threads', r.caps.threads.reason);
+    assert.equal(r.info.variant, 'simd');
+    assert.equal(r.caps.simd.level, 'WASM SIMD128');
+    assert.equal(r.caps.platform, 'browser');
+    assert.equal(r.caps.threads.wasmThreads, true);
+    assert.ok(r.caps.threads.count >= 1);
+    checkFiles(r, 'threads');
+    for (const name of FILES) {
+      assert.match(r.files[name].raw.backend.decode, /WASM SIMD128 x\d+ thread/);
+      assert.equal(r.files[name].raw.backend.threads, r.caps.threads.count);
+    }
+    const h = expected[FILES[0]].hash_full;
+    assert.deepEqual([r.worker.a, r.worker.b, r.worker.after], [h, h, h], 'worker pool output');
+    assert.equal(r.worker.aborted, 'AbortError');
+    assert.equal(r.worker.caps.platform, 'worker');
+    assert.equal(r.worker.caps.wasm.binary, 'simd', 'pool workers default to the single-threaded build');
+  });
+
+  await check('single-threaded SIMD build (threads: false) agrees with the threaded build', async () => {
+    const r = await load(`files=${FILES.join(',')}&threads=0`);
+    results.simd = r;
+    assert.equal(r.info.binary, 'simd');
+    assert.equal(r.caps.threads.count, 0);
+    assert.equal(r.caps.threads.reason, 'disabled by option');
+    checkFiles(r, 'simd');
+    for (const name of FILES) {
+      assert.match(r.files[name].raw.backend.decode, /WASM SIMD128 x1 thread$/);
+      if (results.threads) assert.deepEqual(r.files[name].rgba.center, results.threads.files[name].rgba.center);
+    }
+  });
+
+  await check('page without cross-origin isolation falls back to the single-threaded build', async () => {
+    const r = await load(`files=${FILES[0]}`, plain);
+    assert.equal(r.caps.threads.crossOriginIsolated, false);
+    assert.equal(r.info.binary, 'simd');
+    assert.equal(r.caps.threads.wasmThreads, false);
+    assert.equal(r.caps.threads.count, 0);
+    assert.match(r.caps.threads.reason, /cross-origin isolated/);
+    assert.equal(r.files[FILES[0]].raw.hash, expected[FILES[0]].hash_full);
+  });
+
+  await check('fallback (non-SIMD) build agrees', async () => {
+    const r = await load(`files=${FILES.join(',')}&simd=0`);
+    assert.equal(r.info.variant, 'fallback');
+    assert.equal(r.info.binary, 'fallback');
+    assert.equal(r.caps.simd.active, false);
+    assert.match(r.caps.threads.reason, /requires WebAssembly SIMD/);
+    for (const name of FILES) {
+      assert.equal(r.files[name].raw.hash, expected[name].hash_full);
+      assert.match(r.files[name].raw.backend.decode, /scalar/);
+      if (results.simd) assert.deepEqual(r.files[name].rgba.center, results.simd.files[name].rgba.center);
+    }
+    results.fallback = r;
+  });
+
+  // The WebGPU build twice: as the browser offers it (Chromium is started with
+  // --enable-unsafe-webgpu, which gives a software SwiftShader adapter on GPU-less hosts), and with
+  // `navigator.gpu` removed, as in browsers without WebGPU.
+  for (const hide of [false, true]) {
+    const label = hide ? 'WebGPU build with navigator.gpu removed: CPU fallback with reason' : 'WebGPU build: GPU decode when an adapter exists, CPU fallback otherwise';
+    await check(label, async () => {
+      // canon-a410-chdk.dng is bit-packed: the GPU path unpacks it straight from the file bytes.
+      const r = await load(`files=canon-a410-chdk.dng&gpu=1${hide ? '&nogpu=1' : ''}`);
+      if (!hide) results.gpu = r;
+      assert.equal(r.info.binary, 'gpu');
+      assert.equal(r.caps.gpu.compiled, true);
+      assert.equal(r.files['canon-a410-chdk.dng'].raw.hash, expected['canon-a410-chdk.dng'].hash_full);
+      const g = r.gpu;
+      if (hide) {
+        assert.equal(r.caps.gpu.webgpu, false);
+        assert.match(r.caps.gpu.reason, /navigator\.gpu is undefined/);
+      }
+      if (!r.caps.gpu.available) {
+        console.log(`# WebGPU unavailable (${r.caps.gpu.reason}); checked the CPU fallback`);
+        assert.equal(g.device, false);
+        assert.equal(g.opcodes, 'cpu');
+        assert.equal(g.rgba.kind, 'cpu');
+        assert.ok(g.rgba.fallbackReason);
+        assert.equal(g.rgba.diff.count, 0);
+        assert.deepEqual(g.resident, { gpu: false, kind: 'cpu', output: 'rgba8', fallbackReason: g.rgba.fallbackReason });
+        assert.deepEqual(g.error, { name: 'GpuUnavailableError', kind: 'GpuUnavailable' });
+        return;
+      }
+      console.log(`# WebGPU adapter: ${JSON.stringify(r.caps.gpu.adapter?.description)}`);
+      assert.equal(g.device, true);
+      assert.equal(g.opcodes, 'cpu', 'outputs changed by DNG opcodes are decoded on the CPU');
+      assert.equal(g.rgba.kind, 'gpu');
+      assert.equal(g.rgba.fallbackReason, null);
+      // GPU develop matches the CPU reference up to float rounding (see docs/gpu.md).
+      assert.ok(g.rgba.diff.max <= 2 && g.rgba.diff.fraction < 0.01, JSON.stringify(g.rgba.diff));
+      assert.equal(g.resident.gpu, true);
+      assert.equal(g.resident.output, 'gpu-rgba8');
+      assert.equal(g.resident.format, 'rgba8');
+      assert.equal(g.resident.sameDevice, true);
+      assert.equal(g.resident.byteLength, g.rgba.size[0] * g.rgba.size[1] * 4);
+      assert.ok(g.resident.bufferSize >= g.resident.byteLength);
+      assert.deepEqual(g.resident.texture, [...g.rgba.size, 'rgba8unorm']);
+      assert.equal(g.resident.downloaded, 'rgba8');
+      assert.ok(g.resident.diff.max <= 2 && g.resident.diff.fraction < 0.01, JSON.stringify(g.resident.diff));
+      assert.equal(g.resident.detached, true);
+      assert.equal(g.error, null);
+    });
   }
-  const h = expected[FILES[0]].hash_full;
-  assert.deepEqual([r.worker.a, r.worker.b], [h, h], 'worker pool output');
-  assert.equal(r.worker.caps.platform, 'worker');
-  assert.equal(r.worker.caps.wasm.binary, 'simd', 'pool workers default to the single-threaded build');
-});
 
-await check('single-threaded SIMD build (threads: false) agrees with the threaded build', async () => {
-  const r = await load(`files=${FILES.join(',')}&threads=0`);
-  results.simd = r;
-  assert.equal(r.info.binary, 'simd');
-  assert.equal(r.caps.threads.count, 0);
-  assert.equal(r.caps.threads.reason, 'disabled by option');
-  checkFiles(r, 'simd');
-  for (const name of FILES) {
-    assert.match(r.files[name].raw.backend.decode, /WASM SIMD128 x1 thread$/);
-    if (results.threads) assert.deepEqual(r.files[name].rgba.center, results.threads.files[name].rgba.center);
+  await browser.close();
+
+  const row = (r, n) => `${r.files[n].raw.timings.totalMs.toFixed(1)} ms raw-u16, ${r.files[n].rgba.timings.totalMs.toFixed(1)} ms rgba8`;
+  for (const [k, r] of Object.entries(results)) {
+    if (r.initMs !== undefined) console.log(`# ${engine} init ${k}: ${r.initMs.toFixed(1)} ms`);
   }
-});
-
-await check('page without cross-origin isolation falls back to the single-threaded build', async () => {
-  const r = await load(`files=${FILES[0]}`, plain);
-  assert.equal(r.caps.threads.crossOriginIsolated, false);
-  assert.equal(r.info.binary, 'simd');
-  assert.equal(r.caps.threads.wasmThreads, false);
-  assert.equal(r.caps.threads.count, 0);
-  assert.match(r.caps.threads.reason, /cross-origin isolated/);
-  assert.equal(r.files[FILES[0]].raw.hash, expected[FILES[0]].hash_full);
-});
-
-await check('fallback (non-SIMD) build agrees', async () => {
-  const r = await load(`files=${FILES.join(',')}&simd=0`);
-  assert.equal(r.info.variant, 'fallback');
-  assert.equal(r.info.binary, 'fallback');
-  assert.equal(r.caps.simd.active, false);
-  assert.match(r.caps.threads.reason, /requires WebAssembly SIMD/);
-  for (const name of FILES) {
-    assert.equal(r.files[name].raw.hash, expected[name].hash_full);
-    assert.match(r.files[name].raw.backend.decode, /scalar/);
-    if (results.simd) assert.deepEqual(r.files[name].rgba.center, results.simd.files[name].rgba.center);
+  for (const n of FILES) {
+    const parts = ['threads', 'simd', 'fallback'].filter((k) => results[k]?.files[n]).map((k) => `${k} ${row(results[k], n)}`);
+    console.log(`# ${engine} ${n}: ${parts.join(' | ')}`);
   }
-  results.fallback = r;
-});
-
-await check('WebGPU build: GPU decode when an adapter exists, CPU fallback with reason otherwise', async () => {
-  // canon-a410-chdk.dng is bit-packed: the GPU path unpacks it straight from the file bytes.
-  const r = await load(`files=canon-a410-chdk.dng&gpu=1`);
-  results.gpu = r;
-  assert.equal(r.info.binary, 'gpu');
-  assert.equal(r.caps.gpu.compiled, true);
-  assert.equal(r.files['canon-a410-chdk.dng'].raw.hash, expected['canon-a410-chdk.dng'].hash_full);
-  const g = r.gpu;
-  if (!r.caps.gpu.available) {
-    console.log(`# WebGPU unavailable here (${r.caps.gpu.reason}); checked the CPU fallback`);
-    assert.equal(g.device, false);
-    assert.equal(g.rgba.kind, 'cpu');
-    assert.ok(g.rgba.fallbackReason);
-    assert.equal(g.rgba.diff.count, 0);
-    assert.deepEqual(g.resident, { gpu: false, kind: 'cpu', output: 'rgba8', fallbackReason: g.rgba.fallbackReason });
-    assert.deepEqual(g.error, { name: 'GpuUnavailableError', kind: 'GpuUnavailable' });
-    return;
-  }
-  console.log(`# WebGPU adapter: ${JSON.stringify(r.caps.gpu.adapter?.description)}`);
-  assert.equal(g.device, true);
-  assert.equal(g.rgba.kind, 'gpu');
-  assert.equal(g.rgba.fallbackReason, null);
-  // GPU develop matches the CPU reference up to float rounding (see docs/gpu.md).
-  assert.ok(g.rgba.diff.max <= 2 && g.rgba.diff.fraction < 0.01, JSON.stringify(g.rgba.diff));
-  assert.equal(g.resident.gpu, true);
-  assert.equal(g.resident.output, 'gpu-rgba8');
-  assert.equal(g.resident.format, 'rgba8');
-  assert.equal(g.resident.sameDevice, true);
-  assert.equal(g.resident.byteLength, g.rgba.size[0] * g.rgba.size[1] * 4);
-  assert.ok(g.resident.bufferSize >= g.resident.byteLength);
-  assert.deepEqual(g.resident.texture, [...g.rgba.size, 'rgba8unorm']);
-  assert.equal(g.resident.downloaded, 'rgba8');
-  assert.ok(g.resident.diff.max <= 2 && g.resident.diff.fraction < 0.01, JSON.stringify(g.resident.diff));
-  assert.equal(g.resident.detached, true);
-  assert.equal(g.error, null);
-});
-
-await browser.close();
+}
 isolated.close();
 plain.close();
 
-const row = (r, n) => `${r.files[n].raw.timings.totalMs.toFixed(1)} ms raw-u16, ${r.files[n].rgba.timings.totalMs.toFixed(1)} ms rgba8`;
-for (const [k, r] of Object.entries(results)) {
-  if (r.initMs !== undefined) console.log(`# init ${k}: ${r.initMs.toFixed(1)} ms`);
-}
-for (const n of FILES) {
-  const parts = ['threads', 'simd', 'fallback'].filter((k) => results[k]?.files[n]).map((k) => `${k} ${row(results[k], n)}`);
-  console.log(`# ${n}: ${parts.join(' | ')}`);
-}
 if (failed) {
   console.log(`${failed} browser check(s) failed`);
   process.exit(1);

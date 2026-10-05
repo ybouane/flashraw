@@ -43,8 +43,8 @@ architecture, memory model, builds, sizes and performance. User-facing API docs:
 
 | Data | Copies | Lifetime |
 |---|---|---|
-| Input bytes (`Uint8Array`/`ArrayBuffer`/`Buffer`) | **1** (into an `InputBuffer` allocated in WASM memory with `try_reserve`; OOM → `OutOfMemoryError`) | owned by the `RawFile` until `close()` |
-| Input `Blob`/`File` (browser), file path (Node) | **1**, streamed chunk by chunk straight into WASM memory (Node: 8 MiB staging buffer) — no full-size JS copy | same |
+| Input bytes (`Uint8Array`/`ArrayBuffer`/`Buffer`) | **1** (into an `InputBuffer` allocated in WASM memory with `try_reserve`, not zero-filled since JS overwrites it; OOM → `OutOfMemoryError`) | owned by the `RawFile` until `close()` |
+| Input `Blob`/`File` (browser), file path (Node) | **1**, streamed chunk by chunk straight into WASM memory (a Blob whose stream fails is re-read in 8 MiB slices: WebKit rejects streaming fetched Blobs over ~100 MB) — no full-size JS copy (Node paths: read directly into the shared memory of the threaded build, through an 8 MiB staging buffer otherwise) | same |
 | Metadata, frame info | JSON string (small) | plain JS objects, cached per handle |
 | Embedded preview (default) | 1 (`slice()` of the input region) | standalone `Uint8Array` |
 | Embedded preview (`zeroCopy: true`) | **0**: view into the input buffer | until `close()`; the handle is pinned (not GC-able) meanwhile |
@@ -120,10 +120,11 @@ package (no extra dependency; `npm/src/threads.js`, `crates/flashraw-wasm/src/li
 ```
  main thread                  coordinator worker                 N rayon workers
  ───────────                  ──────────────────                 ───────────────
- compile module, instantiate  instantiate (same module,          instantiate (same module,
- with shared memory           same memory)                       same memory)
+ compile module, instantiate  instantiate (same module,          started at the same time:
+ with shared memory           same memory)                       instantiate (same module,
+                                                                 same memory)
  ── job 'build' ────────────▶ threadPoolBuild(n, onSpawn):
-                              rayon calls onSpawn per thread ──▶ spawn worker(ptr)
+                              rayon calls onSpawn per thread ──▶ 'run' ptr to the next worker:
                               (blocks until all are primed)       threadRun(ptr)  (never returns)
  ── job 'open'/'decode' ────▶ jobOpen / jobDecode (may block,
     (await, never blocks)     rayon join/par_iter fan out) ────▶ work stealing
@@ -174,7 +175,7 @@ each with its own single-threaded instance (pool workers do not start nested thr
 The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the opt-in
 `flashraw_simd_gpu.wasm`, loaded with `init({ gpu: true })`:
 
-- **Why opt-in**: +172 KiB raw / +51 KiB brotli of WASM and +52 KiB (+9 KiB gzip) of JS glue
+- **Why opt-in**: +185 KiB raw / +55 KiB brotli of WASM and +52 KiB (+9 KiB gzip) of JS glue
   over the SIMD build, and it is single-threaded (below); most pages never need it.
 - **Async all the way**: the browser cannot block on the GPU, so the bindings export
   `gpuInit()` (adapter + device request, once) and `RawFile.decodeGpu(tile, options)` returning a
@@ -200,6 +201,12 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
   error during decode) the default `fallback: 'cpu'` decodes on the CPU (`gpu-*` outputs become
   their host output) and sets `backend.fallbackReason`; `fallback: 'error'` throws
   `GpuUnavailableError`. `getCapabilities().gpu.available` requests the device on first call.
+- **WebGPU only, no WebGL**: the kernels are compute shaders, which WebGL2 lacks (wgpu's WebGL2
+  backend cannot run them), so the WebGPU build is not compiled with it. Browsers without WebGPU
+  (or with `navigator.gpu` but no adapter, e.g. Firefox on macOS at the time of writing) get the
+  CPU fallback below. Verified: Chrome 154 (Metal) and WebKit 26.6 (Metal) run the GPU path;
+  headless Chromium on Linux with `--enable-unsafe-webgpu` gets a SwiftShader software adapter
+  (correct but slow); Firefox 155 (Linux, macOS) and WebKit on Linux fall back to the CPU.
 - **Not combined with threads**: decoding would run on the coordinator worker, but WebGPU
   objects cannot move between workers, so resident outputs would be unusable on the main thread
   (and `flashraw`'s pool `install` requires `Send` frames). `--features gpu,threads` is a
@@ -213,16 +220,16 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
 
 | Binary | Raw | gzip -9 | brotli -11 | Its glue JS (raw / gzip) |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | 1980 KiB | 678 KiB | 507 KiB | 24 / 4 KiB (shared) |
-| `flashraw.wasm` (fallback) | 1948 KiB | 666 KiB | 498 KiB | 24 / 4 KiB (shared) |
-| `flashraw_simd_threads.wasm` | 2027 KiB | 676 KiB | 504 KiB | 30 / 5 KiB |
-| `flashraw_simd_gpu.wasm` | 2152 KiB | 744 KiB | 558 KiB | 76 / 13 KiB |
-| All JS (3 glues + wrappers + workers, unminified) | 198 KiB | — | — | |
+| `flashraw_simd.wasm` | 2223 KiB | 751 KiB | 563 KiB | 24 / 4 KiB (shared) |
+| `flashraw.wasm` (fallback) | 2190 KiB | 739 KiB | 552 KiB | 24 / 4 KiB (shared) |
+| `flashraw_simd_threads.wasm` | 2270 KiB | 750 KiB | 558 KiB | 30 / 5 KiB |
+| `flashraw_simd_gpu.wasm` | 2408 KiB | 822 KiB | 618 KiB | 76 / 13 KiB |
+| All JS (3 glues + wrappers + workers, unminified) | 205 KiB | — | — | |
 
 Sizes include every format decoder (measured after all vendor decoders were merged; the
 DNG-only build was 216 KiB brotli). See [benchmarks.md](benchmarks.md#wasm) for the size
 breakdown. Only one binary is downloaded per page (and only its glue: the threads/gpu glues are
-dynamic imports). The threaded binary costs nothing extra over the SIMD one (+47 KiB raw, −3 KiB
+dynamic imports). The threaded binary costs nothing extra over the SIMD one (+47 KiB raw, −5 KiB
 brotli: rayon is small, and std rebuilt with `build-std` drops some code). Of the SIMD binary,
 416 KiB is code and 364 KiB data (mostly the camera database tables, which compress well).
 `wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 2.9 MB tarball, 23 files.
@@ -360,7 +367,7 @@ Node uses the same WASM module as browsers. Rationale:
 | `cargo test -p flashraw-wasm` | option parsing, structured errors, DNG round trip (native) |
 | `npm test` | Node, threaded build by default (`FLASHRAW_WASM_THREADS=0 npm test` runs everything single-threaded): metadata/decode/preview vs native CLI hashes (4 bundled CC0 fixtures, 11 corpus DNGs when `$FLASHRAW_CORPUS` is present), all outputs, regions/tiles, input types, zero-copy, GPU fallback, garbage/truncated/corrupted input never traps, limits, memory release + GC reclamation, SIMD vs fallback equality, worker pool; `threads.test.mjs`: threaded vs single-threaded binaries identical for raw-u16/rgba8/half-size/linear-rgb/tiles on the fixtures + 5 corpus formats (CR3, NEF, ARW, RAF, RW2), raw-u16 == native `hash_full`, concurrent decodes, `close()` during a decode, errors keep the pool usable |
 | `npm run test:types` | `tsc` against the `.d.ts` (bundler and NodeNext resolution) |
-| `npm run test:browser` | headless Chromium (Playwright), two servers: cross-origin isolated → threaded binary selected, raw-u16 hash == native, RGBA8 `ImageData` on a canvas, single-threaded (`threads: false`) and scalar builds agree; not isolated → single-threaded with the reason; WebGPU build: GPU vs CPU rgba8 (±2), `gpu-rgba8` buffer/texture/download/detach when an adapter exists, otherwise the CPU fallback and `GpuUnavailableError` (no GPU on the Linux CI host; `FLASHRAW_CHROME=<Chrome> FLASHRAW_CHROME_ARGS=--enable-unsafe-webgpu` runs the GPU branch, verified on Metal); worker pool; errors |
+| `npm run test:browser` | headless Chromium by default, `FLASHRAW_BROWSERS=chromium,firefox,webkit` for all three Playwright engines; two servers: cross-origin isolated → threaded binary selected, raw-u16 hash == native, RGBA8 `ImageData` on a canvas, single-threaded (`threads: false`) and scalar builds agree; not isolated → single-threaded with the reason; WebGPU build: GPU vs CPU rgba8 (±2), outputs changed by DNG opcodes decoded on the CPU, `gpu-rgba8` buffer/texture/download/detach when an adapter exists (Chromium runs with `--enable-unsafe-webgpu`: a SwiftShader software adapter on GPU-less Linux hosts; `FLASHRAW_CHROME=<Chrome>` for a hardware adapter, verified on Metal), and again with `navigator.gpu` removed: the CPU fallback and `GpuUnavailableError`; worker pool; errors |
 | `npm run test:bundlers` | `npm pack` → install into scratch apps → Vite 8, esbuild (browser + node), webpack 5 → run in Chromium; Vite and webpack served cross-origin isolated must run the threaded build from the bundle (all four `.wasm` and the thread worker emitted), esbuild served plain falls back |
 
 Hash check: `flashraw verify --json` prints `hash_full` = FNV-1a 64 over the LE bytes of the

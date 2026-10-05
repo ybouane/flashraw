@@ -52,7 +52,7 @@ if (args.includes('--json')) {
     ['Orientation', m.orientation],
     ...m.previews.map((p) => ['Preview', `${p.kind} ${p.width}x${p.height} ${p.encoding} (${p.byteLength} bytes)`]),
     ['Random access', JSON.stringify(raw.capabilities.randomAccess)],
-    ['WASM', `${caps.wasm.variant} (${caps.simd.level}), init ${tInit.toFixed(1)} ms, open ${tOpen.toFixed(1)} ms`],
+    ['WASM', `${caps.wasm.binary} build (${caps.simd.level}, ${caps.threads.count || 1} thread${caps.threads.count > 1 ? 's' : ''}), init ${tInit.toFixed(1)} ms, open ${tOpen.toFixed(1)} ms`],
   ];
   for (const [k, v] of lines) if (v !== null && v !== undefined && v !== '') console.log(`  ${(k + ':').padEnd(15)}${v}`);
 }

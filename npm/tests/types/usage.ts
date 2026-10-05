@@ -150,11 +150,15 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const wh = await pool.decode(file, { output: 'normalized', sampleType: 'f16' });
   const whd: Uint16Array = wh.data;
   void whd;
+  const ac = new AbortController();
+  const rc: Uint8ClampedArray = (await remote.decode({ output: 'rgba8', signal: ac.signal })).data;
+  const timed = await pool.readMetadata(file, { signal: AbortSignal.timeout(5000) });
+  const queued: number = pool.queued;
   await remote.close();
   pool.terminate();
 
   void [variant, camera, w, h, cfa, wb, iso, u16, backend, total, pattern, clamped, imageData, f32, dfltData, norm, tile];
-  void [m, f, p, t, ok, fmt, webgpu, wd, rd];
+  void [m, f, p, t, ok, fmt, webgpu, wd, rd, rc, timed, queued];
 }
 
 // @ts-expect-error the constructor is private

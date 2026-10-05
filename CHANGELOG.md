@@ -72,7 +72,8 @@ First complete release of FlashRaw.
   uploads, banded or tiled outputs).
 - WASM bindings and the `flashraw` npm package (browser, Node, workers, TypeScript):
   multithreaded build (shared-memory rayon pool, chosen automatically when available),
-  opt-in WebGPU build with GPU-resident frames.
+  opt-in WebGPU build with GPU-resident frames; worker pool with a shared request
+  queue and `AbortSignal` cancellation.
 
 ### API
 - Semver-ready surface: growable enums and result/metadata structs are

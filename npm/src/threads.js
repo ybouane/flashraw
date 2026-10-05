@@ -47,7 +47,9 @@ export class ThreadPool {
   }
 
   /**
-   * Start the coordinator, then rayon's global pool of `count` threads (one worker each).
+   * Start the coordinator and `count` thread workers (one per rayon thread), then rayon's
+   * global pool. The thread workers load and instantiate while the coordinator starts; each
+   * becomes a rayon thread once the coordinator hands it its `ThreadBuilder` pointer.
    * @param {{ spawn: (name: string) => any, module: WebAssembly.Module, memory: WebAssembly.Memory, count: number }} o
    */
   static async start({ spawn, module, memory, count }) {
@@ -65,23 +67,35 @@ export class ThreadPool {
       workers.push(coordinator);
       const ready = once(coordinator, 'the FlashRaw coordinator worker');
       coordinator.post({ type: 'init', role: 'coordinator', module, memory });
-      await Promise.race([ready, timeout]);
-      pool = new ThreadPool(coordinator);
-      // The coordinator builds rayon's pool; for every thread rayon wants, it forwards a
-      // pointer here and we start a worker running it. The build job completes once all of
-      // them are running.
       const started = [];
-      coordinator.onMessage((m) => {
-        if (m?.type !== 'spawn') return;
+      const idle = [];
+      const startThread = () => {
         const i = started.length;
         const w = spawn(`flashraw-thread-${i}`);
         workers.push(w);
         started.push(once(w, `FlashRaw thread ${i}`));
-        pool.#add(w);
-        w.post({ type: 'init', role: 'thread', module, memory, ptr: m.ptr });
+        w.post({ type: 'init', role: 'thread', module, memory });
+        return w;
+      };
+      for (let i = 0; i < count; i++) idle.push(startThread());
+      await Promise.race([ready, timeout]);
+      pool = new ThreadPool(coordinator);
+      for (const w of workers.slice(1)) pool.#add(w);
+      // The coordinator builds rayon's pool; for every thread rayon wants, it forwards a
+      // pointer here and the next prepared worker starts running it. The build job completes
+      // once all of them are running.
+      coordinator.onMessage((m) => {
+        if (m?.type !== 'spawn') return;
+        let w = idle.shift();
+        if (!w) {
+          w = startThread();
+          pool.#add(w);
+        }
+        w.post({ type: 'run', ptr: m.ptr });
       });
       pool.count = await Promise.race([pool.call('build', { count }), timeout]);
       await Promise.race([Promise.all(started), timeout]);
+      for (const w of idle) w.terminate(); // rayon asked for fewer threads than prepared
       return pool;
     } catch (e) {
       for (const w of workers) {
@@ -184,16 +198,17 @@ export function runThreadWorker(glue, port) {
       }
       role = m.role;
       port.post({ type: 'ready' });
-      if (role === 'thread') {
-        // Let the 'ready' message go out first, then become a rayon thread for good.
-        setTimeout(() => {
-          try {
-            glue.threadRun(m.ptr);
-          } catch (e) {
-            port.post({ type: 'trap', message: String(e?.message ?? e), panic: panicOf() });
-          }
-        }, 0);
-      }
+      return;
+    }
+    if (m?.type === 'run' && role === 'thread') {
+      // Let the current message settle, then become a rayon thread for good.
+      setTimeout(() => {
+        try {
+          glue.threadRun(m.ptr);
+        } catch (e) {
+          port.post({ type: 'trap', message: String(e?.message ?? e), panic: panicOf() });
+        }
+      }, 0);
       return;
     }
     if (m?.type !== 'job' || role !== 'coordinator') return;

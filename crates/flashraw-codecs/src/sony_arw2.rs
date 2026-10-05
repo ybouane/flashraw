@@ -54,16 +54,24 @@ fn decode_block(blk: &[u8; 18], pix: &mut [u16; 16]) {
     let mut bit = 30usize;
     if imax != imin {
         // Fast path: all 14 deltas lie inside the 128-bit block.
-        let mut b16 = [0u8; 16];
-        b16.copy_from_slice(&blk[..16]);
-        let v = u128::from_le_bytes(b16);
+        #[cfg(not(target_arch = "wasm32"))]
+        let v = {
+            let mut b16 = [0u8; 16];
+            b16.copy_from_slice(&blk[..16]);
+            u128::from_le_bytes(b16)
+        };
         for (i, p) in pix.iter_mut().enumerate() {
             *p = if i == imax {
                 max as u16
             } else if i == imin {
                 min as u16
             } else {
+                #[cfg(not(target_arch = "wasm32"))]
                 let d = ((v >> bit) as u32 & 0x7f) as i32;
+                // wasm32 has no 128-bit shifts (each would be a `__lshrti3` call): read the
+                // delta from a 16-bit window instead (bit <= 121, so the window ends at byte 16).
+                #[cfg(target_arch = "wasm32")]
+                let d = ((u16::from_le_bytes([blk[bit >> 3], blk[(bit >> 3) + 1]]) >> (bit & 7)) & 0x7f) as i32;
                 bit += 7;
                 ((d << sh) + min).min(0x7ff) as u16
             };

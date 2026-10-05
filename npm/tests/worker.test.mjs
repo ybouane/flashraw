@@ -84,4 +84,78 @@ describe('worker pool (worker_threads)', () => {
     }
     await assert.rejects(pool.decode(fixture('canon-5d3-mlv.dng')), { kind: 'Closed' });
   });
+
+  test('cancellation: queued requests are dropped, running ones stop their worker', async () => {
+    const pool = createWorkerPool({ size: 1 });
+    try {
+      const file = fixture('canon-5d3-mlv.dng');
+      const ref = expected['canon-5d3-mlv.dng'].hash_full;
+      // Already aborted: rejected without touching a worker.
+      const pre = new AbortController();
+      pre.abort();
+      await assert.rejects(pool.decode(file, { signal: pre.signal }), { name: 'AbortError' });
+      assert.equal(pool.load.length, 0);
+      await assert.rejects(pool.decode(file, { signal: 'nope' }), { kind: 'InvalidArgument' });
+
+      // Queued behind another request: dropped; the running one is unaffected.
+      const a = pool.decode(file);
+      const c = new AbortController();
+      const b = pool.decode(file, { signal: c.signal });
+      assert.deepEqual([pool.load, pool.queued], [[1], 1]);
+      c.abort(new Error('not needed'));
+      await assert.rejects(b, { message: 'not needed' });
+      assert.equal(fnv1a64U16((await a).data), ref);
+
+      // Running: its worker is terminated, the request rejects at once, the pool carries on.
+      const raw = await pool.open(file);
+      const running = new AbortController();
+      const t0 = performance.now();
+      const p = raw.decode({ output: 'rgba8', signal: running.signal });
+      const queued = raw.decode(); // waits on the same worker: its handle dies with it
+      running.abort();
+      await assert.rejects(p, { name: 'AbortError' });
+      await assert.rejects(queued, { kind: 'Closed' });
+      assert.ok(performance.now() - t0 < 1000);
+      assert.equal(raw.closed, true);
+      await assert.rejects(raw.decode(), { kind: 'Closed' });
+      assert.equal(fnv1a64U16((await pool.decode(file)).data), ref, 'a fresh worker took over');
+      // Timeouts are signals too.
+      const late = await pool.decode(file, { signal: AbortSignal.timeout(60_000) });
+      assert.equal(fnv1a64U16(late.data), ref);
+    } finally {
+      pool.terminate();
+    }
+  });
+
+  test('a handle from a terminated worker never reaches its replacement', async () => {
+    const pool = createWorkerPool({ size: 1 });
+    try {
+      const a = await pool.open(fixture('canon-5d3-mlv.dng'));
+      const c = new AbortController();
+      const p = a.decode({ signal: c.signal });
+      c.abort();
+      await assert.rejects(p, { name: 'AbortError' });
+      // The replacement worker numbers its handles from 1 again.
+      const b = await pool.open(fixture('bmpcc-tiles.dng'));
+      await assert.rejects(a.decode(), { kind: 'Closed' });
+      await a.close();
+      assert.equal(b.metadata.camera.canonicalMake, 'Blackmagic');
+      assert.equal((await b.decode()).width, b.frameInfo.width);
+    } finally {
+      pool.terminate();
+    }
+  });
+
+  test('requests go to whichever worker is free', async () => {
+    const pool = createWorkerPool({ size: 2 });
+    try {
+      const jobs = Array.from({ length: 6 }, () => pool.readMetadata(fixture('bmpcc-tiles.dng')));
+      assert.deepEqual(pool.load, [1, 1]);
+      assert.equal(pool.queued, 4);
+      for (const m of await Promise.all(jobs)) assert.equal(m.format, 'DNG');
+      assert.deepEqual([pool.load, pool.queued], [[0, 0], 0]);
+    } finally {
+      pool.terminate();
+    }
+  });
 });

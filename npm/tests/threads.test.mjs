@@ -23,6 +23,7 @@ const CORPUS = [
   // Olympus: the decoder overlaps entropy decoding and prediction; it used std::thread under
   // rayon, which traps in WASM ("failed to spawn thread").
   'Olympus/E-M1MarkII/Olympus_EM1mk2_Standard_20MP.ORF',
+  'OM System/OM-1/OM_Systems_OM1_RAW_Image_20mpx_P1010025.ORF',
 ]
   .map(corpusFile)
   .filter(Boolean);

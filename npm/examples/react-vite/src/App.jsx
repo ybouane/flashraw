@@ -10,22 +10,25 @@ function useRawFile(file) {
   const [state, setState] = useState({ status: 'idle' });
   useEffect(() => {
     if (!file) return undefined;
-    let cancelled = false;
+    // Picking another file (or unmounting) cancels the work still queued or running for this one.
+    const ac = new AbortController();
+    const { signal } = ac;
     let raw;
     (async () => {
       setState({ status: 'opening' });
-      raw = await pool.open(file);
-      if (cancelled) return;
-      const preview = await raw.preview();
+      raw = await pool.open(file, { signal });
+      if (signal.aborted) return;
+      const preview = await raw.preview({ signal });
       const previewUrl =
         preview?.mimeType === 'image/jpeg' ? URL.createObjectURL(new Blob([preview.data], { type: preview.mimeType })) : null;
-      if (cancelled) return;
       setState({ status: 'decoding', metadata: raw.metadata, previewUrl });
-      const frame = await raw.decode({ output: 'rgba8', demosaic: 'half-size' });
-      if (!cancelled) setState({ status: 'done', metadata: raw.metadata, previewUrl, frame });
-    })().catch((error) => !cancelled && setState({ status: 'error', error }));
+      const frame = await raw.decode({ output: 'rgba8', demosaic: 'half-size', signal });
+      setState({ status: 'done', metadata: raw.metadata, previewUrl, frame });
+    })()
+      .catch((error) => !signal.aborted && setState({ status: 'error', error }))
+      .finally(() => signal.aborted && raw?.close());
     return () => {
-      cancelled = true;
+      ac.abort();
       raw?.close();
     };
   }, [file]);

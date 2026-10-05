@@ -97,8 +97,8 @@ _setPlatform({
   },
   spawnThread: (name, options) =>
     wrapWorker(new Worker(options.threadWorkerUrl ?? new URL('./thread-worker.node.js', import.meta.url), { name })),
-  // Files are read in 8 MiB chunks straight into WASM memory: one copy, bounded JS memory,
-  // and the event loop stays responsive.
+  // Files are read in chunks into WASM memory by core.js (`fileIn`): one copy, bounded JS
+  // memory, and the event loop stays responsive.
   async fileSource(p) {
     const path = toPath(p);
     let fh;
@@ -114,23 +114,19 @@ _setPlatform({
       await fh.close();
       throw ioError(e, path);
     }
-    async function* chunks() {
-      const staging = Buffer.allocUnsafe(Math.max(1, Math.min(size, STAGING)));
-      let pos = 0;
-      try {
-        while (pos < size) {
-          const { bytesRead } = await fh.read(staging, 0, Math.min(staging.length, size - pos), pos);
-          if (bytesRead === 0) break;
-          yield staging.subarray(0, bytesRead);
-          pos += bytesRead;
+    return {
+      size,
+      chunkSize: STAGING,
+      /** Read into `view` from file offset `position`; resolves to the bytes read. */
+      async read(view, position) {
+        try {
+          return (await fh.read(view, 0, view.length, position)).bytesRead;
+        } catch (e) {
+          throw ioError(e, path);
         }
-      } catch (e) {
-        throw ioError(e, path);
-      } finally {
-        await fh.close();
-      }
-    }
-    return { size, chunks: chunks() };
+      },
+      close: () => fh.close(),
+    };
   },
   async readHead(p, max) {
     const path = toPath(p);
