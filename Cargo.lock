@@ -540,6 +540,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "flashraw-libraw-compat"
+version = "0.1.0"
+dependencies = [
+ "flashraw",
+ "libc",
+]
+
+[[package]]
 name = "flashraw-wasm"
 version = "0.1.0"
 dependencies = [

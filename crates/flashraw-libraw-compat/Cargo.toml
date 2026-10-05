@@ -1,0 +1,28 @@
+[package]
+name = "flashraw-libraw-compat"
+description = "LibRaw-compatible C API (a documented subset) implemented on FlashRaw"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+publish = false
+readme = "README.md"
+
+[lib]
+# `libraw.{so,dylib,a}` / `raw.dll`: programs link it with -lraw. The rlib is only used by
+# the Rust-side tests.
+name = "raw"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = []
+gpu = ["flashraw/gpu"]
+jpegxl = ["flashraw/jpegxl"]
+
+[dependencies]
+flashraw = { workspace = true, features = ["rayon", "simd", "mmap"] }
+libc = "0.2"
+
+[lints]
+workspace = true

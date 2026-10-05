@@ -10,6 +10,7 @@ members = [
     "crates/flashraw-cli",
     "crates/flashraw-wasm",
     "crates/flashraw-capi",
+    "crates/flashraw-libraw-compat",
 ]
 default-members = [
     "crates/flashraw",
