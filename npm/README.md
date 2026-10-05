@@ -8,7 +8,7 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **Instant previews**: embedded JPEG previews/thumbnails as bytes (zero decoding), or as RGBA.
 - **Sensor data**: `raw-u16`, `raw-f32`, `normalized`, `linear-rgb`, or display-ready `rgba8`
   (`ImageData`-compatible), bit-identical to the native FlashRaw decoder.
-- **WASM SIMD128** binary with automatic scalar fallback; ~500 KiB brotli (all decoders).
+- **WASM SIMD128** binary with automatic scalar fallback; ~560 KiB brotli (all decoders).
 - **Multithreaded**: on cross-origin isolated pages and in Node.js a threaded build decodes one
   image on all cores (shared memory + Web Workers); single-threaded everywhere else, same API.
 - **WebGPU** (opt-in build): GPU develop/unpack, results read back or left in a `GPUBuffer` /
@@ -281,7 +281,7 @@ const jpeg = await extractPreview(fileOrBytes);      // one-shot
 
 ## GPU decoding
 
-The WebGPU backend ships as a separate, opt-in binary (`flashraw_simd_gpu.wasm`, +51 KiB brotli
+The WebGPU backend ships as a separate, opt-in binary (`flashraw_simd_gpu.wasm`, +55 KiB brotli
 and +52 KiB of JS bindings; single-threaded). Load it before any other call:
 
 ```js

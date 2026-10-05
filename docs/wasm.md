@@ -175,7 +175,7 @@ each with its own single-threaded instance (pool workers do not start nested thr
 The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the opt-in
 `flashraw_simd_gpu.wasm`, loaded with `init({ gpu: true })`:
 
-- **Why opt-in**: +172 KiB raw / +51 KiB brotli of WASM and +52 KiB (+9 KiB gzip) of JS glue
+- **Why opt-in**: +185 KiB raw / +55 KiB brotli of WASM and +52 KiB (+9 KiB gzip) of JS glue
   over the SIMD build, and it is single-threaded (below); most pages never need it.
 - **Async all the way**: the browser cannot block on the GPU, so the bindings export
   `gpuInit()` (adapter + device request, once) and `RawFile.decodeGpu(tile, options)` returning a
@@ -201,6 +201,12 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
   error during decode) the default `fallback: 'cpu'` decodes on the CPU (`gpu-*` outputs become
   their host output) and sets `backend.fallbackReason`; `fallback: 'error'` throws
   `GpuUnavailableError`. `getCapabilities().gpu.available` requests the device on first call.
+- **WebGPU only, no WebGL**: the kernels are compute shaders, which WebGL2 lacks (wgpu's WebGL2
+  backend cannot run them), so the WebGPU build is not compiled with it. Browsers without WebGPU
+  (or with `navigator.gpu` but no adapter, e.g. Firefox on macOS at the time of writing) get the
+  CPU fallback below. Verified: Chrome 154 (Metal) and WebKit 26.6 (Metal) run the GPU path;
+  headless Chromium on Linux with `--enable-unsafe-webgpu` gets a SwiftShader software adapter
+  (correct but slow); Firefox 155 (Linux, macOS) and WebKit on Linux fall back to the CPU.
 - **Not combined with threads**: decoding would run on the coordinator worker, but WebGPU
   objects cannot move between workers, so resident outputs would be unusable on the main thread
   (and `flashraw`'s pool `install` requires `Send` frames). `--features gpu,threads` is a
@@ -214,16 +220,16 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
 
 | Binary | Raw | gzip -9 | brotli -11 | Its glue JS (raw / gzip) |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | 1980 KiB | 678 KiB | 507 KiB | 24 / 4 KiB (shared) |
-| `flashraw.wasm` (fallback) | 1948 KiB | 666 KiB | 498 KiB | 24 / 4 KiB (shared) |
-| `flashraw_simd_threads.wasm` | 2027 KiB | 676 KiB | 504 KiB | 30 / 5 KiB |
-| `flashraw_simd_gpu.wasm` | 2152 KiB | 744 KiB | 558 KiB | 76 / 13 KiB |
-| All JS (3 glues + wrappers + workers, unminified) | 198 KiB | — | — | |
+| `flashraw_simd.wasm` | 2223 KiB | 751 KiB | 563 KiB | 24 / 4 KiB (shared) |
+| `flashraw.wasm` (fallback) | 2190 KiB | 739 KiB | 552 KiB | 24 / 4 KiB (shared) |
+| `flashraw_simd_threads.wasm` | 2270 KiB | 750 KiB | 558 KiB | 30 / 5 KiB |
+| `flashraw_simd_gpu.wasm` | 2408 KiB | 822 KiB | 618 KiB | 76 / 13 KiB |
+| All JS (3 glues + wrappers + workers, unminified) | 205 KiB | — | — | |
 
 Sizes include every format decoder (measured after all vendor decoders were merged; the
 DNG-only build was 216 KiB brotli). See [benchmarks.md](benchmarks.md#wasm) for the size
 breakdown. Only one binary is downloaded per page (and only its glue: the threads/gpu glues are
-dynamic imports). The threaded binary costs nothing extra over the SIMD one (+47 KiB raw, −3 KiB
+dynamic imports). The threaded binary costs nothing extra over the SIMD one (+47 KiB raw, −5 KiB
 brotli: rayon is small, and std rebuilt with `build-std` drops some code). Of the SIMD binary,
 416 KiB is code and 364 KiB data (mostly the camera database tables, which compress well).
 `wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 2.9 MB tarball, 23 files.
