@@ -14,15 +14,21 @@ pub fn corpus(rel: &str) -> Option<Vec<u8>> {
     std::fs::read(p).ok()
 }
 
-/// Open and decode; `Ok(true)` when an image came out.
+/// Open and decode under the strict policy; `Ok(true)` when an image came out.
 fn try_decode(data: &[u8]) -> Result<bool> {
+    try_decode_with(data, false).map(|w| w.is_empty())
+}
+
+/// Open and decode; the recover warnings when an image came out.
+fn try_decode_with(data: &[u8], recover: bool) -> Result<Vec<DecodeWarning>> {
     let dec = crate::open(data, &OpenOptions::default())?;
     let prof = Profiler::new();
-    let ctx = DecodeContext::new(&prof);
+    let mut ctx = DecodeContext::new(&prof);
+    ctx.recover = recover;
     let img = dec.decode(&ctx)?;
     let info = dec.frame_info();
     assert_eq!((img.width, img.height), (info.width, info.height));
-    Ok(true)
+    Ok(ctx.take_warnings())
 }
 
 /// Decode `rel` intact, truncated and corrupted. `payload_from` is a byte offset
@@ -37,6 +43,10 @@ pub fn stress(rel: &str) {
     // simply not panic (previews may follow the sensor data).
     if let Ok(true) = try_decode(&data[..data.len() / 2]) {
         panic!("{rel}: truncated to half decoded without error");
+    }
+    // Recovering (the default policy) reports it instead.
+    if let Ok(w) = try_decode_with(&data[..data.len() / 2], true) {
+        assert!(!w.is_empty(), "{rel}: truncated to half recovered without a warning");
     }
     for frac in [0.8f64, 0.97, 0.999] {
         let _ = try_decode(&data[..(data.len() as f64 * frac) as usize]);
