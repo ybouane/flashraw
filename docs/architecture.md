@@ -99,7 +99,9 @@ self-synchronisation locates where each chunk's speculation joins the true path
 (typically within a few dozen symbols), and rows are rebuilt from the differences by
 a parallel prefix sum. Any case the speculation cannot prove identical — no
 synchronisation, an invalid code, truncation — falls back to the sequential decoder,
-so results and errors never differ.
+so results and errors never differ. Lossless JPEG scans with restart markers (common
+in phone DNGs) need no speculation: each restart interval is an independent bit stream
+with reset predictors and is decoded as its own task.
 
 **Camera knowledge as data.** `camera-db/cameras.json` — one database for the whole
 library — holds camera entries (aliases, modes, crops, masked areas, per-ISO levels,

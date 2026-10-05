@@ -52,6 +52,8 @@ First complete release of FlashRaw.
   sequential decoder): CR2 lossless JPEG and sRAW, single-strip lossless DNG, Kodak
   DCS, Hasselblad 3FR/FFF, Nikon and Pentax predictive Huffman, Panasonic v8 strips,
   Sony ARW1.
+- Lossless JPEG scans with restart markers (Samsung Galaxy DNGs) decode one restart
+  interval per task: a 12.5 MP Galaxy S24 DNG drops from 282 to 26 ms (M1 Ultra).
 - Fuji compressed: branch-free predictions, pass-local decoder state (bit pump in
   registers, bounds-check-free line windows and level tables, packed statistics with
   precomputed Rice parameters); Samsung V2: staged block decoding.

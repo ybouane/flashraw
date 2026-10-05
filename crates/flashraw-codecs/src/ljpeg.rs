@@ -233,11 +233,10 @@ where
     let un = unstuff_scan(scan, hdr.restart_interval != 0);
     let mut segment = 0usize;
     let mut bits = BitPumpMsb::new(un.segment(0));
-    let clrs = hdr.clrs as usize;
     let init = 1u32 << (hdr.bits - 1);
     let mut vpred = [init as u16; 6];
     let restart = if hdr.restart_interval > 0 { hdr.restart_interval as usize } else { usize::MAX };
-    let fast = hdr.sraw == 0 && (hdr.predictor == 1 || hdr.height == 1);
+    let fast = fast_rows(hdr);
     for jrow in 0..hdr.height as usize {
         if restart != usize::MAX && (jrow * hdr.width as usize) % restart == 0 {
             vpred = [init as u16; 6];
@@ -249,19 +248,40 @@ where
                 bits = BitPumpMsb::new(un.segment(segment));
             }
         }
-        if fast {
-            decode_row_pred1(&hdr.tables, &mut bits, &mut cur, clrs, &mut vpred)?;
-        } else {
-            decode_row_generic(hdr, &mut bits, &mut cur, &prev, jrow, clrs, &mut vpred)?;
-        }
-        // Up to two bytes consumed past the end are tolerated at the very end (some
-        // encoders drop the final partial byte); anything more means truncation.
-        let slack = if jrow + 1 == hdr.height as usize { 2 } else { 64 };
-        if bits.past_end() > slack {
-            return Err(Error::corrupt(format!("lossless JPEG: data ends at row {jrow}/{}", hdr.height)));
-        }
+        decode_row(hdr, fast, &mut bits, &mut cur, &prev, jrow, &mut vpred)?;
         sink(jrow, &cur)?;
         std::mem::swap(&mut cur, &mut prev);
+    }
+    Ok(())
+}
+
+/// Rows can use the predictor-1 row decoder.
+pub(crate) fn fast_rows(hdr: &LjpegHeader) -> bool {
+    hdr.sraw == 0 && (hdr.predictor == 1 || hdr.height == 1)
+}
+
+/// Decode row `jrow` into `cur` and check the stream has not run out.
+#[inline(always)]
+pub(crate) fn decode_row(
+    hdr: &LjpegHeader,
+    fast: bool,
+    bits: &mut BitPumpMsb<'_>,
+    cur: &mut [u16],
+    prev: &[u16],
+    jrow: usize,
+    vpred: &mut [u16; 6],
+) -> Result<()> {
+    let clrs = hdr.clrs as usize;
+    if fast {
+        decode_row_pred1(&hdr.tables, bits, cur, clrs, vpred)?;
+    } else {
+        decode_row_generic(hdr, bits, cur, prev, jrow, clrs, vpred)?;
+    }
+    // Up to two bytes consumed past the end are tolerated at the very end (some
+    // encoders drop the final partial byte); anything more means truncation.
+    let slack = if jrow + 1 == hdr.height as usize { 2 } else { 64 };
+    if bits.past_end() > slack {
+        return Err(Error::corrupt(format!("lossless JPEG: data ends at row {jrow}/{}", hdr.height)));
     }
     Ok(())
 }
@@ -464,8 +484,8 @@ pub(crate) fn reconstruct_row(
     Ok(())
 }
 
-/// [`decode_rows`] that first decodes large restart-free scans on all threads
-/// ([`decode_frame_parallel`]) when `parallel` is set. Rows reach `sink` in order either
+/// [`decode_rows`] that first decodes large scans on all threads when `parallel` is set
+/// ([`decode_frame_parallel`]; scans with restart markers one interval per task). Rows reach `sink` in order either
 /// way with identical values; corrupt streams always take the sequential path, so errors
 /// are identical too.
 pub fn decode_rows_par<F>(data: &[u8], hdr: &LjpegHeader, parallel: bool, sink: F) -> Result<()>
@@ -485,7 +505,14 @@ where
     let rl = hdr.row_len();
     let rows = rows.min(hdr.height as usize);
     let total = rl * rows;
-    if parallel && total >= crate::ljpeg_par::PARALLEL_MIN_SAMPLES {
+    // Restart intervals are decoded independently, without speculation, so they pay off
+    // on smaller frames.
+    let min = if hdr.restart_interval != 0 {
+        flashraw_core::par::PAR_MIN_SAMPLES
+    } else {
+        crate::ljpeg_par::PARALLEL_MIN_SAMPLES
+    };
+    if parallel && total >= min {
         let mut frame = vec![0u16; total];
         if crate::ljpeg_par::decode_frame_rows(data, hdr, rows, &mut frame)? {
             for (jrow, row) in frame.chunks_exact(rl).enumerate() {
@@ -588,6 +615,21 @@ pub mod encoder {
     /// Encode `samples` (`height` rows of `width * comps` interleaved values) as a
     /// lossless JPEG with predictor `psv` (1..=7) and a fixed Huffman table.
     pub fn encode(width: usize, height: usize, comps: usize, bits: u32, psv: u32, samples: &[u16]) -> Vec<u8> {
+        encode_with_restarts(width, height, comps, bits, psv, samples, 0)
+    }
+
+    /// [`encode`] with a restart interval of `restart` MCUs (0: none). Intervals must
+    /// start at row starts; each one resets the first-column predictors, and other
+    /// predictors keep reading the row above (as the decoder does).
+    pub fn encode_with_restarts(
+        width: usize,
+        height: usize,
+        comps: usize,
+        bits: u32,
+        psv: u32,
+        samples: &[u16],
+        restart: usize,
+    ) -> Vec<u8> {
         // Huffman table: lengths 0..=16 with simple code lengths.
         let counts: [u8; 16] = [0, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0];
         let values: Vec<u8> = (0..=16).collect();
@@ -619,6 +661,10 @@ pub mod encoder {
         out.push(0x00);
         out.extend(counts);
         out.extend(&values);
+        if restart > 0 {
+            out.extend([0xFF, 0xDD, 0, 4]);
+            out.extend((restart as u16).to_be_bytes());
+        }
         // SOS
         out.extend([0xFF, 0xDA]);
         out.extend(((6 + 2 * comps) as u16).to_be_bytes());
@@ -628,30 +674,40 @@ pub mod encoder {
         }
         out.extend([psv as u8, 0, 0]);
         // Entropy data
-        let mut acc: u64 = 0;
-        let mut n = 0u32;
+        // Bit accumulator and its fill.
+        let mut st = (0u64, 0u32);
         let mut ent = vec![];
-        let mut put = |v: u32, len: u32, ent: &mut Vec<u8>| {
+        let put = |v: u32, len: u32, ent: &mut Vec<u8>, (acc, n): &mut (u64, u32)| {
             for i in (0..len).rev() {
-                acc = (acc << 1) | ((v >> i) & 1) as u64;
-                n += 1;
-                if n == 8 {
-                    ent.push(acc as u8);
-                    if acc as u8 == 0xFF {
+                *acc = (*acc << 1) | ((v >> i) & 1) as u64;
+                *n += 1;
+                if *n == 8 {
+                    ent.push(*acc as u8);
+                    if *acc as u8 == 0xFF {
                         ent.push(0);
                     }
-                    acc = 0;
-                    n = 0;
+                    *acc = 0;
+                    *n = 0;
                 }
             }
         };
         let rl = width * comps;
         let s = |r: usize, i: usize| samples[r * rl + i] as i32;
+        let mut markers = 0u8;
         for r in 0..height {
+            let restarted = restart > 0 && (r * width) % restart == 0;
+            if restarted && r > 0 {
+                // Pad the partial byte with 1-bits and emit RSTn.
+                if st.1 > 0 {
+                    put(0x7F, 8 - st.1, &mut ent, &mut st);
+                }
+                ent.extend([0xFF, 0xD0 + markers % 8]);
+                markers += 1;
+            }
             for col in 0..width {
                 for c in 0..comps {
                     let i = col * comps + c;
-                    let pred = if r == 0 && col == 0 {
+                    let pred = if (r == 0 || restarted) && col == 0 {
                         1 << (bits - 1)
                     } else if r == 0 {
                         s(r, i - comps)
@@ -672,23 +728,23 @@ pub mod encoder {
                     let mut diff = (s(r, i) - pred) as i16 as i32;
                     if diff == -32768 {
                         let (c16, l16) = codes[16];
-                        put(c16, l16, &mut ent);
+                        put(c16, l16, &mut ent, &mut st);
                         continue;
                     }
                     let len = if diff == 0 { 0 } else { 32 - diff.unsigned_abs().leading_zeros() };
                     let (cd, l) = codes[len as usize];
-                    put(cd, l, &mut ent);
+                    put(cd, l, &mut ent, &mut st);
                     if len > 0 {
                         if diff < 0 {
                             diff -= 1;
                         }
-                        put(diff as u32 & ((1 << len) - 1), len, &mut ent);
+                        put(diff as u32 & ((1 << len) - 1), len, &mut ent, &mut st);
                     }
                 }
             }
         }
         // Pad the final partial byte with 1-bits (JPEG convention).
-        put(0x7F, 7, &mut ent);
+        put(0x7F, 7, &mut ent, &mut st);
         out.extend(ent);
         out.extend([0xFF, 0xD9]);
         out
