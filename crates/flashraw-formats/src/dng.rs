@@ -84,6 +84,9 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
     let (info, raw) = parse_raw(data, &tiff, ifd0, raw_ifd, v4, &meta, opts)?;
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
     meta.dng = Some(dng_extras(ifd0, raw_ifd));
+    if let Some(l) = raw_ifd.u32(tags::CFA_LAYOUT).filter(|&l| l != 1) {
+        meta.set_extra("cfa_layout", l);
+    }
     if let Some(sw) = &meta.software {
         meta.set_extra("software", sw.clone());
     }
@@ -477,9 +480,17 @@ fn parse_raw<'a>(
 
     // Layout & CFA.
     if photometric == 32803 {
+        // Staggered layouts A-D (2-5: even rows or columns offset by half a photosite, e.g.
+        // converted SuperCCD files) are returned as stored with their stored-grid CFA, like
+        // native SuperCCD buffers; undoing the stagger interpolates and is left to
+        // post-processing (DefaultScale gives the pixel aspect).
         let layout = raw.u32(tags::CFA_LAYOUT).unwrap_or(1);
-        if layout != 1 {
-            return Err(Error::unsupported_compression("DNG", format!("CFALayout {layout} (non-rectangular CFA)")));
+        if !(1..=5).contains(&layout) {
+            return Err(Error::CameraUnsupported {
+                make: meta.make.clone(),
+                model: meta.model.clone(),
+                reason: format!("DNG CFALayout {layout}"),
+            });
         }
         let dim = raw
             .get(tags::CFA_REPEAT_PATTERN_DIM)
@@ -500,7 +511,7 @@ fn parse_raw<'a>(
             CfaPattern::new(pw, ph, &colors).ok_or_else(|| Error::invalid_metadata("invalid DNG CFA dimensions"))?;
         // Re-anchor from ActiveArea origin to buffer origin.
         let p = p.shifted(pw - active.x as usize % pw, ph - active.y as usize % ph);
-        info.layout = layout_for(&p);
+        info.layout = if layout == 1 { layout_for(&p) } else { SensorLayout::OtherCfa };
         info.cfa = Some(p);
     } else if cpp == 1 {
         info.layout = SensorLayout::Monochrome;
@@ -1378,6 +1389,31 @@ mod tests {
         let f = float_dng(true, 1).build();
         assert_eq!(open_dng(&f).unwrap().frame_info().white_level.values, vec![1]);
         assert_eq!(decode_dng(&f).unwrap().data.as_f32().unwrap(), &float_samples()[..]);
+    }
+
+    #[test]
+    fn staggered_cfa_layouts_decode_as_stored() {
+        let mut d = u16_dng(false);
+        d.shorts(tags::CFA_REPEAT_PATTERN_DIM, &[2, 4]);
+        d.raw(tags::CFA_PATTERN_EP, 1, vec![0, 1, 2, 1, 2, 1, 0, 1]);
+        d.shorts(tags::CFA_LAYOUT, &[2]);
+        let f = d.build();
+        let dec = open_dng(&f).unwrap();
+        let info = dec.frame_info();
+        assert_eq!(info.layout, SensorLayout::OtherCfa);
+        let p = info.cfa.unwrap();
+        assert_eq!((p.width(), p.height()), (4, 2));
+        assert_eq!(p.color_at(0, 0), CfaColor::Red);
+        assert_eq!(p.color_at(2, 0), CfaColor::Blue);
+        assert_eq!(p.color_at(0, 1), CfaColor::Blue);
+        assert_eq!(p.color_at(1, 1), CfaColor::Green);
+        assert_eq!(dec.metadata().extra("cfa_layout"), Some("2"));
+        let expected: Vec<u16> = (0..8 * 6).map(|i: u16| i * 300).collect();
+        assert_eq!(decode_dng(&f).unwrap().u16(), &expected[..]);
+        // Layouts beyond staggered A-D are a clear "unsupported mode", not a compression error.
+        d.shorts(tags::CFA_LAYOUT, &[6]);
+        let f = d.build();
+        assert!(matches!(open_dng(&f).err(), Some(Error::CameraUnsupported { .. })));
     }
 
     #[test]

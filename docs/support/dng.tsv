@@ -8,4 +8,5 @@ DNG	LinearRaw	lossy JPEG (34892)	verified	converter-produced lossy files
 DNG	any	JPEG XL (52546, DNG 1.7)	experimental	`jpegxl` feature; corpus sample verified visually only
 DNG	CFA	GoPro VC-5 (compression 9, GPR)	verified	17/17 corpus files decode, regression-hashed
 DNG	opcode lists	OpcodeList1/2/3	supported	applied by default, each list in its stage (1: stored values; 2: normalised active area; 3: demosaiced camera RGB): GainMap, MapTable, MapPolynomial, per-row/column delta and scale, FixBadPixelsConstant/List, FixVignetteRadial; geometric opcodes (WarpRectilinear, WarpFisheye, TrimBounds) are reported, not applied; `DecodeOptions::apply_opcodes = false` / `--no-opcodes` disables
-DNG	CFALayout != 1	staggered layouts	unsupported	no corpus samples; explicit error
+DNG	CFALayout 2-5	staggered layouts A-D	experimental	converted SuperCCD (S2Pro) files: samples returned as stored with the stored-grid CFA (`SensorLayout::OtherCfa`, extra `cfa_layout`), like native SuperCCD buffers; the half-photosite stagger is not undone (DefaultScale gives the pixel aspect); no corpus sample
+DNG	CFALayout 6-9	staggered layouts E-H	unsupported	no samples; `CameraUnsupported` error

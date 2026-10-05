@@ -59,6 +59,10 @@ First complete release of FlashRaw.
   or a model whose digits are all zeros) are identified by the maker-note model id (tag
   0xB001): camera-database entry, colour matrix and visible area of the production body
   (the IFD0 string is kept as the `ifd0_model` extra).
+- DNGs with a staggered CFA (CFALayout 2-5, e.g. converted Fujifilm S2Pro files) decode:
+  samples as stored with the stored-grid CFA (`OtherCfa`), like native SuperCCD buffers,
+  and an extra `cfa_layout`. Layouts 6-9 fail with `CameraUnsupported` instead of
+  `UnsupportedCompression`.
 - JPEG XL DNG samples are scaled to the DNG's BitsPerSample instead of the codestream's
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark).
 

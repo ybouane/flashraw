@@ -72,7 +72,7 @@ Generated from `docs/support/*.tsv` by `tools/support_matrix.py` (also printed b
 `flashraw supported`).
 
 <!-- BEGIN GENERATED SUPPORT TABLE (tools/support_matrix.py) -->
-Status counts: experimental: 17, partial: 7, supported: 1, unsupported: 20, verified: 110
+Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 20, verified: 110
 
 | Format | Mode | Compression | Status | Notes |
 |---|---|---|---|---|
@@ -112,7 +112,8 @@ Status counts: experimental: 17, partial: 7, supported: 1, unsupported: 20, veri
 | DNG | CFA / LinearRaw, 1-4 components | lossless JPEG (predictors 1-7, restart markers, 2-component tile rows) | verified | all corpus files decode incl. smartphones with per-row restarts and Pentax Pixel Shift (frame 0) |
 | DNG | CFA, 12-bit | SOF1 12-bit DCT tiles (Blackmagic) | verified | bit-exact with the scalar float IDCT |
 | DNG | CFA, float 16/24/32 | deflate + floating-point predictors 3/34894/34895 | verified | merged-HDR files; RawU16 output: when max(white, data maximum) lies outside 4096..32767 it is scaled to 16383, then clamped at 0 and truncated; big-endian files whose WhiteLevel LONG holds the bits of 1.0f and whose samples are little-endian (one HDR-merge writer) are read little-endian with white 1.0; float data whose integer Black/WhiteLevel tags are in another unit than the samples (e.g. samples below 0.08 with white 1023) decode as stored and render dark |
-| DNG | CFALayout != 1 | staggered layouts | unsupported | no corpus samples; explicit error |
+| DNG | CFALayout 2-5 | staggered layouts A-D | experimental | converted SuperCCD (S2Pro) files: samples returned as stored with the stored-grid CFA (`SensorLayout::OtherCfa`, extra `cfa_layout`), like native SuperCCD buffers; the half-photosite stagger is not undone (DefaultScale gives the pixel aspect); no corpus sample |
+| DNG | CFALayout 6-9 | staggered layouts E-H | unsupported | no samples; `CameraUnsupported` error |
 | DNG | LinearRaw | lossy JPEG (34892) | verified | converter-produced lossy files |
 | DNG | any | deflate + integer predictors 1/2/34892/34893 | verified |  |
 | DNG | any | JPEG XL (52546, DNG 1.7) | experimental | `jpegxl` feature; corpus sample verified visually only |
