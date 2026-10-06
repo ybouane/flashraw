@@ -13,19 +13,26 @@ writes JSON lines plus a Markdown report.
         -DCMAKE_BUILD_TYPE=Release -DWITH_OPENMP=ON -DWITH_JPEG=OFF \
         -DBUILD_TESTING=OFF -DBUILD_BENCHMARKING=OFF -DBUILD_FUZZERS=OFF \
         -DBUILD_DOCS=OFF -DBUILD_TOOLS=OFF
-    cmake --build ../bench-libs/rawspeed-build -j --target rawspeed
+    cmake --build ../bench-libs/rawspeed-build -j
+    # macOS (Apple clang has no OpenMP runtime; use a libomp prefix such as Homebrew's):
+    #   add -DOpenMP_CXX_FLAGS="-Xpreprocessor -fopenmp -I$OMP/include" \
+    #       -DOpenMP_CXX_LIB_NAMES=omp -DOpenMP_omp_LIBRARY=$OMP/lib/libomp.dylib
+    #   (a CMake binary tarball from cmake.org works without installing anything)
 
-    # 2. Build the benchmark programs (LibRaw single-threaded and OpenMP, RawSpeed).
+    # 2. Build the benchmark programs (LibRaw single-threaded and OpenMP, RawSpeed) into
+    #    target/bench-compare. LibRaw is built from a copy of its tree with its own
+    #    Makefile.dist. Add --zlib-prefix DIR if zlib's headers are not installed.
     tools/bench/compare.py build --libraw-src ../bench-libs/LibRaw \
         --rawspeed-src ../bench-libs/rawspeed --rawspeed-build ../bench-libs/rawspeed-build
 
     # 3. FlashRaw CLI (JPEG XL DNG needs the jpegxl feature; add gpu for a GPU column).
     cargo build --release -p flashraw-cli --features jpegxl
 
-    # 4. Run and report.
+    # 4. Run (two or more passes on a shared machine; --max-busy waits for quiet moments
+    #    on Linux) and report (keeps the lowest median of the passes per measurement).
     tools/bench/compare.py run benches/popular-cameras.tsv benches/benchmark-set.tsv \
-        --out benches/results/<host>-compare.jsonl
-    tools/bench/compare.py report benches/results/<host>-compare.jsonl \
+        --out pass1.jsonl --max-busy 0.15
+    tools/bench/compare.py report pass1.jsonl pass2.jsonl \
         --popular benches/popular-cameras.tsv --markdown benches/results/<host>-compare.md
 
 What is measured (every value: median of --iterations timed runs after one warm-up, in
@@ -44,15 +51,14 @@ one process per file; input read into memory before timing):
 
 Threads: "all" = every core (FlashRaw default; RawSpeed and the LibRaw OpenMP build with
 OpenMP's default team); "1" = one thread (FlashRaw with RAYON_NUM_THREADS=1, RawSpeed with
-OMP_NUM_THREADS=1, LibRaw's default single-threaded build). Peak RSS is the process's ru_maxrss, which
-includes the input file held in memory.
+OMP_NUM_THREADS=1, LibRaw's default single-threaded build). Peak RSS is the process's
+ru_maxrss, which includes the input file held in memory.
 """
 import argparse
 import glob
 import json
 import math
 import os
-import platform
 import shutil
 import statistics
 import subprocess
@@ -506,7 +512,10 @@ def cmd_report(a):
             return "❌"
         if mode == "rgb-gpu" and not str(r.get("postprocess") or "").startswith("GPU"):
             return "CPU¹"  # the GPU pipeline does not handle this file: it ran on the CPU
-        return fmt_ms(r["ms"])
+        # Bold the fastest library for this file, mode and thread count.
+        fastest = min((x["ms"] for l in ("flashraw", "libraw", "rawspeed")
+                       for x in [by.get((f, l, mode, th))] if x and x.get("ok")), default=None)
+        return f"**{fmt_ms(r['ms'])}**" if mode != "rgb-gpu" and r["ms"] == fastest else fmt_ms(r["ms"])
 
     def label(f, cam, note):
         # The note names the camera's own compression mode; skip it when it only repeats the format.
@@ -525,7 +534,7 @@ def cmd_report(a):
         out.append(open(a.header).read().rstrip() + "\n")
     out.append("Times in ms (median of the timed runs; lower is better). "
                "❌ = the library failed or does not support the file; – = not measured. "
-               "Speedup = other library's time / FlashRaw's time.\n")
+               "Speedup = other library's time / FlashRaw's time. **Bold** = fastest library for that file.\n")
 
     def summary(sel, label):
         lines = [f"### {label}\n", "| Comparison | threads | files | geomean speedup | median speedup | FlashRaw faster |",
@@ -559,17 +568,17 @@ def cmd_report(a):
             if f not in meta:
                 continue
             mp = meta[f].get("mp") or 0
-            line = (f"| {label(f, cam, note)} | {codec(f)} | {mp:.1f} | **{cell(f, 'flashraw', 'decode', 'all')}** | "
+            line = (f"| {label(f, cam, note)} | {codec(f)} | {mp:.1f} | {cell(f, 'flashraw', 'decode', 'all')} | "
                     f"{cell(f, 'libraw', 'decode', 'all')} | {cell(f, 'rawspeed', 'decode', 'all')} | "
-                    f"**{cell(f, 'flashraw', 'rgb', 'all')}** | {cell(f, 'libraw', 'rgb', 'all')} |")
+                    f"{cell(f, 'flashraw', 'rgb', 'all')} | {cell(f, 'libraw', 'rgb', 'all')} |")
             if has_gpu:
                 line += f" {cell(f, 'flashraw', 'rgb-gpu', 'all')} |"
             out.append(line)
         out.append("")
         if has_gpu:
             out.append("FlashRaw GPU = `--backend gpu --output rgba8`: CPU decode or GPU unpack, GPU develop, "
-                       "frame downloaded to host memory. ¹ The GPU pipeline does not handle this file "
-                       "(e.g. DNG opcodes on demosaiced RGB, linear/3-channel DNG): it falls back to the CPU.\n")
+                       "frame downloaded to host memory. ¹ FlashRaw's GPU pipeline does not handle "
+                       "this file's processing yet and ran it on the CPU (same result, CPU time).\n")
         out.append("Single thread (same files):\n")
         out += ["| Camera | Decode: FlashRaw | LibRaw | RawSpeed | RAW→RGB: FlashRaw | LibRaw |",
                 "|---|---:|---:|---:|---:|---:|"]
