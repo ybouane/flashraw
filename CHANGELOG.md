@@ -86,6 +86,14 @@ First complete release of FlashRaw.
   at fractions of the file and around the start and end of the sensor data.
 
 ### Fixes
+- Sigma / Foveon X3F renders are no longer deep green: the CAMF calibration block (codings
+  2/4/5, decoded on demand) provides the as-shot white balance (preset gains, temperature,
+  aperture and sensor-adjustment factors) and an XYZ → camera matrix for every generation
+  (SD9 … SD14, DP1 … Merrill, Quattro), reported in `FrameInfo` (`ColorSource::File`). Classic
+  and Merrill bodies measure their per-layer black from the dark-shield rows (the database
+  value was off by up to 54 levels, e.g. SD14, DP2/SD1 Merrill). Mean R/G of the corpus
+  renders went from 0.004–0.9 (sd Quattro H 4.7) to within 0.2 of the embedded previews.
+  Raw buffers are unchanged.
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):
   the pipelined entropy/prediction stages use `rayon::join` on wasm32 instead of
   `std::thread::scope`.

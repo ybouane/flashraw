@@ -5,7 +5,7 @@
 //! version 4.x for Quattro bodies), a directory (`SECd`) at the offset stored in the
 //! last four bytes, and sections: `SECp` (UTF-16 property list: make, model, ISO,
 //! exposure, lens), `SECi` (images: raw, JPEG/RGB/Huffman thumbnails) and `SECc`
-//! (CAMF calibration blob; not needed for the decoded buffer and not parsed).
+//! (CAMF calibration block, see [`camf`]; only its colour calibration is used).
 //!
 //! ## Raw image types
 //! | type/format | cameras | coding |
@@ -27,10 +27,21 @@
 //!   block (except for a 2-sample border).
 //! - Polaroid x530 stores channels in reverse order; they are swapped to R,G,B order.
 //!
-//! Geometry (margins), black and white levels come from the camera database (they
-//! are not stored in the file in a usable form); the colour matrix comes from
-//! the database's fallback colour table. X3F has no usable as-shot white balance,
-//! so none is reported.
+//! Geometry (margins) and white level come from the camera database (they are not
+//! stored in the file in a usable form), as does the fallback black level.
+//!
+//! ## Calibration (CAMF)
+//! - White balance and colour: the as-shot preset is named by the `WB_DESC` property
+//!   (or the version 2.1 – 3.x header) or by the CAMF `WhiteBalance` index (Quattro);
+//!   the preset's channel gains and colour matrices ([`camf`]) are reported as
+//!   [`FrameInfo::white_balance`] and an XYZ → camera matrix ([`ColorSource::File`]).
+//! - Black: the optically shielded rows (`DarkShieldTop`/`DarkShieldBottom`) of classic
+//!   and Merrill bodies become [`FrameInfo::masked_areas`] with `black_from_masked`.
+//!
+//! Files without a usable CAMF block keep the database's fallback colour matrix and
+//! report no white balance.
+
+mod camf;
 
 use crate::common::*;
 use flashraw_codecs::x3f;
@@ -39,6 +50,7 @@ use flashraw_core::*;
 
 const SEC_PROP: &[u8; 4] = b"SECp";
 const SEC_IMAGE: &[u8; 4] = b"SECi";
+const SEC_CAMF: &[u8; 4] = b"SECc";
 
 const RAW_X530: u32 = 0x0003_0005;
 const RAW_HUFFMAN_10BIT: u32 = 0x0003_0006;
@@ -356,6 +368,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     let black = info.black_level.values.first().copied().unwrap_or(0.0).max(0.0) as u32;
 
     let swap_rb = meta.make.eq_ignore_ascii_case("Polaroid") && meta.model.eq_ignore_ascii_case("x530");
+    apply_camf(data, version, &sections, swap_rb, is_quattro(type_format), &mut meta, &mut info);
     let raw = X3fRaw {
         data,
         section_range: (raw_sec.offset, raw_sec.size),
@@ -370,6 +383,74 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     };
     let dec = SimpleDecoder::new(RawFormat::X3f, meta, info, Box::new(move |ctx| raw.decode(ctx)));
     Ok(Box::new(dec))
+}
+
+/// White-balance preset named in a version 2.1 – 3.x header (32 bytes at offset 40).
+fn header_white_balance(data: &[u8], version: u32) -> Option<String> {
+    if !(0x0002_0001..0x0004_0000).contains(&version) {
+        return None;
+    }
+    let field = data.get(40..72)?;
+    let end = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    let s = std::str::from_utf8(&field[..end]).ok()?.trim();
+    (!s.is_empty() && s.bytes().all(|b| b.is_ascii_graphic())).then(|| s.to_string())
+}
+
+/// Calibration from the CAMF block, when it has it: the dark-shield areas the black
+/// level is measured from, the as-shot white balance and the colour matrix.
+fn apply_camf(
+    data: &[u8],
+    version: u32,
+    sections: &[Section],
+    swap_rb: bool,
+    quattro: bool,
+    meta: &mut RawMetadata,
+    info: &mut FrameInfo,
+) {
+    let Some(mut camf) = sections
+        .iter()
+        .find(|s| &s.ident == SEC_CAMF && s.complete(data))
+        .and_then(|s| s.bytes(data).ok())
+        .and_then(camf::Camf::from_section)
+    else {
+        return;
+    };
+    // Black: optically shielded rows above/below the image, outside the active area.
+    // Quattro bodies store their lower layers at half resolution (the shielded rows of
+    // those layers are only partly filled), so they keep the database level.
+    if !quattro {
+        let active = camf.rect("ActiveImageArea").unwrap_or(info.active_area);
+        let full = Rect::full(info.width, info.height);
+        info.masked_areas = ["DarkShieldTop", "DarkShieldBottom"]
+            .iter()
+            .filter_map(|n| camf.rect(n)?.intersect(&full))
+            .filter(|r| r.intersect(&active).is_none() && r.intersect(&info.active_area).is_none())
+            .collect();
+        info.black_from_masked = !info.masked_areas.is_empty();
+    }
+    let preset = if version >= 0x0004_0000 {
+        camf.white_balance_name().map(str::to_string)
+    } else {
+        meta.extra("white_balance").map(str::to_string).or_else(|| header_white_balance(data, version))
+    };
+    let Some(cal) = camf::calibration(&mut camf, preset.as_deref().unwrap_or("Auto")) else { return };
+    let Some(mut matrix) = cal.color_matrix() else { return };
+    let mut g = cal.gains;
+    if swap_rb {
+        // Channels are stored in reverse order and swapped when decoding.
+        g.swap(0, 2);
+        let v = &mut matrix.values;
+        for c in 0..3 {
+            v.swap(c, 6 + c);
+        }
+    }
+    let Some(wb) = WhiteBalance::from_multipliers(g[0] as f32, g[1] as f32, g[2] as f32, g[1] as f32) else { return };
+    info.white_balance = Some(wb);
+    let mut cm = ColorMatrices::default();
+    cm.color.push(matrix);
+    cm.source = ColorSource::File;
+    info.color_matrices = cm;
+    meta.set_extra("white_balance", cal.preset.as_str());
 }
 
 fn is_quattro(t: u32) -> bool {
@@ -836,5 +917,97 @@ mod tests {
         }
         let d = open(&file, &OpenOptions::default()).unwrap();
         let _ = d.decode(&DecodeContext::new(&p));
+    }
+
+    /// A type-2 (XOR-coded) `SECc` section holding `block`.
+    fn camf_section(block: &[u8]) -> Vec<u8> {
+        let mut s = b"SECc".to_vec();
+        for w in [0x0002_0000u32, 2, 0, 0, 0, 0x1234_5678] {
+            s.extend_from_slice(&w.to_le_bytes());
+        }
+        // The coding is an XOR stream: coding the plain block yields the stored bytes.
+        let stored = x3f::decode_camf(&[&s[..], block].concat()).unwrap();
+        s.extend_from_slice(&stored);
+        s
+    }
+
+    #[test]
+    fn camf_white_balance_and_matrix() {
+        use camf::tests::Block;
+        let cc = [2.0f32, -0.5, -0.5, -0.25, 1.5, -0.25, 0.0, -1.0, 2.0];
+        let block = Block::default()
+            .property("WhiteBalanceGains", &[("Auto", "AutoWBGain"), ("Shade", "ShadeWBGain")])
+            .property("WhiteBalanceColorCorrections", &[("Auto", "CC"), ("Shade", "CC")])
+            .matrix("AutoWBGain", &[3], &[2.0, 1.0, 0.5])
+            .matrix("ShadeWBGain", &[3], &[3.0, 1.5, 0.75])
+            .matrix("CC", &[3, 3], &cc)
+            .0;
+        let (w, h) = (4u32, 3u32);
+        let mut img = image_header(3, 5, w, h, w * 4);
+        img.extend((0..1024u16).flat_map(|m| m.to_le_bytes()));
+        img.extend((0..w * h).flat_map(|_| (1u32 << 20 | 1 << 10 | 1).to_le_bytes()));
+        for (make, model, wb, coeffs) in [
+            ("SIGMA", "SIGMA SD10", "Shade", [2.0, 1.0, 0.5]),
+            ("SIGMA", "SIGMA SD10", "Bulb", [2.0, 1.0, 0.5]),
+            // Channels stored in reverse order: so are the gains.
+            ("Polaroid", "x530", "Auto", [0.5, 1.0, 2.0]),
+        ] {
+            let prop = prop_section(&[("CAMMANUF", make), ("CAMMODEL", model), ("WB_DESC", wb)]);
+            let file = build_x3f(&[(b"IMAG", img.clone()), (b"PROP", prop), (b"CAMF", camf_section(&block))]);
+            let dec = open(&file, &OpenOptions::default()).unwrap();
+            let fi = dec.frame_info();
+            assert_eq!(&fi.white_balance.unwrap().coeffs[..3], &coeffs, "{model} {wb}");
+            assert_eq!(fi.color_matrices.source, ColorSource::File);
+            let m = &fi.color_matrices.color[0];
+            assert_eq!((m.rows, m.values.len()), (3, 9));
+            assert_eq!(dec.metadata().extra("white_balance"), Some(if wb == "Bulb" { "Auto" } else { wb }));
+        }
+        // A corrupt calibration block leaves the database colour data.
+        let mut bad = camf_section(&block);
+        bad[8] = 9;
+        let prop = prop_section(&[("CAMMANUF", "SIGMA"), ("CAMMODEL", "SIGMA SD10")]);
+        let file = build_x3f(&[(b"IMAG", img), (b"PROP", prop), (b"CAMF", bad)]);
+        let dec = open(&file, &OpenOptions::default()).unwrap();
+        assert!(dec.frame_info().white_balance.is_none());
+        assert_ne!(dec.frame_info().color_matrices.source, ColorSource::File);
+    }
+
+    /// Every X3F of the corpus: the on-demand calibration equals the one read from the
+    /// fully decoded block, white balance and colour matrix come from the file, and the
+    /// black level of non-Quattro bodies is measured from the dark-shield rows.
+    #[test]
+    fn corpus_calibration() {
+        let root = std::env::var_os("FLASHRAW_CORPUS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
+        let mut files = Vec::new();
+        for make in ["Sigma", "Polaroid"] {
+            let Ok(models) = std::fs::read_dir(root.join(make)) else { continue };
+            for m in models.flatten() {
+                for f in std::fs::read_dir(m.path()).into_iter().flatten().flatten() {
+                    if f.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("x3f")) {
+                        files.push(f.path());
+                    }
+                }
+            }
+        }
+        for path in &files {
+            let data = std::fs::read(path).unwrap();
+            let dec = open(&data, &OpenOptions::default()).unwrap();
+            let fi = dec.frame_info();
+            let name = path.display();
+            assert!(fi.white_balance.is_some(), "{name}: no white balance");
+            assert_eq!(fi.color_matrices.source, ColorSource::File, "{name}");
+            let sections = parse_directory(&data).unwrap();
+            let raw = sections.iter().find_map(|s| s.image.filter(|i| RAW_TYPES.contains(&i.0))).unwrap();
+            assert_eq!(fi.black_from_masked, !is_quattro(raw.0), "{name}");
+            let sec = sections.iter().find(|s| &s.ident == SEC_CAMF).unwrap().bytes(&data).unwrap();
+            let wb = dec.metadata().extra("white_balance").unwrap();
+            let lazy = camf::calibration(&mut camf::Camf::from_section(sec).unwrap(), wb);
+            let full = camf::calibration(&mut camf::Camf::parse(x3f::decode_camf(sec).unwrap()), wb);
+            assert_eq!(lazy, full, "{name}");
+            assert_eq!(lazy.unwrap().preset, wb, "{name}");
+        }
+        eprintln!("x3f calibration: {} corpus files", files.len());
     }
 }

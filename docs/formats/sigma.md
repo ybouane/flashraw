@@ -1,6 +1,6 @@
 # Sigma / Foveon X3F
 
-Module: `crates/flashraw-formats/src/sigma.rs`; codec: `crates/flashraw-codecs/src/x3f.rs`.
+Module: `crates/flashraw-formats/src/sigma/` (`camf.rs`: calibration block); codec: `crates/flashraw-codecs/src/x3f.rs`.
 Sigma DNG files (fp, fp L, and DNGs written by Sigma Photo Pro) go through the DNG decoder.
 
 ## Container
@@ -11,7 +11,7 @@ Sigma DNG files (fp, fp L, and DNGs written by Sigma Photo Pro) go through the D
 | directory | `SECd` block at the offset stored in the last 4 bytes; ≤ 50 entries of (offset, size, type) |
 | `SECp` | UTF-16 property list: `CAMMANUF`, `CAMMODEL`, `ISO`, `SHUTTER`, `APERTURE`, `FLENGTH`, `FLEQ35MM`, `LENSMODEL`, `LENSFRANGE`, `LENSARANGE`, `TIME`, `CAMSERIAL`, `FIRMVERS`, `WB_DESC` |
 | `SECi` | images: raw (see below), JPEG thumbnail (`2/12`), plain RGB thumbnail (`2/3`); Huffman thumbnails (`2/b`) and Quattro `2/19` thumbnails are not exposed |
-| `SECc` | CAMF calibration blob: not parsed (not needed for the decoded buffer, levels or white balance) |
+| `SECc` | CAMF calibration block: white balance, colour matrix and dark-shield areas (see [Colour](#colour)) |
 
 Quattro files have no property list: the make is `SIGMA` and the model is derived from
 `SIGMA dp<n>` / `sd Quattro (H)` strings in the first 2 KiB, falling back to the raster size.
@@ -46,9 +46,45 @@ concurrently (3 threads); each plane is a strictly sequential stream.
 ## Metadata
 
 Margins (active area) and white level come from the camera database (entries
-`mode = "x3f-<width>x<height>"` in `camera-db/cameras.json`), black level and colour matrix from the
-camera database's colour table (prefix-matched). No as-shot white balance is reported. Unknown bodies/sizes still decode
-with full-frame geometry, the colour-table black and white 0x3fff.
+`mode = "x3f-<width>x<height>"` in `camera-db/cameras.json`), the fallback black level from the
+camera database's colour table (prefix-matched). Unknown bodies/sizes still decode with full-frame
+geometry, the colour-table black and white 0x3fff.
+
+## Colour
+
+The `SECc` block (CAMF) holds the camera calibration as a sequence of `CMb` entries: text (`CMbT`),
+property lists (`CMbP`, name → value strings) and matrices (`CMbM`: element type, dimensions, data).
+It is coded in one of three ways (`flashraw_codecs::x3f::CamfStream`): type 2 (SD9–SD14) XORs the
+bytes with a pseudo-random stream; type 4 (DP1–Merrill) is a TRUE-style prefix code over 12-bit
+samples (2x2-phase prediction, two samples per three bytes); type 5 (Quattro) the same code over a
+running byte sum. Blocks reach several MiB (spatial gain and defect tables), so they are decoded on
+demand: lookups stop once the entry is found or the `IncludeBlocks` list shows it is absent.
+
+- **White-balance preset**: the `WB_DESC` property (falling back to the header's 32-byte name at
+  offset 40, versions 2.1–3.x), or the CAMF `WhiteBalance` index (Quattro: 1 Auto, 2 Sunlight,
+  3 Shade, 4 Overcast, 5 Incandescent, 6 Fluorescent, 7 Flash, 8 Custom, 12 AutoLSP). `Daylight`
+  names the `Sunlight` preset; unknown presets use `Auto`.
+- **DP1 … Quattro**: gains from `WhiteBalanceGains` (`DP1_WhiteBalanceGains`) for the preset, times
+  `TempGainFact`, `FNumberGainFact`, `SensorAdjustmentGainFact` and `DigitalISOGain` (sd Quattro H:
+  the lower layers are stored at half the top layer's gain) when present; the preset's matrix in
+  `WhiteBalanceColorCorrections` (`DP1_…`) maps balanced raw to linear sRGB.
+- **SD9 … SD14, Polaroid x530**: `WhiteBalanceIlluminants` gives camera → XYZ and
+  `WhiteBalanceCorrections` an XYZ correction; the gains are the reciprocal of `<preset>RGBNeutral`
+  or, without it, of the camera response to D65.
+
+`FrameInfo::white_balance` holds the gains (normalised to the middle channel) and
+`color_matrices.color` the XYZ → camera matrix (source `File`, illuminant from the preset). Files
+without a usable block keep the colour-table matrix and report no white balance.
+
+**Black level**: classic and Merrill bodies record their optically shielded rows
+(`DarkShieldTop`/`DarkShieldBottom`, outside `ActiveImageArea`) as `FrameInfo::masked_areas` with
+`black_from_masked`, so the per-layer black is measured after decoding (the database value is the
+fallback: actual levels vary per body and file, e.g. 16 vs 31 on DP2 Merrill, 69 vs 15 on SD14).
+Quattro bodies keep the database level (their lower layers fill the shielded rows only partly).
+
+Not applied: the lens- and aperture-dependent spatial gain tables (`SpatialGain*`, colour shading
+factors) that correct the colour shading towards the frame edges of Merrill bodies, colour-mode
+compensations and tone curves (renders are colorimetric).
 
 ## Verification
 

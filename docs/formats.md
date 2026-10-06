@@ -72,7 +72,7 @@ Generated from `docs/support/*.tsv` by `tools/support_matrix.py` (also printed b
 `flashraw supported`).
 
 <!-- BEGIN GENERATED SUPPORT TABLE (tools/support_matrix.py) -->
-Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 20, verified: 110
+Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 19, verified: 111
 
 | Format | Mode | Compression | Status | Notes |
 |---|---|---|---|---|
@@ -229,7 +229,7 @@ Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 20, veri
 | X3F | 3/1e TRUE I/II (DP1, DP1s, SD15) | sigma-x3f | verified | corpus files decode; planes decode in parallel |
 | X3F | 3/5 uncompressed 10-bit words (Polaroid x530) | sigma-x3f | verified | R/B swapped to RGB order |
 | X3F | 3/6 10-bit Huffman (SD9, SD10, SD14) | sigma-x3f | verified | rows decode in parallel; negative running sums offset |
-| X3F | CAMF calibration | - | unsupported | not parsed: not needed for the buffer, levels or white balance |
+| X3F | CAMF calibration | - | verified | as-shot white balance, colour matrix and dark-shield black areas (types 2/4/5); spatial colour shading not applied |
 | X3F | Huffman thumbnail (2/b), Quattro thumbnail (2/19) | - | unsupported | JPEG and RGB thumbnails are exposed as previews |
 | X3F | half/2-3 size raws (SD14/SD15/DP/Merrill/Quattro) | sigma-x3f | experimental | geometry from the camera database; no corpus sample |
 <!-- END GENERATED SUPPORT TABLE -->
