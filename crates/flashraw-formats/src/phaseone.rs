@@ -719,9 +719,9 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
     let raw = tiff
         .all_ifds()
         .into_iter()
-        .filter(|i| i.bps() > 8 && i.width() > 0 && i.height() > 0)
+        .filter(|i| i.bps() > 8 && i.width() > 0 && i.height() > 0 && !i.is_reduced_resolution())
         .max_by_key(|i| i.width() as u64 * i.height() as u64)
-        .ok_or_else(|| Error::invalid_metadata("MOS: no raw image"))?;
+        .ok_or_else(|| no_raw_ifd(&tiff, "MOS", Error::invalid_metadata("MOS: no raw image")))?;
     let samples = raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
     if samples > 1 {
         return Err(Error::unsupported_compression("MOS", format!("multi-shot capture ({samples} planes)")));

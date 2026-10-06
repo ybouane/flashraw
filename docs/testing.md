@@ -68,6 +68,13 @@ redistributable); each set is skipped when absent.
   the zero-filled samples and `DecodeWarning` under Recover. `crates/flashraw-cli/tests/`,
   `npm/tests/truncation.test.mjs` and `crates/flashraw-python/tests/test_errors.py` check the
   same through the CLI JSON, the JS API and the Python API.
+- `crates/flashraw/tests/truncated_files.rs`: real files of every format cut at fractions of
+  the file (0.1% to 99%) and around the start and end of their sensor data. A cut file must
+  open with the true sensor geometry (never a thumbnail or preview taken for the raw image)
+  or fail with a clear error; a decode that reports no warning must equal the complete
+  decode, and a recovered one must fail under `Strict`. One file per extension and make by
+  default, one per camera directory with `FLASHRAW_TRUNCATION_ALL=1`; synthetic NEF and DNG
+  files (thumbnail IFD0, raw SubIFD) cover the rule without the corpus.
 - `fuzz/`: cargo-fuzz targets `open_decode` (whole pipeline, all formats,
   decoding under both corruption policies with consistency checks), `tiff_parse`,
   `bmff_parse`, `bit_pumps` (with a model check), `huffman`, `ljpeg`, `packed_unpack`

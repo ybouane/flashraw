@@ -76,6 +76,14 @@ First complete release of FlashRaw.
   rest and warns, `Strict` fails with the structured `Truncated` cause. Truncated PEF and SRW
   files previously decoded the zero padding as image data without any warning, and a NEF
   missing only its last bytes decoded its last row from padding.
+- A truncated file never decodes a thumbnail or preview as its sensor image. Raw IFD
+  selection skips reduced-resolution (NewSubFileType 1) and 8-bit RGB/YCbCr images in NEF,
+  PEF, SRW, ARW/SR2, ORF and MOS files (a NEF cut before its raw SubIFD decoded as a
+  160x120 black frame: its RGB thumbnail taken for a film-scanner image). When the file
+  ends inside its directory structure, before the raw image's IFD, every TIFF-based format
+  fails with `CorruptFile` naming the missing directory instead of `InvalidMetadata` or a
+  wrong image. `crates/flashraw/tests/truncated_files.rs` cuts corpus files of every format
+  at fractions of the file and around the start and end of the sensor data.
 
 ### Fixes
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):

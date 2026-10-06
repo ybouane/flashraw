@@ -124,7 +124,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let model_uc = model.to_ascii_uppercase();
     let mn = tiff.find_entry(tags::MAKER_NOTE).map(|e| parse_makernote(data, e, tiff.order)).unwrap_or_default();
 
-    let raw = select_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("SRW has no raw image IFD"))?;
+    let raw = select_raw_ifd(&tiff, false)
+        .ok_or_else(|| no_raw_ifd(&tiff, "SRW", Error::invalid_metadata("SRW has no raw image IFD")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     let bps = raw.bps();

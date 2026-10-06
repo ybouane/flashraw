@@ -134,7 +134,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         meta.exposure.iso = mn.iso;
     }
 
-    let raw = select_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("PEF has no raw image IFD"))?;
+    let raw = select_raw_ifd(&tiff, false)
+        .ok_or_else(|| no_raw_ifd(&tiff, "PEF", Error::invalid_metadata("PEF has no raw image IFD")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     let bps = raw.bps();

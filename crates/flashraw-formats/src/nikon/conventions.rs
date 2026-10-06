@@ -121,9 +121,14 @@ pub(crate) fn decode_rows_region(
     Ok(img)
 }
 
-/// The raw IFD: the largest image (by samples x bits) that is not a JPEG preview.
-/// Ties keep the first IFD in file order (the first frame of multi-shot files).
-pub(crate) fn select_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>) -> Option<&'t Ifd<'a>> {
+/// The raw IFD: the largest image (by samples x bits) that is not a preview. Ties keep
+/// the first IFD in file order (the first frame of multi-shot files).
+///
+/// Previews are never candidates, so a file truncated before its raw IFD has none
+/// (rather than a thumbnail standing in for the sensor image): JPEG data, reduced-
+/// resolution images and, unless `rgb_images` (film scanner files, whose image is RGB),
+/// 8-bit RGB / YCbCr images.
+pub(crate) fn select_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>, rgb_images: bool) -> Option<&'t Ifd<'a>> {
     let mut best: Option<(&Ifd, u64)> = None;
     for ifd in tiff.all_ifds() {
         let (w, h) = (ifd.width() as u64, ifd.height() as u64);
@@ -132,6 +137,9 @@ pub(crate) fn select_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>) -> Option<&'t Ifd<'a>> 
             continue;
         }
         if matches!(ifd.compression(), 6 | 7) {
+            continue;
+        }
+        if ifd.is_reduced_resolution() || (!rgb_images && is_preview_ifd(ifd)) {
             continue;
         }
         let score = w * h * bps;

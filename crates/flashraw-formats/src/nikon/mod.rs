@@ -107,7 +107,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }
     }
 
-    let raw = select_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("NEF has no raw image IFD"))?;
+    // Film scanner NEFs (Nikon Scan) hold an RGB image; camera NEFs never do, and an RGB
+    // IFD there is a thumbnail.
+    let software = meta.software.clone().unwrap_or_default();
+    let scanner = software.starts_with("Nikon Scan") || model_uc.contains("COOLSCAN");
+    let raw = select_raw_ifd(&tiff, scanner)
+        .ok_or_else(|| no_raw_ifd(&tiff, "NEF", Error::invalid_metadata("NEF has no raw image IFD")))?;
     let raw_w = raw.width();
     let raw_h = raw.height();
     opts.limits.check_dims(raw_w, raw_h, 1)?;
@@ -118,14 +123,11 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     // A payload past the end of the file fails when decoded, not here (metadata and
     // previews stay available).
     let src = data.get(offset..).unwrap_or(&[]);
-    let software = meta.software.clone().unwrap_or_default();
     let samples = raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
 
     // --- Payload selection (heuristics on compression, size and makernote) ---
     let (w64, h64, b64) = (raw_w as u64, raw_h as u64, bytes as u64);
-    let is_coolscan = software.starts_with("Nikon Scan")
-        || model_uc.contains("COOLSCAN")
-        || (bps == 8 && compression == 1 && raw.u32(tags::PHOTOMETRIC) != Some(32803));
+    let is_coolscan = scanner || (bps == 8 && compression == 1 && raw.u32(tags::PHOTOMETRIC) != Some(32803));
     let mut width = raw_w as usize;
     let height = raw_h as usize;
     let mut packed_flags: Option<u32> = None;

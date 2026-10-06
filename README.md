@@ -393,7 +393,9 @@ truncated or fails to decode is zero-filled with a warning), and Nikon and Penta
 and Samsung SRW streams cut short by the end of the file (the rows decoded from real data
 are kept). Other compressed streams (one entropy-coded stream per image) fail under both
 policies; when their declared range runs past the end of the file the error carries the
-same truncation details.
+same truncation details. A file cut inside its directory structure, before the raw image's
+IFD, fails with `Error::CorruptFile`: a thumbnail or preview is never decoded in place of
+the sensor image.
 
 ### GPU
 

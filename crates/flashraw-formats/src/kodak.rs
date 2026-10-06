@@ -497,7 +497,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         let (w, h) = (kifd.width.unwrap_or(0), kifd.height.unwrap_or(0));
         (Kind::Packed12 { offset }, w, h)
     } else {
-        let r = raw.ok_or_else(|| Error::invalid_metadata("Kodak: no raw image"))?;
+        let r = raw.ok_or_else(|| no_raw_ifd(&tiff, "Kodak", Error::invalid_metadata("Kodak: no raw image")))?;
         let (w, h) = (r.width(), r.height());
         let offset = first_strip(r)?;
         let kind = match (r.compression(), r.u32(tags::PHOTOMETRIC).unwrap_or(32803), r.bps()) {

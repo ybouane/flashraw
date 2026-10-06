@@ -100,7 +100,8 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
     let cam = db_lookup(&mut meta, "dng");
     let _ = cam;
 
-    let raw_ifd = find_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("DNG has no raw image IFD"))?;
+    let raw_ifd = find_raw_ifd(&tiff)
+        .ok_or_else(|| no_raw_ifd(&tiff, "DNG", Error::invalid_metadata("DNG has no raw image IFD")))?;
     let (info, raw) = parse_raw(data, &tiff, ifd0, raw_ifd, v4, &meta, opts)?;
     meta.previews = tiff_previews(data, 0, &tiff, info.orientation);
     meta.dng = Some(dng_extras(ifd0, raw_ifd));

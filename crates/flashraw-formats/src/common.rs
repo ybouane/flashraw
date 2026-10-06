@@ -213,6 +213,62 @@ pub fn strips(ifd: &Ifd) -> Vec<(usize, usize)> {
     offs.iter().zip(lens.iter().chain(std::iter::repeat(&0))).map(|(&o, &l)| (o as usize, l as usize)).collect()
 }
 
+/// True when `ifd` describes a preview or thumbnail rather than sensor data: a
+/// reduced-resolution image (NewSubFileType bit 0) or an 8-bit RGB / YCbCr image.
+/// Raw IFD selection must never fall back to such an image, whatever data is present.
+pub fn is_preview_ifd(ifd: &Ifd) -> bool {
+    ifd.is_reduced_resolution() || (ifd.bps() <= 8 && matches!(ifd.u32(tags::PHOTOMETRIC), Some(2 | 6)))
+}
+
+/// Offset of the first IFD the TIFF structure points to but the file does not fully
+/// contain (a SubIFD, EXIF or next-IFD pointer past the end, or a directory whose
+/// entries run past it): the mark of a truncated file.
+pub fn unreadable_ifd(tiff: &Tiff) -> Option<u64> {
+    let data = tiff.data;
+    let incomplete = |o: u32| -> bool {
+        let o = o as usize;
+        match data.get(o..o.saturating_add(2)) {
+            Some(n) => o + 2 + tiff.order.u16([n[0], n[1]]) as usize * 12 > data.len(),
+            None => true,
+        }
+    };
+    for ifd in tiff.all_ifds() {
+        if incomplete(ifd.offset) {
+            return Some(ifd.offset as u64);
+        }
+        let mut pointers: Vec<u32> = ifd.get(tags::SUB_IFDS).map(|e| e.u32s()).unwrap_or_default();
+        pointers.extend(ifd.u32(tags::EXIF_IFD));
+        pointers.extend((ifd.next != 0).then_some(ifd.next));
+        if let Some(&o) = pointers.iter().find(|&&o| incomplete(o)) {
+            return Some(o as u64);
+        }
+        // A SubIFDs array cut short by the end of the file.
+        if let Some(e) = ifd.get(tags::SUB_IFDS) {
+            if (e.data.len() as u64) < e.count as u64 * 4 {
+                return Some(e.value_pos as u64);
+            }
+        }
+    }
+    None
+}
+
+/// The error for a TIFF-based file without a usable raw image IFD: a [`Error::CorruptFile`]
+/// when the file is truncated inside its IFD structure (the raw IFD is then missing; `format`
+/// names the format), otherwise `otherwise`.
+pub fn no_raw_ifd(tiff: &Tiff, format: &str, otherwise: Error) -> Error {
+    match unreadable_ifd(tiff) {
+        Some(o) => Error::corrupt_at(
+            format!(
+                "{format}: truncated file, the image directory at offset {o} lies past the end of the data ({} bytes); \
+                 the raw image is missing",
+                tiff.data.len()
+            ),
+            o,
+        ),
+        None => otherwise,
+    }
+}
+
 /// `(offset, length)` pairs of an IFD's tiles.
 pub fn tiles(ifd: &Ifd) -> Vec<(usize, usize)> {
     let offs = ifd.get(tags::TILE_OFFSETS).map(|e| e.u32s()).unwrap_or_default();
