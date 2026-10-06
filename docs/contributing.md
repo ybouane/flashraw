@@ -33,7 +33,9 @@ masked/optical-black borders), origin at the first stored sample.
 - `width`/`height`: full buffer dimensions: every stored sample, including masked
   borders (regression hashes cover the full buffer).
 - `active_area`: valid image pixels.
-- `crop`: recommended default crop (DNG DefaultCrop, vendor crop, or camera-db crop).
+- `crop`: recommended default crop, the camera's own image area (DNG DefaultCrop, vendor
+  crop field, recorded image size or full-size JPEG, camera-db `image_crops`; see
+  docs/camera-db.md "Default crops").
 - `cfa`: pattern anchored at buffer `(0, 0)` (shift vendor patterns accordingly).
 - `black_level`: pattern anchored at `(0, 0)`; set `black_from_masked = true` (with
   `masked_areas`) when the black level must be measured from optical black pixels.
