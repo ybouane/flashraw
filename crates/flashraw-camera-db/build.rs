@@ -54,9 +54,11 @@ fn main() {
                 )
             })
             .unwrap_or("None".into());
+        let image_crops: Vec<String> =
+            c.image_crops.iter().map(|r| format!("ImageCrop {{ area: {:?}, crop: {:?} }}", r.area, r.crop)).collect();
         writeln!(
             out,
-            "  Camera {{ make: {}, model: {}, mode: {}, canonical_make: {}, canonical_model: {}, aliases: &[{}], cfa: {}, crop: {}, black_areas_v: &{:?}, black_areas_h: &{:?}, sensors: &[{}], color_matrix: &{:?}, hints: &[{}], no_size_match: {}, orientation: {} }},",
+            "  Camera {{ make: {}, model: {}, mode: {}, canonical_make: {}, canonical_model: {}, aliases: &[{}], cfa: {}, crop: {}, black_areas_v: &{:?}, black_areas_h: &{:?}, sensors: &[{}], color_matrix: &{:?}, hints: &[{}], no_size_match: {}, orientation: {}, image_crops: &[{}] }},",
             q(&c.make), q(&c.model), q(&c.mode), q(&c.canonical_make), q(&c.canonical_model),
             aliases.join(", "),
             c.cfa.as_ref().map(|s| format!("Some({})", q(s))).unwrap_or("None".into()),
@@ -67,6 +69,7 @@ fn main() {
             hints.join(", "),
             c.no_size_match,
             orientation,
+            image_crops.join(", "),
         )
         .unwrap();
     }
