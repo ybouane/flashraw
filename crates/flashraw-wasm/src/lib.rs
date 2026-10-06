@@ -512,7 +512,7 @@ mod bindings {
                 to_js(ApiError {
                     corrupt: None,
                     kind: "NotAvailable",
-                    message: "the frame exceeds the adapter's buffer limits and is stored in bands; use download() or createTexture()".into(),
+                    message: "the frame exceeds the adapter's buffer limits and is stored in bands; use `download()` or `createTexture()`".into(),
                 })
             })?;
             b.as_webgpu().map(|b| JsValue::from(b.clone())).ok_or_else(|| {

@@ -436,14 +436,14 @@ pub(crate) unsafe fn read_versioned<T: Versioned>(p: *const T, defaults: T, what
     let ours = std::mem::size_of::<T>();
     if !(T::MIN_SIZE..=MAX_STRUCT_SIZE).contains(&size) {
         return Err(FfiError::invalid(format!(
-            "{what}.size is {size}; set it with the matching _init() function (expected {ours})"
+            "`{what}.size` is {size}; set it with the matching `_init()` function (expected {ours})"
         )));
     }
     // SAFETY: the caller guarantees `size` readable bytes at `p`.
     let bytes = unsafe { std::slice::from_raw_parts(p as *const u8, size) };
     if size > ours && bytes[ours..].iter().any(|&b| b != 0) {
         return Err(FfiError::invalid(format!(
-            "{what} sets fields unknown to this library version ({size} bytes, this version knows {ours})"
+            "`{what}` sets fields unknown to this library version ({size} bytes, this version knows {ours})"
         )));
     }
     let mut out = defaults;
@@ -469,7 +469,7 @@ pub(crate) unsafe fn write_versioned<T: Versioned>(p: *mut T, value: &T, what: &
     let size = unsafe { (p as *const u32).read_unaligned() } as usize;
     if !(T::MIN_SIZE..=MAX_STRUCT_SIZE).contains(&size) {
         return Err(FfiError::invalid(format!(
-            "{what}->size is {size}; set it to sizeof before the call (expected {})",
+            "`{what}->size` is {size}; set it to `sizeof` before the call (expected {})",
             std::mem::size_of::<T>()
         )));
     }

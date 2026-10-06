@@ -63,7 +63,7 @@ export function serve(api, port) {
         case 'thumbnail':
           return api.extractThumbnail(input, o);
         default:
-          throw new InvalidArgumentError(`unknown task ${task}`);
+          throw new InvalidArgumentError(`unknown task ${JSON.stringify(task)}`);
       }
     },
     async open({ input, options }) {
@@ -96,7 +96,7 @@ export function serve(api, port) {
         case 'thumbnail':
           return raw.thumbnail({ ...(a[0] ?? {}), zeroCopy: false });
         default:
-          throw new InvalidArgumentError(`unknown method ${method}`);
+          throw new InvalidArgumentError(`unknown method ${JSON.stringify(method)}`);
       }
     },
     async close({ handle }) {
@@ -109,7 +109,7 @@ export function serve(api, port) {
     const { id, op, args } = msg ?? {};
     try {
       const fn = ops[op];
-      if (!fn) throw new InvalidArgumentError(`unknown op ${op}`);
+      if (!fn) throw new InvalidArgumentError(`unknown op ${JSON.stringify(op)}`);
       const result = await fn(args);
       port.post({ id, ok: true, result }, transferablesOf(result));
     } catch (e) {
@@ -140,13 +140,13 @@ function inputTransfer(input, transfer) {
 function abortReason(signal) {
   if (signal.reason !== undefined) return signal.reason;
   if (typeof DOMException === 'function') return new DOMException('This operation was aborted', 'AbortError');
-  return Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+  return Object.assign(new Error('the operation was aborted'), { name: 'AbortError' });
 }
 
 function checkSignal(signal) {
   if (signal === undefined || signal === null) return null;
   if (typeof signal !== 'object' || typeof signal.addEventListener !== 'function' || !('aborted' in signal)) {
-    throw new InvalidArgumentError('signal must be an AbortSignal');
+    throw new InvalidArgumentError('`signal` must be an AbortSignal');
   }
   return signal;
 }

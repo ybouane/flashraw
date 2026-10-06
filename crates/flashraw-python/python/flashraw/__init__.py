@@ -156,7 +156,7 @@ def _rect_tuple(r: Optional[RectLike]) -> Optional[Tuple[int, int, int, int]]:
     try:
         x, y, w, h = r
     except (TypeError, ValueError):
-        raise InvalidArgumentError("region must be a Rect, (x, y, width, height) or a dict") from None
+        raise InvalidArgumentError("`region` must be a Rect, (x, y, width, height) or a dict") from None
     if min(x, y, w, h) < 0:
         raise InvalidArgumentError(f"region {tuple(r)} has negative values")
     return (int(x), int(y), int(w), int(h))
@@ -294,11 +294,11 @@ class Frame:
         applied for ``rgba8``.
         """
         if self.output != "rgba8":
-            raise InvalidArgumentError(f"to_pil() needs output='rgba8' (this frame is {self.output!r})")
+            raise InvalidArgumentError(f'`to_pil()` needs output="rgba8" (this frame is "{self.output}")')
         try:
             from PIL import Image
         except ImportError as e:  # pragma: no cover - depends on the environment
-            raise ImportError("to_pil() requires Pillow: pip install pillow") from e
+            raise ImportError("`to_pil()` requires Pillow (pip install pillow)") from e
         return Image.frombuffer("RGBA", (self.width, self.height), self.array, "raw", "RGBA", 0, 1)
 
     def __array__(self, dtype: Any = None, copy: Optional[bool] = None) -> "np.ndarray":

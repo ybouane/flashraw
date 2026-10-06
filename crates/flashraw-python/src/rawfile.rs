@@ -249,7 +249,7 @@ impl RawFile {
         if !is_buffer && source.hasattr("read")? {
             let data = source.call_method0("read")?;
             if data.hasattr("read")? || as_path(&data)?.is_some() {
-                return Err(invalid(py, "read() must return a bytes-like object"));
+                return Err(invalid(py, "`read()` must return a bytes-like object"));
             }
             return Self::open_bytes(py, &data, limits);
         }
@@ -316,7 +316,7 @@ impl RawFile {
             return Err(invalid(
                 py,
                 format!(
-                    "GPU-resident output {output:?} is not available from Python; use backend=\"gpu\" with a host output"
+                    "GPU-resident output {output:?} is not available from Python; use `backend=\"gpu\"` with a host output"
                 ),
             ));
         }
@@ -325,10 +325,10 @@ impl RawFile {
         let dm = Demosaic::parse(demosaic)
             .ok_or_else(|| invalid(py, format!("unknown demosaic {demosaic:?} (expected bilinear or half-size)")))?;
         let policy = CorruptionPolicy::parse(corruption_policy).ok_or_else(|| {
-            invalid(py, format!("unknown corruption_policy {corruption_policy:?} (expected recover or strict)"))
+            invalid(py, format!("unknown `corruption_policy` {corruption_policy:?} (expected recover or strict)"))
         })?;
         if threads == Some(0) {
-            return Err(invalid(py, "threads must be at least 1 (or None for all cores)"));
+            return Err(invalid(py, "`threads` must be at least 1 (or None for all cores)"));
         }
         let (mut crop_rgb, mut active) = (true, false);
         if let Some(c) = crop.filter(|c| !c.is_none()) {
@@ -337,7 +337,7 @@ impl RawFile {
             } else if c.extract::<String>().is_ok_and(|s| s == "active") {
                 active = true;
             } else {
-                return Err(invalid(py, "crop must be True, False or \"active\""));
+                return Err(invalid(py, "`crop` must be True, False or \"active\""));
             }
         }
         let region = match region {
@@ -569,7 +569,7 @@ impl RawFile {
             self.limits,
         )?;
         if tile.is_some() && req.opts.region.is_some() {
-            return Err(invalid(py, "tile and region cannot be combined"));
+            return Err(invalid(py, "`tile` and `region` cannot be combined"));
         }
         req.tile = tile;
         self.run_decode(py, req)

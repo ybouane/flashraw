@@ -47,7 +47,7 @@ function glueOf(variant) {
     case 'threads-jxl':
       return import('./flashraw_bindgen_threads_jxl.js');
     default:
-      throw new Error(`no glue for ${variant}`);
+      throw new Error(`no glue for ${JSON.stringify(variant)}`);
   }
 }
 

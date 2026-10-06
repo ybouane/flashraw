@@ -229,7 +229,7 @@ export function runThreadWorker(glue, port) {
           ok = glue.jobDecodePreview(a.shared, a.which);
           break;
         default:
-          throw new Error(`unknown job ${op}`);
+          throw new Error(`unknown job ${JSON.stringify(op)}`);
       }
       port.post({ type: 'result', id, ok });
     } catch (e) {

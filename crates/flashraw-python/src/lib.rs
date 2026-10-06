@@ -120,9 +120,9 @@ fn fnv1a64(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<u64> {
         let bytes = b.as_bytes();
         return Ok(py.detach(|| hash(bytes)));
     }
-    let a = data.cast::<PyUntypedArray>().map_err(|_| invalid(py, "fnv1a64 expects bytes or a NumPy array"))?;
+    let a = data.cast::<PyUntypedArray>().map_err(|_| invalid(py, "`fnv1a64` expects bytes or a NumPy array"))?;
     if !a.is_c_contiguous() {
-        return Err(invalid(py, "fnv1a64 needs a C-contiguous array"));
+        return Err(invalid(py, "`fnv1a64` needs a C-contiguous array"));
     }
     let n = a.len() * a.dtype().itemsize();
     // SAFETY: a C-contiguous array holds `len * itemsize` bytes at `data`; the array is

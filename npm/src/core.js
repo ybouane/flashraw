@@ -120,7 +120,7 @@ export function init(options = {}) {
 function jpegxlMode(o) {
   if (o === undefined || o === null) return 'auto';
   if (!JPEGXL_MODES.includes(o)) {
-    throw new InvalidArgumentError(`jpegxl must be "auto", "always" or "never", got ${JSON.stringify(o)}`);
+    throw new InvalidArgumentError(`\`jpegxl\` must be "auto", "always" or "never", got ${JSON.stringify(o)}`);
   }
   return o;
 }
@@ -332,7 +332,7 @@ async function initGpuBinary(options) {
 
 function threadCount(opt) {
   if (typeof opt === 'number') {
-    if (!Number.isInteger(opt) || opt < 1) throw new InvalidArgumentError('threads must be a positive integer, true, false or "auto"');
+    if (!Number.isInteger(opt) || opt < 1) throw new InvalidArgumentError('`threads` must be a positive integer, true, false or "auto"');
     return Math.min(opt, 256);
   }
   const hc = Number(platform.hardwareConcurrency?.() ?? 4);
@@ -350,7 +350,7 @@ export async function initThreads(count) {
 }
 
 function ensureInit() {
-  if (!wasm) throw new InternalError('FlashRaw is not initialised; await init() first');
+  if (!wasm) throw new InternalError('FlashRaw is not initialised; `await init()` first');
 }
 
 /** Typed-array view of `eng`'s WASM memory. */
@@ -577,7 +577,7 @@ export class DecodedFrame {
   }
   /** `ImageData` for `rgba8` frames (browsers / environments with ImageData). */
   toImageData() {
-    if (this.output !== 'rgba8') throw new InvalidArgumentError('toImageData() requires output "rgba8"');
+    if (this.output !== 'rgba8') throw new InvalidArgumentError('`toImageData()` requires output "rgba8"');
     if (typeof ImageData === 'undefined') throw new NotAvailableError('ImageData is not available in this environment');
     const d = this.data;
     // ImageData rejects views of shared memory (zero-copy frames of the threaded build): copy.
@@ -759,8 +759,8 @@ const isJpegXlUnsupported = (e) => e?.kind === 'UnsupportedCompression' && /JPEG
 
 function jpegXlError(why, cause) {
   return new UnsupportedCompressionError(
-    `this JPEG XL DNG needs the JPEG XL variant of FlashRaw (flashraw_simd_jxl.wasm), which is not available: ${why}` +
-      (build.jpegxlMode === 'never' ? '; init({ jpegxl: "auto" }) (the default) loads it when a file needs it' : ''),
+    `this JPEG XL DNG needs the JPEG XL variant of FlashRaw (\`flashraw_simd_jxl.wasm\`), which is not available: ${why}` +
+      (build.jpegxlMode === 'never' ? '; `init({ jpegxl: "auto" })` (the default) loads it when a file needs it' : ''),
     cause ? { cause } : undefined,
   );
 }
@@ -842,7 +842,7 @@ export class FlashRaw {
 
   /** Open a file by path (Node.js only). */
   static async openFile(path, options) {
-    if (!platform.fileSource) throw new NotAvailableError('FlashRaw.openFile() is only available in Node.js');
+    if (!platform.fileSource) throw new NotAvailableError('`FlashRaw.openFile()` is only available in Node.js');
     return this.open(path, options);
   }
 
@@ -970,7 +970,7 @@ export class FlashRaw {
       if (eng.pool) return this.#job('preview', { which: sel }).then(done);
       return done(this.#call((r) => r.decodePreview(sel)));
     }
-    if (format !== 'encoded') throw new InvalidArgumentError(`unknown preview format "${format}" (encoded | rgba8)`);
+    if (format !== 'encoded') throw new InvalidArgumentError(`unknown preview format ${JSON.stringify(format)} (expected "encoded" or "rgba8")`);
     const [ptr, len, json] = this.#call((r) => r.previewSpan(sel));
     const info = { ...JSON.parse(json), format: 'encoded' };
     if (!o.zeroCopy) return { ...info, data: heap(eng, Uint8Array, ptr, len).slice() };
@@ -980,7 +980,7 @@ export class FlashRaw {
     return Object.defineProperty(info, 'data', {
       enumerable: true,
       get: () => {
-        if (!this.#raw) throw new ClosedError('zero-copy preview used after close()');
+        if (!this.#raw) throw new ClosedError('zero-copy preview used after `close()`');
         if (!view || view.buffer !== eng.wasm.memory.buffer) view = heap(eng, Uint8Array, ptr, len);
         return view;
       },
@@ -1005,7 +1005,7 @@ export class FlashRaw {
     const t0 = now();
     const { backend = 'auto', fallback = 'cpu', zeroCopy = false, init: _init, ...rest } = options;
     if (fallback !== 'cpu' && fallback !== 'error') {
-      throw new InvalidArgumentError(`fallback must be "cpu" or "error", got ${JSON.stringify(fallback)}`);
+      throw new InvalidArgumentError(`\`fallback\` must be "cpu" or "error", got ${JSON.stringify(fallback)}`);
     }
     if (!this.#raw) throw new ClosedError('this FlashRaw handle is closed');
     // Only a pending switch to the JPEG XL engine awaits here: otherwise the decode job takes

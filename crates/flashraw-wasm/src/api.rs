@@ -102,19 +102,19 @@ pub struct Decoded {
 fn limits_from(v: Option<&Value>) -> ApiResult<Limits> {
     let mut l = Limits::default().with_max_samples(DEFAULT_MAX_SAMPLES);
     if let Some(v) = v.filter(|v| !v.is_null()) {
-        let o = v.as_object().ok_or_else(|| ApiError::invalid("limits must be an object"))?;
+        let o = v.as_object().ok_or_else(|| ApiError::invalid("`limits` must be an object"))?;
         if let Some(x) = o.get("maxSamples").filter(|x| !x.is_null()) {
             l.max_samples = x
                 .as_f64()
                 .filter(|x| *x >= 1.0 && x.fract() == 0.0)
-                .ok_or_else(|| ApiError::invalid("limits.maxSamples must be a positive integer"))?
+                .ok_or_else(|| ApiError::invalid("`limits.maxSamples` must be a positive integer"))?
                 as u64;
         }
         if let Some(x) = o.get("maxDimension").filter(|x| !x.is_null()) {
             l.max_dimension = x
                 .as_u64()
                 .filter(|x| *x >= 1 && *x <= u32::MAX as u64)
-                .ok_or_else(|| ApiError::invalid("limits.maxDimension must be a positive integer"))?
+                .ok_or_else(|| ApiError::invalid("`limits.maxDimension` must be a positive integer"))?
                 as u32;
         }
     }
@@ -157,13 +157,13 @@ fn u32_field(o: &Value, key: &str) -> ApiResult<u32> {
         .and_then(|v| v.as_u64())
         .filter(|v| *v <= u32::MAX as u64)
         .map(|v| v as u32)
-        .ok_or_else(|| ApiError::invalid(format!("region.{key} must be a non-negative integer")))
+        .ok_or_else(|| ApiError::invalid(format!("`region.{key}` must be a non-negative integer")))
 }
 
 /// Parse a rectangle `{x, y, width, height}`.
 pub fn parse_rect(v: &Value) -> ApiResult<Rect> {
     if !v.is_object() {
-        return Err(ApiError::invalid("region must be an object {x, y, width, height}"));
+        return Err(ApiError::invalid("`region` must be an object {x, y, width, height}"));
     }
     let r = Rect::new(u32_field(v, "x")?, u32_field(v, "y")?, u32_field(v, "width")?, u32_field(v, "height")?);
     if r.is_empty() {
@@ -206,12 +206,12 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
     let mut o = DecodeOptions { threads, limits: limits_from(v.get("limits"))?, ..Default::default() };
     let backend = str_opt(&v, "backend")?.unwrap_or("auto");
     o.backend = Backend::parse(backend).ok_or_else(|| {
-        ApiError::invalid(format!("unknown backend `{backend}` (expected auto, cpu, cpu-simd, scalar or gpu)"))
+        ApiError::invalid(format!("unknown backend {backend:?} (expected auto, cpu, cpu-simd, scalar or gpu)"))
     })?;
     if let Some(out) = str_opt(&v, "output")? {
         o.output = OutputFormat::parse(out).ok_or_else(|| {
             ApiError::invalid(format!(
-                "unknown output `{out}` (expected raw-u16, raw-f32, normalized, linear-rgb, linear-rgb16, \
+                "unknown output {out:?} (expected raw-u16, raw-f32, normalized, linear-rgb, linear-rgb16, \
                  linear-rgb-f16, rgba8 or rgb16)"
             ))
         })?;
@@ -220,7 +220,7 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
         o.demosaic = match d.to_ascii_lowercase().as_str() {
             "bilinear" => Demosaic::Bilinear,
             "half" | "half-size" | "halfsize" => Demosaic::HalfSize,
-            _ => return Err(ApiError::invalid(format!("unknown demosaic `{d}` (expected bilinear or half-size)"))),
+            _ => return Err(ApiError::invalid(format!("unknown demosaic {d:?} (expected bilinear or half-size)"))),
         };
     }
     match v.get("crop") {
@@ -242,15 +242,16 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
             OutputFormat::LinearRgbF16 => {}
             _ => {
                 return Err(ApiError::invalid(
-                    "sampleType \"f16\" requires output \"normalized\", \"linear-rgb\" or \"linear-rgb-f16\"",
+                    "`sampleType` \"f16\" requires output \"normalized\", \"linear-rgb\" or \"linear-rgb-f16\"",
                 ));
             }
         },
-        Some(t) => return Err(ApiError::invalid(format!("unknown sampleType `{t}` (expected f32 or f16)"))),
+        Some(t) => return Err(ApiError::invalid(format!("unknown `sampleType` {t:?} (expected f32 or f16)"))),
     }
     if let Some(p) = str_opt(&v, "corruptionPolicy")? {
-        o.corruption_policy = CorruptionPolicy::parse(p)
-            .ok_or_else(|| ApiError::invalid(format!("unknown corruptionPolicy `{p}` (expected recover or strict)")))?;
+        o.corruption_policy = CorruptionPolicy::parse(p).ok_or_else(|| {
+            ApiError::invalid(format!("unknown `corruptionPolicy` {p:?} (expected recover or strict)"))
+        })?;
     }
     match v.get("applyOpcodes") {
         None | Some(Value::Null) => {}
@@ -448,7 +449,7 @@ pub fn select_preview<'r>(raw: &'r FlashRaw<'_>, which: &str) -> ApiResult<(usiz
         "largest" | "preview" | "" => pick(raw.preview()),
         "smallest" | "thumbnail" => pick(raw.thumbnail()),
         s => {
-            let i: usize = s.parse().map_err(|_| ApiError::invalid(format!("unknown preview selector `{s}`")))?;
+            let i: usize = s.parse().map_err(|_| ApiError::invalid(format!("unknown preview selector {s:?}")))?;
             let p = all.get(i).ok_or_else(|| ApiError {
                 corrupt: None,
                 kind: "NotAvailable",

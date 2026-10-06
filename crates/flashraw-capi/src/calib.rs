@@ -91,7 +91,7 @@ pub(crate) fn matrix(m: &ColorMatrices, kind: i32, index: usize, out: *mut flash
     let cols = x.values.len() / rows;
     if x.values.len() > 16 || rows * cols != x.values.len() {
         return Err(FfiError::not_available(format!(
-            "{rows}-row matrix with {} values does not fit flashraw_color_matrix (see the metadata JSON)",
+            "{rows}-row matrix with {} values does not fit `flashraw_color_matrix` (see the metadata JSON)",
             x.values.len()
         )));
     }
