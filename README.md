@@ -245,8 +245,11 @@ Other entry points: `decode_region(rect, opts)`, `decode_tile(index, opts)`,
 `flashraw::read_metadata(bytes)`, `flashraw::supports(bytes)`.
 
 Output formats: `RawU16` (default), `RawF32`, `NormalizedF32` (black-subtracted,
-white-scaled), `LinearRgbF32`, `Rgba8`. Statistics (`frame.stats()`) report
-per-stage timings and the backend that ran.
+white-scaled), linear sRGB-primaries RGB as `LinearRgbF32`, `LinearRgbF16` (half floats,
+half the memory) or `LinearRgb16`, and display-ready sRGB as `Rgba8` or `Rgb16` (16-bit,
+orientation applied). RGB outputs take `exposure` (EV) and `black_point` / `white_point`
+convenience controls. Statistics (`frame.stats()`) report per-stage timings and the
+backend that ran.
 
 ### 🐍 Python
 
@@ -351,9 +354,10 @@ flashraw supported                          # format/mode support matrix
 flashraw camera-db validate|generate|compare|stats
 ```
 
-Options: `--backend auto|cpu|simd|gpu`, `--output raw-u16|raw-f32|normalized|linear-rgb|rgba8`,
+Options: `--backend auto|cpu|simd|gpu`,
+`--output raw-u16|raw-f32|normalized|linear-rgb|linear-rgb16|linear-rgb-f16|rgba8|rgb16`,
 `--region x,y,w,h`, `--tile N`, `--threads N`, `--demosaic bilinear|half`,
-`--profile`, `--json`.
+`--exposure EV`, `--black-point V`, `--white-point V`, `--profile`, `--json`.
 
 ```
 $ flashraw decode photo.DNG out.jpg --output rgba8 --profile

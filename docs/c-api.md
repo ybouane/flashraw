@@ -123,12 +123,17 @@ All functions are prefixed `flashraw_`. Handles are opaque (`flashraw_file`, `fl
 | everything else | `file_metadata_json()` — the escape hatch: all metadata (EXIF, GPS, DNG tags, orientation records, opcode lists, capabilities) as JSON, so new fields need no ABI change |
 
 **Decoding**: `decode_options_init(&o)` then set `backend` (`FLASHRAW_BACKEND_*`), `output`
-(`FLASHRAW_OUTPUT_RAW_U16`, `_RAW_F32`, `_NORMALIZED_F32`, `_LINEAR_RGB_F32`, `_RGBA8`),
+(`FLASHRAW_OUTPUT_RAW_U16`, `_RAW_F32`, `_NORMALIZED_F32`, `_LINEAR_RGB_F32`,
+`_LINEAR_RGB_F16` (half floats), `_LINEAR_RGB16`, `_RGBA8`, `_RGB16` (16-bit display sRGB)),
 `threads` (0 = all cores), `use_region` + `region`, `crop`, `demosaic` (`BILINEAR`,
-`HALF_SIZE`), `apply_opcodes`, `corruption_policy` (`RECOVER` default, `STRICT`), and limits;
-`decode(file, &o, &frame)`.
+`HALF_SIZE`), `apply_opcodes`, `corruption_policy` (`RECOVER` default, `STRICT`), limits, and
+for the RGB outputs `exposure` (EV), `black_point` and `white_point` (linear values mapped to 0
+and 1; defaults 0, 0, 1); `decode(file, &o, &frame)`. The display outputs (`RGBA8`, `RGB16`)
+have the orientation applied; the linear ones keep the sensor orientation
+(`frame_orientation`).
 
-**Frames**: `frame_width/height/cpp`, `frame_sample_type` (`U8`/`U16`/`F32`), `frame_data`,
+**Frames**: `frame_width/height/cpp`, `frame_sample_type` (`U8`/`U16`/`F16`/`F32`; `F16` =
+IEEE half-float bit patterns in `uint16_t`, C++ `frame::f16_bits()`), `frame_data`,
 `frame_data_len` (bytes), `frame_sample_count`, `frame_output_format`, `frame_active_area`,
 `frame_crop`, `frame_origin`, `frame_cfa`, `frame_color_at`, `frame_black_level` (measured),
 `frame_white_level`, `frame_white_balance`, `frame_color_matrix*`, `frame_orientation`,

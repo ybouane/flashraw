@@ -132,6 +132,9 @@ frame = raw.decode(
     demosaic="bilinear",         # or "half-size" (2x2 binning)
     apply_opcodes=True,          # DNG opcode lists (bad pixels, gain maps, ...)
     corruption_policy="recover", # or "strict"
+    exposure=0.0,                # RGB outputs: EV applied to linear values before encoding
+    black_point=0.0,             # RGB outputs: linear value mapped to black (after exposure)
+    white_point=1.0,             # RGB outputs: linear value mapped to white
 )
 raw.decode_region((0, 0, 512, 512))    # same as region=...
 raw.decode_tile(3)                      # one tile/strip of raw.tiles
@@ -142,8 +145,16 @@ raw.decode_tile(3)                      # one tile/strip of raw.tiles
 | `raw-u16` | `uint16` | `(h, w)` or `(h, w, c)` | sensor samples as stored (floating-point DNGs scaled to integers) |
 | `raw-f32` | `float32` | `(h, w)` or `(h, w, c)` | the same, as floats (floating-point DNGs unscaled) |
 | `normalized` | `float32` | `(h, w)` or `(h, w, c)` | black-subtracted, white-normalised to `[0, 1]`, CFA layout kept |
-| `linear-rgb` | `float32` | `(h, w, 3)` | demosaiced, white-balanced, linear sRGB primaries |
+| `linear-rgb` | `float32` | `(h, w, 3)` | demosaiced, white-balanced, linear sRGB primaries (sensor orientation) |
+| `linear-rgb-f16` | `float16` | `(h, w, 3)` | the same as half floats: half the memory, developed straight to `float16` |
+| `linear-rgb16` | `uint16` | `(h, w, 3)` | the same clipped to `[0, 1]` and scaled to `[0, 65535]` |
 | `rgba8` | `uint8` | `(h, w, 4)` | display-ready sRGB, orientation applied |
+| `rgb16` | `uint16` | `(h, w, 3)` | display-ready sRGB at 16 bits, orientation applied |
+
+`exposure`, `black_point` and `white_point` are convenience controls for the RGB outputs:
+`v' = (v * 2**exposure - black_point) / (white_point - black_point)` on linear values after
+the colour conversion. Integer outputs clip the result to `[0, 1]`; float outputs keep it.
+There is no tone curve or highlight recovery: editors do that.
 
 Raw outputs have one sample per pixel for CFA and monochrome sensors and `c` (usually 3) for
 linear DNGs and Foveon sensors.
@@ -157,7 +168,7 @@ A `Frame` carries everything needed to interpret the pixels:
 | `active_area`, `crop`, `masked_areas` | `Rect`s in frame coordinates; `active_view()` / `crop_view()` return array views |
 | `origin` | position of the frame in the sensor buffer (region/tile decodes, `crop="active"`) |
 | `cfa`, `layout`, `color_at(x, y)` | CFA pattern (anchored at sensor `(0, 0)`) and the colour at frame coordinates |
-| `black_level`, `white_level`, `white_balance`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8`, which has it applied) |
+| `black_level`, `white_level`, `white_balance`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8` and `rgb16`, which have it applied) |
 | `warnings`, `incomplete` | repairs made under `corruption_policy="recover"` |
 | `stats` | `total_ms`, per-stage `stages`, `backend` (`decode`, `simd`, `threads`, ...), `call_ms` (native call), `wall_ms` (Python call) |
 | `metadata` | the file's `Metadata` |

@@ -251,17 +251,23 @@ whether random access/tiles are available, `raw.tiles` lists decodable tiles.
 
 ```js
 const f = await raw.decode({
-  output: 'raw-u16',        // 'raw-u16' | 'raw-f32' | 'normalized' | 'linear-rgb' | 'rgba8'
+  output: 'raw-u16',        // 'raw-u16' | 'raw-f32' | 'normalized' | 'linear-rgb' | 'linear-rgb16'
+                            // | 'linear-rgb-f16' | 'rgba8' | 'rgb16'
   backend: 'auto',          // 'auto' | 'cpu' (scalar reference) | 'cpu-simd' | 'gpu'
   demosaic: 'bilinear',     // RGB outputs: 'bilinear' | 'half-size'
   crop: true,               // RGB outputs: apply the default crop; raw outputs: 'active' = active area only
-  sampleType: 'f32',        // normalized only: 'f16' = half floats (Uint16Array bits, half the memory)
+  sampleType: 'f32',        // normalized, linear-rgb: 'f16' = half floats (Uint16Array bits, half the memory)
+  exposure: 0,              // RGB outputs: EV applied to linear values before encoding
+  blackPoint: 0,            // RGB outputs: linear value mapped to black (after exposure)
+  whitePoint: 1,            // RGB outputs: linear value mapped to white (integer outputs clip)
   corruptionPolicy: 'recover', // truncated sensor data: 'recover' (zero-fill + warnings) | 'strict' (throw)
   limits: { maxSamples: 4e8 },
 });
-f.data;            // Uint16Array (raw-u16, normalized + f16) | Float32Array (raw-f32, normalized, linear-rgb) | Uint8ClampedArray (rgba8)
-f.dataType;        // 'u8' | 'u16' | 'f16' | 'f32' 
-f.channels;        // 1 (CFA), 3 (linear-rgb / linear DNG), 4 (rgba8)
+f.data;            // Uint16Array (raw-u16, rgb16, linear-rgb16, linear-rgb-f16, f16 sample types)
+                   // | Float32Array (raw-f32, normalized, linear-rgb) | Uint8ClampedArray (rgba8)
+f.dataType;        // 'u8' | 'u16' | 'f16' | 'f32'
+f.channels;        // 1 (CFA), 3 (linear RGB outputs, rgb16, linear DNG), 4 (rgba8)
+f.orientation;     // still to apply: 1 for rgba8/rgb16 (already oriented); linear outputs keep the sensor's
 f.cfa; f.blackLevel; f.whiteLevel; f.whiteBalance; f.colorMatrices; f.activeArea; f.crop; f.origin;
 f.backend;         // { requested, kind: 'cpu', decode: 'CPU WASM SIMD128 x1 thread', simd, fallbackReason }
 f.timings;         // { totalMs, stages: { containerParse, entropyDecode, postprocess, ... }, copyMs, wallMs }
