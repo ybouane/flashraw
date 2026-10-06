@@ -16,6 +16,7 @@
 //! | `0x0081` | 1D raw pointer  | raw data location of EOS-1D / 1Ds TIFF raws               |
 //! | `0x0095` | LensModel       | metadata                                                  |
 //! | `0x00a4` | WB table (1D)   | as-shot WB of EOS-1D / 1Ds                                |
+//! | `0x009a` | AspectInfo      | image size of the aspect ratio set on the camera          |
 //! | `0x00e0` | SensorInfo      | sensor size, default crop, left optical black             |
 //! | `0x4001` | ColorData       | as-shot WB, sRAW WB, per-channel black, white levels      |
 //!
@@ -23,7 +24,7 @@
 //! 16-bit words in the tag; see [`ColorData::parse`].
 
 use flashraw_core::tiff::{Entry, Ifd};
-use flashraw_core::{ByteOrder, Orientation};
+use flashraw_core::{ByteOrder, Orientation, Rect};
 
 /// Rectangle in Canon's inclusive `left, top, right, bottom` convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -94,6 +95,9 @@ pub struct CanonMakernote {
     /// White-balance index from ShotInfo[7].
     pub wbi: Option<u16>,
     pub sensor: Option<SensorInfo>,
+    /// AspectInfo (tag 0x009a): `(width, height)` of the image for the aspect ratio set
+    /// on the camera (3:2, 1:1, 4:3, 16:9, or the 1.6x crop).
+    pub aspect: Option<(u32, u32)>,
     pub color: Option<ColorData>,
     /// As-shot WB from the EOS-1D/1Ds table (tag 0x00a4), `R, G, B`.
     pub wb_table_1d: Option<[u16; 3]>,
@@ -250,6 +254,26 @@ impl ColorData {
 }
 
 impl CanonMakernote {
+    /// The camera's image area in a `raw_w x raw_h` buffer: SensorInfo's valid-image
+    /// rectangle (inclusive) when the record describes this buffer, narrowed (centred)
+    /// to the AspectInfo size for 1:1 / 4:3 / 16:9 settings. Scaled sRAW/mRAW buffers
+    /// take the rectangle when it lies inside the buffer (their aspect record does not
+    /// describe them).
+    pub fn image_area(&self, raw_w: u32, raw_h: u32, scaled: bool) -> Option<Rect> {
+        let s = self.sensor?;
+        if !scaled && (s.width as u32, s.height as u32) != (raw_w, raw_h) {
+            return None;
+        }
+        let r = Rect::new(s.crop.left as u32, s.crop.top as u32, s.crop.width(), s.crop.height());
+        if r.is_empty() || r.right() > raw_w || r.bottom() > raw_h {
+            return None;
+        }
+        Some(match self.aspect {
+            Some((w, h)) if !scaled && w <= r.width && h <= r.height => crate::common::centred_crop(r, w, h),
+            _ => r,
+        })
+    }
+
     /// Parse a Canon maker note IFD.
     pub fn parse(ifd: &Ifd) -> CanonMakernote {
         let mut mn = CanonMakernote::default();
@@ -276,6 +300,9 @@ impl CanonMakernote {
                             |i: usize| CanonArea { left: v[i], top: v[i + 1], right: v[i + 2], bottom: v[i + 3] };
                         mn.sensor = Some(SensorInfo { width: v[1], height: v[2], crop: area(5), left_ob: area(9) });
                     }
+                }
+                0x009a => {
+                    mn.aspect = e.u32(1).zip(e.u32(2)).filter(|&(w, h)| w > 0 && h > 0);
                 }
                 0x4001 => mn.color = ColorData::parse(&u16s(e), e.count as usize),
                 // Multi-shot (HDR / multiple exposure) composites are already white balanced.

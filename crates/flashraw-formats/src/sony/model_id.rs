@@ -131,13 +131,23 @@ pub(crate) fn is_placeholder(model: &str) -> bool {
 /// The model id from the Sony maker note ("SONY DSC"/"SONY CAM" header + IFD, or a bare
 /// IFD), with value offsets relative to the TIFF start.
 pub(crate) fn makernote_model_id(data: &[u8], tiff: &Tiff) -> Option<u16> {
+    makernote(data, tiff)?.u32(TAG_MODEL_ID).and_then(|v| u16::try_from(v).ok())
+}
+
+/// FullImageSize (maker note tag 0xb02b, height then width): the size of the image the
+/// camera renders at its largest image-size setting.
+pub(crate) fn makernote_full_image_size(data: &[u8], tiff: &Tiff) -> Option<(u32, u32)> {
+    let e = makernote(data, tiff)?.get(0xb02b).cloned()?;
+    Some((e.u32(1)?, e.u32(0)?)).filter(|&(w, h)| w > 0 && h > 0)
+}
+
+fn makernote<'a>(data: &'a [u8], tiff: &Tiff) -> Option<flashraw_core::tiff::Ifd<'a>> {
     let e = tiff.find_entry(tags::MAKER_NOTE)?;
     let start = e.value_pos;
     let header = data.get(start..start + 12)?;
     let off = if header.starts_with(b"SONY DSC ") || header.starts_with(b"SONY CAM ") { start + 12 } else { start };
     let opts = TiffOptions { follow_sub_ifds: false, ..Default::default() };
-    let ifd = flashraw_core::tiff::parse_ifd_at(data, tiff.order, u32::try_from(off).ok()?, opts).ok()?;
-    ifd.u32(TAG_MODEL_ID).and_then(|v| u16::try_from(v).ok())
+    flashraw_core::tiff::parse_ifd_at(data, tiff.order, u32::try_from(off).ok()?, opts).ok()
 }
 
 #[cfg(test)]

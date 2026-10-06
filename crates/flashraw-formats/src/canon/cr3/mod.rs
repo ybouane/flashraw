@@ -81,6 +81,9 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         if m.sensor.is_none() {
             m.sensor = extra.sensor;
         }
+        if m.aspect.is_none() {
+            m.aspect = extra.aspect;
+        }
         m.multishot |= extra.multishot;
     }
     if let Some(mn) = &mn {
@@ -106,6 +109,11 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         info.color_matrices = db_color(&primary, cam);
     }
     apply_db(&mut info, &meta, cam, known);
+    if let Some(r) = mn.as_ref().and_then(|m| m.image_area(info.width, info.height, false)) {
+        if let Some(c) = r.intersect(&info.active_area) {
+            info.crop = even_crop_origin(c, info.active_area);
+        }
+    }
 
     meta.previews = previews(data, &cr3, info.orientation);
 
@@ -149,8 +157,8 @@ fn apply_geometry(info: &mut FrameInfo, mn: Option<&CanonMakernote>) -> Known {
             g = Geometry {
                 left,
                 top,
-                width: (s.crop.right as u32).saturating_sub(left),
-                height: (s.crop.bottom as u32).saturating_sub(top),
+                width: (s.crop.right as u32 + 1).saturating_sub(left),
+                height: (s.crop.bottom as u32 + 1).saturating_sub(top),
             };
         }
     }

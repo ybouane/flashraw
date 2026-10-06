@@ -169,6 +169,8 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         }
     }
     let (w, h) = (prd.raw_width as u32, prd.raw_height as u32);
+    // PRD's image size is the camera's own output size (3008x2000 of 3016x2008, ...).
+    meta.set_image_size(prd.image_width as u32, prd.image_height as u32);
     opts.limits.check_dims(w, h, 1)?;
     let packed = match prd.storage {
         STORAGE_PACKED => true,
