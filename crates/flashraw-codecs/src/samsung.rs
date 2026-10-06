@@ -426,11 +426,12 @@ fn v1_table() -> DirectHuff {
     DirectHuff::from_direct(10, direct)
 }
 
-/// Decode Samsung V1 (compression 32772).
-pub fn decode_v1(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Result<bool> {
+/// Decode Samsung V1 (compression 32772). Returns the row in which the data ran out
+/// (`None` when the stream was complete).
+pub fn decode_v1(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Result<Option<usize>> {
     let t = v1_table();
     let p = PredictiveParams { width, rows: height, tables: &[(0, &t)], vpred: [[0; 2]; 2] };
-    Ok(decode_predictive(src, &p, out, width, |h| h)?.is_dead())
+    Ok(decode_predictive(src, &p, out, width, |h| h)?.dead_row())
 }
 
 /// Decode Samsung V2 (compression 32773). `src` starts at the image data.

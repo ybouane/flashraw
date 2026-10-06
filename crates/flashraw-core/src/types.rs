@@ -262,6 +262,25 @@ impl CfaPattern {
         }
         (0..8u8).filter(|&i| seen[i as usize]).map(CfaColor::from_index).collect()
     }
+    /// Channel order of a four-colour pattern: the order of the rows of its 4-row colour
+    /// matrices ([`ColorMatrix`]) and of its white-balance coefficients
+    /// ([`WhiteBalance`]). `[G, M, C, Y]` for complementary (CMYG) filters, `[R, G, B, x]`
+    /// for an RGB filter with a fourth colour `x` (e.g. RGBE). `None` unless the pattern
+    /// has exactly four distinct colours.
+    pub fn four_colour_order(&self) -> Option<[CfaColor; 4]> {
+        use CfaColor::*;
+        let d = self.distinct_colors();
+        if d.len() != 4 {
+            return None;
+        }
+        if d == [Green, Cyan, Magenta, Yellow] {
+            return Some([Green, Magenta, Cyan, Yellow]);
+        }
+        match d[..] {
+            [Red, Green, Blue, x] => Some([Red, Green, Blue, x]),
+            _ => None,
+        }
+    }
 }
 
 impl CfaColor {
@@ -442,6 +461,10 @@ impl WhiteLevel {
 }
 
 /// As-shot white-balance multipliers in `[R, G, B, G2/4th]` order, normalised so G = 1.
+///
+/// Four-colour CFAs list one multiplier per channel in
+/// [`CfaPattern::four_colour_order`] (`[G, M, C, Y]` or `[R, G, B, x]`), normalised by
+/// the second.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WhiteBalance {
@@ -507,7 +530,8 @@ impl Illuminant {
 }
 
 /// A colour matrix in DNG `ColorMatrix` convention: maps CIE XYZ to camera space,
-/// `rows` (camera channels, usually 3) x 3.
+/// `rows` (camera channels, usually 3) x 3. The rows of a 4-row matrix follow
+/// [`CfaPattern::four_colour_order`].
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ColorMatrix {
@@ -530,6 +554,22 @@ impl ColorMatrix {
     /// If `(r, c)` is out of range.
     pub fn get(&self, r: usize, c: usize) -> f32 {
         self.values[r * 3 + c]
+    }
+    /// Camera response (one value per row) to the linear sRGB colour `rgb`; `[1, 1, 1]`
+    /// is D65 white.
+    pub fn camera_response(&self, rgb: [f32; 3]) -> Vec<f32> {
+        /// sRGB (D65) → XYZ.
+        const XYZ_FROM_SRGB: [[f64; 3]; 3] =
+            [[0.412_453, 0.357_580, 0.180_423], [0.212_671, 0.715_160, 0.072_169], [0.019_334, 0.119_193, 0.950_227]];
+        let xyz: [f64; 3] = std::array::from_fn(|i| (0..3).map(|j| XYZ_FROM_SRGB[i][j] * rgb[j] as f64).sum());
+        self.values.chunks_exact(3).map(|r| (0..3).map(|k| r[k] as f64 * xyz[k]).sum::<f64>() as f32).collect()
+    }
+    /// White-balance multipliers (one per row) that make the camera response to the
+    /// linear sRGB colour `neutral` equal in every channel; `[1, 1, 1]` gives daylight
+    /// (D65). `None` when a response is not positive.
+    pub fn multipliers_for(&self, neutral: [f32; 3]) -> Option<Vec<f32>> {
+        let r = self.camera_response(neutral);
+        r.iter().all(|v| v.is_finite() && *v > 1e-6).then(|| r.iter().map(|v| 1.0 / v).collect())
     }
 }
 
@@ -905,5 +945,38 @@ mod tests {
         assert!(WhiteBalance::from_multipliers(0.0, 1.0, 1.0, 1.0).is_none());
         let n = WhiteBalance::from_neutral(&[0.5, 1.0, 0.8]).unwrap();
         assert!((n.coeffs[0] - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn four_colour_orders() {
+        use CfaColor::*;
+        let cmyg = CfaPattern::new(2, 2, &[Green, Magenta, Yellow, Cyan]).unwrap();
+        assert_eq!(cmyg.four_colour_order(), Some([Green, Magenta, Cyan, Yellow]));
+        let rgbe = CfaPattern::new(2, 2, &[Emerald, Red, Blue, Green]).unwrap();
+        assert_eq!(rgbe.four_colour_order(), Some([Red, Green, Blue, Emerald]));
+        assert_eq!(CfaPattern::RGGB.four_colour_order(), None);
+        let three = CfaPattern::new(2, 2, &[Cyan, Magenta, Yellow, Cyan]).unwrap();
+        assert_eq!(three.four_colour_order(), None);
+    }
+
+    #[test]
+    fn multipliers_balance_the_response() {
+        let m = ColorMatrix::new(
+            Illuminant::D65,
+            4,
+            vec![-0.5686, 1.03, 0.2223, 0.4725, -0.1157, 0.4383, -0.6128, 1.0783, 0.6163, -0.2688, 1.2087, 0.0598],
+        )
+        .unwrap();
+        for neutral in [[1.0f32; 3], [1.0, 0.7, 0.4]] {
+            let mul = m.multipliers_for(neutral).unwrap();
+            let r = m.camera_response(neutral);
+            assert_eq!(r.len(), 4);
+            for (v, k) in r.iter().zip(&mul) {
+                assert!((v * k - 1.0).abs() < 1e-5);
+            }
+        }
+        // A response that is not positive has no multipliers.
+        let neg = ColorMatrix::new(Illuminant::D65, 3, vec![-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        assert!(neg.multipliers_for([1.0; 3]).is_none());
     }
 }

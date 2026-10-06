@@ -204,6 +204,7 @@ class Frame:
         "orientation",
         "stats",
         "warnings",
+        "source",
         "metadata",
         "_data_address",
     )
@@ -227,6 +228,8 @@ class Frame:
     orientation: int
     stats: DecodeStats
     warnings: Tuple[DecodeWarning, ...]
+    #: ``"sensor"``, or ``"preview"`` when ``preview_fallback`` returned the embedded preview.
+    source: str
     metadata: Metadata
 
     def __init__(self, array: "np.ndarray", info: Dict[str, Any], metadata: Metadata, wall_ms: float = 0.0) -> None:
@@ -250,6 +253,7 @@ class Frame:
         self.orientation = info["orientation"]
         self.stats = DecodeStats._from(info["stats"], wall_ms)
         self.warnings = tuple(DecodeWarning._from(w) for w in info["warnings"])
+        self.source = info.get("source", "sensor")
         self.metadata = metadata
         self._data_address = info.get("data_address", 0)
 
@@ -479,6 +483,7 @@ class RawFile:
         exposure: float = 0.0,
         black_point: float = 0.0,
         white_point: float = 1.0,
+        preview_fallback: bool = False,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
 
@@ -507,6 +512,11 @@ class RawFile:
             black_point: RGB outputs: linear value (after exposure) mapped to black.
             white_point: RGB outputs: linear value (after exposure) mapped to white. Integer
                 outputs clip outside [black_point, white_point]; float outputs keep the values.
+            preview_fallback: RGB outputs (``"rgba8"``, ``"linear-rgb"``) of files whose
+                sensor data cannot be decoded (:class:`UnsupportedCompressionError`, e.g.
+                Nikon High Efficiency NEF): return the embedded full-size preview instead of
+                raising. The frame then has ``source == "preview"`` and a
+                ``"preview-fallback"`` warning. Never applies to raw outputs or regions.
         """
         t0 = time.perf_counter()
         array, info = self._native.decode(
@@ -522,6 +532,7 @@ class RawFile:
             exposure,
             black_point,
             white_point,
+            preview_fallback,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 

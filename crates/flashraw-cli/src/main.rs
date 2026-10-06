@@ -52,6 +52,11 @@ struct DecodeArgs {
     /// (with a warning, the default).
     #[arg(long)]
     strict: bool,
+    /// RGB outputs of files whose sensor data cannot be decoded (unsupported compression):
+    /// write the embedded full-size preview instead of failing (reported as a warning and
+    /// as `"source": "preview"` with --json).
+    #[arg(long)]
+    preview_fallback: bool,
     /// Print per-stage timings.
     #[arg(long)]
     profile: bool,
@@ -176,6 +181,7 @@ fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
         exposure: a.exposure,
         black_point: a.black_point,
         white_point: a.white_point,
+        preview_fallback: a.preview_fallback,
         ..Default::default()
     })
 }
@@ -260,7 +266,7 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
                 println!(
                     "{}",
                     serde_json::json!({"width": frame.width, "height": frame.height, "cpp": frame.cpp, "stats": frame.stats,
-                        "incomplete": frame.is_incomplete(), "warnings": output::warnings_json(frame.warnings())})
+                        "source": frame.source.name(), "incomplete": frame.is_incomplete(), "warnings": output::warnings_json(frame.warnings())})
                 );
             } else {
                 eprintln!("wrote {} ({}x{}x{})", out.display(), frame.width, frame.height, frame.cpp);

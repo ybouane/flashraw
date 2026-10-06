@@ -71,8 +71,29 @@ First complete release of FlashRaw.
 - CLI: `--strict` on `decode`/`verify`; JSON output has `incomplete` and `warnings`, and
   errors carry `corrupt` (the structured cause). JS: `corruptionPolicy: 'recover' |
   'strict'`, `frame.incomplete`, `frame.warnings`, `CorruptFileError.corrupt`.
+- Nikon and Pentax Huffman and Samsung SRW (V0 row streams, V1, V2) payloads cut by the end
+  of the file are truncation: `Recover` keeps the rows decoded from real data, zero-fills the
+  rest and warns, `Strict` fails with the structured `Truncated` cause. Truncated PEF and SRW
+  files previously decoded the zero padding as image data without any warning, and a NEF
+  missing only its last bytes decoded its last row from padding.
+- A truncated file never decodes a thumbnail or preview as its sensor image. Raw IFD
+  selection skips reduced-resolution (NewSubFileType 1) and 8-bit RGB/YCbCr images in NEF,
+  PEF, SRW, ARW/SR2, ORF and MOS files (a NEF cut before its raw SubIFD decoded as a
+  160x120 black frame: its RGB thumbnail taken for a film-scanner image). When the file
+  ends inside its directory structure, before the raw image's IFD, every TIFF-based format
+  fails with `CorruptFile` naming the missing directory instead of `InvalidMetadata` or a
+  wrong image. `crates/flashraw/tests/truncated_files.rs` cuts corpus files of every format
+  at fractions of the file and around the start and end of the sensor data.
 
 ### Fixes
+- Sigma / Foveon X3F renders are no longer deep green: the CAMF calibration block (codings
+  2/4/5, decoded on demand) provides the as-shot white balance (preset gains, temperature,
+  aperture and sensor-adjustment factors) and an XYZ → camera matrix for every generation
+  (SD9 … SD14, DP1 … Merrill, Quattro), reported in `FrameInfo` (`ColorSource::File`). Classic
+  and Merrill bodies measure their per-layer black from the dark-shield rows (the database
+  value was off by up to 54 levels, e.g. SD14, DP2/SD1 Merrill). Mean R/G of the corpus
+  renders went from 0.004–0.9 (sd Quattro H 4.7) to within 0.2 of the embedded previews.
+  Raw buffers are unchanged.
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):
   the pipelined entropy/prediction stages use `rayon::join` on wasm32 instead of
   `std::thread::scope`.
@@ -107,6 +128,13 @@ First complete release of FlashRaw.
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark), and JPEG XL tiles
   with RowInterleaveFactor/ColumnInterleaveFactor are de-interleaved (they decoded as four
   quadrant sub-images).
+- RGB renders of four-colour sensors (CMYG: Canon PowerShot G1/Pro70/Pro90 IS, Nikon
+  Coolpix E5700; RGBE: Sony DSC-F828) are neutral instead of saturated red or green: all
+  four channels are demosaiced, white balanced per channel and converted with the
+  pseudo-inverse of the 4-row colour matrix. Files without an as-shot balance use
+  daylight derived from that matrix; the Coolpix red/blue levels are converted to channel
+  multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
+  matrices and of their white balance. GPU backends leave these to the CPU.
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
@@ -220,6 +248,23 @@ First complete release of FlashRaw.
   builders; `decode_preview_rgb` returns a `PreviewImage`; `FromStr`/`Display` for
   `Backend`, `OutputFormat` and `Demosaic` (`ParseOptionError`); internals (`low_level`, `process`, `decode_raw_image`) are
   hidden from the documented API; the `RawFile` alias is gone (use `FlashRaw`).
+- Explicit preview fallback for sensor data FlashRaw cannot decode (Nikon High Efficiency
+  NEF): `decode` fails with `UnsupportedCompression` by default, also for RGB outputs; with
+  `DecodeOptions::preview_fallback` the `Rgba8` / `LinearRgbF32` outputs return the embedded
+  full-size preview (at least 90% of the default crop; orientation applied for `Rgba8`),
+  marked `RawFrame::source == FrameSource::Preview` with a `CorruptReason::PreviewFallback`
+  warning. Raw outputs and region decodes never fall back. `CorruptReason::kind()` names
+  every reason.
+- CLI: `decode --preview-fallback`; the decode JSON has `source` (`sensor` / `preview`) and
+  warnings of kind `preview-fallback`.
+- JS: `decode({ previewFallback: true })`, `frame.source` (`FrameSource`), warning kind
+  `preview-fallback`.
+- Python: `decode(..., preview_fallback=True)`, `Frame.source`, warning kind
+  `preview-fallback`.
+- C API: `flashraw_decode_options.preview_fallback` (appended with a zero `reserved0`; the
+  struct grows to 72 bytes, older 64-byte callers keep the default), `flashraw_frame_source()`
+  (`FLASHRAW_SOURCE_SENSOR` / `_PREVIEW`), frame JSON `source`; C++
+  `decode_options::preview_fallback` and `frame::from_preview()`.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,

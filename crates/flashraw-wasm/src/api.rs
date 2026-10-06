@@ -260,6 +260,11 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
     o.exposure = f32_opt(&v, "exposure")?.unwrap_or(0.0);
     o.black_point = f32_opt(&v, "blackPoint")?.unwrap_or(0.0);
     o.white_point = f32_opt(&v, "whitePoint")?.unwrap_or(1.0);
+    match v.get("previewFallback") {
+        None | Some(Value::Null) => {}
+        Some(Value::Bool(b)) => o.preview_fallback = *b,
+        Some(_) => return Err(ApiError::invalid("option `previewFallback` must be a boolean")),
+    }
     if let Some(r) = v.get("region").filter(|r| !r.is_null()) {
         o.region = Some(parse_rect(r)?);
     }
@@ -602,6 +607,20 @@ mod tests {
             (info["incomplete"].as_bool(), info["warnings"].as_array().map(|a| a.len())),
             (Some(false), Some(0))
         );
+    }
+
+    #[test]
+    fn preview_fallback_option() {
+        assert!(!parse_decode_options("{}").unwrap().0.preview_fallback);
+        assert!(parse_decode_options(r#"{"previewFallback":true}"#).unwrap().0.preview_fallback);
+        assert_eq!(parse_decode_options(r#"{"previewFallback":"yes"}"#).unwrap_err().kind, "InvalidArgument");
+        let nef = include_bytes!("../../../npm/tests/fixtures/nikon-he-synthetic.nef").to_vec();
+        let raw = open(nef, "").unwrap();
+        assert_eq!(decode(&raw, r#"{"output":"rgba8"}"#).unwrap_err().kind, "UnsupportedCompression");
+        let d = decode(&raw, r#"{"output":"rgba8","previewFallback":true}"#).unwrap();
+        let info: Value = serde_json::from_str(&d.info).unwrap();
+        assert_eq!((info["source"].as_str(), info["incomplete"].as_bool()), (Some("preview"), Some(true)));
+        assert_eq!(info["warnings"][0]["kind"].as_str(), Some("preview-fallback"));
     }
 
     #[test]

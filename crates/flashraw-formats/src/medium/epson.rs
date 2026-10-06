@@ -93,7 +93,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let mut meta = RawMetadata::default();
     flashraw_core::exif::read_ifd0(ifd0, &mut meta);
     let cam = db_lookup(&mut meta, "");
-    let raw = raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("ERF: no CFA image"))?;
+    let raw = raw_ifd(&tiff).ok_or_else(|| no_raw_ifd(&tiff, "ERF", Error::invalid_metadata("ERF: no CFA image")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     let comp = raw.compression();

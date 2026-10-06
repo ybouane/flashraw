@@ -300,6 +300,7 @@ impl RawFile {
         apply_opcodes: bool,
         corruption_policy: &str,
         levels: (f32, f32, f32),
+        preview_fallback: bool,
         limits: Limits,
     ) -> PyResult<Request> {
         let out = OutputFormat::parse(output).ok_or_else(|| {
@@ -362,6 +363,7 @@ impl RawFile {
             exposure: levels.0,
             black_point: levels.1,
             white_point: levels.2,
+            preview_fallback,
         };
         Ok(Request { opts, backend: be.name().to_string(), active, tile: None })
     }
@@ -532,7 +534,7 @@ impl RawFile {
     #[pyo3(signature = (
         output="raw-u16", backend="auto", threads=None, region=None, crop=None, demosaic="bilinear",
         apply_opcodes=true, corruption_policy="recover", tile=None, exposure=0.0, black_point=0.0,
-        white_point=1.0
+        white_point=1.0, preview_fallback=false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn decode<'py>(
@@ -550,6 +552,7 @@ impl RawFile {
         exposure: f32,
         black_point: f32,
         white_point: f32,
+        preview_fallback: bool,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         let mut req = Self::parse_request(
             py,
@@ -562,6 +565,7 @@ impl RawFile {
             apply_opcodes,
             corruption_policy,
             (exposure, black_point, white_point),
+            preview_fallback,
             self.limits,
         )?;
         if tile.is_some() && req.opts.region.is_some() {

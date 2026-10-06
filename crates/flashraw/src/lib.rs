@@ -38,6 +38,7 @@ mod opcodes;
 mod options;
 // Host-side develop kernels, shared with the GPU crate's equivalence tests. Not part
 // of the stable API.
+mod fallback;
 #[doc(hidden)]
 pub mod process;
 mod source;
@@ -49,7 +50,7 @@ pub use flashraw_core::{
     OrientationSource, PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result,
     SampleFormat, SensorLayout, Stage, Truncation, WhiteBalance, WhiteLevel,
 };
-pub use frame::{BackendReport, DecodeStatistics, RawFrame, RawPixelData};
+pub use frame::{BackendReport, DecodeStatistics, FrameSource, RawFrame, RawPixelData};
 pub use options::{Backend, CorruptionPolicy, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};
 pub use source::Source;
 
@@ -180,18 +181,26 @@ impl<'a> FlashRaw<'a> {
     }
 
     /// Decode the sensor data.
+    ///
+    /// Sensor data this build cannot decode fails with [`Error::UnsupportedCompression`];
+    /// with [`DecodeOptions::preview_fallback`], RGB outputs then return the embedded
+    /// full-size preview instead (see [`FrameSource::Preview`]).
     pub fn decode(&self, opts: DecodeOptions) -> Result<RawFrame> {
         // One thread: run on the calling thread rather than on a one-worker pool, so the
         // decode keeps the caller's scheduling class (a lone pool worker may be placed on
         // an efficiency core).
+        let decode = || match self.decode_inner(&opts) {
+            Err(e) if fallback::applies(&e, &opts) => fallback::preview_frame(self, &opts, e),
+            r => r,
+        };
         if opts.threads == Some(1) {
-            return flashraw_core::par::sequential(|| self.decode_inner(&opts));
+            return flashraw_core::par::sequential(decode);
         }
         let pool = thread_pool(opts.threads);
         match pool {
             #[cfg(feature = "rayon")]
-            Some(p) => p.install(|| self.decode_inner(&opts)),
-            _ => self.decode_inner(&opts),
+            Some(p) => p.install(decode),
+            _ => decode(),
         }
     }
 
@@ -411,6 +420,7 @@ impl<'a> FlashRaw<'a> {
             metadata: self.metadata().clone(),
             stats,
             warnings: ctx.take_warnings(),
+            source: FrameSource::Sensor,
         })
     }
 

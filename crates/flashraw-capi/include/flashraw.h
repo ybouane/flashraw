@@ -285,6 +285,32 @@ typedef int32_t flashraw_sample_type;
 #endif // __cplusplus
 
 /**
+ * Where a frame's pixels come from (`flashraw_frame_source()`).
+ */
+enum flashraw_pixel_source
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : int32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+    /**
+     * Decoded from the sensor data.
+     */
+    FLASHRAW_SOURCE_SENSOR = 0,
+    /**
+     * The embedded full-size preview (`flashraw_decode_options.preview_fallback`); the frame
+     * also carries a `preview-fallback` warning.
+     */
+    FLASHRAW_SOURCE_PREVIEW = 1,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum flashraw_pixel_source flashraw_pixel_source;
+#else
+typedef int32_t flashraw_pixel_source;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+/**
  * Colour of one CFA site (DNG colour indices, plus emerald).
  */
 enum flashraw_cfa_color
@@ -772,9 +798,12 @@ typedef struct flashraw_decode_options {
      */
     float white_point;
     /**
-     * Must be zero.
+     * Non-zero: when the sensor data cannot be decoded (`FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`,
+     * e.g. Nikon High Efficiency NEF), RGB outputs return the embedded full-size preview
+     * instead (`flashraw_frame_source()` is then `FLASHRAW_SOURCE_PREVIEW`). Default 0: the
+     * error is returned.
      */
-    uint32_t reserved0;
+    int32_t preview_fallback;
 } flashraw_decode_options;
 
 /**
@@ -1586,6 +1615,15 @@ flashraw_status flashraw_frame_color_matrix(const struct flashraw_frame *frame,
  * `frame` must be NULL or a live frame.
  */
 bool flashraw_frame_is_incomplete(const struct flashraw_frame *frame);
+
+/**
+ * Where the frame's pixels come from (`flashraw_pixel_source`): the sensor data, or the
+ * embedded preview substituted by `flashraw_decode_options.preview_fallback`.
+ *
+ * # Safety
+ * `frame` must be NULL or a live frame.
+ */
+int32_t flashraw_frame_source(const struct flashraw_frame *frame);
 
 /**
  * Number of recovery warnings.

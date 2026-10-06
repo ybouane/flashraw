@@ -18,11 +18,11 @@ pub fn corrupt_reason(r: &CorruptReason) -> Value {
             v["available"] = json!(t.available);
             v["file_len"] = json!(t.file_len);
         }
-        CorruptReason::InvalidUnit { message, .. } => {
-            v["kind"] = json!("invalid-unit");
+        CorruptReason::InvalidUnit { message, .. } | CorruptReason::PreviewFallback { message } => {
+            v["kind"] = json!(r.kind());
             v["message"] = json!(message);
         }
-        _ => v["kind"] = json!("other"),
+        _ => v["kind"] = json!(r.kind()),
     }
     v
 }
@@ -139,6 +139,7 @@ pub fn frame(f: &RawFrame) -> Value {
         "color_matrices": f.color_matrices,
         "orientation": f.orientation.exif(),
         "stats": f.stats,
+        "source": f.source.name(),
         "incomplete": f.is_incomplete(),
         "warnings": f.warnings.iter().map(warning).collect::<Vec<_>>(),
     })

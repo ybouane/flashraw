@@ -78,6 +78,38 @@ impl RawPixelData {
     }
 }
 
+/// Where the pixels of a [`RawFrame`] come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum FrameSource {
+    /// Decoded from the sensor data (every decode, unless stated otherwise).
+    #[default]
+    Sensor,
+    /// The embedded full-size preview, decoded because the sensor data could not be
+    /// (see [`crate::DecodeOptions::preview_fallback`]). The frame then carries a
+    /// [`crate::CorruptReason::PreviewFallback`] warning, and its calibration fields
+    /// (levels, white balance, colour matrices) describe the 8-bit display-referred
+    /// preview, not the sensor.
+    Preview,
+}
+
+impl FrameSource {
+    /// `"sensor"` or `"preview"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            FrameSource::Sensor => "sensor",
+            FrameSource::Preview => "preview",
+        }
+    }
+}
+
+impl std::fmt::Display for FrameSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// Which backend actually ran each part of the decode.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -173,8 +205,12 @@ pub struct RawFrame {
     /// Timings and backends of this decode.
     pub stats: DecodeStatistics,
     /// Repairs made under [`crate::CorruptionPolicy::Recover`] (truncated strips/tiles
-    /// zero-filled, ...), in unit order. Always empty under the default strict policy.
+    /// zero-filled, ...), in unit order, and the substitution of the embedded preview
+    /// ([`FrameSource::Preview`]). Empty for a complete decode of the sensor data.
     pub warnings: Vec<DecodeWarning>,
+    /// Where the pixels come from: the sensor data, or the embedded preview when the
+    /// preview fallback was used.
+    pub source: FrameSource,
 }
 
 impl RawFrame {

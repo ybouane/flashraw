@@ -53,7 +53,9 @@ image = flashraw.imread("photo.CR3")              # RGBA8 array
 
 Outputs: `raw-u16` (uint16 samples as stored), `raw-f32`, `normalized` (float32 in [0, 1], CFA
 layout kept), `linear-rgb` (float32, demosaiced, white-balanced) and `rgba8`. Options:
-`backend`, `threads`, `region`, `crop`, `demosaic`, `apply_opcodes`, `corruption_policy`.
+`backend`, `threads`, `region`, `crop`, `demosaic`, `apply_opcodes`, `corruption_policy`,
+`preview_fallback` (RGB outputs of undecodable sensor data return the embedded full-size
+preview, `frame.source == "preview"`).
 
 ```python
 from concurrent.futures import ThreadPoolExecutor

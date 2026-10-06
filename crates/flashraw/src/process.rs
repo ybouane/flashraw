@@ -61,8 +61,57 @@ pub fn camera_to_srgb(cm: &ColorMatrices) -> [[f32; 3]; 3] {
     mat_inv(&cam_rgb).unwrap_or(identity)
 }
 
+/// Four camera channels → linear sRGB (3x4) for a four-colour CFA, from its 4-row
+/// XYZ→camera matrix (rows in [`CfaPattern::four_colour_order`]): the pseudo-inverse
+/// of camera←sRGB with rows normalised to 1, so unit channels map to white. `None`
+/// without a usable 4-row matrix.
+pub fn camera4_to_srgb(cm: &ColorMatrices) -> Option<[[f32; 4]; 3]> {
+    let mut a = camera4_from_srgb(cm)?;
+    for row in a.iter_mut() {
+        let s: f64 = row.iter().sum();
+        if s.abs() > 1e-6 {
+            row.iter_mut().for_each(|v| *v /= s);
+        }
+    }
+    // (AᵀA)⁻¹ Aᵀ
+    let mut ata = [[0f32; 3]; 3];
+    for (i, r) in ata.iter_mut().enumerate() {
+        for (j, v) in r.iter_mut().enumerate() {
+            *v = (0..4).map(|k| a[k][i] * a[k][j]).sum::<f64>() as f32;
+        }
+    }
+    let inv = mat_inv(&ata)?;
+    let mut out = [[0f32; 4]; 3];
+    for (i, r) in out.iter_mut().enumerate() {
+        for (k, v) in r.iter_mut().enumerate() {
+            *v = (0..3).map(|j| inv[i][j] as f64 * a[k][j]).sum::<f64>() as f32;
+        }
+    }
+    out.iter().flatten().all(|v| v.is_finite()).then_some(out)
+}
+
+/// Camera←sRGB (4x3) from a 4-row XYZ→camera matrix.
+fn camera4_from_srgb(cm: &ColorMatrices) -> Option<[[f64; 3]; 4]> {
+    let m = cm.preferred().filter(|m| m.rows == 4 && m.values.len() == 12)?;
+    let mut a = [[0f64; 3]; 4];
+    for (i, row) in a.iter_mut().enumerate() {
+        for (j, v) in row.iter_mut().enumerate() {
+            *v = (0..3).map(|k| m.values[i * 3 + k] as f64 * XYZ_FROM_SRGB[k][j] as f64).sum();
+        }
+    }
+    Some(a)
+}
+
+/// Daylight (D65) white balance of a four-colour CFA from its 4-row colour matrix: the
+/// reciprocal camera response to white, for files that record no white balance.
+pub fn camera4_daylight_wb(cm: &ColorMatrices) -> Option<[f32; 4]> {
+    let m = cm.preferred().filter(|m| m.rows == 4)?;
+    m.multipliers_for([1.0; 3])?.try_into().ok()
+}
+
 /// Measure per-position black levels from masked (optical black) areas.
-/// Returns a pattern with the CFA's dimensions (or 1x1 without CFA), anchored at buffer (0, 0).
+/// Returns a pattern with the CFA's dimensions (or 1x1 without CFA), anchored at buffer (0, 0);
+/// images with several samples per pixel get one value per sample.
 pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel> {
     black_from_masked_at(img, info, (0, 0))
 }
@@ -71,10 +120,13 @@ pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel>
 /// (region decodes): `info.masked_areas` are buffer coordinates, the pattern is still
 /// anchored at buffer (0, 0).
 pub fn black_from_masked_at(img: &RawImage, info: &FrameInfo, origin: (u32, u32)) -> Option<BlackLevel> {
-    if info.masked_areas.is_empty() || img.cpp != 1 {
+    if info.masked_areas.is_empty() {
         return None;
     }
     let data = img.data.as_u16()?;
+    if img.cpp != 1 {
+        return black_per_sample(data, img, info, origin);
+    }
     let (pw, ph) = info.cfa.map(|p| (p.width(), p.height())).unwrap_or((1, 1));
     let w = img.width as usize;
     let (ox, oy) = (origin.0 as usize, origin.1 as usize);
@@ -122,6 +174,33 @@ pub fn black_from_masked_at(img: &RawImage, info: &FrameInfo, origin: (u32, u32)
     }
     let values: Vec<f32> = sum.iter().zip(&cnt).map(|(s, &c)| (s / c as f64) as f32).collect();
     Some(BlackLevel::pattern(ph, pw, values))
+}
+
+/// Masked-area black of a multi-sample image (Foveon, linear RGB): one mean per sample.
+fn black_per_sample(data: &[u16], img: &RawImage, info: &FrameInfo, origin: (u32, u32)) -> Option<BlackLevel> {
+    let (w, cpp) = (img.width as usize, img.cpp as usize);
+    let frame = Rect::new(origin.0, origin.1, img.width, img.height);
+    let mut sum = vec![0u64; cpp];
+    let mut cnt = 0u64;
+    for r in &info.masked_areas {
+        let Some(r) = r.intersect(&frame) else { continue };
+        for y in r.y as usize..r.bottom() as usize {
+            let row = (y - origin.1 as usize) * w;
+            let px = &data
+                [(row + r.x as usize - origin.0 as usize) * cpp..(row + r.right() as usize - origin.0 as usize) * cpp];
+            for p in px.chunks_exact(cpp) {
+                for (s, &v) in sum.iter_mut().zip(p) {
+                    *s += v as u64;
+                }
+            }
+            cnt += r.width as u64;
+        }
+    }
+    if cnt == 0 {
+        return None;
+    }
+    let values = sum.iter().map(|&s| (s as f64 / cnt as f64) as f32).collect();
+    Some(BlackLevel { rows: 1, cols: 1, samples: cpp as u8, values, row_deltas: vec![], col_deltas: vec![] })
 }
 
 fn gcd(a: usize, b: usize) -> usize {
@@ -243,9 +322,13 @@ impl Levels {
 pub struct DevelopParams {
     pub demosaic: Demosaic,
     pub crop: Rect,
-    /// White balance multipliers per CFA colour index (R, G, B, other).
+    /// White balance multipliers per CFA colour index (R, G, B, other), or per channel of
+    /// a four-colour CFA (in [`CfaPattern::four_colour_order`]).
     pub wb: [f32; 4],
     pub cam_to_rgb: [[f32; 3]; 3],
+    /// Four-colour CFAs: camera channels → linear sRGB (see [`camera4_to_srgb`]); when set
+    /// it replaces `cam_to_rgb` and all four channels are demosaiced.
+    pub cam4_to_rgb: Option<[[f32; 4]; 3]>,
     pub orientation: Orientation,
     /// Exposure / black / white points (`None`: none).
     pub levels: Option<Levels>,
@@ -253,12 +336,20 @@ pub struct DevelopParams {
 
 impl DevelopParams {
     pub fn new(info: &FrameInfo, demosaic: Demosaic, crop: Rect) -> Self {
-        let wb = info.white_balance.map(|w| w.coeffs).unwrap_or([1.0; 4]);
+        let cam4_to_rgb =
+            info.cfa.and_then(|p| p.four_colour_order()).and_then(|_| camera4_to_srgb(&info.color_matrices));
+        let wb = match info.white_balance {
+            Some(w) => w.coeffs,
+            // Four-colour sensors without a recorded balance: daylight from the matrix.
+            None if cam4_to_rgb.is_some() => camera4_daylight_wb(&info.color_matrices).unwrap_or([1.0; 4]),
+            None => [1.0; 4],
+        };
         DevelopParams {
             demosaic,
             crop,
             wb,
             cam_to_rgb: camera_to_srgb(&info.color_matrices),
+            cam4_to_rgb,
             orientation: info.orientation,
             levels: None,
         }
@@ -349,7 +440,11 @@ pub(crate) struct Kernel<'a> {
     origin: (usize, usize),
     cfa: Option<CfaPattern>,
     /// Same-colour 3x3 neighbour offsets per CFA position and channel, with 1/count.
-    neigh: Vec<[NeighbourList; 3]>,
+    neigh: Vec<[NeighbourList; 4]>,
+    /// Channel of each [`CfaColor`] (by value); `NO_CHANNEL` for colours not developed.
+    chan: [u8; 8],
+    /// Four-colour CFAs: camera channels → linear sRGB.
+    m4: Option<[[f32; 4]; 3]>,
     pw: usize,
     ph: usize,
     wb: [f32; 4],
@@ -452,6 +547,15 @@ impl Kernel<'_> {
         }
     }
 
+    /// White balance, clipping and colour conversion of the developed channels (the
+    /// fourth is used by four-colour CFAs only).
+    #[inline(always)]
+    fn finish_n(&self, v: [f32; 4]) -> [f32; 3] {
+        let Some(m) = &self.m4 else { return self.finish([v[0], v[1], v[2]]) };
+        let c: [f32; 4] = std::array::from_fn(|i| (v[i] * self.wb[i]).clamp(0.0, 1.0));
+        std::array::from_fn(|i| m[i][0] * c[0] + m[i][1] * c[1] + m[i][2] * c[2] + m[i][3] * c[3])
+    }
+
     #[inline(always)]
     fn finish(&self, rgb: [f32; 3]) -> [f32; 3] {
         finish_rgb(rgb, &self.wb, &self.m, self.levels)
@@ -462,7 +566,10 @@ impl Kernel<'_> {
         let img = self.img;
         let (w, h, cpp) = (img.width as usize, img.height as usize, img.cpp as usize);
         let (ox0, oy0) = (self.origin.0, self.origin.1);
-        let color = |x: usize, y: usize| self.cfa.map(|p| (p.color_at(x + ox0, y + oy0) as usize).min(3)).unwrap_or(1);
+        let color = |x: usize, y: usize| {
+            self.cfa.map(|p| self.chan[p.color_at(x + ox0, y + oy0) as usize] as usize).unwrap_or(1)
+        };
+        let nch = if self.m4.is_some() { 4 } else { 3 };
         if self.half {
             let y0 = self.crop.y as usize + oy * 2;
             let r0 = cache.get(self, y0);
@@ -495,14 +602,14 @@ impl Kernel<'_> {
                         }
                     }
                 }
-                let mut rgb = [0f32; 3];
-                for c in 0..3 {
+                let mut rgb = [0f32; 4];
+                for c in 0..nch {
                     rgb[c] = if n[c] > 0.0 { acc[c] / n[c] } else { 0.0 };
                 }
                 if cpp == 1 && self.cfa.is_none() {
-                    rgb = [acc[1] / n[1].max(1.0); 3];
+                    rgb = [acc[1] / n[1].max(1.0); 4];
                 }
-                *o = self.finish(rgb);
+                *o = self.finish_n(rgb);
             }
             return;
         }
@@ -551,10 +658,10 @@ impl Kernel<'_> {
                 continue;
             }
             let lists = &self.neigh[py * self.pw + (x + ox0) % self.pw];
-            let mut rgb = [0f32; 3];
+            let mut rgb = [0f32; 4];
             if interior_y && x > 0 && x + 1 < w {
                 // Fast path: all 3x3 neighbours exist.
-                for c in 0..3 {
+                for c in 0..nch {
                     let (list, inv) = &lists[c];
                     let mut s = 0f32;
                     for &(dx, dy) in list {
@@ -569,7 +676,7 @@ impl Kernel<'_> {
                 }
             } else {
                 // Border: average only neighbours inside the image.
-                for c in 0..3 {
+                for c in 0..nch {
                     let mut s = 0f32;
                     let mut n = 0f32;
                     for &(dx, dy) in &lists[c].0 {
@@ -585,7 +692,7 @@ impl Kernel<'_> {
                     rgb[c] = if n > 0.0 { s / n } else { 0.0 };
                 }
             }
-            *o = self.finish(rgb);
+            *o = self.finish_n(rgb);
         }
     }
 }
@@ -616,30 +723,31 @@ fn kernel_with<'a>(
 ) -> Kernel<'a> {
     let cpp = img.cpp as usize;
     let (pw, ph) = info.cfa.map(|p| (p.width(), p.height())).unwrap_or((1, 1));
+    let m4 = params.cam4_to_rgb.filter(|_| cpp == 1);
+    let chan = channel_map(info.cfa.and_then(|p| p.four_colour_order()).filter(|_| m4.is_some()));
     let mut neigh = Vec::with_capacity(pw * ph);
     for py in 0..ph {
         for px in 0..pw {
-            let mut lists: [NeighbourList; 3] = Default::default();
+            let mut lists: [NeighbourList; 4] = Default::default();
             for dy in -1isize..=1 {
                 for dx in -1isize..=1 {
                     let c = info
                         .cfa
                         .map(|p| {
-                            (p.color_at(
+                            chan[p.color_at(
                                 (px as isize + dx + pw as isize * 4) as usize,
                                 (py as isize + dy + ph as isize * 4) as usize,
-                            ) as usize)
-                                .min(3)
+                            ) as usize] as usize
                         })
                         .unwrap_or(1);
-                    if c < 3 {
+                    if c < 4 {
                         lists[c].0.push((dx, dy));
                     }
                 }
             }
             // The site's own colour is measured, not interpolated.
-            let own = info.cfa.map(|p| (p.color_at(px, py) as usize).min(3)).unwrap_or(1);
-            if own < 3 {
+            let own = info.cfa.map(|p| chan[p.color_at(px, py) as usize] as usize).unwrap_or(1);
+            if own < 4 {
                 lists[own].0 = vec![(0, 0)];
             }
             for l in lists.iter_mut() {
@@ -655,14 +763,38 @@ fn kernel_with<'a>(
         origin: (origin.0 as usize, origin.1 as usize),
         cfa: info.cfa,
         neigh,
+        chan,
+        m4,
         pw,
         ph,
-        wb: params.wb,
+        wb: if m4.is_some() { normalized_min(params.wb) } else { params.wb },
         m: params.cam_to_rgb,
         levels: params.levels,
         crop,
         half: params.demosaic == Demosaic::HalfSize,
     }
+}
+
+/// Colour channels developed: R, G, B as 0, 1, 2 (other colours unused), or the
+/// channels of a four-colour CFA in `order`.
+fn channel_map(order: Option<[CfaColor; 4]>) -> [u8; 8] {
+    let mut map = [NO_CHANNEL; 8];
+    match order {
+        Some(o) => o.iter().enumerate().for_each(|(i, c)| map[*c as usize] = i as u8),
+        None => map[..3].copy_from_slice(&[0, 1, 2]),
+    }
+    map
+}
+
+/// Channel index of colours that are not developed (a fourth slot that only
+/// four-colour CFAs use).
+const NO_CHANNEL: u8 = 3;
+
+/// Multipliers scaled so the smallest is 1 (saturated samples stay saturated in every
+/// channel after white balance).
+fn normalized_min(wb: [f32; 4]) -> [f32; 4] {
+    let min = wb.iter().copied().filter(|v| v.is_finite() && *v > 0.0).fold(f32::MAX, f32::min);
+    if min == f32::MAX { [1.0; 4] } else { wb.map(|v| if v.is_finite() && v > 0.0 { v / min } else { 1.0 }) }
 }
 
 fn output_dims(img: &RawImage, params: &DevelopParams) -> Result<(Rect, u32, u32)> {
@@ -1228,6 +1360,27 @@ mod tests {
         info.masked_areas = vec![Rect::new(1, 0, 3, 6), Rect::new(0, 4, 10, 2)];
         let b = black_from_masked(&img, &info).unwrap();
         assert_eq!(b.values, vec![100.0, 110.0, 120.0, 130.0]);
+    }
+
+    #[test]
+    fn masked_black_per_sample() {
+        // Three samples per pixel (Foveon): one black per sample, rows 0 and 5 masked.
+        let mut img = RawImage::new_u16(4, 6, 3, &Limits::default()).unwrap();
+        for (i, px) in img.u16_mut().chunks_exact_mut(3).enumerate() {
+            let masked = i / 4 == 0 || i / 4 == 5;
+            px.copy_from_slice(&if masked { [10 + (i % 2) as u16 * 2, 20, 30] } else { [500, 600, 700] });
+        }
+        let mut info = FrameInfo::new(4, 6, 12);
+        info.layout = SensorLayout::Foveon;
+        info.masked_areas = vec![Rect::new(0, 0, 4, 1), Rect::new(0, 5, 4, 1)];
+        let b = black_from_masked(&img, &info).unwrap();
+        assert_eq!((b.samples, b.values.clone()), (3, vec![11.0, 20.0, 30.0]));
+        // Region decodes: the masked rows outside the region are not counted.
+        let region = img.crop(Rect::new(0, 4, 4, 2)).unwrap();
+        let b = black_from_masked_at(&region, &info, (0, 4)).unwrap();
+        assert_eq!(b.values, vec![11.0, 20.0, 30.0]);
+        info.masked_areas.clear();
+        assert!(black_from_masked(&img, &info).is_none());
     }
 
     #[test]

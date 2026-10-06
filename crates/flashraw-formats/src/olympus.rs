@@ -79,9 +79,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         .all_ifds()
         .into_iter()
         .filter(|i| i.width() > 0 && i.height() > 0 && i.has(tags::STRIP_OFFSETS))
-        .filter(|i| i.compression() == 1)
+        .filter(|i| i.compression() == 1 && !is_preview_ifd(i))
         .max_by_key(|i| i.width() as u64 * i.height() as u64)
-        .ok_or_else(|| Error::invalid_metadata("ORF: no raw image"))?;
+        .ok_or_else(|| no_raw_ifd(&tiff, "ORF", Error::invalid_metadata("ORF: no raw image")))?;
     let (raw_w, raw_h) = (raw.width(), raw.height());
     let bps = raw.bps();
     let strips = strips(raw);

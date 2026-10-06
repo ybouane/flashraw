@@ -50,7 +50,9 @@ pub fn default_table() -> Result<DirectHuff> {
     DirectHuff::from_counts(&DEFAULT_TABLE)
 }
 
-/// Decode a Pentax Huffman payload into `out` (rows of `stride` samples).
+/// Decode a Pentax Huffman payload into `out` (rows of `stride` samples). Returns the row
+/// in which the data ran out (`None` when the stream was complete); that row and the rows
+/// after it hold no real data.
 #[allow(clippy::too_many_arguments)]
 pub fn decode(
     src: &[u8],
@@ -61,9 +63,9 @@ pub fn decode(
     stride: usize,
     parallel: bool,
     declared: usize,
-) -> Result<bool> {
+) -> Result<Option<usize>> {
     let p = PredictiveParams { width, rows: height, tables: &[(0, table)], vpred: [[0; 2]; 2] };
-    Ok(decode_predictive_par(src, &p, out, stride, |h| h, parallel, declared)?.is_some())
+    decode_predictive_par(src, &p, out, stride, |h| h, parallel, declared)
 }
 
 #[cfg(test)]

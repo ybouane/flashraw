@@ -161,9 +161,11 @@ pub enum CorruptionPolicy {
     /// Decode every complete sample that is present, zero-fill the rest, and report each
     /// repair in [`crate::RawFrame::warnings`] ([`crate::RawFrame::is_incomplete`] is then
     /// true): never silent. Applies to truncated strips, tiles and other uncompressed or
-    /// packed payloads, and to compressed DNG strips/tiles (a unit that is truncated or
-    /// fails to decode is zero-filled). Other compressed streams (single entropy-coded
-    /// streams such as NEF, CR2/CR3, ARW, RAF compressed data) fail as under `Strict`.
+    /// packed payloads, to compressed DNG strips/tiles (a unit that is truncated or
+    /// fails to decode is zero-filled) and to Nikon and Pentax Huffman and Samsung SRW
+    /// streams cut short by the end of the file (the rows decoded from real data are kept).
+    /// Other compressed streams (single entropy-coded streams such as CR2/CR3, ARW, RAF
+    /// compressed data) fail as under `Strict`.
     /// The default.
     #[default]
     Recover,
@@ -231,6 +233,14 @@ pub struct DecodeOptions {
     /// maps to 1. Integer outputs clip above it; float outputs keep larger values. Must be
     /// above `black_point`. Default: 1.
     pub white_point: f32,
+    /// When the sensor data cannot be decoded ([`crate::Error::UnsupportedCompression`],
+    /// e.g. Nikon High Efficiency NEF), return the embedded full-size preview for the RGB
+    /// outputs ([`OutputFormat::Rgba8`], [`OutputFormat::LinearRgbF32`]) instead of
+    /// failing. The frame is marked [`crate::FrameSource::Preview`] and carries a
+    /// [`crate::CorruptReason::PreviewFallback`] warning. Needs a preview covering at
+    /// least 90% of the default crop in each dimension; never applies to sensor-domain
+    /// outputs or region decodes. Default: false (the error is returned).
+    pub preview_fallback: bool,
 }
 
 impl Default for DecodeOptions {
@@ -248,6 +258,7 @@ impl Default for DecodeOptions {
             exposure: 0.0,
             black_point: 0.0,
             white_point: 1.0,
+            preview_fallback: false,
         }
     }
 }

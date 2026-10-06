@@ -393,9 +393,25 @@ not touch the missing data work normally. Short data that still holds every samp
 complete: the last row needs no padding to the row stride, and a declared length beyond
 the last needed sample may run past the end of the file. Recovery covers uncompressed
 and bit-packed payloads in every format and compressed DNG strips/tiles (a unit that is
-truncated or fails to decode is zero-filled with a warning). Other compressed streams
-(one entropy-coded stream per image) fail under both policies; when their declared range
-runs past the end of the file the error carries the same truncation details.
+truncated or fails to decode is zero-filled with a warning), and Nikon and Pentax Huffman
+and Samsung SRW streams cut short by the end of the file (the rows decoded from real data
+are kept). Other compressed streams (one entropy-coded stream per image) fail under both
+policies; when their declared range runs past the end of the file the error carries the
+same truncation details. A file cut inside its directory structure, before the raw image's
+IFD, fails with `Error::CorruptFile`: a thumbnail or preview is never decoded in place of
+the sensor image.
+
+### Undecodable sensor data
+
+Sensor data in a codec FlashRaw cannot decode (Nikon High Efficiency NEF) fails with
+`Error::UnsupportedCompression`, also for RGB outputs. With
+`DecodeOptions::preview_fallback`, `Rgba8` and `LinearRgbF32` decodes return the embedded
+full-size preview instead, explicitly marked: `frame.source == FrameSource::Preview` and a
+`DecodeWarning` whose reason is `CorruptReason::PreviewFallback`. Such a frame is the
+camera's 8-bit rendering, not sensor data; raw outputs and regions never fall back. The
+CLI (`--preview-fallback`), JavaScript (`previewFallback`), Python (`preview_fallback=`)
+and C (`flashraw_decode_options.preview_fallback`, `flashraw_frame_source()`) expose the
+same option.
 
 ### GPU
 

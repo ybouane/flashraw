@@ -26,6 +26,8 @@ pub struct MakerNote {
     /// As-shot multipliers in R, G, B, G2 order (before any camera-specific
     /// rewriting); zero when unknown.
     pub cam_mul: [f32; 4],
+    /// Red and blue levels of tag 0x000C as stored (relative to green).
+    pub rb_levels: Option<[f32; 2]>,
     /// Black level from tag 0x003D in R, G1, G2, B order.
     pub black: Option<[u16; 4]>,
     /// Black level from the Coolpix NRW block (tag 0x0014).
@@ -87,6 +89,7 @@ pub fn parse(data: &[u8], entry: &Entry, file_order: ByteOrder, model: &str) -> 
             0x000c if e.count == 4 && e.typ == types::RATIONAL => {
                 let f = |i| e.f32(i).unwrap_or(0.0);
                 mn.cam_mul = [f(0), f(2), f(1), f(3)];
+                mn.rb_levels = Some([f(0), f(1)]);
             }
             0x0011 => {
                 if let Some(off) = e.u32(0) {

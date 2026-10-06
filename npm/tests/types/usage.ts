@@ -32,6 +32,7 @@ import {
   type ErrorKind,
   type CorruptInfo,
   type DecodeWarning,
+  type FrameSource,
 } from 'flashraw';
 import { createWorkerPool, type WorkerFrame } from 'flashraw/worker';
 
@@ -185,7 +186,10 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
       void avail;
     }
   }
-  void [incomplete, filled, unitIndex];
+  const fb = await decodeRaw(new Uint8Array(buffer), { output: 'rgba8', previewFallback: true });
+  const frameSource: FrameSource = fb.source;
+  const substituted: boolean = fb.warnings.some((w: DecodeWarning) => w.kind === 'preview-fallback');
+  void [incomplete, filled, unitIndex, frameSource, substituted];
   const p = await extractPreview(buffer);
   const t = await extractThumbnail(buffer, { format: 'rgba8' });
   const ok: boolean = await supportsFile(buffer);
@@ -217,5 +221,7 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
 new FlashRaw();
 // @ts-expect-error unknown output
 void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { output: 'png' });
+// @ts-expect-error previewFallback is a boolean
+void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { previewFallback: 'yes' });
 // @ts-expect-error unknown corruption policy
 void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { corruptionPolicy: 'lenient' });

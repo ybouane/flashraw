@@ -19,7 +19,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         .into_iter()
         .filter(|i| i.u32(tags::PHOTOMETRIC) == Some(32803) && i.width() > 0 && i.height() > 0)
         .max_by_key(|i| i.width() as u64 * i.height() as u64)
-        .ok_or_else(|| Error::invalid_metadata("MEF: no CFA image"))?;
+        .ok_or_else(|| no_raw_ifd(&tiff, "MEF", Error::invalid_metadata("MEF: no CFA image")))?;
     let (w, h, bps) = (raw.width(), raw.height(), raw.bps());
     opts.limits.check_dims(w, h, 1)?;
     if raw.compression() != 1 || !(bps == 12 || bps == 16) {

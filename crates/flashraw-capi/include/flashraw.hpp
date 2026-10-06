@@ -298,6 +298,8 @@ struct decode_options {
     float exposure = 0.0f;
     float black_point = 0.0f;
     float white_point = 1.0f;
+    /// RGB outputs of undecodable sensor data: return the embedded full-size preview.
+    bool preview_fallback = false;
 
     flashraw_decode_options to_c() const {
         flashraw_decode_options o;
@@ -318,6 +320,7 @@ struct decode_options {
         o.exposure = exposure;
         o.black_point = black_point;
         o.white_point = white_point;
+        o.preview_fallback = preview_fallback ? 1 : 0;
         return o;
     }
 };
@@ -472,8 +475,11 @@ public:
         return detail::matrices(h(), kind, flashraw_frame_color_matrix_count, flashraw_frame_color_matrix);
     }
 
-    /// True when some samples were zero-filled while recovering from corrupt input.
+    /// True when some samples were zero-filled while recovering from corrupt input, or the
+    /// embedded preview was substituted (`from_preview()`).
     bool is_incomplete() const { return flashraw_frame_is_incomplete(h()); }
+    /// True when `decode_options::preview_fallback` returned the embedded preview.
+    bool from_preview() const { return flashraw_frame_source(h()) == FLASHRAW_SOURCE_PREVIEW; }
     std::vector<std::string> warnings() const {
         std::vector<std::string> w;
         std::size_t n = flashraw_frame_warning_count(h());

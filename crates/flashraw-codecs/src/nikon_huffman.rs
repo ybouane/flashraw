@@ -688,6 +688,24 @@ pub fn decode_nikon(
     parallel: bool,
     declared: usize,
 ) -> Result<()> {
+    let dead_row = decode_nikon_rows(src, meta, width, rows, out, stride, parallel, declared)?;
+    check_complete(dead_row, rows)
+}
+
+/// Like [`decode_nikon`], but a stream that runs out of data is not an error: returns the
+/// row in which the data ended (`None` when the stream was complete). That row and the
+/// rows after it hold no real data (callers recovering a truncated file zero them).
+#[allow(clippy::too_many_arguments)]
+pub fn decode_nikon_rows(
+    src: &[u8],
+    meta: &NikonMeta,
+    width: usize,
+    rows: usize,
+    out: &mut [u16],
+    stride: usize,
+    parallel: bool,
+    declared: usize,
+) -> Result<Option<usize>> {
     let main = DirectHuff::from_counts(NIKON_TREES[meta.tree])?;
     let after;
     let mut tables: Vec<(usize, &DirectHuff)> = vec![(0, &main)];
@@ -711,7 +729,7 @@ pub fn decode_nikon(
         parallel,
         declared,
     )?;
-    check_complete(dead_row, rows)
+    Ok(dead_row)
 }
 
 /// A stream may need a few zero padding bits for its very last codes (encoders do not

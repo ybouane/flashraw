@@ -107,7 +107,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }
     }
 
-    let raw = select_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("NEF has no raw image IFD"))?;
+    // Film scanner NEFs (Nikon Scan) hold an RGB image; camera NEFs never do, and an RGB
+    // IFD there is a thumbnail.
+    let software = meta.software.clone().unwrap_or_default();
+    let scanner = software.starts_with("Nikon Scan") || model_uc.contains("COOLSCAN");
+    let raw = select_raw_ifd(&tiff, scanner)
+        .ok_or_else(|| no_raw_ifd(&tiff, "NEF", Error::invalid_metadata("NEF has no raw image IFD")))?;
     let raw_w = raw.width();
     let raw_h = raw.height();
     opts.limits.check_dims(raw_w, raw_h, 1)?;
@@ -118,14 +123,11 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     // A payload past the end of the file fails when decoded, not here (metadata and
     // previews stay available).
     let src = data.get(offset..).unwrap_or(&[]);
-    let software = meta.software.clone().unwrap_or_default();
     let samples = raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
 
     // --- Payload selection (heuristics on compression, size and makernote) ---
     let (w64, h64, b64) = (raw_w as u64, raw_h as u64, bytes as u64);
-    let is_coolscan = software.starts_with("Nikon Scan")
-        || model_uc.contains("COOLSCAN")
-        || (bps == 8 && compression == 1 && raw.u32(tags::PHOTOMETRIC) != Some(32803));
+    let is_coolscan = scanner || (bps == 8 && compression == 1 && raw.u32(tags::PHOTOMETRIC) != Some(32803));
     let mut width = raw_w as usize;
     let height = raw_h as usize;
     let mut packed_flags: Option<u32> = None;
@@ -388,6 +390,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     info.white_balance = wb_from_cam_mul(mul);
     info.color_matrices = conventions::color_from_table(fallback, &meta, cam);
+    if info.cfa.and_then(|p| p.four_colour_order()).is_some() {
+        // Complementary-colour Coolpix: the red and blue levels apply to the camera's
+        // RGB rendering, not to the four sensor channels; convert them to channel
+        // multipliers through the colour matrix (daylight when there are none).
+        info.white_balance = four_colour_wb(&info.color_matrices, mn.rb_levels);
+    }
 
     // Previews: TIFF thumbnails/JpgFromRaw plus the makernote preview IFD.
     let mut previews = tiff_previews(data, 0, &tiff, info.orientation);
@@ -436,6 +444,17 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }));
     }
     Ok(Box::new(dec))
+}
+
+/// As-shot white balance of a four-colour sensor from the makernote's red and blue
+/// levels (multipliers of the camera's RGB rendering, relative to green): the channel
+/// multipliers that balance the colour those levels make neutral. `None` without
+/// levels (or a 4-row colour matrix).
+fn four_colour_wb(cm: &ColorMatrices, rb: Option<[f32; 2]>) -> Option<WhiteBalance> {
+    let [r, b] = rb.filter(|l| l.iter().all(|v| v.is_finite() && (0.05..=20.0).contains(v)))?;
+    let m = cm.preferred().filter(|m| m.rows == 4)?;
+    let mul = m.multipliers_for([1.0 / r, 1.0, 1.0 / b])?;
+    WhiteBalance::from_multipliers(mul[0], mul[1], mul[2], mul[3])
 }
 
 /// Visible area plus the (possibly widened) buffer width.
@@ -538,20 +557,21 @@ impl<'a> NefRaw<'a> {
         let unit = DataUnit::Strip(0);
         match &self.payload {
             Payload::Huffman { meta, rows } => {
-                ctx.profiler
+                let rows = (*rows).min(h);
+                let dead_row = ctx
+                    .profiler
                     .time(Stage::EntropyDecode, || {
-                        nikon_huffman::decode_nikon(
-                            self.src,
-                            meta,
-                            w,
-                            (*rows).min(h),
-                            out,
-                            w,
-                            ctx.parallel,
-                            self.declared,
-                        )
+                        nikon_huffman::decode_nikon_rows(self.src, meta, w, rows, out, w, ctx.parallel, self.declared)
                     })
                     .map_err(|e| e.or_truncated(self.data.len(), unit, self.offset, self.declared))?;
+                // A stream that runs dry because the strip runs past the end of the file is
+                // truncation (even in the last row): recovering keeps the rows decoded from
+                // real data. Otherwise only the last row may need padding bits (encoders
+                // that do not flush).
+                let (len, (o, d)) = (self.data.len(), (self.offset, self.declared));
+                if !conventions::finish_truncated_stream(ctx, len, unit, o, d, out, w, rows, dead_row)? {
+                    nikon_huffman::check_complete(dead_row, rows)?;
+                }
             }
             Payload::Packed(spec) => {
                 let spec = PackedSpec { width: w, height: h, ..*spec };
@@ -733,6 +753,29 @@ mod tests {
     }
 
     #[test]
+    fn four_colour_wb_from_rb_levels() {
+        // Coolpix E5700 matrix ([G, M, C, Y] rows).
+        let m = ColorMatrix::new(
+            Illuminant::D65,
+            4,
+            vec![-0.6475, 1.2501, 0.2434, 0.5414, -0.0017, 0.3184, -0.5962, 1.0913, 0.5868, -0.0181, 0.9924, 0.0247],
+        )
+        .unwrap();
+        let cm = ColorMatrices { color: vec![m.clone()], ..Default::default() };
+        assert!(four_colour_wb(&cm, None).is_none());
+        assert!(four_colour_wb(&cm, Some([0.0, 1.0])).is_none());
+        // Levels that cut red and boost blue balance a warm light.
+        let wb = four_colour_wb(&cm, Some([0.586, 1.375])).unwrap();
+        let daylight = m.multipliers_for([1.0; 3]).unwrap();
+        let warm = m.camera_response([1.0 / 0.586, 1.0, 1.0 / 1.375]);
+        for i in 0..4 {
+            assert!((wb.coeffs[i] * warm[i] - wb.coeffs[1] * warm[1]).abs() < 1e-4);
+        }
+        // Yellow (index 3) is boosted less than cyan (index 2) relative to daylight.
+        assert!(wb.coeffs[3] / wb.coeffs[2] < daylight[3] / daylight[2]);
+    }
+
+    #[test]
     fn ycc_neutral_grey() {
         let [r, g, b] = ycc_to_rgb([1000, 2048, 2048]);
         assert!(r > 0.0 && (r - g).abs() < 0.2 && (b - g).abs() < 0.2);
@@ -771,6 +814,18 @@ mod tests {
             assert_eq!(e.kind(), "UnsupportedCompression");
         }
         eprintln!("nikon robustness: {tested} samples");
+    }
+
+    /// A Huffman NEF cut by the end of the file: rows decoded from real data are kept and the
+    /// rest zero-filled with a warning under the recover policy (even when only the last
+    /// byte is missing); a structured truncation under strict.
+    #[test]
+    fn truncated_huffman_stream_recovers() {
+        use conventions::robustness::{corpus_file, truncated_stream_recovers};
+        for s in ["Nikon/D3/JD1_8205.NEF", "Nikon/Z fc/_DSC0018.nef"] {
+            let Some(data) = corpus_file(s) else { continue };
+            truncated_stream_recovers(s, &data);
+        }
     }
 
     #[test]

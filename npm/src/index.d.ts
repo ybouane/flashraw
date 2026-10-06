@@ -467,10 +467,17 @@ export type Backend = 'auto' | 'cpu' | 'scalar' | 'cpu-simd' | 'simd' | 'gpu' | 
 /** See `DecodeOptions.corruptionPolicy`. */
 export type CorruptionPolicy = 'recover' | 'strict';
 
+/** Where a frame's pixels come from: the sensor data, or the embedded preview (`previewFallback`). */
+export type FrameSource = 'sensor' | 'preview';
+
 /** Structured cause of corrupt sensor data (`CorruptFileError.corrupt`, `DecodeWarning`). */
 export interface CorruptInfo {
-  /** `truncated`: the data runs past the end of the file; `invalid-unit`: a compressed strip/tile failed to decode. */
-  kind: 'truncated' | 'invalid-unit';
+  /**
+   * `truncated`: the data runs past the end of the file; `invalid-unit`: a compressed strip/tile
+   * failed to decode; `preview-fallback` (warnings only): the sensor data could not be decoded and
+   * the frame holds the embedded full-size preview (`previewFallback: true`).
+   */
+  kind: 'truncated' | 'invalid-unit' | 'preview-fallback';
   /** Which part of the payload. */
   unit: 'strip' | 'tile' | 'plane' | 'payload';
   /** Strip/tile/plane index (null for `payload`). */
@@ -483,11 +490,11 @@ export interface CorruptInfo {
   available?: number;
   /** `truncated`: length of the input. */
   fileLength?: number;
-  /** `invalid-unit`: what the decoder reported. */
+  /** `invalid-unit`, `preview-fallback`: what the decoder reported. */
   message?: string;
 }
 
-/** A repair made under `corruptionPolicy: 'recover'`. */
+/** A repair made under `corruptionPolicy: 'recover'`, or the preview substitution of `previewFallback`. */
 export interface DecodeWarning extends Omit<CorruptInfo, 'message'> {
   /** Output samples left zero because their data is missing or invalid. */
   samplesFilled: number;
@@ -541,10 +548,20 @@ export interface DecodeOptions {
    * Truncated or corrupt sensor data. `'recover'` (default): decode every complete sample,
    * zero-fill the rest and report it in `frame.warnings` (`frame.incomplete` is then true).
    * `'strict'`: throw a `CorruptFileError` whose `corrupt` field describes the problem.
-   * Recovery covers uncompressed/packed strips, tiles and payloads and compressed DNG
-   * strips/tiles; other compressed streams throw under both policies.
+   * Recovery covers uncompressed/packed strips, tiles and payloads, compressed DNG
+   * strips/tiles and Nikon/Pentax Huffman and Samsung SRW streams cut short by the end of
+   * the file; other compressed streams throw under both policies.
    */
   corruptionPolicy?: CorruptionPolicy;
+  /**
+   * RGB outputs (`rgba8`, `linear-rgb`) of files whose sensor data cannot be decoded
+   * (`UnsupportedCompressionError`, e.g. Nikon High Efficiency NEF): return the embedded
+   * full-size preview instead of throwing. The frame then has `source: 'preview'` and a
+   * `preview-fallback` warning; its levels and colour fields describe the 8-bit preview. Needs a
+   * preview covering at least 90% of the default crop; never applies to raw outputs or regions.
+   * Default false (throw).
+   */
+  previewFallback?: boolean;
   /** Decode only this region (sensor-buffer coordinates). */
   region?: Rect;
   limits?: Limits;
@@ -644,6 +661,8 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   incomplete: boolean;
   /** Repairs made under `corruptionPolicy: 'recover'`; empty for a complete decode. */
   warnings: DecodeWarning[];
+  /** `'preview'` when `previewFallback` substituted the embedded preview; `'sensor'` otherwise. */
+  source: FrameSource;
 }
 
 /** A decoded frame as returned by `FlashRaw#decode`. */
@@ -676,6 +695,8 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat, S exten
   readonly incomplete: boolean;
   /** Repairs made under `corruptionPolicy: 'recover'` (the default); empty for a complete decode. */
   readonly warnings: DecodeWarning[];
+  /** `'preview'` when `previewFallback` substituted the embedded preview; `'sensor'` otherwise. */
+  readonly source: FrameSource;
   /** Pixels, row-major, `channels` interleaved samples per pixel. */
   readonly data: FrameDataFor<O, S>;
   /** True while `data` is a view into WASM memory (`zeroCopy: true`). */
@@ -722,6 +743,8 @@ export declare class GpuFrame<O extends GpuOutputFormat = GpuOutputFormat> {
   readonly incomplete: boolean;
   /** Repairs made under `corruptionPolicy: 'recover'` (the default); empty for a complete decode. */
   readonly warnings: DecodeWarning[];
+  /** `'preview'` when `previewFallback` substituted the embedded preview; `'sensor'` otherwise. */
+  readonly source: FrameSource;
   readonly gpuResident: true;
   /**
    * Storage buffer (`STORAGE | COPY_SRC`) holding the pixels; may be larger than `byteLength`.

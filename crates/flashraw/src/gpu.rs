@@ -109,6 +109,14 @@ fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuCon
     {
         return Ok(None);
     }
+    // Four-colour CFAs are developed on the CPU only (the GPU kernels have three channels).
+    let rgb = matches!(base, OutputFormat::LinearRgbF32 | OutputFormat::Rgba8);
+    if rgb && raw.frame_info().cfa.and_then(|p| p.four_colour_order()).is_some() {
+        if resident {
+            return Err(Error::NotAvailable("GPU-resident RGB output of a four-colour sensor".into()));
+        }
+        return Ok(None);
+    }
     match opts.backend {
         Backend::Cpu | Backend::CpuSimd => {
             if resident {
@@ -376,6 +384,7 @@ async fn run(
         metadata: raw.metadata().clone(),
         stats,
         warnings: dctx.take_warnings(),
+        source: crate::FrameSource::Sensor,
     })
 }
 

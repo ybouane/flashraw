@@ -146,7 +146,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         .ifds
         .iter()
         .find(|i| i.has(0x118) || (i.has(0x02) && i.has(0x03) && i.has(tags::STRIP_OFFSETS)))
-        .ok_or_else(|| Error::invalid_metadata("Panasonic file without raw IFD"))?;
+        .ok_or_else(|| no_raw_ifd(&tiff, "Panasonic", Error::invalid_metadata("Panasonic file without raw IFD")))?;
     let mut meta = RawMetadata::default();
     flashraw_core::exif::read_ifd0(ifd, &mut meta);
     for i in tiff.ifds.iter().skip(1) {

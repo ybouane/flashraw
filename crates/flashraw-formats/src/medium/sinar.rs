@@ -63,7 +63,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         .into_iter()
         .filter(|i| i.u32(tags::PHOTOMETRIC) == Some(32803) && i.width() > 0 && i.height() > 0)
         .max_by_key(|i| i.width() as u64 * i.height() as u64)
-        .ok_or_else(|| Error::invalid_metadata("Sinar: no CFA image"))?;
+        .ok_or_else(|| no_raw_ifd(&tiff, "Sinar", Error::invalid_metadata("Sinar: no CFA image")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     let units = if raw.has(tags::TILE_OFFSETS) { tiles(raw) } else { strips(raw) };

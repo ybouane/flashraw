@@ -134,7 +134,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         meta.exposure.iso = mn.iso;
     }
 
-    let raw = select_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("PEF has no raw image IFD"))?;
+    let raw = select_raw_ifd(&tiff, false)
+        .ok_or_else(|| no_raw_ifd(&tiff, "PEF", Error::invalid_metadata("PEF has no raw image IFD")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     let bps = raw.bps();
@@ -312,11 +313,15 @@ impl PefRaw<'_> {
         let unit = DataUnit::Strip(0);
         match &self.payload {
             Payload::Huffman(t) => {
-                ctx.profiler
+                let dead_row = ctx
+                    .profiler
                     .time(Stage::EntropyDecode, || {
                         pentax_huffman::decode(self.src, t, w, h, out, w, ctx.parallel, self.declared)
                     })
                     .map_err(|e| e.or_truncated(self.data.len(), unit, self.offset, self.declared))?;
+                // A stream cut by the end of the file (its zero padding decodes as data).
+                let (len, (o, d)) = (self.data.len(), (self.offset, self.declared));
+                conventions::finish_truncated_stream(ctx, len, unit, o, d, out, w, h, dead_row)?;
             }
             Payload::Packed(spec) => {
                 let src = ctx.sensor_rows(self.data, unit, self.offset, crate::nikon::packed_geometry(spec))?;
@@ -351,6 +356,17 @@ mod tests {
 
     /// One corpus sample per payload variant: originals decode, truncated/corrupted
     /// copies never panic.
+    /// Huffman PEFs cut by the end of the file are recovered or reported, never decoded
+    /// from the zero padding as if complete.
+    #[test]
+    fn truncated_huffman_stream_recovers() {
+        use crate::nikon::conventions::robustness::{corpus_file, truncated_stream_recovers};
+        for s in ["Pentax/K-1/IMGP8550.PEF", "Pentax/K20D/IMGP3335.PEF", "Pentax/KF/IMGP0063.PEF"] {
+            let Some(data) = corpus_file(s) else { continue };
+            truncated_stream_recovers(s, &data);
+        }
+    }
+
     #[test]
     fn malformed_inputs_do_not_panic() {
         let samples = [

@@ -102,6 +102,8 @@ struct SrwRaw<'a> {
     offset: usize,
     /// Payload bytes from `offset` to the end of the file (empty if past it).
     src: &'a [u8],
+    /// Payload length the strip declares.
+    declared: usize,
     width: usize,
     height: usize,
     payload: Payload,
@@ -122,7 +124,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let model_uc = model.to_ascii_uppercase();
     let mn = tiff.find_entry(tags::MAKER_NOTE).map(|e| parse_makernote(data, e, tiff.order)).unwrap_or_default();
 
-    let raw = select_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("SRW has no raw image IFD"))?;
+    let raw = select_raw_ifd(&tiff, false)
+        .ok_or_else(|| no_raw_ifd(&tiff, "SRW", Error::invalid_metadata("SRW has no raw image IFD")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     let bps = raw.bps();
@@ -320,7 +323,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     };
     let random_access = if row_layout.is_some() { RandomAccess::Rows } else { RandomAccess::Sequential };
     // V0 rows are addressed relative to the strip offset; keep the whole file.
-    let srw = Arc::new(SrwRaw { data, offset, src, width: w as usize, height: h as usize, payload });
+    let srw = Arc::new(SrwRaw { data, offset, src, declared: bytes, width: w as usize, height: h as usize, payload });
     let s2 = srw.clone();
     let mut dec = SimpleDecoder::new(RawFormat::Srw, meta, info, Box::new(move |ctx| s2.decode(ctx)));
     dec.random_access = random_access;
@@ -371,14 +374,30 @@ impl SrwRaw<'_> {
         let (w, h) = (self.width, self.height);
         let mut img = RawImage::new_u16(w as u32, h as u32, 1, &ctx.limits)?;
         let out = img.u16_mut();
+        let (unit, len, (o, d)) = (DataUnit::Strip(0), self.data.len(), (self.offset, self.declared));
         match &self.payload {
-            Payload::V0 { row_offsets } => ctx
-                .profiler
-                .time(Stage::EntropyDecode, || codec::decode_v0_with(self.src, row_offsets, w, h, out, ctx.parallel))?,
-            Payload::V1 => {
-                ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v1(self.src, w, h, out))?;
+            Payload::V0 { row_offsets } => {
+                ctx.profiler.time(Stage::EntropyDecode, || {
+                    codec::decode_v0_with(self.src, row_offsets, w, h, out, ctx.parallel)
+                })?;
+                // Rows are independent bit streams (each ends where the next starts, the last
+                // at the strip end; a final block may spill into the next row's bytes), but
+                // predicted from the rows above: everything from the first row whose data (or
+                // its successor's) is cut by the end of the file on is missing.
+                let mut starts: Vec<usize> = row_offsets.iter().map(|&r| r as usize).collect();
+                starts.sort_unstable();
+                let end_of = |s: usize| starts.iter().find(|&&n| n > s).copied().unwrap_or(d.max(s));
+                let first_missing = row_offsets.iter().position(|&r| end_of(end_of(r as usize)) > self.src.len());
+                conventions::finish_truncated_stream(ctx, len, unit, o, d, out, w, h, first_missing)?;
             }
-            Payload::V2 => ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v2(self.src, w, h, out))?,
+            Payload::V1 => {
+                let dead_row = ctx.profiler.time(Stage::EntropyDecode, || codec::decode_v1(self.src, w, h, out))?;
+                conventions::finish_truncated_stream(ctx, len, unit, o, d, out, w, h, dead_row)?;
+            }
+            Payload::V2 => ctx
+                .profiler
+                .time(Stage::EntropyDecode, || codec::decode_v2(self.src, w, h, out))
+                .map_err(|e| e.or_truncated(len, unit, o, d))?,
             Payload::Packed(spec) => {
                 let geometry = crate::nikon::packed_geometry(spec);
                 let src = ctx.sensor_rows(self.data, DataUnit::Strip(0), self.offset, geometry)?;
@@ -479,6 +498,16 @@ mod tests {
 
     /// One corpus sample per payload variant: originals decode, truncated/corrupted
     /// copies never panic.
+    /// Compressed SRWs (V0 row streams, V1, V2) cut by the end of the file are recovered or
+    /// reported, never decoded from the zero padding as if complete.
+    #[test]
+    fn truncated_compressed_payload_recovers() {
+        for s in ["Samsung/NX300/nx300.SRW", "Samsung/NX mini/SAM_0295.SRW", "Samsung/EK-GN120/20231015_094741.srw"] {
+            let Some(data) = corpus_file(s) else { continue };
+            crate::nikon::conventions::robustness::truncated_stream_recovers(s, &data);
+        }
+    }
+
     #[test]
     fn malformed_inputs_do_not_panic() {
         let samples = [

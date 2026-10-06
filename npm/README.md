@@ -263,6 +263,7 @@ const f = await raw.decode({
   blackPoint: 0,            // RGB outputs: linear value mapped to black (after exposure)
   whitePoint: 1,            // RGB outputs: linear value mapped to white (integer outputs clip)
   corruptionPolicy: 'recover', // truncated sensor data: 'recover' (zero-fill + warnings) | 'strict' (throw)
+  previewFallback: false,   // RGB outputs of undecodable sensor data: true = embedded full-size preview
   limits: { maxSamples: 4e8 },
 });
 f.data;            // Uint16Array (raw-u16, rgb16, linear-rgb16, linear-rgb-f16, f16 sample types)
@@ -275,6 +276,7 @@ f.backend;         // { requested, kind: 'cpu', decode: 'CPU WASM SIMD128 x1 thr
 f.timings;         // { totalMs, stages: { containerParse, entropyDecode, postprocess, ... }, copyMs, wallMs }
 f.incomplete;      // true when some samples hold no data (truncated/corrupt input recovered)
 f.warnings;        // [{ kind: 'truncated', unit: 'strip', index, offset, expected, available, fileLength, samplesFilled, message }]
+f.source;          // 'sensor' | 'preview' (previewFallback substituted the embedded preview)
 
 // For an editor that demosaics on its own GPU: black-subtracted, white-normalised CFA (DNG
 // opcode lists 1 and 2 applied) as half floats, cropped to the active area. `f.origin` is the
@@ -294,7 +296,16 @@ whose `corrupt` field holds the same details (`{ kind: 'truncated', unit, index,
 expected, available, fileLength }`). Metadata, previews and regions that do not touch the
 missing data are unaffected. Recovery covers uncompressed/packed data and compressed DNG
 strips/tiles (a unit that is truncated or fails to decode is zero-filled with an
-`invalid-unit` or `truncated` warning); other compressed streams throw under both policies.
+`invalid-unit` or `truncated` warning) and Nikon/Pentax Huffman and Samsung SRW streams cut
+short by the end of the file (the rows decoded before the cut are kept); other compressed
+streams throw under both policies.
+
+**Undecodable sensor data.** Files whose sensor data uses a codec FlashRaw cannot decode (Nikon
+High Efficiency NEF) throw an `UnsupportedCompressionError` by default, even for `rgba8`.
+With `previewFallback: true`, RGB outputs (`rgba8`, `linear-rgb`) return the embedded
+full-size preview instead, explicitly marked: `f.source === 'preview'` and a warning of kind
+`preview-fallback` (so `f.incomplete` is true). Such a frame is the camera's rendering (8-bit,
+display-referred), not sensor data; raw outputs and regions never fall back.
 
 **Memory.** By default `f.data` is a standalone copy (the WASM buffer is freed immediately), so it
 can be kept, transferred to a worker, or wrapped in `ImageData`. For large frames you can skip

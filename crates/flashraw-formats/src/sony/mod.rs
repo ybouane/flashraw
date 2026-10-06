@@ -160,7 +160,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         return open_a100(data, &tiff, meta, opts);
     }
 
-    let raw = find_raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("Sony: no raw image IFD"))?;
+    let raw = find_raw_ifd(&tiff)
+        .ok_or_else(|| no_raw_ifd(&tiff, "Sony", Error::invalid_metadata("Sony: no raw image IFD")))?;
     let (raw_w, raw_h) = (raw.width(), raw.height());
     let bps = raw.bps();
     let samples = raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1);
@@ -749,6 +750,10 @@ fn find_raw_ifd<'t, 'a>(tiff: &'t Tiff<'a>) -> Option<&'t Ifd<'a>> {
             continue;
         }
         if bps > 32 || samples > 12 || !(ifd.has(tags::STRIP_OFFSETS) || ifd.has(tags::TILE_OFFSETS)) {
+            continue;
+        }
+        // Thumbnails (reduced resolution, 8-bit RGB) never stand in for the sensor image.
+        if is_preview_ifd(ifd) {
             continue;
         }
         let score = w as u64 * h as u64 * bps.max(1) as u64;

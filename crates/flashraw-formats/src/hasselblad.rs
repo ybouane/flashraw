@@ -154,7 +154,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     if raw_ifd(&tiff).is_some_and(|r| matches!(r.compression(), 32767 | 32769 | 32770)) {
         return crate::sony::open_tiff(data, tiff, opts);
     }
-    let raw = raw_ifd(&tiff).ok_or_else(|| Error::invalid_metadata("Hasselblad: no CFA image"))?;
+    let raw = raw_ifd(&tiff)
+        .ok_or_else(|| no_raw_ifd(&tiff, "Hasselblad", Error::invalid_metadata("Hasselblad: no CFA image")))?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;
     if raw.u32(tags::SAMPLES_PER_PIXEL).unwrap_or(1) != 1 {
