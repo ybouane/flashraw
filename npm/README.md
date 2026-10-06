@@ -8,7 +8,9 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **Instant previews**: embedded JPEG previews/thumbnails as bytes (zero decoding), or as RGBA.
 - **Sensor data**: `raw-u16`, `raw-f32`, `normalized`, `linear-rgb`, or display-ready `rgba8`
   (`ImageData`-compatible), bit-identical to the native FlashRaw decoder.
-- **WASM SIMD128** binary with automatic scalar fallback; ~560 KiB brotli (all decoders).
+- **WASM SIMD128** binary with automatic scalar fallback; ~620 KiB brotli (all decoders).
+- **JPEG XL DNGs** (DNG 1.7): the codec lives in separate, larger binaries that are downloaded
+  only when a JPEG XL file is decoded; every other file uses the small build.
 - **Multithreaded**: on cross-origin isolated pages and in Node.js a threaded build decodes one
   image on all cores (shared memory + Web Workers); single-threaded everywhere else, same API.
 - **WebGPU** (opt-in build): GPU develop/unpack, results read back or left in a `GPUBuffer` /
@@ -349,13 +351,68 @@ output (`gpu-rgba8` → a CPU `rgba8` `DecodedFrame`) unless `fallback: 'error'`
 entropy-coded files decode on the CPU (that *is* the work); bit-packed files are unpacked on the
 GPU straight from the file bytes. GPU `rgba8` matches the CPU result within ±2 per channel.
 
+## JPEG XL DNGs
+
+DNG 1.7 allows JPEG XL compression (tag 52546; recent phones and DNG converters write it). The
+JPEG XL decoder adds ~55 % to the binary, so it ships as separate variants of the SIMD builds:
+`flashraw_simd_jxl.wasm` and `flashraw_simd_threads_jxl.wasm`. By default nothing changes for
+other files:
+
+```js
+await init();                        // jpegxl: 'auto' (default): the small build
+const raw = await FlashRaw.open(file); // metadata, previews: small build, even for JPEG XL DNGs
+raw.frameInfo.compression;           // 'jpeg-xl'
+const f = await raw.decode();        // first JPEG XL decode: loads the JPEG XL variant (once), then decodes
+f.backend.binary;                    // 'simd-jxl' / 'threads-jxl' (or 'simd' / 'threads' for other files)
+raw.binary;                          // the binary now serving this file
+
+await init({ jpegxl: 'always' });    // load the JPEG XL variant up front, instead of the small build
+await init({ jpegxl: 'never' });     // never load it: decoding a JPEG XL DNG throws UnsupportedCompressionError
+await loadJpegXlSupport();           // 'auto' mode: preload it now (e.g. when the user picks a .dng)
+(await getCapabilities()).jpegxl;    // { mode, compiled, loaded, binary, available, reason }
+```
+
+- `'auto'` detects JPEG XL from the frame's compression when the file is decoded (opening,
+  metadata and previews never need the codec) and moves that file to the JPEG XL variant, which
+  matches the selected build: threaded (`flashraw_simd_threads_jxl.wasm`, with its own thread
+  pool of the same size) on cross-origin isolated pages and in Node.js, single-threaded
+  otherwise. It is loaded once and shared; other files keep using the small build. A load
+  failure surfaces as `UnsupportedCompressionError` with the reason (and is retried on the next
+  JPEG XL decode).
+- Works the same in the `flashraw/worker` pool (each worker loads it on demand;
+  `createWorkerPool({ init: { jpegxl: 'never' } })` to opt out) and in Node.js
+  (`FLASHRAW_WASM_JPEGXL=auto|always|never`).
+- Requires WebAssembly SIMD: the scalar fallback build has no JPEG XL variant. The WebGPU build
+  has none either: with `init({ gpu: true })` JPEG XL files are decoded by `flashraw_simd_jxl.wasm`
+  on the CPU (GPU outputs fall back with `backend.fallbackReason`).
+- Self-hosting: `init({ baseUrl })` covers the JPEG XL files too; `init({ jpegxlWasm })` passes
+  the module explicitly (like `wasm`). The package also exports them as `flashraw/wasm/simd-jxl`
+  and `flashraw/wasm/threads-jxl`.
+- Output: lossless JPEG XL decodes bit-identically to the native FlashRaw build; lossy JPEG XL is
+  floating-point, and native x86-64 runs the codec's AVX2/FMA kernels, so a small fraction of
+  samples (~0.1 % in testing) can round one level apart from the WASM result.
+
+## Binaries and sizes
+
+| Binary | When | Raw | gzip | brotli |
+|---|---|---|---|---|
+| `flashraw_simd.wasm` | default (no cross-origin isolation) | 2450 KiB | 829 KiB | 618 KiB |
+| `flashraw_simd_threads.wasm` | default when threads are available | 2527 KiB | 822 KiB | 610 KiB |
+| `flashraw.wasm` | engines without WebAssembly SIMD | 2408 KiB | 811 KiB | 604 KiB |
+| `flashraw_simd_gpu.wasm` | `init({ gpu: true })` | 2636 KiB | 900 KiB | 672 KiB |
+| `flashraw_simd_jxl.wasm` | first JPEG XL DNG (single-threaded), or `jpegxl: 'always'` | 3920 KiB | 1321 KiB | 951 KiB |
+| `flashraw_simd_threads_jxl.wasm` | first JPEG XL DNG (threaded), or `jpegxl: 'always'` | 3989 KiB | 1313 KiB | 943 KiB |
+
+Plus 24–76 KiB of generated JS glue per binary (4–13 KiB gzip). A page downloads one binary,
+plus one JPEG XL variant only if it decodes a JPEG XL DNG.
+
 ## CPU fallback and SIMD
 
 `init()` runs implicitly on first use. It loads `flashraw_simd_threads.wasm` when threads are
 available (see Multithreading), else `flashraw_simd.wasm` on engines with WebAssembly SIMD
 (Chrome/Edge ≥ 91, Firefox ≥ 89, Safari ≥ 16.4, Node ≥ 16.4) and `flashraw.wasm` otherwise, or
-`flashraw_simd_gpu.wasm` with `init({ gpu: true })`. Only one binary is downloaded; all produce
-identical CPU output. `getCapabilities().wasm.binary` says which one is in use.
+`flashraw_simd_gpu.wasm` with `init({ gpu: true })`. Only one binary is downloaded (plus a
+JPEG XL variant for JPEG XL DNGs, see above); all produce identical CPU output. `getCapabilities().wasm.binary` says which one is in use.
 
 ```js
 import { init, getCapabilities } from 'flashraw';
@@ -394,7 +451,8 @@ sensor data also carry `e.corrupt` (see *Truncated files* above).
 | esbuild | copy `node_modules/flashraw/dist/*.wasm` next to your bundle (or `init({ baseUrl })`); use `createWorkerPool({ workerUrl })` for workers and `init({ threadWorkerUrl })` for threads |
 | Node / Deno | none |
 
-All four `.wasm` files are emitted as assets; a page downloads only the one `init()` selects.
+All six `.wasm` files are emitted as assets; a page downloads only the one `init()` selects, and
+a JPEG XL variant (with its glue, a separate chunk) only when it decodes a JPEG XL DNG.
 
 ## TypeScript
 

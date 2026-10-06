@@ -20,8 +20,9 @@ architecture, memory model, builds, sizes and performance. User-facing API docs:
  worker*.js             worker pool + protocol      ──────────────────────────────────────────
  errors.js              FlashRawError subclasses     flashraw (default-features off + simd;
  flashraw_bindgen*.js   generated glue: one file for           + rayon in the threaded build,
-                        simd+fallback, one each for            + gpu in the WebGPU build)
-                        threads and gpu
+                        simd+fallback, one each for            + gpu in the WebGPU build,
+                        threads, gpu and the two                + jpegxl in the JPEG XL builds)
+                        JPEG XL variants
 ```
 
 - The wasm-bindgen surface is deliberately small and pointer-shaped. Everything ergonomic
@@ -79,6 +80,8 @@ Rules that make the zero-copy paths safe:
    | fallback | `flashraw.wasm` | stable | — |
    | threads | `flashraw_simd_threads.wasm` | nightly, `+atomics,+bulk-memory,+mutable-globals,+simd128`, `-Z build-std=panic_abort,std`, `--shared-memory --import-memory --max-memory=4 GiB` + TLS exports | `threads` (rayon) |
    | gpu | `flashraw_simd_gpu.wasm` | stable, `+simd128` | `gpu` (wgpu → WebGPU) |
+   | simd-jxl | `flashraw_simd_jxl.wasm` | as simd (the `jpegxl` feature needs Rust ≥ 1.88) | `jpegxl` (JPEG XL DNG) |
+   | threads-jxl | `flashraw_simd_threads_jxl.wasm` | as threads | `threads,jpegxl` |
 
    `[profile.wasm-release]`: opt-level 3, fat LTO, 1 codegen unit, `panic = "abort"`, stripped.
    The threaded variant runs `rustup run nightly cargo ...` (needs the nightly `rust-src`
@@ -88,7 +91,12 @@ Rules that make the zero-copy paths safe:
    The glue of simd and fallback must be byte-identical (asserted), so one `flashraw_bindgen.js`
    serves both; threads and gpu have their own (`flashraw_bindgen_threads.js` takes a shared
    memory, `flashraw_bindgen_gpu.js` carries the WebGPU bindings) and are loaded with dynamic
-   `import()` only when selected.
+   `import()` only when selected. The JPEG XL variants export the same ABI as their base build
+   (asserted: the glue may only differ in the initial memory size), but ship their glue as
+   separate files (`flashraw_bindgen_jxl.js`, `flashraw_bindgen_threads_jxl.js`): wasm-bindgen
+   glue holds its instance in module state, and the JPEG XL instance lives next to the primary
+   one. Thread workers of the threaded JPEG XL pool reuse `flashraw_bindgen_threads.js` (they are
+   always handed their memory).
 3. `wasm-opt -O3` (binaryen from npm devDependencies; `--enable-threads` for the threaded one).
 4. Copies the hand-written JS/`.d.ts` into `dist/` and prints the size report.
 
@@ -106,8 +114,12 @@ Runtime selection (`init()`), first match wins:
    `flashraw.wasm`; if the SIMD binary fails to compile, the loader retries with the fallback.
    Override with `init({ simd: false })` or `FLASHRAW_WASM_SIMD=0` (Node).
 
+With `init({ jpegxl: 'always' })` steps 2 and 3 load the JPEG XL flavour of the threaded / SIMD
+build instead (see JPEG XL below).
+
 `getCapabilities()` reports the choice: `wasm.binary`, `threads.{count, reason}`,
-`gpu.{compiled, available, reason, adapter}`. Browsers use `fetch` + `instantiateStreaming`
+`gpu.{compiled, available, reason, adapter}`, `jpegxl.{mode, loaded, binary, reason}`.
+Browsers use `fetch` + `instantiateStreaming`
 (compile while downloading; the threaded module is compiled once and shared with its workers);
 Node reads the file with `fs`.
 
@@ -170,6 +182,41 @@ each with its own single-threaded instance (pool workers do not start nested thr
 `init: { threads }` is passed). Measured: 8 files (fixtures + 4 corpus DNGs, rgba8) sequential
 4149 ms → 4 workers 1535 ms (2.7×) in Node.
 
+### JPEG XL
+
+JPEG XL DNG support (compression 52546, the `jpegxl` feature: `jxl-oxide`) adds ~1.5 MiB raw /
+~330 KiB brotli (+54 %) to a binary, so the default binaries are built without it and two more
+variants carry it: `flashraw_simd_jxl.wasm` and `flashraw_simd_threads_jxl.wasm`.
+
+- **Engines**: `core.js` holds an *engine* per instantiated binary (glue module, exports, thread
+  pool, build info). Every handle remembers its engine; memory views, jobs and frames go through
+  it. The primary engine is the one `init()` selected.
+- **Detection** (`jpegxl: 'auto'`, the default): files are always opened by the primary engine.
+  On the first `decode*` of a handle, `frameInfo.compression === 'jpeg-xl'` (the raw IFD's
+  compression tag; secondary IFDs such as an enhanced DNG's original data do not count) means
+  the file needs the codec: the JPEG XL engine is loaded (once per page / worker / process,
+  shared by all handles; a failed load is not cached), the input bytes are copied from the
+  primary engine's memory into it, the file is reopened there and the old copy freed (kept
+  until `close()` if zero-copy previews point into it). Metadata, previews and thumbnails never
+  load it. As a safety net, an `UnsupportedCompression` error about JPEG XL from the primary
+  engine triggers the same switch and a retry.
+- **Variant choice**: threaded primary → `threads-jxl` with its own coordinator + rayon workers
+  (same count; falls back to `simd-jxl` if they fail to start); `simd` or `gpu` primary →
+  `simd-jxl` (JPEG XL files then decode on the CPU, GPU requests fall back with a reason); the
+  scalar build has no JPEG XL variant (`UnsupportedCompressionError` saying SIMD is required).
+- **Modes**: `'always'` loads the JPEG XL variant as the primary engine (one binary, no switch);
+  `'never'` keeps the small build only and rewrites the decoder's error into an
+  `UnsupportedCompressionError` that names the option. Node: `FLASHRAW_WASM_JPEGXL`.
+- **Reporting**: `frame.backend.binary` / `frame.backend.jpegxl` say which binary decoded a
+  frame, `raw.binary` which one serves a handle, `getCapabilities().jpegxl` the mode and state.
+- **Bundlers**: the JPEG XL `.wasm` files are literal `new URL(..., import.meta.url)` assets and
+  their glue a dynamic `import()`, so Vite/webpack emit separate files fetched only on demand
+  (tested). The bytes are fetched once; the threaded variant is compiled once and shared with
+  its workers.
+- **Output**: lossless JPEG XL is bit-identical to native; lossy JPEG XL is float math, and
+  `jxl-oxide` uses AVX2/FMA kernels on native x86-64, so ~0.1 % of the samples of a lossy test file
+  differed by one level from native x86-64 (WASM single-threaded and threaded agree exactly).
+
 ### GPU
 
 The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the opt-in
@@ -220,19 +267,26 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
 
 | Binary | Raw | gzip -9 | brotli -11 | Its glue JS (raw / gzip) |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | 2223 KiB | 751 KiB | 563 KiB | 24 / 4 KiB (shared) |
-| `flashraw.wasm` (fallback) | 2190 KiB | 739 KiB | 552 KiB | 24 / 4 KiB (shared) |
-| `flashraw_simd_threads.wasm` | 2270 KiB | 750 KiB | 558 KiB | 30 / 5 KiB |
-| `flashraw_simd_gpu.wasm` | 2408 KiB | 822 KiB | 618 KiB | 76 / 13 KiB |
-| All JS (3 glues + wrappers + workers, unminified) | 205 KiB | — | — | |
+| `flashraw_simd.wasm` | 2450 KiB | 829 KiB | 618 KiB | 24 / 4 KiB (shared) |
+| `flashraw.wasm` (fallback) | 2408 KiB | 811 KiB | 604 KiB | 24 / 4 KiB (shared) |
+| `flashraw_simd_threads.wasm` | 2527 KiB | 822 KiB | 610 KiB | 30 / 5 KiB |
+| `flashraw_simd_gpu.wasm` | 2636 KiB | 900 KiB | 672 KiB | 76 / 13 KiB |
+| `flashraw_simd_jxl.wasm` | 3920 KiB | 1321 KiB | 951 KiB | 24 / 4 KiB |
+| `flashraw_simd_threads_jxl.wasm` | 3989 KiB | 1313 KiB | 943 KiB | 30 / 5 KiB |
+| All JS (5 glues + wrappers + workers, unminified) | 272 KiB | — | — | |
 
 Sizes include every format decoder (measured after all vendor decoders were merged; the
 DNG-only build was 216 KiB brotli). See [benchmarks.md](benchmarks.md#wasm) for the size
 breakdown. Only one binary is downloaded per page (and only its glue: the threads/gpu glues are
-dynamic imports). The threaded binary costs nothing extra over the SIMD one (+47 KiB raw, −5 KiB
+dynamic imports), plus a JPEG XL variant only when a JPEG XL DNG is decoded (+333 KiB brotli
+over the binary it complements: +54 %). The fallback and WebGPU builds have no JPEG XL flavour:
+engines without SIMD predate JPEG XL DNGs, and a WebGPU one would be one more ~950 KiB brotli
+file for a CPU-bound codec (the WebGPU build uses `flashraw_simd_jxl.wasm` instead). The
+threaded binary costs nothing extra over the SIMD one (+77 KiB raw, −8 KiB
 brotli: rayon is small, and std rebuilt with `build-std` drops some code). Of the SIMD binary,
 416 KiB is code and 364 KiB data (mostly the camera database tables, which compress well).
-`wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 2.9 MB tarball, 23 files.
+`wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 6.2 MB tarball (2.7 MB of it the two JPEG XL
+variants), 27 files.
 
 ## Init latency
 
@@ -367,8 +421,9 @@ Node uses the same WASM module as browsers. Rationale:
 | `cargo test -p flashraw-wasm` | option parsing, structured errors, DNG round trip (native) |
 | `npm test` | Node, threaded build by default (`FLASHRAW_WASM_THREADS=0 npm test` runs everything single-threaded): metadata/decode/preview vs native CLI hashes (4 bundled CC0 fixtures, 11 corpus DNGs when `$FLASHRAW_CORPUS` is present), all outputs, regions/tiles, input types, zero-copy, GPU fallback, garbage/truncated/corrupted input never traps, limits, memory release + GC reclamation, SIMD vs fallback equality, worker pool; `threads.test.mjs`: threaded vs single-threaded binaries identical for raw-u16/rgba8/half-size/linear-rgb/tiles on the fixtures + 5 corpus formats (CR3, NEF, ARW, RAF, RW2), raw-u16 == native `hash_full`, concurrent decodes, `close()` during a decode, errors keep the pool usable |
 | `npm run test:types` | `tsc` against the `.d.ts` (bundler and NodeNext resolution) |
-| `npm run test:browser` | headless Chromium by default, `FLASHRAW_BROWSERS=chromium,firefox,webkit` for all three Playwright engines; two servers: cross-origin isolated → threaded binary selected, raw-u16 hash == native, RGBA8 `ImageData` on a canvas, single-threaded (`threads: false`) and scalar builds agree; not isolated → single-threaded with the reason; WebGPU build: GPU vs CPU rgba8 (±2), outputs changed by DNG opcodes decoded on the CPU, `gpu-rgba8` buffer/texture/download/detach when an adapter exists (Chromium runs with `--enable-unsafe-webgpu`: a SwiftShader software adapter on GPU-less Linux hosts; `FLASHRAW_CHROME=<Chrome>` for a hardware adapter, verified on Metal), and again with `navigator.gpu` removed: the CPU fallback and `GpuUnavailableError`; worker pool; errors |
-| `npm run test:bundlers` | `npm pack` → install into scratch apps → Vite 8, esbuild (browser + node), webpack 5 → run in Chromium; Vite and webpack served cross-origin isolated must run the threaded build from the bundle (all four `.wasm` and the thread worker emitted), esbuild served plain falls back |
+| `jpegxl.test.mjs` (in `npm test`) | JPEG XL DNGs (two corpus files carrying compression 52546 — one in its raw IFD, one only in a secondary IFD — and real-world samples from `$FLASHRAW_REALWORLD`): native hash equality (lossless; lossy within ±1 on < 0.5 % of samples), `auto` loads `simd-jxl` / `threads-jxl` exactly once and only for JPEG XL files (metadata/previews never), `always` / `never` / scalar-build behaviour, concurrent decodes, `close()` during the switch, worker pool. Without samples only the fixture checks (`always` mode, no load for other files) run |
+| `npm run test:browser` | headless Chromium by default, `FLASHRAW_BROWSERS=chromium,firefox,webkit` for all three Playwright engines; two servers: cross-origin isolated → threaded binary selected, raw-u16 hash == native, RGBA8 `ImageData` on a canvas, single-threaded (`threads: false`) and scalar builds agree; not isolated → single-threaded with the reason; WebGPU build: GPU vs CPU rgba8 (±2), outputs changed by DNG opcodes decoded on the CPU, `gpu-rgba8` buffer/texture/download/detach when an adapter exists (Chromium runs with `--enable-unsafe-webgpu`: a SwiftShader software adapter on GPU-less Linux hosts; `FLASHRAW_CHROME=<Chrome>` for a hardware adapter, verified on Metal), and again with `navigator.gpu` removed: the CPU fallback and `GpuUnavailableError`; worker pool; errors; JPEG XL DNGs (corpus / `$FLASHRAW_REALWORLD`, when present): `auto` fetches `flashraw_simd_threads_jxl.wasm` (isolated) or `flashraw_simd_jxl.wasm` exactly once and only at the first JPEG XL decode, hashes == Node, pool workers load it too, `never` errors without fetching, `always` loads only the JPEG XL binary |
+| `npm run test:bundlers` | `npm pack` → install into scratch apps → Vite 8, esbuild (browser + node), webpack 5 → run in Chromium; Vite and webpack served cross-origin isolated must run the threaded build from the bundle (all six `.wasm` and the thread worker emitted, the JPEG XL glue in its own chunk), esbuild served plain falls back; no JPEG XL `.wasm` is fetched before a JPEG XL DNG, then exactly one (`threads-jxl` isolated, `simd-jxl` otherwise) with the Node hash |
 
 Hash check: `flashraw verify --json` prints `hash_full` = FNV-1a 64 over the LE bytes of the
 u16 buffer; `tests/helpers.mjs` computes the same in JS (32-bit halves, no BigInt). Recorded
