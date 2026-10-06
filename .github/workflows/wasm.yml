@@ -43,19 +43,20 @@ jobs:
       - name: Native unit tests of the bindings
         working-directory: .
         run: cargo test -p flashraw-wasm
-      - name: Native CLI (expected hashes for the WASM tests)
+      - name: Native CLI (expected hashes for the WASM tests, JPEG XL included)
         working-directory: .
-        run: cargo build --release -p flashraw-cli
-      - name: Clippy (single-threaded, WebGPU and threaded bindings)
+        run: cargo build --release -p flashraw-cli --features jpegxl
+      - name: Clippy (single-threaded, WebGPU, threaded and JPEG XL bindings)
         working-directory: .
         run: |
           cargo clippy -p flashraw-wasm --target wasm32-unknown-unknown -- -D warnings
           cargo clippy -p flashraw-wasm --target wasm32-unknown-unknown --features gpu
+          cargo clippy -p flashraw-wasm --target wasm32-unknown-unknown --features jpegxl -- -D warnings
           RUSTFLAGS="-C target-feature=+atomics,+bulk-memory,+mutable-globals,+simd128" \
             cargo +nightly clippy -Z build-std=panic_abort,std -p flashraw-wasm \
-            --target wasm32-unknown-unknown --features threads -- -D warnings
+            --target wasm32-unknown-unknown --features threads,jpegxl -- -D warnings
       - run: npm ci
-      - name: Build (SIMD, fallback, threaded, WebGPU; wasm-bindgen, wasm-opt)
+      - name: Build (SIMD, fallback, threaded, WebGPU, SIMD + JPEG XL, threaded + JPEG XL)
         run: npm run build
       - name: Node tests (threaded build by default)
         run: npm test
