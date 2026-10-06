@@ -68,6 +68,8 @@
     "./wasm/fallback": "./dist/flashraw.wasm",
     "./wasm/threads": "./dist/flashraw_simd_threads.wasm",
     "./wasm/gpu": "./dist/flashraw_simd_gpu.wasm",
+    "./wasm/simd-jxl": "./dist/flashraw_simd_jxl.wasm",
+    "./wasm/threads-jxl": "./dist/flashraw_simd_threads_jxl.wasm",
     "./thread-worker": {
       "node": "./dist/thread-worker.node.js",
       "default": "./dist/thread-worker.browser.js"

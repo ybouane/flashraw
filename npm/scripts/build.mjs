@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // Build the flashraw npm package:
-//   cargo (wasm32, 4 variants) -> wasm-bindgen (--target web) -> wasm-opt -O3 -> dist/
+//   cargo (wasm32, 6 variants) -> wasm-bindgen (--target web) -> wasm-opt -O3 -> dist/
 //
-// Variants (all shipped; the loader downloads exactly one):
+// Variants (all shipped; the loader downloads one, plus a JPEG XL one only for JPEG XL DNGs):
 //   simd      flashraw_simd.wasm          stable, +simd128                     (default single-threaded)
 //   fallback  flashraw.wasm               stable, scalar                       (engines without SIMD)
 //   threads   flashraw_simd_threads.wasm  nightly, +atomics,+bulk-memory,+mutable-globals,+simd128,
 //                                         -Z build-std, shared memory, rayon  (default when isolated)
 //   gpu       flashraw_simd_gpu.wasm      stable, +simd128, WebGPU backend      (opt-in: init({ gpu: true }))
+//   simd-jxl     flashraw_simd_jxl.wasm          simd + JPEG XL DNG     (loaded when a file needs it)
+//   threads-jxl  flashraw_simd_threads_jxl.wasm  threads + JPEG XL DNG  (idem, cross-origin isolated)
 //
-// Usage: node scripts/build.mjs [--no-opt] [--skip-cargo] [--variants simd,fallback,threads,gpu]
+// Usage: node scripts/build.mjs [--no-opt] [--skip-cargo]
+//                               [--variants simd,fallback,threads,gpu,simd-jxl,threads-jxl]
 //
 // Environment:
 //   CARGO          cargo binary (default: `cargo` on PATH, then ~/.cargo/bin/cargo)
@@ -116,6 +119,28 @@ const variants = [
     opt: ['--enable-threads', '--enable-simd'],
   },
   { name: 'gpu', out: 'flashraw_simd_gpu.wasm', glue: 'flashraw_bindgen_gpu.js', rustflags: '-C target-feature=+simd128', features: 'gpu' },
+  // JPEG XL variants: the simd / threads builds plus the `jpegxl` feature. Their glue must match
+  // the base glue up to the initial memory size (asserted below; the thread workers reuse the
+  // base threads glue with the memory they are given), but ships as its own file so both
+  // instances can live side by side on the main thread.
+  {
+    name: 'simd-jxl',
+    out: 'flashraw_simd_jxl.wasm',
+    glue: 'flashraw_bindgen_jxl.js',
+    sameGlueAs: 'flashraw_bindgen.js',
+    rustflags: '-C target-feature=+simd128',
+    features: 'jpegxl',
+  },
+  {
+    name: 'threads-jxl',
+    out: 'flashraw_simd_threads_jxl.wasm',
+    glue: 'flashraw_bindgen_threads_jxl.js',
+    sameGlueAs: 'flashraw_bindgen_threads.js',
+    rustflags: THREAD_FLAGS,
+    features: 'threads,jpegxl',
+    nightly: true,
+    opt: ['--enable-threads', '--enable-simd'],
+  },
 ].filter((v) => !only || only.includes(v.name));
 
 const bindgen = findBindgen(lockedVersion('wasm-bindgen'));
@@ -130,6 +155,7 @@ if (!only) rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
 const glue = {};
+const sameGlue = [];
 for (const v of variants) {
   const targetDir = join(root, 'target', `wasm-${v.name}`);
   if (!skipCargo) {
@@ -174,6 +200,13 @@ for (const v of variants) {
     throw new Error(`wasm-bindgen glue differs between variants sharing ${v.glue}`);
   }
   glue[v.glue] = js;
+  if (v.sameGlueAs) sameGlue.push([v.glue, v.sameGlueAs]);
+}
+// The default memory a glue creates when none is passed (`initial` pages) depends on the binary.
+const abi = (js) => js.replace(/new WebAssembly\.Memory\(\{initial:\d+,/g, 'new WebAssembly.Memory({initial:N,');
+for (const [a, b] of sameGlue) {
+  const other = glue[b] ?? (existsSync(join(dist, b)) ? readFileSync(join(dist, b), 'utf8') : undefined);
+  if (other !== undefined && abi(other) !== abi(glue[a])) throw new Error(`wasm-bindgen glue of ${a} differs from ${b}`);
 }
 for (const [file, js] of Object.entries(glue)) writeFileSync(join(dist, file), js);
 
@@ -207,7 +240,7 @@ for (const v of variants) rmSync(join(tmp, v.name), { recursive: true, force: tr
 const kb = (n) => `${(n / 1024).toFixed(1)} KiB`;
 for (const [k, s] of Object.entries(sizes)) {
   log(
-    `${k.padEnd(8)} ${s.file.padEnd(28)} raw ${kb(s.raw).padStart(11)}  gzip ${kb(s.gzip).padStart(10)}  brotli ${kb(s.brotli).padStart(10)}  (glue ${kb(s.glueRaw)})`,
+    `${k.padEnd(11)} ${s.file.padEnd(31)} raw ${kb(s.raw).padStart(11)}  gzip ${kb(s.gzip).padStart(10)}  brotli ${kb(s.brotli).padStart(10)}  (glue ${kb(s.glueRaw)})`,
   );
 }
 log(`JS (glue + wrappers, unminified): ${kb(jsBytes)}`);
