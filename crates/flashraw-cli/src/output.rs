@@ -587,7 +587,10 @@ pub fn maxrss_kb() -> i64 {
         unsafe {
             let mut ru: libc::rusage = std::mem::zeroed();
             if libc::getrusage(libc::RUSAGE_SELF, &mut ru) == 0 {
-                return ru.ru_maxrss;
+                // `ru_maxrss` is in bytes on Apple platforms and in KiB elsewhere.
+                #[allow(clippy::useless_conversion)]
+                let v = i64::from(ru.ru_maxrss);
+                return if cfg!(target_vendor = "apple") { v / 1024 } else { v };
             }
         }
     }

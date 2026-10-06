@@ -431,9 +431,8 @@ def cmd_run(a):
             j, err, _ = run_one(cmd + [path], env)
             rec = {"ok": False, "error": err} if j is None or "total_ms_median" not in j else {
                 "ok": True, "ms": j["total_ms_median"], "ms_min": j.get("total_ms_min"),
-                # The CLI reports ru_maxrss as is: bytes on macOS, KiB elsewhere.
                 "mp": j.get("megapixels"),
-                "rss_mb": (j.get("maxrss_kb") or 0) / (1024 * 1024 if sys.platform == "darwin" else 1024),
+                "rss_mb": (j.get("maxrss_kb") or 0) / 1024,
                 "camera": j.get("camera"), "format": j.get("format"), "compression": j.get("compression"),
                 "backend": (j.get("backend") or {}).get("decode"),
                 "postprocess": (j.get("backend") or {}).get("postprocess")}
