@@ -97,12 +97,15 @@ fn gpu_backend_matches_cpu_on_files() {
             let cpu = raw.decode(o.clone()).unwrap();
             let gpu = raw.decode(DecodeOptions { backend: Backend::Gpu, ..o }).unwrap();
             assert_eq!((cpu.width, cpu.height, cpu.cpp, cpu.orientation), (gpu.width, gpu.height, 3, gpu.orientation));
-            let (a, b) = match (&cpu.data, &gpu.data) {
-                (RawPixelData::U16(a), RawPixelData::U16(b)) | (RawPixelData::F16(a), RawPixelData::F16(b)) => (a, b),
+            let (a, b, half) = match (&cpu.data, &gpu.data) {
+                (RawPixelData::U16(a), RawPixelData::U16(b)) => (a, b, false),
+                (RawPixelData::F16(a), RawPixelData::F16(b)) => (a, b, true),
                 _ => panic!("{output}: sample types differ"),
             };
-            let off = a.iter().zip(b).filter(|(x, y)| x != y).count();
-            let worst = a.iter().zip(b).map(|(x, y)| (*x as i32 - *y as i32).abs()).max().unwrap_or(0);
+            // Half floats compare in ULPs, ordered by their sign-magnitude bits (-0 == +0).
+            let key = |h: u16| if half && h & 0x8000 != 0 { -((h & 0x7fff) as i32) } else { h as i32 };
+            let off = a.iter().zip(b).filter(|(x, y)| key(**x) != key(**y)).count();
+            let worst = a.iter().zip(b).map(|(x, y)| (key(*x) - key(*y)).abs()).max().unwrap_or(0);
             eprintln!("  {output}: {off} samples differ (max {worst} steps)");
             assert!(worst <= 1 && (off as f64) < a.len() as f64 * 1e-3, "{output}");
         }
