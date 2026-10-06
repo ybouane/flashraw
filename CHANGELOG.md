@@ -151,6 +151,14 @@ First complete release of FlashRaw.
   multithreaded build (shared-memory rayon pool, chosen automatically when available),
   opt-in WebGPU build with GPU-resident frames; worker pool with a shared request
   queue and `AbortSignal` cancellation.
+- JPEG XL DNGs in the npm package: the codec ships as separate variants of the SIMD and
+  threaded builds (`flashraw_simd_jxl.wasm`, `flashraw_simd_threads_jxl.wasm`, ~950 KiB
+  brotli vs ~615 KiB), so the default download is unchanged. `init({ jpegxl: 'auto' })`
+  (default) loads the matching variant once, on the first decode of a JPEG XL DNG, and moves
+  that file to it (browsers, workers, threads, Node, bundlers); `'always'` loads it up front,
+  `'never'` reports `UnsupportedCompressionError`. Frames report the binary that decoded
+  them (`backend.binary`, `backend.jpegxl`); `getCapabilities().jpegxl`, `loadJpegXlSupport()`,
+  package exports `flashraw/wasm/simd-jxl` and `flashraw/wasm/threads-jxl`.
 - Python bindings (`crates/flashraw-python`, the `flashraw` package; PyO3 + maturin, abi3
   wheels for CPython 3.9+ on Linux, macOS and Windows): `flashraw.open` (paths are
   memory-mapped, `bytes` borrowed without a copy, file objects), typed frozen-dataclass
