@@ -9,7 +9,8 @@
 <script type="module">
   // Driven by tests/browser/run.mjs. Query: ?simd=0 forces the fallback binary, ?threads=0|N
   // the single-threaded build / N threads, ?gpu=1 loads the WebGPU build and runs GPU checks,
-  // ?nogpu=1 hides navigator.gpu.
+  // ?nogpu=1 hides navigator.gpu, ?jpegxl=auto|always|never sets the JPEG XL mode, ?jxl=<urls>
+  // runs the JPEG XL checks instead of the fixture checks.
   import * as fr from '/dist/browser.js';
   import { createWorkerPool } from '/dist/worker.browser.js';
 
@@ -68,6 +69,56 @@
     return out;
   }
 
+  // ?jxl=<url>,<url>: JPEG XL DNGs, decoded after the fixture in ?plain; reports which binary
+  // decoded each file and which JPEG XL binaries the page downloaded (and when).
+  const jxlFetches = () => performance.getEntriesByType('resource').map((e) => e.name.split('/').pop()).filter((n) => /_jxl\.wasm$/.test(n));
+  async function jxlChecks(q) {
+    const out = { files: {} };
+    const plain = q.get('plain');
+    if (plain) {
+      const raw = await fr.FlashRaw.open(await (await fetch(`/tests/fixtures/${plain}`)).blob());
+      const f = await raw.decode();
+      out.plain = { hash: fnv1a64U16(f.data), binary: f.backend.binary, jpegxl: f.backend.jpegxl, fetched: jxlFetches() };
+      raw.close();
+    }
+    for (const url of q.get('jxl').split(',')) {
+      const r = {};
+      try {
+        const raw = await fr.FlashRaw.open(new File([await (await fetch(url)).blob()], url.split('/').pop()));
+        r.compression = raw.frameInfo.compression;
+        r.openedIn = raw.binary;
+        r.format = raw.metadata.format;
+        r.fetchedBeforeDecode = jxlFetches();
+        try {
+          const f = await raw.decode();
+          r.hash = fnv1a64U16(f.data);
+          r.size = [f.width, f.height];
+          r.backend = { binary: f.backend.binary, jpegxl: f.backend.jpegxl, threads: f.backend.threads };
+        } catch (e) {
+          r.error = { name: e.name, kind: e.kind, message: e.message };
+        }
+        raw.close();
+      } catch (e) {
+        r.openError = String(e?.stack ?? e);
+      }
+      r.fetched = jxlFetches();
+      out.files[url] = r;
+    }
+    out.caps = (await fr.getCapabilities()).jpegxl;
+    if (q.get('worker') === '1') {
+      // Pool workers load the JPEG XL variant on their own, too.
+      const url = q.get('jxl').split(',')[0];
+      const pool = createWorkerPool({ size: 1 });
+      try {
+        const f = await pool.decode(await (await fetch(url)).blob());
+        out.worker = { hash: fnv1a64U16(f.data), binary: f.backend.binary, caps: (await pool.getCapabilities()).jpegxl };
+      } finally {
+        pool.terminate();
+      }
+    }
+    return out;
+  }
+
   async function run() {
     const q = new URLSearchParams(location.search);
     // ?nogpu=1: behave like a browser without WebGPU.
@@ -77,9 +128,11 @@
     if (q.get('simd') === '0') opts.simd = false;
     if (q.has('threads')) opts.threads = q.get('threads') === '0' ? false : Number(q.get('threads'));
     if (q.get('gpu') === '1') opts.gpu = true;
+    if (q.has('jpegxl')) opts.jpegxl = q.get('jpegxl');
     const info = await fr.init(opts);
     const initMs = performance.now() - t0;
     const caps = await fr.getCapabilities();
+    if (q.has('jxl')) return { info, initMs, caps, jxlAtInit: jxlFetches(), jxl: await jxlChecks(q) };
     const out = { info, initMs, caps, files: {} };
     if (q.get('gpu') === '1') out.gpu = await gpuChecks((q.get('files') ?? '').split(',')[0]);
     for (const name of (q.get('files') ?? '').split(',').filter(Boolean)) {

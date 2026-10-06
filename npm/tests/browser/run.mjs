@@ -6,7 +6,9 @@
 //   - ?simd=0                                 -> scalar fallback build agrees
 //   - init({ gpu: true })                     -> WebGPU build: GPU decode/resident outputs when
 //                                                an adapter exists, clean CPU fallback otherwise
-// plus the worker pool, GPU fallback of the default build, and structured errors.
+// plus the worker pool, GPU fallback of the default build, and structured errors; with JPEG XL
+// DNGs available (corpus, $FLASHRAW_REALWORLD) also the on-demand JPEG XL variants
+// (auto/always/never, threaded and single-threaded, worker pool).
 //
 //   node tests/browser/run.mjs          (after `npx playwright install chromium`)
 //
@@ -22,6 +24,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as playwright from 'playwright';
 import { serve } from '../../scripts/serve.mjs';
+import { corpusRoot, realworldRoot, fnv1a64U16 } from '../helpers.mjs';
 
 const expected = JSON.parse(readFileSync(new URL('../fixtures/expected.json', import.meta.url), 'utf8'));
 const FILES = ['canon-5d3-mlv.dng', 'bmpcc-tiles.dng', 'canon-a410-chdk.dng'];
@@ -33,8 +36,31 @@ const env = existsSync(libs)
   ? { ...process.env, LD_LIBRARY_PATH: [libs, process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') }
   : process.env;
 
-const isolated = await serve({ isolated: true });
-const plain = await serve({ isolated: false });
+// JPEG XL DNGs from the corpus / $FLASHRAW_REALWORLD (skipped when absent), served under
+// /corpus/ and /realworld/; reference hashes from the Node build (checked against the native CLI
+// by tests/jpegxl.test.mjs).
+const extra = Object.fromEntries(
+  [
+    ['/corpus/', corpusRoot],
+    ['/realworld/', realworldRoot],
+  ].filter(([, dir]) => dir),
+);
+const JXL = [
+  ['/corpus/', corpusRoot, 'samsung/SM-S901E/20250305_173647.dng'],
+  ['/realworld/', realworldRoot, 'pixls/54754/my_jxl_test.dng'],
+  ['/realworld/', realworldRoot, 'pixls/54775/30YELfBfqJWkhvrznqs7R8aKx0X.dng'],
+]
+  .filter(([, dir, rel]) => dir && existsSync(join(dir, rel)))
+  .map(([prefix, dir, rel]) => ({ url: prefix + rel, file: join(dir, rel) }));
+const jxlRef = {};
+if (JXL.length) {
+  const node = await import('../../dist/node.js');
+  for (const s of JXL) jxlRef[s.url] = fnv1a64U16((await node.decodeRaw(s.file)).data);
+}
+const QUICK = JXL.find((s) => /my_jxl_test/.test(s.url)) ?? JXL[0];
+
+const isolated = await serve({ isolated: true, extra });
+const plain = await serve({ isolated: false, extra });
 const url = (server) => `http://127.0.0.1:${server.address().port}`;
 const ENGINES = (process.env.FLASHRAW_BROWSERS ?? 'chromium').split(',').filter(Boolean);
 let browser;
@@ -210,9 +236,63 @@ for (engine of ENGINES) {
     });
   }
 
+  if (JXL.length) {
+    const plainHash = expected[FILES[0]].hash_full;
+    await check('JPEG XL, isolated, auto: threads-jxl fetched once, only for JPEG XL files; worker pool', async () => {
+      const r = await load(`plain=${FILES[0]}&jxl=${JXL.map((s) => s.url).join(',')}&worker=1`);
+      assert.equal(r.info.binary, 'threads', r.caps.threads.reason);
+      assert.deepEqual(r.jxlAtInit, []);
+      assert.deepEqual(r.jxl.plain, { hash: plainHash, binary: 'threads', jpegxl: false, fetched: [] });
+      JXL.forEach((s, i) => {
+        const f = r.jxl.files[s.url];
+        assert.equal(f.openError, undefined, f.openError);
+        assert.equal(f.error, undefined, f.error?.message);
+        assert.equal(f.compression, 'jpeg-xl');
+        assert.equal(f.openedIn, 'threads');
+        if (i === 0) assert.deepEqual(f.fetchedBeforeDecode, [], 'opening does not fetch it');
+        assert.deepEqual(f.backend.binary, 'threads-jxl');
+        assert.ok(f.backend.threads > 1);
+        assert.equal(f.hash, jxlRef[s.url], s.url);
+        assert.deepEqual(f.fetched, ['flashraw_simd_threads_jxl.wasm'], 'fetched exactly once');
+      });
+      assert.deepEqual([r.jxl.caps.loaded, r.jxl.caps.binary], [true, 'threads-jxl']);
+      assert.deepEqual([r.jxl.worker.binary, r.jxl.worker.hash], ['simd-jxl', jxlRef[JXL[0].url]]);
+      assert.equal(r.jxl.worker.caps.loaded, true);
+    });
+
+    await check('JPEG XL, not isolated, auto: simd-jxl on demand', async () => {
+      const r = await load(`plain=${FILES[0]}&jxl=${QUICK.url}`, plain);
+      assert.equal(r.info.binary, 'simd');
+      assert.deepEqual(r.jxl.plain.fetched, []);
+      const f = r.jxl.files[QUICK.url];
+      assert.deepEqual([f.openedIn, f.backend.binary, f.hash], ['simd', 'simd-jxl', jxlRef[QUICK.url]]);
+      assert.deepEqual(f.fetched, ['flashraw_simd_jxl.wasm']);
+    });
+
+    await check('JPEG XL, never: UnsupportedCompressionError, nothing fetched', async () => {
+      const r = await load(`jpegxl=never&jxl=${QUICK.url}`);
+      const f = r.jxl.files[QUICK.url];
+      assert.equal(f.format, 'DNG');
+      assert.equal(f.error.name, 'UnsupportedCompressionError');
+      assert.match(f.error.message, /jpegxl: "never"/);
+      assert.deepEqual(f.fetched, []);
+      assert.equal(r.jxl.caps.available, false);
+    });
+
+    await check('JPEG XL, always: threads-jxl is the only binary', async () => {
+      const r = await load(`jpegxl=always&plain=${FILES[0]}&jxl=${QUICK.url}`);
+      assert.equal(r.info.binary, 'threads-jxl');
+      assert.deepEqual(r.jxlAtInit, ['flashraw_simd_threads_jxl.wasm']);
+      assert.deepEqual([r.jxl.plain.binary, r.jxl.plain.hash], ['threads-jxl', plainHash]);
+      const f = r.jxl.files[QUICK.url];
+      assert.deepEqual([f.openedIn, f.backend.binary, f.hash], ['threads-jxl', 'threads-jxl', jxlRef[QUICK.url]]);
+      assert.deepEqual(f.fetched, ['flashraw_simd_threads_jxl.wasm']);
+    });
+  }
+
   await browser.close();
 
-  const row = (r, n) => `${r.files[n].raw.timings.totalMs.toFixed(1)} ms raw-u16, ${r.files[n].rgba.timings.totalMs.toFixed(1)} ms rgba8`;
+  const row =(r, n) => `${r.files[n].raw.timings.totalMs.toFixed(1)} ms raw-u16, ${r.files[n].rgba.timings.totalMs.toFixed(1)} ms rgba8`;
   for (const [k, r] of Object.entries(results)) {
     if (r.initMs !== undefined) console.log(`# ${engine} init ${k}: ${r.initMs.toFixed(1)} ms`);
   }

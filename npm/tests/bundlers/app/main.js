@@ -36,6 +36,16 @@ async function main() {
     threadsReason: caps.threads.reason,
     backend: frame.backend.decode,
   };
+  // JPEG XL: the variant must not have been fetched so far, then load on the first JPEG XL DNG.
+  const jxlFetches = () => performance.getEntriesByType('resource').map((e) => e.name.split('/').pop()).filter((n) => /jxl.*\.wasm$/.test(n));
+  out.jxlBefore = jxlFetches();
+  const jxl = await fetch('./jxl.dng');
+  if (jxl.ok) {
+    const r = await FlashRaw.open(await jxl.blob());
+    const f = await r.decode();
+    r.close();
+    out.jxl = { hash: fnv1a64U16(f.data), binary: f.backend.binary, fetched: jxlFetches() };
+  }
   if (globalThis.__withWorker) {
     const { createWorkerPool } = await import('flashraw/worker');
     const pool = createWorkerPool({ size: 1 });

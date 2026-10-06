@@ -15,6 +15,9 @@ import {
   getGpuDevice,
   initThreads,
   GPU_OUTPUTS,
+  JPEGXL_MODES,
+  loadJpegXlSupport,
+  type JpegXlMode,
   type FlashRawGPUBuffer,
   type GpuOutputFormat,
   type WasmBinary,
@@ -145,6 +148,16 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const binary: WasmBinary = (await init({ threads: false, gpu: false })).binary;
   const tc: number = (await getCapabilities()).threads.count;
   void [n, binary, tc];
+
+  // JPEG XL variants.
+  const jx = await init({ jpegxl: 'auto' as JpegXlMode, jpegxlWasm: new URL('https://cdn.example/flashraw_simd_jxl.wasm') });
+  const jxlBinary: WasmBinary = await loadJpegXlSupport();
+  const jxlCaps: { loaded: boolean; binary: WasmBinary | null; reason: string | null } = (await getCapabilities()).jpegxl;
+  const jxlFrame = await decodeRaw(new Uint8Array(buffer));
+  const servedBy: WasmBinary = jxlFrame.backend.binary;
+  const hasJxl: boolean = jxlFrame.backend.jpegxl;
+  const modes: readonly JpegXlMode[] = JPEGXL_MODES;
+  void [jx.jpegxl, jx.jpegxlMode, jxlBinary, jxlCaps, servedBy, hasJxl, modes];
 
   const m: RawMetadata = await readMetadata(file);
   const f: DecodedFrame<'rgba8'> = await decodeRaw(new Uint8Array(buffer), { output: 'rgba8' });

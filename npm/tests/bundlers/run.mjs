@@ -2,7 +2,9 @@
 // Bundler smoke tests: install the packed tarball (exactly what npm publishes) into scratch
 // apps, bundle with Vite (Rolldown) and esbuild, serve the output and run it in headless
 // Chromium. Checks that the .wasm assets (and the worker, for Vite) are emitted and that the
-// decoded output matches the native hash.
+// decoded output matches the native hash. The JPEG XL variants must be separate assets that are
+// fetched only once a JPEG XL DNG is decoded (with a sample from the corpus /
+// $FLASHRAW_REALWORLD when present).
 //
 //   node tests/bundlers/run.mjs
 
@@ -14,11 +16,16 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { serve } from '../../scripts/serve.mjs';
+import { corpusFile, realworldFile, fnv1a64U16 } from '../helpers.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const pkgDir = resolve(here, '../..');
 const work = join(pkgDir, '.build/bundlers');
 const expected = JSON.parse(readFileSync(join(pkgDir, 'tests/fixtures/expected.json'), 'utf8'))['canon-5d3-mlv.dng'];
+// A JPEG XL DNG (optional) and its hash from the Node build.
+const jxlSample = realworldFile('pixls/54754/my_jxl_test.dng') ?? corpusFile('samsung/SM-S901E/20250305_173647.dng');
+const jxlHash = jxlSample ? fnv1a64U16((await (await import('../../dist/node.js')).decodeRaw(jxlSample)).data) : null;
+if (!jxlSample) console.log('# no JPEG XL sample: the on-demand JPEG XL decode is not exercised');
 
 rmSync(work, { recursive: true, force: true });
 mkdirSync(work, { recursive: true });
@@ -35,6 +42,7 @@ function app(name) {
   execFileSync('npm', ['install', '--silent', '--no-audit', '--no-fund', tarball], { cwd: dir });
   cpSync(join(here, 'app/main.js'), join(dir, 'main.js'));
   cpSync(join(pkgDir, 'tests/fixtures/canon-5d3-mlv.dng'), join(dir, 'public/fixture.dng'));
+  if (jxlSample) cpSync(jxlSample, join(dir, 'public/jxl.dng'));
   return dir;
 }
 
@@ -56,6 +64,9 @@ const builds = {};
   assert.ok(assets.some((f) => /^flashraw_simd_threads-.*\.wasm$/.test(f)), 'vite emitted the threaded wasm');
   assert.ok(assets.some((f) => /^flashraw_simd_gpu-.*\.wasm$/.test(f)), 'vite emitted the WebGPU wasm');
   assert.ok(assets.some((f) => /thread-worker/.test(f)), 'vite emitted the thread worker chunk');
+  assert.ok(assets.some((f) => /^flashraw_simd_jxl-.*\.wasm$/.test(f)), 'vite emitted the JPEG XL wasm');
+  assert.ok(assets.some((f) => /^flashraw_simd_threads_jxl-.*\.wasm$/.test(f)), 'vite emitted the threaded JPEG XL wasm');
+  assert.ok(assets.some((f) => /^flashraw_bindgen_jxl-.*\.js$/.test(f)), 'vite split the JPEG XL glue into its own chunk');
   // Served cross-origin isolated: the threaded build must work from the bundle.
   builds.vite = { dir: join(dir, 'dist'), withWorker: true, isolated: true };
   console.log('ok - vite build');
@@ -75,8 +86,11 @@ const builds = {};
     logLevel: 'warning',
   });
   // esbuild keeps `new URL('./x.wasm', import.meta.url)` as-is: ship the .wasm next to the bundle.
-  for (const f of ['flashraw_simd.wasm', 'flashraw.wasm']) cpSync(join(dir, 'node_modules/flashraw/dist', f), join(out, f));
+  for (const f of ['flashraw_simd.wasm', 'flashraw.wasm', 'flashraw_simd_jxl.wasm']) {
+    cpSync(join(dir, 'node_modules/flashraw/dist', f), join(out, f));
+  }
   cpSync(join(dir, 'public/fixture.dng'), join(out, 'fixture.dng'));
+  if (jxlSample) cpSync(jxlSample, join(out, 'jxl.dng'));
   writeFileSync(join(out, 'index.html'), html('./app.js', false));
   builds.esbuild = { dir: out, withWorker: false };
   console.log('ok - esbuild build');
@@ -88,7 +102,9 @@ const builds = {};
     `import { readMetadata, decodeRaw } from 'flashraw';
      const m = await readMetadata(process.argv[2]);
      const f = await decodeRaw(process.argv[2]);
-     console.log(JSON.stringify({ format: m.format, width: f.width, height: f.height }));`,
+     const out = { format: m.format, width: f.width, height: f.height };
+     if (process.argv[3]) out.jxl = (await decodeRaw(process.argv[3])).backend.binary;
+     console.log(JSON.stringify(out));`,
   );
   await esbuild.build({
     entryPoints: [join(dir, 'node-main.js')],
@@ -98,9 +114,12 @@ const builds = {};
     outfile: join(nodeOut, 'app.mjs'),
     logLevel: 'warning',
   });
-  for (const f of ['flashraw_simd.wasm', 'flashraw.wasm']) cpSync(join(dir, 'node_modules/flashraw/dist', f), join(nodeOut, f));
-  const r = JSON.parse(execFileSync(process.execPath, [join(nodeOut, 'app.mjs'), join(dir, 'public/fixture.dng')], { encoding: 'utf8' }));
-  assert.deepEqual(r, { format: 'DNG', width: expected.width, height: expected.height });
+  for (const f of ['flashraw_simd.wasm', 'flashraw.wasm', 'flashraw_simd_jxl.wasm']) {
+    cpSync(join(dir, 'node_modules/flashraw/dist', f), join(nodeOut, f));
+  }
+  const argv = [join(nodeOut, 'app.mjs'), join(dir, 'public/fixture.dng'), ...(jxlSample ? [jxlSample] : [])];
+  const r = JSON.parse(execFileSync(process.execPath, argv, { encoding: 'utf8' }));
+  assert.deepEqual(r, { format: 'DNG', width: expected.width, height: expected.height, ...(jxlSample ? { jxl: 'simd-jxl' } : {}) });
   console.log('ok - esbuild node bundle');
 }
 
@@ -115,7 +134,8 @@ const builds = {};
         mode: 'production',
         context: dir,
         entry: './main.js',
-        output: { path: out, filename: 'app.js', publicPath: 'auto' },
+        // Named assets, so the test can tell which .wasm the page fetched.
+        output: { path: out, filename: 'app.js', publicPath: 'auto', assetModuleFilename: '[name]-[hash][ext]' },
         resolve: { modules: [join(dir, 'node_modules')] },
         performance: { hints: false },
       },
@@ -124,8 +144,10 @@ const builds = {};
   );
   assert.ok(!stats.hasErrors(), stats.toString('errors-only'));
   const files = readdirSync(out);
-  assert.equal(files.filter((f) => f.endsWith('.wasm')).length, 4, `webpack emitted all four wasm assets (${files})`);
+  assert.equal(files.filter((f) => f.endsWith('.wasm')).length, 6, `webpack emitted all six wasm assets (${files})`);
+  assert.ok(files.some((f) => /^flashraw_simd_threads_jxl-.*\.wasm$/.test(f)), 'webpack emitted the threaded JPEG XL wasm');
   cpSync(join(dir, 'public/fixture.dng'), join(out, 'fixture.dng'));
+  if (jxlSample) cpSync(jxlSample, join(out, 'jxl.dng'));
   writeFileSync(join(out, 'index.html'), html('./app.js', true));
   builds.webpack = { dir: out, withWorker: true, isolated: true };
   console.log('ok - webpack build');
@@ -157,6 +179,14 @@ for (const [name, b] of Object.entries(builds)) {
       assert.match(r.threadsReason, /cross-origin isolated/);
     }
     if (b.withWorker) assert.equal(r.workerHash, expected.hash_full);
+    assert.deepEqual(r.jxlBefore, [], 'no JPEG XL wasm fetched before a JPEG XL file');
+    if (jxlSample) {
+      const want = b.isolated ? 'threads-jxl' : 'simd-jxl';
+      assert.equal(r.jxl.binary, want);
+      assert.equal(r.jxl.hash, jxlHash);
+      assert.equal(r.jxl.fetched.length, 1, `fetched once: ${r.jxl.fetched}`);
+      assert.match(r.jxl.fetched[0], b.isolated ? /^flashraw_simd_threads_jxl/ : /^flashraw_simd_jxl/);
+    }
     console.log(
       `ok - ${name} bundle runs in Chromium${b.withWorker ? ' (incl. worker pool)' : ''}` +
         `${b.isolated ? `, cross-origin isolated: ${r.threads} threads` : ', not isolated: single-threaded'}`,

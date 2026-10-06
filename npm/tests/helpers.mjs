@@ -32,6 +32,20 @@ export function corpusFile(rel) {
   return existsSync(p) ? p : null;
 }
 
+/** Real-world samples outside the corpus ($FLASHRAW_REALWORLD), or null when unavailable. */
+export const realworldRoot = (() => {
+  for (const p of [process.env.FLASHRAW_REALWORLD, join(repoRoot, '..', 'flashraw-realworld'), '/var/projects/flashraw-realworld']) {
+    if (p && existsSync(p) && statSync(p).isDirectory()) return p;
+  }
+  return null;
+})();
+
+export function realworldFile(rel) {
+  if (!realworldRoot) return null;
+  const p = join(realworldRoot, rel);
+  return existsSync(p) ? p : null;
+}
+
 /** FNV-1a 64 over the little-endian bytes of u16 samples — same as `flashraw verify` hash_full. */
 export function fnv1a64U16(data) {
   // 64-bit state as two 32-bit halves; prime = 2^40 + 0x1b3.
