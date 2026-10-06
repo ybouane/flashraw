@@ -16,7 +16,9 @@ fn is_cfa() -> bool {
     return LAYOUT == 1u || LAYOUT == 3u;
 }
 
-// 0 = RGBA8 (sRGB, orientation applied, one u32 per pixel), 1 = linear RGB f32 (3 words per pixel).
+// 0 = RGBA8 (sRGB, orientation applied, one u32 per pixel), 1 = linear RGB f32 (3 words per pixel),
+// 16-bit RGBA, two words per pixel (R | G << 16, B | A << 16): 2 = sRGB (orientation applied),
+// 3 = linear integers, 4 = linear half floats. The host drops the fourth sample on download.
 override OUT_MODE: u32 = 0u;
 
 const TILE: u32 = 16u;
@@ -29,12 +31,46 @@ fn srgb8(v: f32) -> u32 {
     return lut[P.off_srgb + min(i, 4096u)];
 }
 
-// White balance, clip at sensor saturation, convert to linear sRGB, store.
+// Linear -> sRGB 16-bit: the CPU `srgb16` interpolation of the same table.
+fn srgb16(v: f32) -> u32 {
+    let x = clamp(v, 0.0, 1.0) * 16384.0;
+    let i = min(u32(x), 16383u);
+    let t = x - f32(i);
+    let a = tab[P.off_srgb16 + i];
+    let b = tab[P.off_srgb16 + i + 1u];
+    return u32(a + (b - a) * t + 0.5);
+}
+
+fn lin16(v: f32) -> u32 {
+    return u32(clamp(v, 0.0, 1.0) * 65535.0 + 0.5);
+}
+
+// f32 -> IEEE half bits, round to nearest even, saturating at +-65504: the CPU
+// `f32_to_f16` (integer operations, so the result is the same bit for bit; the
+// `pack2x16float` builtin needs an optional shader capability and leaves rounding open).
+fn f16_bits(x: f32) -> u32 {
+    let bits = bitcast<u32>(x);
+    let sign = (bits >> 16u) & 0x8000u;
+    let a = bits & 0x7fffffffu;
+    let normal = (a + 0xc8000fffu + ((a >> 13u) & 1u)) >> 13u;
+    // Below the smallest normal half: the float addition rounds into the subnormal range.
+    let sub = bitcast<u32>(bitcast<f32>(a) + 0.5) - 0x3f000000u;
+    var h = select(normal, sub, a < 0x38800000u);
+    h = select(h, select(0x7bffu, 0x7e00u, a > 0x7f800000u), a >= 0x477ff000u);
+    return sign | h;
+}
+
+// White balance, clip at sensor saturation, convert to linear sRGB, levels, store.
 fn finish(rgb_in: vec3<f32>, dx: u32, dy: u32) {
     let rgb = clamp(rgb_in * P.wb.xyz, vec3<f32>(0.0), vec3<f32>(1.0));
-    let r = P.m0.x * rgb.x + P.m0.y * rgb.y + P.m0.z * rgb.z;
-    let g = P.m1.x * rgb.x + P.m1.y * rgb.y + P.m1.z * rgb.z;
-    let b = P.m2.x * rgb.x + P.m2.y * rgb.y + P.m2.z * rgb.z;
+    var r = P.m0.x * rgb.x + P.m0.y * rgb.y + P.m0.z * rgb.z;
+    var g = P.m1.x * rgb.x + P.m1.y * rgb.y + P.m1.z * rgb.z;
+    var b = P.m2.x * rgb.x + P.m2.y * rgb.y + P.m2.z * rgb.z;
+    if (P.levels.z != 0.0) {
+        r = r * P.levels.x - P.levels.y;
+        g = g * P.levels.x - P.levels.y;
+        b = b * P.levels.x - P.levels.y;
+    }
     if (OUT_MODE == 1u) {
         let o = ((dy - P.dst_y) * P.dst_stride + dx - P.dst_x) * 3u + P.dst_off;
         dst[o] = bitcast<u32>(r);
@@ -58,7 +94,25 @@ fn finish(rgb_in: vec3<f32>, dx: u32, dy: u32) {
         case 8u: { ox = dy; oy = w - 1u - dx; }
         default: {}
     }
-    dst[(oy - P.dst_y) * P.dst_stride + ox - P.dst_x + P.dst_off] = srgb8(r) | (srgb8(g) << 8u) | (srgb8(b) << 16u) | (255u << 24u);
+    if (OUT_MODE == 0u) {
+        dst[(oy - P.dst_y) * P.dst_stride + ox - P.dst_x + P.dst_off] = srgb8(r) | (srgb8(g) << 8u) | (srgb8(b) << 16u) | (255u << 24u);
+        return;
+    }
+    var lo: u32;
+    var hi: u32;
+    if (OUT_MODE == 2u) {
+        lo = srgb16(r) | (srgb16(g) << 16u);
+        hi = srgb16(b) | (0xffffu << 16u);
+    } else if (OUT_MODE == 3u) {
+        lo = lin16(r) | (lin16(g) << 16u);
+        hi = lin16(b) | (0xffffu << 16u);
+    } else {
+        lo = f16_bits(r) | (f16_bits(g) << 16u);
+        hi = f16_bits(b) | (0x3c00u << 16u);
+    }
+    let o = ((oy - P.dst_y) * P.dst_stride + ox - P.dst_x) * 2u + P.dst_off;
+    dst[o] = lo;
+    dst[o + 1u] = hi;
 }
 
 struct Taps {

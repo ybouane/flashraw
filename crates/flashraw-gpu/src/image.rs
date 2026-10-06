@@ -108,6 +108,31 @@ fn par_copy(dst: &mut [u8], src: &[u8]) {
     dst.copy_from_slice(src);
 }
 
+/// [`par_copy`] of 4-sample 16-bit pixels keeping the first 3 samples of each
+/// (`src`: 8 bytes per pixel, `dst`: 6).
+fn par_copy_rgb16(dst: &mut [u8], src: &[u8]) {
+    let run = |d: &mut [u8], s: &[u8]| {
+        for (d, s) in d.chunks_exact_mut(6).zip(s.chunks_exact(8)) {
+            d.copy_from_slice(&s[..6]);
+        }
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        const CHUNK: usize = 8 << 20;
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(8);
+        if dst.len() >= 2 * CHUNK && threads > 1 {
+            let px = (dst.len() / 6).div_ceil(threads).div_ceil(4096) * 4096;
+            std::thread::scope(|sc| {
+                for (d, s) in dst.chunks_mut(px * 6).zip(src.chunks(px * 8)) {
+                    sc.spawn(move || run(d, s));
+                }
+            });
+            return;
+        }
+    }
+    run(dst, src);
+}
+
 /// Host copy of a downloaded [`GpuImage`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum HostPixels {
@@ -180,8 +205,25 @@ impl GpuImage {
     /// Download to host memory (tiled images are reassembled). Returns the pixels and
     /// the wall time in ms.
     pub async fn download_async(&self) -> Result<(HostPixels, f64)> {
+        self.download_impl(false).await
+    }
+
+    /// Download a 4-channel 16-bit image (the 16-bit develop outputs) as 3-channel RGB:
+    /// the fourth sample of every pixel is dropped while copying out of the device
+    /// buffer, so no 4-channel host copy is made. Other images download unchanged.
+    pub async fn download_rgb_async(&self) -> Result<(HostPixels, f64)> {
+        self.download_impl(self.format == GpuPixelFormat::U16 && self.channels == 4).await
+    }
+
+    /// Blocking [`GpuImage::download_rgb_async`] (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn download_rgb(&self) -> Result<(HostPixels, f64)> {
+        pollster::block_on(self.download_rgb_async())
+    }
+
+    async fn download_impl(&self, drop_alpha: bool) -> Result<(HostPixels, f64)> {
         let t0 = flashraw_core::profile::now_ms();
-        let n = self.len();
+        let n = if drop_alpha { self.len() / 4 * 3 } else { self.len() };
         let mut px = match self.format {
             GpuPixelFormat::Rgba8 => HostPixels::U8(vec![0u8; n]),
             GpuPixelFormat::U16 => HostPixels::U16(vec![0u16; n]),
@@ -194,7 +236,9 @@ impl GpuImage {
         };
         let ctx = &self.ctx;
         let bpp = self.channels as usize * self.format.bytes_per_sample();
-        let row = self.width as usize * bpp;
+        // Bytes per pixel on the host (6 when the fourth 16-bit sample is dropped).
+        let hbpp = if drop_alpha { 6 } else { bpp };
+        let row = self.width as usize * hbpp;
         // Untiled: the image starts at byte 0 of the single buffer, row-major.
         for tile in &self.parts {
             let r = tile.rect;
@@ -204,14 +248,27 @@ impl GpuImage {
                 continue;
             }
             let size = (bytes as u64).div_ceil(4) * 4;
+            let host_tile_row = r.width as usize * hbpp;
             let copy_out = |src: &[u8]| {
-                if tile_row == row {
+                if host_tile_row == row {
                     let o = r.y as usize * row;
-                    par_copy(&mut out[o..o + bytes], &src[..bytes]);
+                    let len = host_tile_row * r.height as usize;
+                    if drop_alpha {
+                        par_copy_rgb16(&mut out[o..o + len], &src[..bytes]);
+                    } else {
+                        par_copy(&mut out[o..o + len], &src[..bytes]);
+                    }
                 } else {
                     for (y, s) in src[..bytes].chunks_exact(tile_row).enumerate() {
-                        let o = (r.y as usize + y) * row + r.x as usize * bpp;
-                        out[o..o + tile_row].copy_from_slice(s);
+                        let o = (r.y as usize + y) * row + r.x as usize * hbpp;
+                        let d = &mut out[o..o + host_tile_row];
+                        if drop_alpha {
+                            for (d, s) in d.chunks_exact_mut(6).zip(s.chunks_exact(8)) {
+                                d.copy_from_slice(&s[..6]);
+                            }
+                        } else {
+                            d.copy_from_slice(s);
+                        }
                     }
                 }
             };

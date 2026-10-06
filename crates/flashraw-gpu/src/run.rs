@@ -99,6 +99,15 @@ pub enum DevelopOutput {
     Rgba8,
     /// Linear sRGB-primaries f32 RGB (no orientation), like `OutputFormat::LinearRgbF32`.
     LinearRgbF32,
+    /// sRGB 16-bit with EXIF orientation applied, like `OutputFormat::Rgb16`, stored as
+    /// RGBA (alpha 65535): a [`GpuPixelFormat::U16`] image with 4 channels.
+    Rgb16,
+    /// Linear 16-bit integers (no orientation), like `OutputFormat::LinearRgb16`, stored
+    /// as RGBA (alpha 65535).
+    LinearRgb16,
+    /// Linear half floats (no orientation), like `OutputFormat::LinearRgbF16`, stored as
+    /// RGBA bit patterns (alpha 1.0) in a [`GpuPixelFormat::U16`] image with 4 channels.
+    LinearRgbF16,
 }
 
 /// Parameters of the fused develop pass (mirror of `flashraw::process::DevelopParams`).
@@ -113,6 +122,9 @@ pub struct DevelopSpec {
     pub cam_to_rgb: [[f32; 3]; 3],
     pub orientation: Orientation,
     pub output: DevelopOutput,
+    /// Exposure and black/white points after the colour conversion: `v * scale - offset`
+    /// (`[scale, offset]`; `None` for none).
+    pub levels: Option<[f32; 2]>,
 }
 
 /// What to compute.
@@ -382,7 +394,7 @@ impl GpuContext {
             }
         };
         let use_lut = frame.linearization.is_some() && input_mode != 1;
-        let calib = kernels::calib_table(info, cpp as usize);
+        let mut calib = kernels::calib_table(info, cpp as usize);
         p.pat_w = calib.pat_w;
         p.pat_h = calib.pat_h;
         p.off_scale = calib.off_scale;
@@ -437,6 +449,9 @@ impl GpuContext {
                 p.m0 = [m[0][0], m[0][1], m[0][2], 0.0];
                 p.m1 = [m[1][0], m[1][1], m[1][2], 0.0];
                 p.m2 = [m[2][0], m[2][1], m[2][2], 0.0];
+                if let Some([scale, offset]) = d.levels {
+                    p.levels = [scale, offset, 1.0, 0.0];
+                }
                 let layout = if cpp == 1 && info.cfa.is_some_and(|c| c.is_bayer()) {
                     3
                 } else if cpp == 1 && info.cfa.is_some() {
@@ -453,6 +468,13 @@ impl GpuContext {
                         (0, ow, oh, 4, GpuPixelFormat::Rgba8)
                     }
                     DevelopOutput::LinearRgbF32 => (1, dw, dh, 3, GpuPixelFormat::F32),
+                    DevelopOutput::Rgb16 => {
+                        p.orientation = d.orientation.exif();
+                        let (ow, oh) = if d.orientation.swaps_dimensions() { (dh, dw) } else { (dw, dh) };
+                        (2, ow, oh, 4, GpuPixelFormat::U16)
+                    }
+                    DevelopOutput::LinearRgb16 => (3, dw, dh, 4, GpuPixelFormat::U16),
+                    DevelopOutput::LinearRgbF16 => (4, dw, dh, 4, GpuPixelFormat::U16),
                 };
                 p.out_w = ow;
                 p.out_h = oh;
@@ -473,6 +495,10 @@ impl GpuContext {
                 (key, ow, oh, ch, fmt)
             }
         };
+        if key.out_mode == 2 {
+            p.off_srgb16 = calib.tab.len() as u32;
+            calib.tab.extend_from_slice(kernels::srgb16_table());
+        }
         let bps = format.bytes_per_sample() as u64;
         let out_bytes = out_w as u64 * out_h as u64 * channels as u64 * bps;
         // Rotated RGBA8: a band of developed rows is a column band of the output.
