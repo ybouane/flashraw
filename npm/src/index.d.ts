@@ -486,8 +486,9 @@ export interface DecodeOptions {
    * Truncated or corrupt sensor data. `'recover'` (default): decode every complete sample,
    * zero-fill the rest and report it in `frame.warnings` (`frame.incomplete` is then true).
    * `'strict'`: throw a `CorruptFileError` whose `corrupt` field describes the problem.
-   * Recovery covers uncompressed/packed strips, tiles and payloads and compressed DNG
-   * strips/tiles; other compressed streams throw under both policies.
+   * Recovery covers uncompressed/packed strips, tiles and payloads, compressed DNG
+   * strips/tiles and Nikon/Pentax Huffman and Samsung SRW streams cut short by the end of
+   * the file; other compressed streams throw under both policies.
    */
   corruptionPolicy?: CorruptionPolicy;
   /** Decode only this region (sensor-buffer coordinates). */

@@ -286,7 +286,9 @@ whose `corrupt` field holds the same details (`{ kind: 'truncated', unit, index,
 expected, available, fileLength }`). Metadata, previews and regions that do not touch the
 missing data are unaffected. Recovery covers uncompressed/packed data and compressed DNG
 strips/tiles (a unit that is truncated or fails to decode is zero-filled with an
-`invalid-unit` or `truncated` warning); other compressed streams throw under both policies.
+`invalid-unit` or `truncated` warning) and Nikon/Pentax Huffman and Samsung SRW streams cut
+short by the end of the file (the rows decoded before the cut are kept); other compressed
+streams throw under both policies.
 
 **Memory.** By default `f.data` is a standalone copy (the WASM buffer is freed immediately), so it
 can be kept, transferred to a worker, or wrapped in `ImageData`. For large frames you can skip

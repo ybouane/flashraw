@@ -71,6 +71,11 @@ First complete release of FlashRaw.
 - CLI: `--strict` on `decode`/`verify`; JSON output has `incomplete` and `warnings`, and
   errors carry `corrupt` (the structured cause). JS: `corruptionPolicy: 'recover' |
   'strict'`, `frame.incomplete`, `frame.warnings`, `CorruptFileError.corrupt`.
+- Nikon and Pentax Huffman and Samsung SRW (V0 row streams, V1, V2) payloads cut by the end
+  of the file are truncation: `Recover` keeps the rows decoded from real data, zero-fills the
+  rest and warns, `Strict` fails with the structured `Truncated` cause. Truncated PEF and SRW
+  files previously decoded the zero padding as image data without any warning, and a NEF
+  missing only its last bytes decoded its last row from padding.
 
 ### Fixes
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):

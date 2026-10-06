@@ -167,14 +167,18 @@ describe('structured errors', () => {
 
 describe('truncated entropy streams', () => {
   const nef = corpusFile('Nikon/Z 7/3-Nikon-Z7-RAW-14bit-lossless-compressed-L.NEF');
-  test('truncated Nikon Huffman NEF → CorruptFileError (not silent garbage rows)', { skip: !nef && 'corpus not available' }, async () => {
+  test('truncated Nikon Huffman NEF → recovered rows + warning, CorruptFileError when strict (never silent)', { skip: !nef && 'corpus not available' }, async () => {
     const bytes = readFileSync(nef);
     for (const pct of [50, 90, 99]) {
       const cut = bytes.subarray(0, Math.floor((bytes.length * pct) / 100));
-      const e = await decodeRaw(cut).then(() => null, (x) => x);
+      const e = await decodeRaw(cut, { corruptionPolicy: 'strict' }).then(() => null, (x) => x);
       assert.ok(e, `${pct} %: decoded a truncated file`);
       assert.equal(e.kind, 'CorruptFile', `${pct} %: ${e.message}`);
       assert.match(e.message, /truncated/);
+      const f = await decodeRaw(cut);
+      assert.equal(f.incomplete, true, `${pct} %`);
+      assert.equal(f.warnings[0].kind, 'truncated');
+      assert.ok(f.warnings[0].samplesFilled > 0);
     }
     const ok = await decodeRaw(bytes);
     assert.equal(ok.width * ok.height, ok.data.length);

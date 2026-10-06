@@ -538,20 +538,21 @@ impl<'a> NefRaw<'a> {
         let unit = DataUnit::Strip(0);
         match &self.payload {
             Payload::Huffman { meta, rows } => {
-                ctx.profiler
+                let rows = (*rows).min(h);
+                let dead_row = ctx
+                    .profiler
                     .time(Stage::EntropyDecode, || {
-                        nikon_huffman::decode_nikon(
-                            self.src,
-                            meta,
-                            w,
-                            (*rows).min(h),
-                            out,
-                            w,
-                            ctx.parallel,
-                            self.declared,
-                        )
+                        nikon_huffman::decode_nikon_rows(self.src, meta, w, rows, out, w, ctx.parallel, self.declared)
                     })
                     .map_err(|e| e.or_truncated(self.data.len(), unit, self.offset, self.declared))?;
+                // A stream that runs dry because the strip runs past the end of the file is
+                // truncation (even in the last row): recovering keeps the rows decoded from
+                // real data. Otherwise only the last row may need padding bits (encoders
+                // that do not flush).
+                let (len, (o, d)) = (self.data.len(), (self.offset, self.declared));
+                if !conventions::finish_truncated_stream(ctx, len, unit, o, d, out, w, rows, dead_row)? {
+                    nikon_huffman::check_complete(dead_row, rows)?;
+                }
             }
             Payload::Packed(spec) => {
                 let spec = PackedSpec { width: w, height: h, ..*spec };
@@ -771,6 +772,18 @@ mod tests {
             assert_eq!(e.kind(), "UnsupportedCompression");
         }
         eprintln!("nikon robustness: {tested} samples");
+    }
+
+    /// A Huffman NEF cut by the end of the file: rows decoded from real data are kept and the
+    /// rest zero-filled with a warning under the recover policy (even when only the last
+    /// byte is missing); a structured truncation under strict.
+    #[test]
+    fn truncated_huffman_stream_recovers() {
+        use conventions::robustness::{corpus_file, truncated_stream_recovers};
+        for s in ["Nikon/D3/JD1_8205.NEF", "Nikon/Z fc/_DSC0018.nef"] {
+            let Some(data) = corpus_file(s) else { continue };
+            truncated_stream_recovers(s, &data);
+        }
     }
 
     #[test]

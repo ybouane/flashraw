@@ -22,6 +22,38 @@ pub(crate) fn row_geometry(l: &PackedLayout, rows: usize) -> RowGeometry {
     RowGeometry::packed(rows.min(l.height), l.width, l.bits, l.row_stride)
 }
 
+/// The strip `[offset, offset + declared)` of sensor data `unit`, sequentially decoded into
+/// the first `rows` rows of `out` (`width` samples each), ran out of data in row
+/// `first_missing` (`None`: it did not). When the strip runs past the end of the
+/// `data_len`-byte file that is truncation: the recover policy zero-fills the rows from
+/// `first_missing` on and reports them, the strict policy fails with the structured
+/// truncation. A stream that runs dry inside the file is left to the caller.
+/// Returns whether the stream was truncated.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finish_truncated_stream(
+    ctx: &DecodeContext,
+    data_len: usize,
+    unit: DataUnit,
+    offset: usize,
+    declared: usize,
+    out: &mut [u16],
+    width: usize,
+    rows: usize,
+    first_missing: Option<usize>,
+) -> Result<bool> {
+    let Some(first) = first_missing else { return Ok(false) };
+    let Err(t) = flashraw_core::integrity::check_range(data_len, unit, offset, declared) else { return Ok(false) };
+    if !ctx.recover {
+        return Err(Error::truncated(t));
+    }
+    let first = first.min(rows);
+    if let Some(rest) = out.get_mut(first * width..rows * width) {
+        rest.fill(0);
+    }
+    ctx.recovered(CorruptReason::Truncated(t), ((rows - first) * width) as u64);
+    Ok(true)
+}
+
 /// Decode only `region` of a row-addressable payload starting at `offset` of `data` (rows
 /// are unpacked in parallel straight from the source; unrelated rows are never touched).
 /// Rows the file does not hold fail (strict) or stay zero with a warning (recover).
@@ -285,6 +317,45 @@ pub(crate) mod robustness {
             assert_eq!(got, full.crop(r).unwrap(), "region {r}");
         }
         true
+    }
+
+    /// A sequentially coded payload cut by the end of the file (half of it, and the last
+    /// byte): the rows decoded from real data are kept and the rest zero-filled with one
+    /// warning under the recover policy; a structured truncation under strict. Cuts that
+    /// lose nothing (trailing bytes no sample needs) must decode exactly.
+    pub fn truncated_stream_recovers(name: &str, data: &[u8]) {
+        let full = open_decode(data).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let w = full.width as usize;
+        for cut in [data.len() / 2, data.len() - 1] {
+            let dec = crate::open(&data[..cut], &OpenOptions::default()).unwrap();
+            let p = Profiler::new();
+            let mut ctx = DecodeContext::new(&p);
+            ctx.recover = false;
+            let strict = dec.decode(&ctx);
+            let mut ctx = DecodeContext::new(&p);
+            ctx.recover = true;
+            let img = dec.decode(&ctx).unwrap_or_else(|e| panic!("{name} cut at {cut}: {e}"));
+            let warnings = ctx.take_warnings();
+            if warnings.is_empty() {
+                assert!(strict.is_ok(), "{name} cut at {cut}");
+                assert_eq!(img, full, "{name} cut at {cut}: silent change");
+                continue;
+            }
+            let e = strict.expect_err("strict must fail when recover warns");
+            assert!(e.truncation().is_some(), "{name} cut at {cut}: {e}");
+            assert_eq!(warnings.len(), 1, "{name} cut at {cut}");
+            let filled = warnings[0].samples_filled as usize;
+            assert!(filled > 0 && filled % w == 0, "{name}: {filled}");
+            // The rows before the zero-filled ones equal the full decode.
+            let kept = img.u16().iter().rposition(|&v| v != 0).map_or(0, |i| i / w + 1) * w;
+            assert!(kept < full.u16().len());
+            let first_diff = img.u16()[..kept].iter().zip(full.u16()).position(|(a, b)| a != b);
+            assert!(
+                first_diff.is_none(),
+                "{name} cut at {cut}: row {:?} of the kept rows differs",
+                first_diff.map(|i| i / w)
+            );
+        }
     }
 
     /// Truncate and corrupt `data` in many ways; every variant must return (any
