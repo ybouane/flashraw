@@ -144,7 +144,7 @@ pub fn decode_v4(s: &BlockedStream, width: usize, height: usize, out: &mut [u16]
     if width % V4_PIXELS != 0 {
         let needed = (width * height).div_ceil(V4_PIXELS);
         if s.packets_available() < needed {
-            return Err(Error::corrupt("Panasonic data truncated"));
+            return Err(Error::corrupt("truncated Panasonic data"));
         }
         return decode_v4_sequential(s, width, height, out);
     }
@@ -163,11 +163,11 @@ pub fn decode_v4_rows(
 ) -> Result<()> {
     let rows = out.len() / width.max(1);
     if width == 0 || width % V4_PIXELS != 0 || first_row + rows > height {
-        return Err(Error::InvalidArgument("Panasonic v4 row range".into()));
+        return Err(Error::InvalidArgument("invalid Panasonic v4 row range".into()));
     }
     let needed = (width * height).div_ceil(V4_PIXELS);
     if s.packets_available() < needed {
-        return Err(Error::corrupt(format!("Panasonic data truncated: {} of {needed} packets", s.packets_available())));
+        return Err(Error::corrupt(format!("truncated Panasonic data: {} of {needed} packets", s.packets_available())));
     }
     let per_row = width / V4_PIXELS;
     par::for_each_row_chunk(&mut out[..width * rows], width, 16, parallel, |first, chunk| {
@@ -287,12 +287,12 @@ pub fn decode_v5_rows(
 ) -> Result<()> {
     let rows = out.len() / width.max(1);
     if width == 0 || first_row + rows > height {
-        return Err(Error::InvalidArgument("Panasonic v5 row range".into()));
+        return Err(Error::InvalidArgument("invalid Panasonic v5 row range".into()));
     }
     let ppp = packed_pixels(bits).ok_or_else(|| Error::corrupt(format!("Panasonic v5 with {bits} bits")))?;
     let per_row = width.div_ceil(ppp);
     if s.packets_available() < per_row * height {
-        return Err(Error::corrupt("Panasonic v5 data truncated"));
+        return Err(Error::corrupt("truncated Panasonic v5 data"));
     }
     par::for_each_row_chunk(&mut out[..width * rows], width, 16, parallel, |first, chunk| {
         let mut tmp = [0u16; 10];
@@ -327,13 +327,13 @@ pub fn decode_v7_rows(
 ) -> Result<()> {
     let nrows = out.len() / width.max(1);
     if width == 0 || first_row + nrows > height {
-        return Err(Error::InvalidArgument("Panasonic v7 row range".into()));
+        return Err(Error::InvalidArgument("invalid Panasonic v7 row range".into()));
     }
     let ppp = packed_pixels(bits).ok_or_else(|| Error::corrupt(format!("Panasonic v7 with {bits} bits")))?;
     let row_bytes = width / ppp * 16;
     let rows = height / 16 * 16;
     if row_bytes == 0 || data.len() < rows * row_bytes {
-        return Err(Error::corrupt("Panasonic v7 data truncated"));
+        return Err(Error::corrupt("truncated Panasonic v7 data"));
     }
     par::for_each_row_chunk(&mut out[..width * nrows], width, 16, parallel, |first, chunk| {
         for (r, row) in chunk.chunks_exact_mut(width).enumerate() {
@@ -373,7 +373,7 @@ pub fn decode_v6_rows(
 ) -> Result<()> {
     let nrows = out.len() / width.max(1);
     if width == 0 || first_row + nrows > height {
-        return Err(Error::InvalidArgument("Panasonic v6 row range".into()));
+        return Err(Error::InvalidArgument("invalid Panasonic v6 row range".into()));
     }
     let twelve = match bits {
         12 => true,
@@ -385,7 +385,7 @@ pub fn decode_v6_rows(
     let row_bytes = blocks * 16;
     let rows = height / 16 * 16;
     if row_bytes == 0 || data.len() < rows * row_bytes {
-        return Err(Error::corrupt("Panasonic v6 data truncated"));
+        return Err(Error::corrupt("truncated Panasonic v6 data"));
     }
     par::for_each_row_chunk(&mut out[..width * nrows], width, 16, parallel, |first, chunk| {
         for (r, row) in chunk.chunks_exact_mut(width).enumerate() {
@@ -542,7 +542,7 @@ struct V8Lut {
 impl V8Lut {
     fn new(codes: &[(u8, u16)]) -> Result<Self> {
         if codes.is_empty() || codes.len() > 17 {
-            return Err(Error::corrupt("Panasonic v8 Huffman table size"));
+            return Err(Error::corrupt("invalid Panasonic v8 Huffman table size"));
         }
         let bits = codes.iter().map(|&(l, _)| l as u32).filter(|&l| l <= 16).max().unwrap_or(1).max(1);
         // Codes are matched in table order (first match wins; not necessarily a prefix code).
@@ -758,7 +758,7 @@ impl V8Decoder {
                 return Err(Error::corrupt("invalid Panasonic v8 Huffman code"));
             }
             if bits.consumed() > budget {
-                return Err(Error::corrupt("Panasonic v8 strip truncated"));
+                return Err(Error::corrupt("truncated Panasonic v8 strip"));
             }
         }
         Ok(())

@@ -157,8 +157,10 @@ enum CameraDbCmd {
 }
 
 fn parse_rect(s: &str) -> Result<Rect, String> {
-    let v: Vec<u32> =
-        s.split(',').map(|x| x.trim().parse().map_err(|_| format!("bad number in {s:?}"))).collect::<Result<_, _>>()?;
+    let v: Vec<u32> = s
+        .split(',')
+        .map(|x| x.trim().parse().map_err(|_| format!("invalid number in {s:?}")))
+        .collect::<Result<_, _>>()?;
     if v.len() != 4 {
         return Err("expected x,y,width,height".into());
     }

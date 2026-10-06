@@ -85,11 +85,11 @@ impl HuffTable {
     /// Build from JPEG-style `counts` (codes per length 1..=16) and `values`.
     pub fn from_counts(counts: &[u8], values: &[u8], has_diffs: bool) -> Result<Self> {
         if counts.len() > 16 {
-            return Err(Error::corrupt("huffman table with code lengths > 16"));
+            return Err(Error::corrupt("Huffman table with code lengths > 16"));
         }
         let total: usize = counts.iter().map(|&c| c as usize).sum();
         if total == 0 || total > values.len() || total > 256 {
-            return Err(Error::corrupt(format!("invalid huffman table ({total} codes, {} values)", values.len())));
+            return Err(Error::corrupt(format!("invalid Huffman table ({total} codes, {} values)", values.len())));
         }
         let values = values[..total].to_vec();
         // Generate canonical codes.
@@ -107,7 +107,7 @@ impl HuffTable {
                 mincode[len] = code;
                 for _ in 0..n {
                     if code >= (1u32 << len) {
-                        return Err(Error::corrupt("over-subscribed huffman table"));
+                        return Err(Error::corrupt("over-subscribed Huffman table"));
                     }
                     codes.push((code, len as u32, values[k]));
                     code += 1;
@@ -165,7 +165,7 @@ impl HuffTable {
         let mut values = Vec::with_capacity(sorted.len());
         for &(l, s) in &sorted {
             if l == 0 || l > 16 {
-                return Err(Error::corrupt("invalid huffman code length"));
+                return Err(Error::corrupt("invalid Huffman code length"));
             }
             counts[l as usize - 1] += 1;
             values.push(s);
@@ -190,11 +190,11 @@ impl HuffTable {
                 && code as u32 >= self.mincode[len as usize]
             {
                 let idx = self.valptr[len as usize] + code - self.mincode[len as usize] as i32;
-                let sym = *self.values.get(idx as usize).ok_or_else(|| Error::corrupt("bad huffman index"))?;
+                let sym = *self.values.get(idx as usize).ok_or_else(|| Error::corrupt("invalid Huffman index"))?;
                 return Ok((sym as u32, len));
             }
         }
-        Err(Error::corrupt("invalid huffman code"))
+        Err(Error::corrupt("invalid Huffman code"))
     }
 
     /// Decode one symbol (no diff handling).

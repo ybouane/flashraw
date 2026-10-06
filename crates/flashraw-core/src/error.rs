@@ -18,7 +18,7 @@ pub enum Error {
     UnsupportedFormat(String),
 
     /// The container was understood but the payload uses an unsupported compression scheme.
-    #[error("unsupported compression {compression} in {format}")]
+    #[error("unsupported compression in {format}: {compression}")]
     UnsupportedCompression {
         /// Container format name (e.g. `"NEF"`).
         format: &'static str,
@@ -46,7 +46,7 @@ pub enum Error {
     InvalidMetadata(String),
 
     /// The file format is supported but this camera or mode is not (yet).
-    #[error("camera unsupported: {make} {model}{}", fmt_ctx(.reason))]
+    #[error("unsupported camera: {make} {model}{}", fmt_ctx(.reason))]
     CameraUnsupported {
         /// Camera make.
         make: String,

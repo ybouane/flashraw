@@ -145,7 +145,7 @@ impl CrxHeader {
 pub fn decode(h: &CrxHeader, data: &[u8], out: &mut [u16], parallel: bool) -> Result<()> {
     let (w, ht) = (h.width as usize, h.height as usize);
     if out.len() < w * ht {
-        return Err(Error::InvalidArgument("CRX output buffer too small".into()));
+        return Err(Error::InvalidArgument("CRX: output buffer too small".into()));
     }
     let img = Image::parse(h, data)?;
     let planes = h.planes as usize;

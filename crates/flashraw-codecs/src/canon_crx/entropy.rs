@@ -193,7 +193,7 @@ impl<'a> BandDecoder<'a> {
             }
         }
         if self.bits.exhausted() {
-            return Err(Error::corrupt("CRX: subband bit stream truncated"));
+            return Err(Error::corrupt("CRX: truncated subband bit stream"));
         }
         self.line += 1;
         Ok(&cur[1..=w])
@@ -657,7 +657,7 @@ pub(crate) fn decode_qp_map(data: &[u8], qp_w: usize, qp_h: usize) -> Result<Vec
         }
         l1[qp_w + 1] = l1[qp_w].wrapping_add(1);
         if b.exhausted() {
-            return Err(Error::corrupt("CRX: quantisation map truncated"));
+            return Err(Error::corrupt("CRX: truncated quantisation map"));
         }
         out.extend(l1[1..=qp_w].iter().map(|v| v.wrapping_add(4)));
     }

@@ -54,7 +54,7 @@ pub fn unpack(
         src.len().saturating_sub(row_bytes).checked_div(row_stride).map_or(height, |n| (n + 1).min(height));
     let avail_rows = if src.len() < row_bytes { 0 } else { avail_rows };
     if avail_rows < height && !lenient {
-        return Err(Error::corrupt(format!("packed data truncated: {avail_rows}/{height} rows present")));
+        return Err(Error::corrupt(format!("truncated packed data: {avail_rows}/{height} rows present")));
     }
     let n = (dst_stride * height).min(dst.len());
     let dst = &mut dst[..n];

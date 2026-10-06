@@ -18,8 +18,8 @@ pub fn decode(data: &[u8]) -> Result<Decoded8> {
     let opts =
         DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGB).set_max_width(65535).set_max_height(65535);
     let mut d = zune_jpeg::JpegDecoder::new_with_options(data, opts);
-    d.decode_headers().map_err(|e| Error::corrupt(format!("jpeg: {e:?}")))?;
-    let info = d.info().ok_or_else(|| Error::corrupt("jpeg: no header info"))?;
+    d.decode_headers().map_err(|e| Error::corrupt(format!("JPEG: {e:?}")))?;
+    let info = d.info().ok_or_else(|| Error::corrupt("JPEG: no header info"))?;
     let gray = info.components == 1;
     if gray {
         let opts = DecoderOptions::default()
@@ -28,8 +28,8 @@ pub fn decode(data: &[u8]) -> Result<Decoded8> {
             .set_max_height(65535);
         d = zune_jpeg::JpegDecoder::new_with_options(data, opts);
     }
-    let pixels = d.decode().map_err(|e| Error::corrupt(format!("jpeg: {e:?}")))?;
-    let (w, h) = d.dimensions().ok_or_else(|| Error::corrupt("jpeg: no dimensions"))?;
+    let pixels = d.decode().map_err(|e| Error::corrupt(format!("JPEG: {e:?}")))?;
+    let (w, h) = d.dimensions().ok_or_else(|| Error::corrupt("JPEG: no dimensions"))?;
     Ok(Decoded8 { width: w, height: h, components: if gray { 1 } else { 3 }, data: pixels })
 }
 

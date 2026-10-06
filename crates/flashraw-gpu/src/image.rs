@@ -305,7 +305,7 @@ impl GpuImage {
     /// The copy is queued; it completes before any later submission on the queue.
     pub fn to_texture(&self) -> Result<wgpu::Texture> {
         if self.format != GpuPixelFormat::Rgba8 {
-            return Err(Error::InvalidArgument("to_texture requires an RGBA8 GpuImage".into()));
+            return Err(Error::InvalidArgument("`to_texture` requires an RGBA8 `GpuImage`".into()));
         }
         let ctx = &self.ctx;
         let max = ctx.device.limits().max_texture_dimension_2d;
@@ -365,7 +365,7 @@ impl GpuImage {
         }
         ctx.queue.submit([enc.finish()]);
         if let Some(e) = ctx.take_error() {
-            return Err(Error::GpuUnavailable(format!("GPU error in to_texture: {e}")));
+            return Err(Error::GpuUnavailable(format!("GPU error in `to_texture`: {e}")));
         }
         Ok(tex)
     }

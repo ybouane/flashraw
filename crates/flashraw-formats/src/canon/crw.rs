@@ -742,7 +742,7 @@ pub fn open<'a>(data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecode
     });
     let table_black = matrix.map(|m| m.black.max(0) as f32).unwrap_or(0.0);
     info.black_level = BlackLevel::uniform(table_black);
-    let cfa = cfa_from_filters(filters, desc, left, top).ok_or_else(|| Error::invalid_metadata("CRW: bad CFA"))?;
+    let cfa = cfa_from_filters(filters, desc, left, top).ok_or_else(|| Error::invalid_metadata("CRW: invalid CFA"))?;
     info.layout = layout_for(&cfa);
     info.cfa = Some(cfa);
 

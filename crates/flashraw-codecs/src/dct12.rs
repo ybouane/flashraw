@@ -55,7 +55,7 @@ impl Dct12 {
             }
             let len = data.u16be(pos)? as usize;
             if len < 2 {
-                return Err(Error::corrupt("DCT tile: bad segment length"));
+                return Err(Error::corrupt("DCT tile: invalid segment length"));
             }
             let seg = flashraw_core::bytes::slice_at(data, pos + 2, len - 2)?;
             match marker {

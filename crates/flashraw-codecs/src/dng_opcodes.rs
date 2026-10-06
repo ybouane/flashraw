@@ -155,7 +155,7 @@ fn region(c: &mut Cursor) -> Result<Region> {
 fn count(c: &mut Cursor, elem: usize) -> Result<usize> {
     let n = c.u32()? as usize;
     if n > MAX_ELEMENTS || n.saturating_mul(elem) > c.remaining() {
-        return Err(Error::corrupt(format!("DNG opcode with {n} elements")));
+        return Err(Error::corrupt(format!("invalid DNG opcode with {n} elements")));
     }
     Ok(n)
 }
@@ -163,7 +163,7 @@ fn count(c: &mut Cursor, elem: usize) -> Result<usize> {
 fn warp_rectilinear(b: &mut Cursor) -> Result<Opcode> {
     let n = b.u32()? as usize;
     if n == 0 || n > 4 || (n * 6 + 2) * 8 > b.remaining() {
-        return Err(Error::corrupt("WarpRectilinear plane count"));
+        return Err(Error::corrupt("invalid WarpRectilinear plane count"));
     }
     let mut f = || b.u64().map(f64::from_bits);
     let mut planes = Vec::with_capacity(n);
@@ -196,7 +196,7 @@ pub fn parse_entries(data: &[u8]) -> Result<Vec<OpcodeEntry>> {
     let mut c = Cursor::new(data, ByteOrder::Big);
     let n = c.u32()? as usize;
     if n > 4096 {
-        return Err(Error::corrupt(format!("DNG opcode list with {n} opcodes")));
+        return Err(Error::corrupt(format!("invalid DNG opcode list with {n} opcodes")));
     }
     let mut out = Vec::with_capacity(n);
     for _ in 0..n {
@@ -242,7 +242,7 @@ pub fn parse_entries(data: &[u8]) -> Result<Vec<OpcodeEntry>> {
                 let region = region(&mut b)?;
                 let n = b.u32()? as usize;
                 if n > 8 || (n + 1) * 8 > b.remaining() {
-                    return Err(Error::corrupt("MapPolynomial degree"));
+                    return Err(Error::corrupt("invalid MapPolynomial degree"));
                 }
                 let coeffs = (0..=n).map(|_| Ok(f64::from_bits(b.u64()?))).collect::<Result<Vec<_>>>()?;
                 Opcode::MapPolynomial { region, coeffs }
@@ -259,7 +259,7 @@ pub fn parse_entries(data: &[u8]) -> Result<Vec<OpcodeEntry>> {
                 let total =
                     (points_v as usize).saturating_mul(points_h as usize).saturating_mul(map_planes.max(1) as usize);
                 if total == 0 || total > MAX_ELEMENTS || total * 4 > b.remaining() {
-                    return Err(Error::corrupt("GainMap dimensions"));
+                    return Err(Error::corrupt("invalid GainMap dimensions"));
                 }
                 let gains = (0..total).map(|_| Ok(f32::from_bits(b.u32()?))).collect::<Result<Vec<_>>>()?;
                 Opcode::GainMap {

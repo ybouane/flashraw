@@ -146,7 +146,7 @@ fn open_table<'a>(data: &'a [u8], cam: &'static Camera, opts: &OpenOptions) -> R
         let curve = if cfa.is_some() && offset != 0 {
             let at = if offset < 4096 { 168 } else { 5252 };
             data.get(at..at + 512)
-                .ok_or_else(|| Error::corrupt("Kodak tone curve missing"))?
+                .ok_or_else(|| Error::corrupt("missing Kodak tone curve"))?
                 .chunks_exact(2)
                 .map(|b| u16::from_le_bytes([b[0], b[1]]))
                 .collect()

@@ -84,7 +84,7 @@ fn parse_box<'a>(data: &'a [u8], pos: usize, base: usize) -> Result<(BmffBox<'a>
     };
     let mut uuid = None;
     if &typ == b"uuid" {
-        let u = data.get(pos + hdr..pos + hdr + 16).ok_or_else(|| Error::corrupt("truncated uuid box"))?;
+        let u = data.get(pos + hdr..pos + hdr + 16).ok_or_else(|| Error::corrupt("truncated BMFF uuid box"))?;
         let mut a = [0u8; 16];
         a.copy_from_slice(u);
         uuid = Some(a);

@@ -578,7 +578,7 @@ fn packet_planes(
         (1, 4) => mosaic_w / 2,
         (1, _) => mosaic_w / 16,
         (3, 1..=3) => mosaic_w >> (5 - group),
-        _ => return Err(corrupt("packet type/group")),
+        _ => return Err(corrupt("invalid packet type or group")),
     };
     let rm = row_multiplier(group);
     let rows = p.records.len() * rm;
@@ -943,7 +943,7 @@ struct DecodedTile {
 
 /// Decode one tile stream.
 fn decode_stream(stream: &[u8], parallel: bool) -> Result<DecodedTile> {
-    let (width, half_h) = parse_stream_header(stream).ok_or_else(|| corrupt("bad stream header"))?;
+    let (width, half_h) = parse_stream_header(stream).ok_or_else(|| corrupt("invalid stream header"))?;
     let dir = parse_directory(stream)?;
     let coded_h = half_h * 2;
     let padded = coded_h.div_ceil(16) * 16;
@@ -975,7 +975,7 @@ fn decode_stream(stream: &[u8], parallel: bool) -> Result<DecodedTile> {
     };
     let mut planes = par::map(vec![0usize, 1, 2], parallel, plane).into_iter();
     let (Some(green), Some(red), Some(blue)) = (planes.next(), planes.next(), planes.next()) else {
-        return Err(corrupt("plane decode"));
+        return Err(corrupt("missing colour plane"));
     };
     let (green, red, blue) = (green?, red?, blue?);
     let g4 = packet_planes(stream, &dir, width, coded_h, 4, 0, parallel)?;

@@ -121,7 +121,7 @@ fn be16(d: &[u8], i: usize) -> u32 {
 }
 
 fn be32(d: &[u8], i: usize) -> Result<usize> {
-    let b = d.get(i..i + 4).ok_or_else(|| Error::corrupt("RAF header truncated"))?;
+    let b = d.get(i..i + 4).ok_or_else(|| Error::corrupt("truncated RAF header"))?;
     Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
 }
 
@@ -456,7 +456,7 @@ fn active_area(
 /// Open a RAF file.
 pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
     if data.len() < 0x94 {
-        return Err(Error::corrupt("RAF header truncated"));
+        return Err(Error::corrupt("truncated RAF header"));
     }
     let header_model = flashraw_core::bytes::ascii_field(&data[0x1c..0x3c]);
     let version = String::from_utf8_lossy(&data[0x3c..0x40]).to_string();
@@ -621,7 +621,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if let Some(x) = rmeta.xtrans {
         colors = x;
         let cols: Vec<CfaColor> = x.iter().flatten().map(|&c| CfaColor::from_index(c)).collect();
-        let p = CfaPattern::new(6, 6, &cols).ok_or_else(|| Error::invalid_metadata("bad X-Trans layout"))?;
+        let p = CfaPattern::new(6, 6, &cols).ok_or_else(|| Error::invalid_metadata("invalid X-Trans layout"))?;
         info.cfa = Some(p);
         info.layout = SensorLayout::XTrans;
     } else if superccd {

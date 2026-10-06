@@ -86,7 +86,7 @@ pub fn decode_v0_reference(
     out: &mut [u16],
 ) -> Result<()> {
     if out.len() < width * height || row_offsets.len() < height {
-        return Err(Error::InvalidArgument("samsung v0: buffer/offsets too small".into()));
+        return Err(Error::InvalidArgument("Samsung v0: buffer or offsets too small".into()));
     }
     let max_index = width * (height + 7);
     let raw_len = width * height;
@@ -266,7 +266,7 @@ pub fn decode_v0_with(
     parallel: bool,
 ) -> Result<()> {
     if out.len() < width * height || row_offsets.len() < height {
-        return Err(Error::InvalidArgument("samsung v0: buffer/offsets too small".into()));
+        return Err(Error::InvalidArgument("Samsung v0: buffer or offsets too small".into()));
     }
     if width == 0 || height == 0 {
         return Ok(());
@@ -437,10 +437,10 @@ pub fn decode_v1(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Re
 /// Decode Samsung V2 (compression 32773). `src` starts at the image data.
 pub fn decode_v2(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Result<()> {
     if height < 436 || width < 646 {
-        return Err(Error::corrupt("Samsung V2 image too small"));
+        return Err(Error::corrupt("Samsung v2: image too small"));
     }
     if out.len() < width * height {
-        return Err(Error::InvalidArgument("samsung v2: output too small".into()));
+        return Err(Error::InvalidArgument("Samsung v2: output too small".into()));
     }
     let mut bits = Ph1Bits::new(src, 0);
     bits.get(16);
@@ -464,7 +464,7 @@ pub fn decode_v2(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Re
         bits.reset_at(p + ((16 - p % 16) % 16));
         v2_row(&mut bits, &hdr, row, width, height, out)?;
         if bits.overrun() {
-            return Err(Error::corrupt(format!("Samsung V2 data truncated at row {row}/{height}")));
+            return Err(Error::corrupt(format!("Samsung v2: truncated data at row {row}/{height}")));
         }
     }
     Ok(())
@@ -537,7 +537,7 @@ fn v2_row(bits: &mut Ph1Bits, h: &V2Hdr, row: usize, width: usize, height: usize
             }
         } else {
             if row < 2 {
-                return Err(Error::corrupt("Samsung V2: motion prediction on the first rows"));
+                return Err(Error::corrupt("Samsung v2: motion prediction on the first rows"));
             }
             let m = motion as usize;
             let avg = MOTION_AVERAGE[m];
@@ -551,7 +551,7 @@ fn v2_row(bits: &mut Ph1Bits, h: &V2Hdr, row: usize, width: usize, height: usize
             }
             let (lo, hi) = idx.iter().fold((i64::MAX, i64::MIN), |(a, b), &x| (a.min(x), b.max(x)));
             if lo < 0 || hi + if avg { 2 } else { 0 } >= total {
-                return Err(Error::corrupt("Samsung V2: motion reference out of range"));
+                return Err(Error::corrupt("Samsung v2: motion reference out of range"));
             }
             for (b, &x) in base.iter_mut().zip(&idx) {
                 let r = x as usize;
@@ -575,7 +575,7 @@ fn v2_row(bits: &mut Ph1Bits, h: &V2Hdr, row: usize, width: usize, height: usize
                 mode[colornum][0] = mode[colornum][1];
                 mode[colornum][1] = diff_bits[i];
                 if diff_bits[i] > bit_depth + 1 {
-                    return Err(Error::corrupt("Samsung V2: invalid difference length"));
+                    return Err(Error::corrupt("Samsung v2: invalid difference length"));
                 }
             }
         }

@@ -50,9 +50,9 @@ pub fn decode_block_65000(data: &[u8], pos: usize, len: usize, out: &mut [i16]) 
     let bsize = (len + 3) & !3;
     let need = bsize.div_ceil(8) * 8;
     if out.len() < need {
-        return Err(Error::InvalidArgument("65000: output block too small".into()));
+        return Err(Error::InvalidArgument("Kodak 65000: output block too small".into()));
     }
-    let hdr = data.get(pos..pos + bsize / 2).ok_or_else(|| Error::corrupt("65000: block header truncated"))?;
+    let hdr = data.get(pos..pos + bsize / 2).ok_or_else(|| Error::corrupt("Kodak 65000: truncated block header"))?;
     let byte = |p: usize| -> u64 { data.get(p).copied().unwrap_or(0) as u64 };
     if hdr.iter().any(|&c| c & 15 > 12 || c >> 4 > 12) {
         // Raw block: groups of six big-endian 16-bit words hold eight 12-bit samples.
@@ -97,7 +97,7 @@ pub fn decode_block_65000(data: &[u8], pos: usize, len: usize, out: &mut [i16]) 
         out[i] = d as i16;
     }
     if p > data.len() + 4 {
-        return Err(Error::corrupt("65000: block data truncated"));
+        return Err(Error::corrupt("Kodak 65000: truncated block data"));
     }
     Ok(false)
 }
@@ -112,7 +112,8 @@ pub fn scan_65000_rows(data: &[u8], start: usize, width: usize, height: usize) -
         let mut col = 0;
         while col < width {
             let len = BLOCK_65000.min(width - col);
-            let (n, _) = block_len_65000(data, pos, len).ok_or_else(|| Error::corrupt("65000: data truncated"))?;
+            let (n, _) =
+                block_len_65000(data, pos, len).ok_or_else(|| Error::corrupt("Kodak 65000: truncated data"))?;
             pos += n;
             col += BLOCK_65000;
         }
@@ -129,7 +130,7 @@ pub fn decode_65000_row(data: &[u8], mut pos: usize, out: &mut [u16], curve: &[u
     while col < width {
         let len = BLOCK_65000.min(width - col);
         let raw = decode_block_65000(data, pos, len, &mut buf)?;
-        let (n, _) = block_len_65000(data, pos, len).ok_or_else(|| Error::corrupt("65000: data truncated"))?;
+        let (n, _) = block_len_65000(data, pos, len).ok_or_else(|| Error::corrupt("Kodak 65000: truncated data"))?;
         pos += n;
         let mut pred = [0i32; 2];
         for (i, o) in out[col..col + len].iter_mut().enumerate() {
@@ -329,7 +330,7 @@ pub fn decode_radc(data: &[u8], width: usize, height: usize, cbpp: u32, out: &mu
                 while col > 0 {
                     guard += 1;
                     if guard > 4 * width || bits.exhausted() {
-                        return Err(Error::corrupt("RADC: data truncated"));
+                        return Err(Error::corrupt("RADC: truncated data"));
                     }
                     let t = token(&mut bits, tree);
                     if !(0..=8).contains(&t) {

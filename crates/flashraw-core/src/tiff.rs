@@ -466,7 +466,7 @@ fn parse_ifd<'a>(
     let base = offset as usize;
     let n = data.u16_at(order, base)? as usize;
     if n == 0 || n > opts.max_entries {
-        return Err(Error::corrupt_at(format!("IFD with {n} entries"), offset as u64));
+        return Err(Error::corrupt_at(format!("invalid IFD with {n} entries"), offset as u64));
     }
     let mut entries = Vec::with_capacity(n);
     for i in 0..n {

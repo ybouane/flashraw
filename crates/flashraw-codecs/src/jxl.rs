@@ -18,8 +18,8 @@ pub struct DecodedJxl {
 pub fn decode(src: &[u8], bits: u32) -> Result<DecodedJxl> {
     let image = jxl_oxide::JxlImage::builder()
         .read(std::io::Cursor::new(src))
-        .map_err(|e| Error::corrupt(format!("jxl: {e}")))?;
-    let render = image.render_frame(0).map_err(|e| Error::corrupt(format!("jxl: {e}")))?;
+        .map_err(|e| Error::corrupt(format!("JPEG XL: {e}")))?;
+    let render = image.render_frame(0).map_err(|e| Error::corrupt(format!("JPEG XL: {e}")))?;
     let fb = render.image_all_channels();
     let (w, h, c) = (fb.width(), fb.height(), fb.channels());
     let scale = level_scale(bits);

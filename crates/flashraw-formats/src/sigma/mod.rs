@@ -108,11 +108,11 @@ fn le32(d: &[u8], o: usize) -> Result<u32> {
 fn parse_directory(data: &[u8]) -> Result<Vec<Section>> {
     let dir = le32(data, data.len().saturating_sub(4))? as usize;
     if data.get(dir..dir + 4) != Some(b"SECd") {
-        return Err(Error::corrupt("X3F directory signature missing"));
+        return Err(Error::corrupt("missing X3F directory signature"));
     }
     let n = le32(data, dir + 8)? as usize;
     if n > 50 {
-        return Err(Error::corrupt(format!("X3F directory with {n} entries")));
+        return Err(Error::corrupt(format!("invalid X3F directory with {n} entries")));
     }
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
@@ -297,7 +297,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
         .ok_or_else(|| Error::UnsupportedFormat("X3F without a supported raw image".into()))?;
     let (type_format, width, height, row_stride) = raw_sec.image.unwrap_or_default();
     if width == 0 || height == 0 || width > 65535 || height > 65535 {
-        return Err(Error::corrupt(format!("X3F raw image of {width}x{height}")));
+        return Err(Error::corrupt(format!("invalid X3F raw image size {width}x{height}")));
     }
     opts.limits.check_dims(width, height, 3)?;
 

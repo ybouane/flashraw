@@ -51,7 +51,7 @@ pub struct FujiHeader {
 impl FujiHeader {
     /// Parse and validate the 16-byte header.
     pub fn parse(d: &[u8]) -> Result<Self> {
-        let h = d.get(..HEADER_SIZE).ok_or_else(|| Error::corrupt("Fuji compressed header truncated"))?;
+        let h = d.get(..HEADER_SIZE).ok_or_else(|| Error::corrupt("truncated Fuji compressed header"))?;
         let be16 = |i: usize| u16::from_be_bytes([h[i], h[i + 1]]) as u32;
         let signature = be16(0);
         let lossless = h[2];
@@ -129,7 +129,7 @@ impl<'a> FujiCompressed<'a> {
         let body = &data[HEADER_SIZE..];
         let nb = header.blocks as usize;
         let sizes_len = 4 * nb;
-        let sizes = body.get(..sizes_len).ok_or_else(|| Error::corrupt("Fuji block size table truncated"))?;
+        let sizes = body.get(..sizes_len).ok_or_else(|| Error::corrupt("truncated Fuji block size table"))?;
         let mut pos = (sizes_len + 15) & !15;
         let mut q_bases = Vec::new();
         if !header.lossless {
@@ -138,7 +138,7 @@ impl<'a> FujiCompressed<'a> {
                 let start = pos + b * step;
                 let q = body.get(start..start + header.lines as usize);
                 // A short table means missing data.
-                q_bases.push(q.ok_or_else(|| Error::corrupt("Fuji lossy quantisation table truncated"))?);
+                q_bases.push(q.ok_or_else(|| Error::corrupt("truncated Fuji lossy quantisation table"))?);
             }
             pos += nb * step;
         }
@@ -502,7 +502,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         let stride = c.line_width + 2;
         let init = Grads { main: [new_stat(0, 1); 41], lossy: [[new_stat(0, 1); 5]; 3] };
         let first_q = if LOSSY { q_bases.first().copied().unwrap_or(0) as usize } else { 0 };
-        let qt = c.main[first_q].as_ref().ok_or_else(|| Error::corrupt("Fuji quantisation table missing"))?;
+        let qt = c.main[first_q].as_ref().ok_or_else(|| Error::corrupt("missing Fuji quantisation table"))?;
         let mut d = BlockDecoder {
             c,
             bits: BitPumpMsb::new(data),
@@ -542,7 +542,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
             if line == 0 || q != self.cur_q {
                 self.qt = self.c.main[q as usize]
                     .as_ref()
-                    .ok_or_else(|| Error::corrupt("Fuji quantisation table missing"))?;
+                    .ok_or_else(|| Error::corrupt("missing Fuji quantisation table"))?;
                 self.cur_q = q;
                 self.init_main_grads();
             }
@@ -592,7 +592,7 @@ impl<'c, 'a, const LOSSY: bool> BlockDecoder<'c, 'a, LOSSY> {
         // A stripe is padded with a single zero byte and any further read fails:
         // consuming more than that means the stripe is truncated or corrupt.
         if self.overrun || self.bits_consumed() > 8 * self.data_len + 7 {
-            return Err(Error::corrupt("Fuji compressed block truncated"));
+            return Err(Error::corrupt("truncated Fuji compressed block"));
         }
         Ok(())
     }

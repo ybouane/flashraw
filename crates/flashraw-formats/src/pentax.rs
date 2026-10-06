@@ -29,7 +29,7 @@ pub fn probe(_data: &[u8]) -> bool {
 }
 
 pub fn open<'a>(_data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
-    Err(Error::UnsupportedFormat("PEF files are TIFF based; use open_tiff".into()))
+    Err(Error::UnsupportedFormat("PEF files are TIFF-based; use `open_tiff`".into()))
 }
 
 /// Values from the Pentax makernote.

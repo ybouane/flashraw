@@ -24,7 +24,7 @@ pub fn open<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
     let mut meta = RawMetadata::default();
     flashraw_core::exif::read_ifd0(ifd0, &mut meta);
     let raw = find_cfa_ifd(&tiff).ok_or_else(|| {
-        Error::UnsupportedFormat(format!("TIFF from '{}' without a TIFF/EP CFA image", meta.make.trim()))
+        Error::UnsupportedFormat(format!("TIFF from {:?} without a TIFF/EP CFA image", meta.make.trim()))
     })?;
     let (w, h) = (raw.width(), raw.height());
     opts.limits.check_dims(w, h, 1)?;

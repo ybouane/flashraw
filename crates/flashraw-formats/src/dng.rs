@@ -1274,7 +1274,7 @@ impl DngRaw<'_> {
                 // samples the data did not cover.
                 let n = rb.len() / bytes_ps;
                 if !partial && n < sx + w * cpp {
-                    return Err(Error::corrupt(format!("DNG float row {} truncated", sy + y)));
+                    return Err(Error::corrupt(format!("truncated DNG float row {}", sy + y)));
                 }
                 rowbuf.fill(0);
                 rowbuf[..rb.len()].copy_from_slice(rb);

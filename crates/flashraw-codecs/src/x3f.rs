@@ -363,7 +363,7 @@ pub fn decode_true_plane(
             }
         }
         if bits.exhausted() {
-            return Err(Error::corrupt("X3F TRUE plane truncated"));
+            return Err(Error::corrupt("truncated X3F TRUE plane"));
         }
     }
     Ok(())
@@ -434,7 +434,7 @@ pub fn decode_huffman(
                 }
             }
             if bits.exhausted() {
-                *errors.lock().unwrap() = Some(Error::corrupt("X3F Huffman row truncated"));
+                *errors.lock().unwrap() = Some(Error::corrupt("truncated X3F Huffman row"));
                 return;
             }
         }
@@ -476,7 +476,7 @@ pub fn decode_simple(
     }
     let needed = (rows - 1).checked_mul(row_stride).and_then(|v| v.checked_add(cols * 4));
     if needed.is_none_or(|n| n > data.len()) {
-        return Err(Error::corrupt("X3F uncompressed data truncated"));
+        return Err(Error::corrupt("truncated X3F uncompressed data"));
     }
     let mask = (1u32 << bits) - 1;
     flashraw_core::par::for_each_row_chunk(&mut out[..rl * rows], rl, 32, parallel, |first, chunk| {
@@ -570,7 +570,7 @@ impl<'a> CamfStream<'a> {
         let size = w[0] as usize;
         // Every symbol takes at least one bit and yields at most 1.5 bytes.
         if size > CAMF_MAX_DECODED || size > data.len().saturating_mul(12) {
-            return Err(Error::corrupt(format!("X3F CAMF block of {size} bytes")));
+            return Err(Error::corrupt(format!("invalid X3F CAMF block of {size} bytes")));
         }
         let mut table = Vec::new();
         for pair in data.chunks_exact(2) {
@@ -627,7 +627,7 @@ impl<'a> CamfStream<'a> {
                     out.push(*acc as u8);
                 }
                 if bits.exhausted() {
-                    return Err(Error::corrupt("X3F CAMF data truncated"));
+                    return Err(Error::corrupt("truncated X3F CAMF data"));
                 }
                 out.len() >= size
             }
@@ -670,7 +670,7 @@ impl<'a> CamfStream<'a> {
                     }
                 }
                 if bits.exhausted() {
-                    return Err(Error::corrupt("X3F CAMF data truncated"));
+                    return Err(Error::corrupt("truncated X3F CAMF data"));
                 }
                 let finished = out.len() >= size || *row >= *rows;
                 if finished {

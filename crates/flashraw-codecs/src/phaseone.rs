@@ -101,7 +101,7 @@ pub fn decode_l_row<B: BitRead>(bits: &mut B, out: &mut [u16], p: IiqLParams) ->
         *o = s << p.shift;
     }
     if bits.exhausted() {
-        return Err(Error::corrupt("IIQ L: row data truncated"));
+        return Err(Error::corrupt("IIQ L: truncated row data"));
     }
     Ok(())
 }
@@ -170,7 +170,7 @@ pub fn decode_s_row<B: BitRead>(bits: &mut B, out: &mut [u16]) -> Result<()> {
         *o = (bits.get(14) << 2) as u16;
     }
     if bits.exhausted() {
-        return Err(Error::corrupt("IIQ S: row data truncated"));
+        return Err(Error::corrupt("IIQ S: truncated row data"));
     }
     Ok(())
 }

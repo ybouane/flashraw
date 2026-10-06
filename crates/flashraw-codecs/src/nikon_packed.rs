@@ -145,7 +145,7 @@ fn decode_exact_with(src: &[u8], spec: &PackedSpec, out: &mut [u16], stride: usi
             }
         }
         if eof {
-            return Err(Error::corrupt(format!("packed data truncated at row {irow}/{h}")));
+            return Err(Error::corrupt(format!("truncated packed data at row {irow}/{h}")));
         }
         let line =
             out.get_mut(row * stride..row * stride + w).ok_or_else(|| Error::corrupt("packed row out of range"))?;

@@ -75,15 +75,15 @@ impl DirectHuff {
     /// symbols in code order.
     pub fn from_counts(source: &[u8]) -> Result<Self> {
         if source.len() < 16 {
-            return Err(Error::corrupt("huffman source shorter than 16 counts"));
+            return Err(Error::corrupt("Huffman source shorter than 16 counts"));
         }
         let counts = &source[..16];
         let max = (1..=16).rev().find(|&l| counts[l - 1] != 0).unwrap_or(0) as u32;
         if max == 0 {
-            return Err(Error::corrupt("empty huffman table"));
+            return Err(Error::corrupt("empty Huffman table"));
         }
         let total: usize = counts.iter().map(|&c| c as usize).sum();
-        let syms = source.get(16..16 + total).ok_or_else(|| Error::corrupt("huffman table symbols missing"))?;
+        let syms = source.get(16..16 + total).ok_or_else(|| Error::corrupt("missing Huffman table symbols"))?;
         let mut direct = vec![0u16; 1 << max];
         let mut h = 0usize;
         let mut k = 0usize;
@@ -274,14 +274,14 @@ where
 {
     let PredictiveParams { width, rows, tables, vpred } = *p;
     if width < 2 || stride < width {
-        return Err(Error::InvalidArgument("predictive huffman: bad width".into()));
+        return Err(Error::InvalidArgument("predictive Huffman: invalid width".into()));
     }
     if out.len() < stride * rows.saturating_sub(1) + width && rows > 0 {
-        return Err(Error::InvalidArgument("predictive huffman: output too small".into()));
+        return Err(Error::InvalidArgument("predictive Huffman: output too small".into()));
     }
-    let first = tables.first().ok_or_else(|| Error::InvalidArgument("no huffman table".into()))?;
+    let first = tables.first().ok_or_else(|| Error::InvalidArgument("no Huffman table".into()))?;
     if first.0 != 0 {
-        return Err(Error::InvalidArgument("first huffman table must start at row 0".into()));
+        return Err(Error::InvalidArgument("first Huffman table must start at row 0".into()));
     }
     let mut vpred = vpred;
     let mut bits = ExactBits::new(src);
@@ -608,11 +608,11 @@ impl NikonMeta {
             return Err(Error::unsupported_compression("NEF", format!("{bits}-bit Nikon Huffman")));
         }
         let rd = |off: usize| -> Result<u16> {
-            let b = meta.get(off..off + 2).ok_or_else(|| Error::corrupt("Nikon linearization table truncated"))?;
+            let b = meta.get(off..off + 2).ok_or_else(|| Error::corrupt("truncated Nikon linearization table"))?;
             Ok(order.u16([b[0], b[1]]))
         };
         let ver0 = *meta.first().ok_or_else(|| Error::corrupt("empty Nikon linearization table"))?;
-        let ver1 = *meta.get(1).ok_or_else(|| Error::corrupt("Nikon linearization table truncated"))?;
+        let ver1 = *meta.get(1).ok_or_else(|| Error::corrupt("truncated Nikon linearization table"))?;
         let mut pos = 2usize;
         if ver0 == 0x49 || ver1 == 0x58 {
             pos += 2110;

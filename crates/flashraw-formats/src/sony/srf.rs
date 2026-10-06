@@ -72,7 +72,7 @@ pub fn open<'a>(
         // RGBE ("emerald") filter.
         info.layout = SensorLayout::OtherCfa;
         CfaPattern::new(2, 2, &[CfaColor::Emerald, CfaColor::Red, CfaColor::Blue, CfaColor::Green])
-            .ok_or_else(|| Error::invalid_metadata("SRF: bad CFA"))?
+            .ok_or_else(|| Error::invalid_metadata("SRF: invalid CFA"))?
     } else {
         CfaPattern::GRBG
     });

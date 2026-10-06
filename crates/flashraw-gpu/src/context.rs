@@ -156,7 +156,7 @@ impl GpuContext {
     /// Request the default high-performance adapter and create a device.
     pub async fn new() -> Result<Self> {
         if disabled_by_env() {
-            return Err(Error::GpuUnavailable("disabled by FLASHRAW_GPU".into()));
+            return Err(Error::GpuUnavailable("disabled by `FLASHRAW_GPU`".into()));
         }
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let adapter = instance
@@ -654,7 +654,7 @@ pub fn context() -> Result<Arc<GpuContext>> {
     #[cfg(target_arch = "wasm32")]
     {
         with_slot(|s| s.ctx.clone())
-            .ok_or_else(|| Error::GpuUnavailable("call flashraw_gpu::init().await before using the GPU".into()))
+            .ok_or_else(|| Error::GpuUnavailable("call `flashraw_gpu::init().await` before using the GPU".into()))
     }
 }
 

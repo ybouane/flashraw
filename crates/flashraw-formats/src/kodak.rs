@@ -364,7 +364,9 @@ fn decode_65000_color(
             while col < w {
                 let len = 256.min(w - col);
                 let raw = kc::decode_block_65000(data, pos, len * 3, &mut buf)?;
-                pos += kc::block_len_65000(data, pos, len * 3).ok_or_else(|| Error::corrupt("65000: truncated"))?.0;
+                pos += kc::block_len_65000(data, pos, len * 3)
+                    .ok_or_else(|| Error::corrupt("Kodak 65000: truncated data"))?
+                    .0;
                 let mut rgb = [0i32; 3];
                 for i in 0..len {
                     for c in 0..3 {
@@ -384,7 +386,8 @@ fn decode_65000_color(
         while col < w {
             let len = 128.min(w - col);
             kc::decode_block_65000(data, pos, len * 3, &mut buf)?;
-            pos += kc::block_len_65000(data, pos, len * 3).ok_or_else(|| Error::corrupt("65000: truncated"))?.0;
+            pos +=
+                kc::block_len_65000(data, pos, len * 3).ok_or_else(|| Error::corrupt("Kodak 65000: truncated data"))?.0;
             let mut y = [[0i32; 2]; 2];
             let (mut cb, mut cr) = (0i32, 0i32);
             let mut bp = 0usize;

@@ -36,7 +36,7 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     }
     if is_light_lri(data) {
         return Err(Error::UnsupportedFormat(
-            "Light L16 LRI (multi-module capture with proprietary per-module packing) is not supported".into(),
+            "Light L16 LRI (multi-module capture with proprietary per-module packing)".into(),
         ));
     }
     Err(Error::UnsupportedFormat("misc: unrecognised signature".into()))

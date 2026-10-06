@@ -113,7 +113,7 @@ pub(crate) fn decode_rows_region(
         )
     });
     if truncated.into_inner() {
-        return Err(Error::corrupt("packed data truncated inside the requested region"));
+        return Err(Error::corrupt("truncated packed data inside the requested region"));
     }
     if let Some(t) = truncation {
         ctx.recovered(CorruptReason::Truncated(t), filled.into_inner());

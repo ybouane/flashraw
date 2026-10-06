@@ -22,7 +22,7 @@ const DEFAULT_TABLE: [u8; 29] =
 /// the tag value and may extend further into the file).
 pub fn table_from_makernote(meta: &[u8], order: ByteOrder) -> Result<DirectHuff> {
     let rd16 = |off: usize| -> Result<u16> {
-        let b = meta.get(off..off + 2).ok_or_else(|| Error::corrupt("Pentax huffman table truncated"))?;
+        let b = meta.get(off..off + 2).ok_or_else(|| Error::corrupt("truncated Pentax Huffman table"))?;
         Ok(order.u16([b[0], b[1]]))
     };
     let dep = ((rd16(0)? as usize) + 12) & 15;
@@ -31,7 +31,7 @@ pub fn table_from_makernote(meta: &[u8], order: ByteOrder) -> Result<DirectHuff>
     let mut direct = vec![0u16; 4096];
     for c in 0..dep {
         let code = rd16(codes_at + 2 * c)? as usize;
-        let len = *meta.get(lens_at + c).ok_or_else(|| Error::corrupt("Pentax huffman table truncated"))? as usize;
+        let len = *meta.get(lens_at + c).ok_or_else(|| Error::corrupt("truncated Pentax Huffman table"))? as usize;
         // Fill every 12-bit index that starts with this code, including
         // wrap-around and overwrite behaviour for odd tables.
         let span = if len >= 13 { 0 } else { 4096 >> len };

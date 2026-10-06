@@ -171,14 +171,14 @@ impl Image {
             let sign = be16(hdr, pos)?;
             let size = be16(hdr, pos + 2)? as usize;
             if !((sign == 0xFF01 && size == 8) || (sign == 0xFF11 && (size == 8 || size == 16))) {
-                return Err(Error::corrupt("CRX: bad tile header"));
+                return Err(Error::corrupt("CRX: invalid tile header"));
             }
             if hdr.len() < pos + size + 4 {
                 return Err(truncated());
             }
             let tail = be16(hdr, pos + 10)?;
             if (size == 8 && tail != 0) || (size == 16 && tail != 0x4000) {
-                return Err(Error::corrupt("CRX: bad tile header tail"));
+                return Err(Error::corrupt("CRX: invalid tile header tail"));
             }
             if be16(hdr, pos + 8)? as usize != ti {
                 return Err(Error::corrupt("CRX: tile number mismatch"));
@@ -186,7 +186,7 @@ impl Image {
             let tile_size = be32(hdr, pos + 4)? as u64;
             let (qp_size, extra) = if size == 16 {
                 if be16(hdr, pos + 18)? != 0 {
-                    return Err(Error::corrupt("CRX: bad extended tile header"));
+                    return Err(Error::corrupt("CRX: invalid extended tile header"));
                 }
                 (be32(hdr, pos + 12)? as u64, be16(hdr, pos + 16)? as u64)
             } else {
@@ -202,11 +202,11 @@ impl Image {
                 let sign = be16(hdr, pos)?;
                 let size = be16(hdr, pos + 2)?;
                 if (sign != 0xFF02 && sign != 0xFF12) || size != 8 {
-                    return Err(Error::corrupt("CRX: bad plane header"));
+                    return Err(Error::corrupt("CRX: invalid plane header"));
                 }
                 let flags = hdr[pos + 8];
                 if (flags >> 4) as usize != pi || hdr[pos + 9] != 0 || hdr[pos + 10] != 0 || hdr[pos + 11] != 0 {
-                    return Err(Error::corrupt("CRX: bad plane header fields"));
+                    return Err(Error::corrupt("CRX: invalid plane header fields"));
                 }
                 let comp_size = be32(hdr, pos + 4)? as u64;
                 let rounded_bits = (flags >> 1) & 3;
@@ -254,7 +254,7 @@ fn parse_subbands(hdr: &[u8], pos: &mut usize, n: usize, base: u64, data_len: us
             return Err(truncated());
         }
         if !((sign == 0xFF03 && size == 8) || (sign == 0xFF13 && size == 16)) {
-            return Err(Error::corrupt("CRX: bad subband header"));
+            return Err(Error::corrupt("CRX: invalid subband header"));
         }
         let band_size = be32(hdr, p + 4)? as i32 as i64;
         if (hdr[p + 8] >> 4) as usize != i {

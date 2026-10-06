@@ -121,7 +121,7 @@ fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuCon
         Backend::Cpu | Backend::CpuSimd => {
             if resident {
                 return Err(Error::InvalidArgument(format!(
-                    "{:?} is a GPU-resident output; use Backend::Gpu or Backend::Auto",
+                    "{:?} is a GPU-resident output; use `Backend::Gpu` or `Backend::Auto`",
                     opts.output
                 )));
             }
@@ -176,7 +176,7 @@ pub(crate) fn decode(
     {
         let _ = (ctx, why, t0, profiler);
         Err(Error::GpuUnavailable(
-            "synchronous GPU decoding is unavailable in the browser; use decode_gpu_async".into(),
+            "synchronous GPU decoding is unavailable in the browser; use `decode_gpu_async`".into(),
         ))
     }
 }
@@ -256,7 +256,7 @@ async fn run(
                 PixelData::F32(v) => {
                     if base == OutputFormat::RawU16 {
                         return Err(Error::InvalidArgument(
-                            "GpuRawU16 of floating-point data is not supported; use GpuNormalizedF32".into(),
+                            "`GpuRawU16` of floating-point data is not supported; use `GpuNormalizedF32`".into(),
                         ));
                     }
                     GpuFrame::from_f32(v, d.width, d.height, d.cpp)

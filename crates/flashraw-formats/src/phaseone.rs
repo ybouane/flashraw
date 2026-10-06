@@ -83,7 +83,7 @@ impl<'a> IiqDir<'a> {
         let dpos = base.checked_add(dir).ok_or_else(|| Error::corrupt("IIQ: directory offset overflow"))?;
         let n = data.u32_at(order, dpos)? as usize;
         if n > 8192 {
-            return Err(Error::corrupt(format!("IIQ: {n} directory entries")));
+            return Err(Error::corrupt(format!("IIQ: invalid directory entry count {n}")));
         }
         let mut entries = Vec::with_capacity(n);
         for i in 0..n {

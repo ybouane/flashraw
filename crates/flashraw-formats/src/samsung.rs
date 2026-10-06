@@ -27,7 +27,7 @@ pub fn probe(_data: &[u8]) -> bool {
 }
 
 pub fn open<'a>(_data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
-    Err(Error::UnsupportedFormat("SRW files are TIFF based; use open_tiff".into()))
+    Err(Error::UnsupportedFormat("SRW files are TIFF-based; use `open_tiff`".into()))
 }
 
 /// Tag 40976: offset of the per-row offset table of V0 data.
@@ -144,7 +144,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             for r in 0..h as usize {
                 let o = data
                     .u32_at(ByteOrder::Little, t + r * 4)
-                    .map_err(|_| Error::corrupt("SRW row offset table truncated"))?;
+                    .map_err(|_| Error::corrupt("truncated SRW row offset table"))?;
                 offs.push(o);
             }
             Payload::V0 { row_offsets: offs }

@@ -38,7 +38,7 @@ pub fn decode_tile(src: &[u8], tile_w: usize, tile_h: usize) -> Result<Vec<u16>>
         _ => return Err(Error::unsupported_compression("ARW", format!("YCbCr sampling {h}x{v}"))),
     }
     if bits.overrun() > 64 {
-        return Err(Error::corrupt("Sony YCbCr tile truncated"));
+        return Err(Error::corrupt("truncated Sony YCbCr tile"));
     }
     Ok(out)
 }
@@ -101,7 +101,7 @@ fn decode_420(
             }
         }
         if bits.overrun() > 64 {
-            return Err(Error::corrupt("Sony YCbCr tile truncated"));
+            return Err(Error::corrupt("truncated Sony YCbCr tile"));
         }
     }
     Ok(())
@@ -139,7 +139,7 @@ fn decode_422(
             mcu(out, bits, row, col, py, pcb, pcr)?;
         }
         if bits.overrun() > 64 {
-            return Err(Error::corrupt("Sony YCbCr tile truncated"));
+            return Err(Error::corrupt("truncated Sony YCbCr tile"));
         }
     }
     Ok(())

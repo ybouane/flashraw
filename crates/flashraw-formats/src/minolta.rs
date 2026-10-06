@@ -290,7 +290,7 @@ fn decode_z2(src: &[u8], w: u32, h: u32, ctx: &DecodeContext) -> Result<RawImage
     let half = hu.div_ceil(2);
     let second = (src.len() >> 3) << 2;
     if src.len() < wu * 12 / 8 * half {
-        return Err(Error::corrupt("Z2: payload truncated"));
+        return Err(Error::corrupt("Z2: truncated payload"));
     }
     let out = img.u16_mut();
     ctx.profiler.time(Stage::Unpack, || {
@@ -339,7 +339,7 @@ fn open_rd175<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecod
 fn rd175_unpack(src: &[u8], out: &mut [u16]) -> Result<()> {
     const W: usize = 1534;
     for irow in 0..1481usize {
-        let pixel = src.get(irow * 768..(irow + 1) * 768).ok_or_else(|| Error::corrupt("RD175: data truncated"))?;
+        let pixel = src.get(irow * 768..(irow + 1) * 768).ok_or_else(|| Error::corrupt("RD175: truncated data"))?;
         let mut bx = irow / 82;
         let mut row = irow % 82 * 12 + if bx < 12 { bx | 1 } else { (bx - 12) * 2 };
         match irow {

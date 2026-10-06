@@ -90,7 +90,7 @@ fn counted(e: &Entry, size: usize) -> Vec<u32> {
 type V8Payload<'a> = (Payload<'a>, Vec<(usize, usize)>);
 
 fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Result<V8Payload<'a>> {
-    let e = |t: u16| ifd.get(t).ok_or_else(|| Error::invalid_metadata(format!("RW2 v8 tag {t:#x} missing")));
+    let e = |t: u16| ifd.get(t).ok_or_else(|| Error::invalid_metadata(format!("missing RW2 v8 tag {t:#x}")));
     let mut p = V8Params { clip: u16_tag(ifd, 0x3b).unwrap_or(0xffff), ..Default::default() };
     let slopes = counted(e(0x39)?, 4);
     // Tag 0x3A holds (unused, point) u16 pairs.
@@ -108,7 +108,7 @@ fn v8_payload<'a>(data: &'a [u8], ifd: &Ifd<'a>, raw_w: u32, raw_h: u32) -> Resu
     // Strips form a grid: 0x42 columns by 0x43 rows (one row except on high-resolution shots).
     let count = u16_tag(ifd, 0x42).unwrap_or(0) as usize * u16_tag(ifd, 0x43).unwrap_or(1).max(1) as usize;
     if count == 0 || count > 64 {
-        return Err(Error::corrupt(format!("RW2 v8 with {count} strips")));
+        return Err(Error::corrupt(format!("invalid RW2 v8 strip count {count}")));
     }
     let offsets = counted(e(0x44)?, 4);
     let lefts = counted(e(0x45)?, 4);
@@ -156,7 +156,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let raw_h = u16_tag(ifd, 0x03).unwrap_or(0);
     opts.limits.check_dims(raw_w, raw_h, 1)?;
     if raw_w < 22 || raw_h < 22 {
-        return Err(Error::invalid_metadata(format!("RW2 raw size {raw_w}x{raw_h}")));
+        return Err(Error::invalid_metadata(format!("invalid RW2 raw size {raw_w}x{raw_h}")));
     }
     let bps = u16_tag(ifd, 0x0a).unwrap_or(12).clamp(8, 16);
     let version = u16_tag(ifd, 0x2d);

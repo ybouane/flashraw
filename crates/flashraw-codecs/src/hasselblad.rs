@@ -56,7 +56,7 @@ impl HasselbladHeader {
             }
             let len = data.u16be(pos)? as usize;
             if len < 2 {
-                return Err(Error::corrupt("Hasselblad: bad segment length"));
+                return Err(Error::corrupt("Hasselblad: invalid segment length"));
             }
             let seg = flashraw_core::bytes::slice_at(data, pos + 2, len - 2)?;
             match marker {

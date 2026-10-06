@@ -95,7 +95,7 @@ impl LjpegHeader {
             }
             let len = data.u16be(pos)? as usize;
             if len < 2 {
-                return Err(Error::corrupt("lossless JPEG: bad segment length"));
+                return Err(Error::corrupt("lossless JPEG: invalid segment length"));
             }
             let seg = flashraw_core::bytes::slice_at(data, pos + 2, len - 2)?;
             match marker {
@@ -126,7 +126,7 @@ impl LjpegHeader {
                         let class_id = seg[p];
                         let id = (class_id & 0x0F) as usize;
                         if id > 3 || p + 17 > seg.len() {
-                            return Err(Error::corrupt("lossless JPEG: bad DHT"));
+                            return Err(Error::corrupt("lossless JPEG: invalid DHT"));
                         }
                         let counts = &seg[p + 1..p + 17];
                         let total: usize = counts.iter().map(|&c| c as usize).sum();

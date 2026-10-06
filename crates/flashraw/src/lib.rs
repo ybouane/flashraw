@@ -346,7 +346,9 @@ impl<'a> FlashRaw<'a> {
             OutputFormat::GpuRawU16
             | OutputFormat::GpuNormalizedF32
             | OutputFormat::GpuLinearRgbF32
-            | OutputFormat::GpuRgba8 => return Err(Error::GpuUnavailable("GPU-resident output".into())),
+            | OutputFormat::GpuRgba8 => {
+                return Err(Error::GpuUnavailable("GPU-resident outputs need the GPU backend".into()));
+            }
             OutputFormat::LinearRgbF32
             | OutputFormat::Rgba8
             | OutputFormat::Rgb16

@@ -115,7 +115,7 @@ pub fn stream_start(data: &[u8], p: &OlympusParams) -> Result<usize> {
     let hdr = data.get(..n + 2).ok_or_else(|| Error::corrupt("ORF: compressed data too short"))?;
     let v = hdr[..n].iter().fold(0u64, |a, &b| a << 8 | b as u64);
     if v != 1 || hdr[n] != 0 || hdr[n + 1] != 0 {
-        return Err(Error::corrupt("ORF: bad compressed stream header"));
+        return Err(Error::corrupt("ORF: invalid compressed stream header"));
     }
     Ok(n + 2)
 }
@@ -151,7 +151,7 @@ pub fn decode_with(
 ) -> Result<()> {
     p.validate()?;
     if out.len() < width * height {
-        return Err(Error::InvalidArgument("ORF output buffer too small".into()));
+        return Err(Error::InvalidArgument("ORF: output buffer too small".into()));
     }
     let start = stream_start(data, p)?;
     let standard = OlympusParams { header_len: p.header_len, ..OlympusParams::default() };

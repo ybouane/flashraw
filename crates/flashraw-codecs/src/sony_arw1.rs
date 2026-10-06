@@ -194,7 +194,7 @@ fn decode_parallel(
         width as u32,
         rows_out as u32,
     )
-    .ok_or_else(|| Error::InvalidArgument("ARW1 output buffer too small".into()))?;
+    .ok_or_else(|| Error::InvalidArgument("ARW1: output buffer too small".into()))?;
     let bad = std::sync::atomic::AtomicUsize::new(0);
     par::for_each_index(grid.tiles_x() as usize, true, |tx| {
         let Some(mut tile) = grid.claim(tx as u32, 0) else { return };
@@ -225,7 +225,7 @@ fn decode_parallel(
     });
     // Real files never leave the 12-bit range; garbage input does so constantly.
     if bad.into_inner() > width * coded_rows / 64 {
-        return Err(Error::corrupt("ARW1 data out of range (corrupt stream)"));
+        return Err(Error::corrupt("ARW1 data out of range"));
     }
     Ok(true)
 }
@@ -237,7 +237,7 @@ fn decode_parallel(
 /// running sum leaves the 12-bit range persistently (corrupt data).
 pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stored_rows: usize) -> Result<()> {
     if out.len() < width * stored_rows {
-        return Err(Error::InvalidArgument("ARW1 output buffer too small".into()));
+        return Err(Error::InvalidArgument("ARW1: output buffer too small".into()));
     }
     let lut = lut();
     // 8-bit prefix table: entry for codes of length <= 8, 0 when the code is longer.
@@ -278,7 +278,7 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
                 }
             }
             if pos > limit {
-                return Err(Error::corrupt(format!("ARW1 stream truncated at column {col}")));
+                return Err(Error::corrupt(format!("truncated ARW1 stream at column {col}")));
             }
         }
         let n = col_end - col_start;
@@ -292,7 +292,7 @@ pub fn decode(src: &[u8], out: &mut [u16], width: usize, coded_rows: usize, stor
     }
     // Real files never leave the 12-bit range; garbage input does so constantly.
     if bad > width * coded_rows / 64 {
-        return Err(Error::corrupt("ARW1 data out of range (corrupt stream)"));
+        return Err(Error::corrupt("ARW1 data out of range"));
     }
     Ok(())
 }

@@ -354,7 +354,7 @@ pub fn decode(stream: &[u8], p: &CrwParams, out: &mut [u16]) -> Result<()> {
                 i += 1;
             }
             if bits.exhausted() {
-                return Err(Error::corrupt(format!("CRW bit stream truncated at row {row}")));
+                return Err(Error::corrupt(format!("truncated CRW bit stream at row {row}")));
             }
             diffs[0] = diffs[0].wrapping_add(carry);
             carry = diffs[0];

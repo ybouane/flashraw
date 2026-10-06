@@ -272,7 +272,7 @@ fn parse(data: &[u8], width: usize, height: usize) -> Result<Stream<'_>> {
                         let p = precision.take().ok_or_else(|| Error::corrupt("VC-5 lowpass without precision"))?;
                         let (w, h) = dims[NUM_LEVELS];
                         let bytes = ((w * h) as u64 * p as u64).div_ceil(64) as usize * 8;
-                        let d = chunk.get(..bytes).ok_or_else(|| Error::corrupt("VC-5 lowpass band truncated"))?;
+                        let d = chunk.get(..bytes).ok_or_else(|| Error::corrupt("truncated VC-5 lowpass band"))?;
                         Coded::Lowpass { precision: p, data: d }
                     } else {
                         let q = quant.take().ok_or_else(|| Error::corrupt("VC-5 highpass without quantisation"))?;
@@ -334,12 +334,12 @@ fn decode_highpass(code: &PrefixCode, data: &[u8], quant: i16, w: usize, h: usiz
         out[i..end].fill(value);
         i = end;
         if bits.exhausted() {
-            return Err(Error::corrupt("VC-5 highpass band truncated"));
+            return Err(Error::corrupt("truncated VC-5 highpass band"));
         }
     }
     let (value, count) = read_rlv(code, &mut bits)?;
     if value != MARKER_BAND_END || count != 0 {
-        return Err(Error::corrupt("VC-5 end-of-band marker missing"));
+        return Err(Error::corrupt("missing VC-5 end-of-band marker"));
     }
     Ok(band)
 }
@@ -427,13 +427,13 @@ pub fn decode(
     parallel: bool,
 ) -> Result<()> {
     if width == 0 || height == 0 || width % 2 != 0 || height % 2 != 0 || width > 65535 || height > 65535 {
-        return Err(Error::corrupt(format!("VC-5 image size {width}x{height}")));
+        return Err(Error::corrupt(format!("invalid VC-5 image size {width}x{height}")));
     }
     if out.len() < width * height {
-        return Err(Error::InvalidArgument("VC-5 output buffer too small".into()));
+        return Err(Error::InvalidArgument("VC-5: output buffer too small".into()));
     }
     if white_level == 0 || white_level > 0xFFFF {
-        return Err(Error::corrupt(format!("VC-5 white level {white_level}")));
+        return Err(Error::corrupt(format!("invalid VC-5 white level {white_level}")));
     }
     let output_bits = 32 - white_level.leading_zeros();
     let st = parse(data, width, height)?;
@@ -468,9 +468,9 @@ pub fn decode(
     }
     let prescale = st.prescale;
     let finals = flashraw_core::par::map(per_channel, parallel, |(c, mut v)| -> Result<Band> {
-        let mut low = v[(NUM_LEVELS - 1) * 4].take().ok_or_else(|| Error::corrupt("VC-5 lowpass band missing"))?;
+        let mut low = v[(NUM_LEVELS - 1) * 4].take().ok_or_else(|| Error::corrupt("missing VC-5 lowpass band"))?;
         for level in (0..NUM_LEVELS).rev() {
-            let mut take = |b: usize| v[level * 4 + b].take().ok_or_else(|| Error::corrupt("VC-5 band missing"));
+            let mut take = |b: usize| v[level * 4 + b].take().ok_or_else(|| Error::corrupt("missing VC-5 band"));
             let (lh, hl, hh) = (take(1)?, take(2)?, take(3)?);
             let lowpass = vertical(&hl, &low)?;
             let highpass = vertical(&hh, &lh)?;

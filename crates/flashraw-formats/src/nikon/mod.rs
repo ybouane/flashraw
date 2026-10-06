@@ -39,7 +39,7 @@ pub fn probe(_data: &[u8]) -> bool {
 }
 
 pub fn open<'a>(_data: &'a [u8], _opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
-    Err(Error::UnsupportedFormat("NEF files are TIFF based; use open_tiff".into()))
+    Err(Error::UnsupportedFormat("NEF files are TIFF-based; use `open_tiff`".into()))
 }
 
 /// How the payload is stored.
