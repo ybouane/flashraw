@@ -183,3 +183,7 @@ First complete release of FlashRaw.
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
   benchmark runner with regression detection, CI for Linux/macOS/Windows/ARM64.
+- Comparative benchmarks against other open-source RAW decoders on Linux x86-64 and
+  Apple M1 Ultra (`tools/bench/compare.py`, `benches/popular-cameras.tsv`,
+  `benches/results/*-compare.*`, `docs/benchmarks.md`); README rewritten around speed,
+  security and support.
