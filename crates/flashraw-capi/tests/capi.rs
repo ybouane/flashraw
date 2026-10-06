@@ -15,8 +15,21 @@ fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_str().unwrap())
 }
 
+/// The thread's last error message, checked against the message style: lower case at the
+/// start unless the first word is an acronym or identifier, no trailing period or space.
 fn last_error() -> String {
-    cstr(flashraw_last_error_message()).unwrap_or("").to_string()
+    let m = cstr(flashraw_last_error_message()).unwrap_or("").to_string();
+    if !m.is_empty() {
+        assert_eq!(m.trim(), m, "stray whitespace in {m:?}");
+        assert!(!m.ends_with('.') || m.ends_with("..."), "trailing period in {m:?}");
+        let word = m.split([' ', ':']).next().unwrap_or("");
+        assert!(
+            !word.starts_with(|c: char| c.is_uppercase())
+                || word.chars().skip(1).any(|c| c.is_uppercase() || c.is_ascii_digit()),
+            "capitalised message {m:?}"
+        );
+    }
+    m
 }
 
 fn open_path(p: &std::path::Path) -> *mut flashraw_file {

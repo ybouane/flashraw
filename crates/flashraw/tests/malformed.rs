@@ -9,6 +9,9 @@
 //! format when the corpus is available. The DNG opcode-list test also checks that
 //! lists apply in their stages and that unparsable lists are reported and ignored.
 
+mod common;
+
+use common::error_style::{check_decode, check_error};
 use flashraw::{CorruptionPolicy, DecodeOptions, FlashRaw, Limits, OutputFormat, RawPixelData};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::{Duration, Instant};
@@ -118,23 +121,31 @@ fn flashraw_codecs_encode(s: &[u16]) -> Vec<u8> {
     flashraw::low_level::codecs::ljpeg::encoder::encode(W as usize / 2, H as usize, 2, 14, 1, s)
 }
 
-/// Open + metadata + previews + decode + region decode; must not panic or hang.
+/// Open + metadata + previews + decode + region decode; must not panic or hang, and every
+/// error and warning must follow the message style.
 fn exercise(data: &[u8]) -> Result<(), String> {
     let t = Instant::now();
-    let r = catch_unwind(AssertUnwindSafe(|| {
+    let r = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
         let limits = Limits::default().with_max_samples(64 << 20).with_max_dimension(65535);
-        if let Ok(raw) = FlashRaw::open_with(data, limits) {
-            let _ = raw.metadata().camera();
-            for p in raw.previews() {
-                let _ = raw.preview_bytes(p);
+        match FlashRaw::open_with(data, limits) {
+            Ok(raw) => {
+                let _ = raw.metadata().camera();
+                for p in raw.previews() {
+                    if let Err(e) = raw.preview_bytes(p) {
+                        check_error(&e)?;
+                    }
+                }
+                let opts = DecodeOptions { limits, threads: Some(2), ..Default::default() };
+                check_decode(&raw.decode(opts.clone()))?;
+                check_decode(&raw.decode_region(flashraw::Rect::new(1, 1, 7, 5), opts))
             }
-            let opts = DecodeOptions { limits, threads: Some(2), ..Default::default() };
-            let _ = raw.decode(opts.clone());
-            let _ = raw.decode_region(flashraw::Rect::new(1, 1, 7, 5), opts);
+            Err(e) => check_error(&e),
         }
     }));
-    if r.is_err() {
-        return Err("panicked".into());
+    match r {
+        Err(_) => return Err("panicked".into()),
+        Ok(Err(e)) => return Err(e),
+        Ok(Ok(())) => {}
     }
     if t.elapsed() > Duration::from_secs(20) {
         return Err(format!("took {:?}", t.elapsed()));

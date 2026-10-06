@@ -96,3 +96,18 @@ Idiomatic Rust, `cargo fmt` (120 columns), `cargo clippy` clean. Small hot-path
 abstractions, explicit error context, comments that explain *why* (camera quirks,
 format oddities) rather than restating code. Implement algorithms from
 understanding of the format.
+
+### Error messages
+
+Every error message (Rust, CLI, WASM/npm, Python, C API) follows one style, checked by
+`crates/flashraw/tests/error_style.rs`:
+
+- Lower case at the start, unless the first word is a proper noun, acronym, format or
+  camera name (`NEF`, `CR2`, `JPEG XL`, `Nikon`, `Huffman`) or code in backticks.
+- No trailing period or whitespace; join clauses with `;`.
+- Wording: `truncated X`, `invalid X`, `missing X`, `unsupported X`; an optional context
+  prefix names the format or codec (`CRX: invalid tile header`).
+- Code (option names, functions, features, environment variables) in backticks; values
+  the caller passed quoted with `{:?}` (`unknown backend "tpu"`).
+- `Error`'s Display adds the kind (`corrupt file: `, `invalid metadata: `, ...); the text
+  passed to the constructor must not repeat it (`Error::corrupt("corrupt header")`).

@@ -265,6 +265,12 @@ First complete release of FlashRaw.
   struct grows to 72 bytes, older 64-byte callers keep the default), `flashraw_frame_source()`
   (`FLASHRAW_SOURCE_SENSOR` / `_PREVIEW`), frame JSON `source`; C++
   `decode_options::preview_fallback` and `frame::from_preview()`.
+- Error messages share one style in every crate and binding: lower case at the start (bar
+  proper nouns, acronyms and format names), no trailing period, `truncated X` / `invalid X` /
+  `missing X` wording, code in backticks and caller values quoted; `UnsupportedCompression`
+  reads "unsupported compression in DNG: ..." and `CameraUnsupported` "unsupported camera:
+  ...". A source scan and the malformed-input and truncation suites enforce it. Error kinds,
+  codes and structured fields are unchanged.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,

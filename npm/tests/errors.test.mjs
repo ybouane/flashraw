@@ -15,6 +15,20 @@ import {
 } from 'flashraw';
 import { fixture, fixtures, corpusFile } from './helpers.mjs';
 
+/** Capitalised words a message may start with (acronyms such as NEF or CR2 need no entry). */
+const PROPER_NOUNS = new Set(['Canon', 'Fuji', 'Fujifilm', 'Hasselblad', 'Huffman', 'Kodak', 'Leaf', 'Light', 'Nikon',
+  'Olympus', 'Panasonic', 'Pentax', 'Phase', 'Samsung', 'Sigma', 'Sinar', 'Sony', 'Web']);
+
+/** Error messages start in lower case (bar proper nouns) and have no trailing period or space. */
+function assertStyled(message, label) {
+  assert.ok(message && message === message.trim(), `${label}: stray whitespace in ${JSON.stringify(message)}`);
+  assert.ok(!/[^.]\.$/.test(message), `${label}: trailing period in ${JSON.stringify(message)}`);
+  const word = message.split(' ')[0].replace(/[:,;]+$/, '');
+  if (/^[A-Z]/.test(word) && !/[A-Z0-9]/.test(word.slice(1))) {
+    assert.ok(PROPER_NOUNS.has(word), `${label}: capitalised ${JSON.stringify(message)}`);
+  }
+}
+
 /** Run `fn`; it may succeed, but any failure must be a structured, non-internal FlashRawError. */
 async function noCrash(fn, label) {
   try {
@@ -25,6 +39,7 @@ async function noCrash(fn, label) {
     assert.ok(ERROR_KINDS.includes(e.kind), `${label}: unknown kind ${e.kind}`);
     assert.notEqual(e.kind, 'Internal', `${label}: WASM trap / panic: ${e.message}`);
     assert.equal(typeof e.message, 'string');
+    assertStyled(e.message, label);
     return e.kind;
   }
 }
@@ -111,6 +126,7 @@ describe('structured errors', () => {
       ]) {
         const e = await raw.decode(opts).catch((x) => x);
         assert.ok(e instanceof InvalidArgumentError, `${JSON.stringify(opts)} → ${e}`);
+        assertStyled(e.message, JSON.stringify(opts));
       }
       await assert.rejects(raw.decodeRegion({ x: 99999, y: 0, width: 10, height: 10 }), { kind: 'InvalidArgument' });
       await assert.rejects(raw.decode('rgba8'), { kind: 'InvalidArgument' });

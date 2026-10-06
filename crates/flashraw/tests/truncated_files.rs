@@ -10,6 +10,9 @@
 //! make by default; `FLASHRAW_TRUNCATION_ALL=1` checks one file per camera directory.
 //! Synthetic cases cover the same rule without the corpus.
 
+mod common;
+
+use common::error_style::{check_decode, check_error};
 use flashraw::{CorruptionPolicy, DecodeOptions, Error, FlashRaw, OutputFormat};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -83,7 +86,7 @@ fn cuts(len: usize, r: &Reference) -> Vec<usize> {
 fn check_cut(data: &[u8], r: &Reference) -> Result<(), String> {
     let raw = match FlashRaw::open(data) {
         Ok(raw) => raw,
-        Err(_) => return Ok(()), // a clear error at open
+        Err(e) => return check_error(&e), // a clear error at open
     };
     let info = raw.frame_info();
     if (info.width, info.height) != (r.width, r.height) {
@@ -91,6 +94,8 @@ fn check_cut(data: &[u8], r: &Reference) -> Result<(), String> {
     }
     let recovered = raw.decode(opts(CorruptionPolicy::Recover));
     let strict = raw.decode(opts(CorruptionPolicy::Strict));
+    check_decode(&recovered)?;
+    check_decode(&strict)?;
     match &recovered {
         Ok(f) => {
             if (f.width, f.height) != (r.width, r.height) {

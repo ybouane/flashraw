@@ -186,12 +186,39 @@ def test_errors_pickle() -> None:
 
 # --- malformed input never crashes ----------------------------------------------------------
 
+# Capitalised words an error message may start with (acronyms and identifiers with another
+# capital or a digit, such as NEF, CR2 or FlashRaw, are accepted without being listed).
+_PROPER_NOUNS = {"Canon", "Fuji", "Fujifilm", "Hasselblad", "Huffman", "Kodak", "Leaf", "Light", "Nikon"}
+_PROPER_NOUNS |= {"Olympus", "Panasonic", "Pentax", "Phase", "Pillow", "Samsung", "Sigma", "Sinar", "Sony"}
+
+
+def _check_style(message: str) -> None:
+    """Error messages start in lower case (bar proper nouns), with no trailing period or space."""
+    assert message and message == message.strip(), repr(message)
+    assert not message.endswith(".") or message.endswith("..."), repr(message)
+    word = message.split(" ")[0].rstrip(":,;")
+    if word[:1].isupper() and not any(c.isupper() or c.isdigit() for c in word[1:]):
+        assert word in _PROPER_NOUNS, repr(message)
+
+
+def test_message_style(mlv_path: pathlib.Path) -> None:
+    _check_style("corrupt file: truncated header")
+    _check_style("NEF has no raw image IFD")
+    for bad in ("Corrupt file", "corrupt file.", " corrupt", "corrupt "):
+        with pytest.raises(AssertionError):
+            _check_style(bad)
+    with pytest.raises(flashraw.InvalidArgumentError) as e:
+        flashraw.open(mlv_path).decode("nope")
+    _check_style(str(e.value))
+
 
 def _try_all(data: bytes) -> None:
-    """Open, read metadata, decode raw and RGB: every failure must be a FlashRawError."""
+    """Open, read metadata, decode raw and RGB: every failure must be a FlashRawError
+    whose message follows the style."""
     try:
         raw = flashraw.open(data, max_samples=50_000_000)
-    except flashraw.FlashRawError:
+    except flashraw.FlashRawError as e:
+        _check_style(str(e))
         return
     with raw:
         try:
@@ -199,21 +226,24 @@ def _try_all(data: bytes) -> None:
             raw.frame_info
             raw.capabilities
             raw.tiles
-        except flashraw.FlashRawError:
+        except flashraw.FlashRawError as e:
+            _check_style(str(e))
             return
         for output in ("raw-u16", "rgba8"):
             for policy in ("recover", "strict"):
                 try:
                     f = raw.decode(output, corruption_policy=policy)
                     assert f.array.size == f.width * f.height * f.channels
-                except flashraw.FlashRawError:
-                    pass
+                    for w in f.warnings:
+                        _check_style(w.message)
+                except flashraw.FlashRawError as e:
+                    _check_style(str(e))
         for p in raw.previews:
             try:
                 raw.preview_bytes(p)
                 raw.preview(p, decode=True)
-            except flashraw.FlashRawError:
-                pass
+            except flashraw.FlashRawError as e:
+                _check_style(str(e))
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED))
