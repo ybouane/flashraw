@@ -128,6 +128,13 @@ First complete release of FlashRaw.
   bit depth (a 12-bit codestream in a 16-bit DNG decoded 16x too dark), and JPEG XL tiles
   with RowInterleaveFactor/ColumnInterleaveFactor are de-interleaved (they decoded as four
   quadrant sub-images).
+- RGB renders of four-colour sensors (CMYG: Canon PowerShot G1/Pro70/Pro90 IS, Nikon
+  Coolpix E5700; RGBE: Sony DSC-F828) are neutral instead of saturated red or green: all
+  four channels are demosaiced, white balanced per channel and converted with the
+  pseudo-inverse of the 4-row colour matrix. Files without an as-shot balance use
+  daylight derived from that matrix; the Coolpix red/blue levels are converted to channel
+  multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
+  matrices and of their white balance. GPU backends leave these to the CPU.
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack

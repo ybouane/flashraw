@@ -390,6 +390,12 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     }
     info.white_balance = wb_from_cam_mul(mul);
     info.color_matrices = conventions::color_from_table(fallback, &meta, cam);
+    if info.cfa.and_then(|p| p.four_colour_order()).is_some() {
+        // Complementary-colour Coolpix: the red and blue levels apply to the camera's
+        // RGB rendering, not to the four sensor channels; convert them to channel
+        // multipliers through the colour matrix (daylight when there are none).
+        info.white_balance = four_colour_wb(&info.color_matrices, mn.rb_levels);
+    }
 
     // Previews: TIFF thumbnails/JpgFromRaw plus the makernote preview IFD.
     let mut previews = tiff_previews(data, 0, &tiff, info.orientation);
@@ -438,6 +444,17 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         }));
     }
     Ok(Box::new(dec))
+}
+
+/// As-shot white balance of a four-colour sensor from the makernote's red and blue
+/// levels (multipliers of the camera's RGB rendering, relative to green): the channel
+/// multipliers that balance the colour those levels make neutral. `None` without
+/// levels (or a 4-row colour matrix).
+fn four_colour_wb(cm: &ColorMatrices, rb: Option<[f32; 2]>) -> Option<WhiteBalance> {
+    let [r, b] = rb.filter(|l| l.iter().all(|v| v.is_finite() && (0.05..=20.0).contains(v)))?;
+    let m = cm.preferred().filter(|m| m.rows == 4)?;
+    let mul = m.multipliers_for([1.0 / r, 1.0, 1.0 / b])?;
+    WhiteBalance::from_multipliers(mul[0], mul[1], mul[2], mul[3])
 }
 
 /// Visible area plus the (possibly widened) buffer width.
@@ -733,6 +750,29 @@ mod tests {
         assert_eq!(c[0], 0);
         assert!(c.windows(2).all(|w| w[1] >= w[0]));
         assert!(*c.last().unwrap() <= 16383);
+    }
+
+    #[test]
+    fn four_colour_wb_from_rb_levels() {
+        // Coolpix E5700 matrix ([G, M, C, Y] rows).
+        let m = ColorMatrix::new(
+            Illuminant::D65,
+            4,
+            vec![-0.6475, 1.2501, 0.2434, 0.5414, -0.0017, 0.3184, -0.5962, 1.0913, 0.5868, -0.0181, 0.9924, 0.0247],
+        )
+        .unwrap();
+        let cm = ColorMatrices { color: vec![m.clone()], ..Default::default() };
+        assert!(four_colour_wb(&cm, None).is_none());
+        assert!(four_colour_wb(&cm, Some([0.0, 1.0])).is_none());
+        // Levels that cut red and boost blue balance a warm light.
+        let wb = four_colour_wb(&cm, Some([0.586, 1.375])).unwrap();
+        let daylight = m.multipliers_for([1.0; 3]).unwrap();
+        let warm = m.camera_response([1.0 / 0.586, 1.0, 1.0 / 1.375]);
+        for i in 0..4 {
+            assert!((wb.coeffs[i] * warm[i] - wb.coeffs[1] * warm[1]).abs() < 1e-4);
+        }
+        // Yellow (index 3) is boosted less than cyan (index 2) relative to daylight.
+        assert!(wb.coeffs[3] / wb.coeffs[2] < daylight[3] / daylight[2]);
     }
 
     #[test]
