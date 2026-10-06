@@ -262,9 +262,17 @@ impl Lists {
             Some(norm)
         };
         let normalizer = process::normalizer(img, info, origin);
-        let ops2 = &self.ops[1].clone();
-        let period = cfa_period(info);
         let (full_w, full_h) = (info.active_area.width as usize, info.active_area.height as usize);
+        // List 2, prepared once for the rows of the active-area window.
+        let ops2 = self.ops[1].clone();
+        let list2 = match (window, full.is_none()) {
+            (Some((l, x0, y0)), true) => {
+                dng_opcodes::RowOps::new(&ops2, l.width as usize, cpp, x0, full_w, full_h, 65535.0)
+                    .filter(|r| !r.is_empty())
+                    .map(|r| (l, y0, r))
+            }
+            _ => None,
+        };
         let rows = |y: usize, out: &mut [f32]| {
             if let Some(n) = &full {
                 for (o, &v) in out.iter_mut().zip(&n[y * w * cpp..(y + 1) * w * cpp]) {
@@ -276,22 +284,11 @@ impl Lists {
             for v in out.iter_mut() {
                 *v = v.max(0.0);
             }
-            if let Some((local, x0, y0)) =
-                window.filter(|(l, _, _)| !ops2.is_empty() && y >= l.y as usize && y < l.bottom() as usize)
+            if let Some((local, y0, ops)) =
+                list2.as_ref().filter(|(l, _, _)| y >= l.y as usize && y < l.bottom() as usize)
             {
                 let s = local.x as usize * cpp;
-                let mut pi = PlaneImage {
-                    data: &mut out[s..s + local.width as usize * cpp],
-                    width: local.width as usize,
-                    height: 1,
-                    planes: cpp,
-                    stride: local.width as usize,
-                    x0,
-                    y0: y0 + (y - local.y as usize),
-                    full_width: full_w,
-                    full_height: full_h,
-                };
-                dng_opcodes::apply(ops2, &mut pi, period, 65535.0, false);
+                ops.apply(y0 + (y - local.y as usize), &mut out[s..s + local.width as usize * cpp]);
             }
             for v in out.iter_mut() {
                 *v = (*v * 65535.0) * lin_scale;
@@ -310,25 +307,15 @@ impl Lists {
         // The output is the requested crop inside the window.
         let c = params.crop.intersect(&win).unwrap_or(win);
         lparams.crop = c;
-        let ops3 = &self.ops[2].clone();
+        let ops3 = self.ops[2].clone();
         let skipped3: Vec<&'static str> = ops3.iter().filter(|o| !o.is_pixel_opcode()).map(|o| o.name()).collect();
-        if ops3.iter().all(|o| o.is_row_local()) {
-            let (bx, by) = (x0 + (c.x - win.x) as usize, y0 + (c.y - win.y) as usize);
-            let cw = c.width as usize;
+        let (bx, by) = (x0 + (c.x - win.x) as usize, y0 + (c.y - win.y) as usize);
+        let cw = c.width as usize;
+        if let Some(ops) = dng_opcodes::RowOps::new(&ops3, cw, 3, bx, full_w, full_h, 65535.0) {
             let list3 = |first: usize, band: &mut [[f32; 3]]| {
-                let height = band.len() / cw;
-                let mut pi = PlaneImage {
-                    data: band.as_flattened_mut(),
-                    width: cw,
-                    height,
-                    planes: 3,
-                    stride: cw,
-                    x0: bx,
-                    y0: by + first,
-                    full_width: full_w,
-                    full_height: full_h,
-                };
-                dng_opcodes::apply(ops3, &mut pi, 1, 65535.0, false);
+                for (j, row) in band.chunks_exact_mut(cw).enumerate() {
+                    ops.apply(by + first + j, row.as_flattened_mut());
+                }
             };
             let r = process::develop_staged(img, &linfo, origin, &lparams, enc, parallel, Some(&rows), Some(&list3));
             self.record(2, &skipped3);

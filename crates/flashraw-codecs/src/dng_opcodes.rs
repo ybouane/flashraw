@@ -400,6 +400,250 @@ impl<'a, T: Sample> PlaneImage<'a, T> {
     }
 }
 
+impl PlaneImage<'_, f32> {
+    /// Run `f(y, row)` for every row of the window (`y` in whole-image coordinates).
+    fn each_row(&mut self, parallel: bool, f: &RowFn<'_>) {
+        let (w, h, p, stride, y0) = (self.width, self.height, self.planes, self.stride, self.y0);
+        if w == 0 || stride < w {
+            return;
+        }
+        let rl = stride * p;
+        let n = self.data.len().min(h * rl);
+        par::for_each_row_chunk(&mut self.data[..n], rl, 16, parallel, |first, chunk| {
+            for (i, row) in chunk.chunks_mut(rl).enumerate() {
+                let len = (w * p).min(row.len());
+                f(y0 + first + i, &mut row[..len]);
+            }
+        });
+    }
+}
+
+/// A row-local opcode prepared for a window: `f(y, row)` processes window row `y`
+/// (whole-image coordinates; `row` holds the window's `width * planes` samples).
+type RowFn<'a> = Box<dyn Fn(usize, &mut [f32]) + Send + Sync + 'a>;
+
+/// Columns of a window's row: placement of the window in the whole image.
+#[derive(Debug, Clone, Copy)]
+struct RowGeometry {
+    width: usize,
+    planes: usize,
+    x0: usize,
+    full_width: usize,
+    full_height: usize,
+}
+
+impl RowGeometry {
+    /// Columns `x` (whole-image coordinates) that `r` selects, with the sample offset of
+    /// plane `r.plane` inside a window row.
+    fn columns(&self, r: &Region) -> Vec<(usize, usize)> {
+        let left = r.left as usize;
+        let start = left.max(self.x0);
+        // First selected column at or after the window start.
+        let start = left + (start - left).div_ceil(r.col_pitch as usize) * r.col_pitch as usize;
+        let right = (r.right as usize).min(self.x0 + self.width);
+        let (x0, p, plane) = (self.x0, self.planes, r.plane as usize);
+        (start..right.max(start)).step_by(r.col_pitch as usize).map(move |x| (x, (x - x0) * p + plane)).collect()
+    }
+
+    /// Number of selected planes that exist.
+    fn plane_count(&self, r: &Region) -> usize {
+        (r.plane as usize).saturating_add(r.planes as usize).min(self.planes).saturating_sub(r.plane as usize)
+    }
+}
+
+/// Whether row `y` is selected by `r` (rows `top..bottom`, every `row_pitch`).
+#[inline]
+fn row_selected(r: &Region, y: usize) -> bool {
+    let top = r.top as usize;
+    y >= top && y < r.bottom as usize && (y - top) % r.row_pitch as usize == 0
+}
+
+/// `f(x, y, plane_index_within_region, sample)` for every sample of a row that `r` selects.
+fn region_fn<'a>(
+    g: &RowGeometry,
+    r: &'a Region,
+    f: impl Fn(usize, usize, usize, &mut f32) + Send + Sync + 'a,
+) -> Option<RowFn<'a>> {
+    let cols = g.columns(r);
+    let np = g.plane_count(r);
+    if cols.is_empty() || np == 0 {
+        return None;
+    }
+    Some(Box::new(move |y, row| {
+        if !row_selected(r, y) {
+            return;
+        }
+        for &(x, off) in &cols {
+            for k in 0..np {
+                if let Some(v) = row.get_mut(off + k) {
+                    f(x, y, k, v);
+                }
+            }
+        }
+    }))
+}
+
+/// Prepare a row-local pixel opcode for windows of geometry `g`: `Some(Some(f))`, or
+/// `Some(None)` when it changes nothing there; `None` for the opcodes that are not
+/// row-local or not applied (bad-pixel repairs, geometric and unknown ones).
+fn row_op<'a>(op: &'a Opcode, g: &RowGeometry, value_scale: f32) -> Option<Option<RowFn<'a>>> {
+    Some(match op {
+        Opcode::MapTable { region, table } if !table.is_empty() => {
+            let last = (table.len() - 1) as f32;
+            region_fn(g, region, move |_, _, _, v| {
+                let i = (*v * value_scale).round().clamp(0.0, last) as usize;
+                *v = table[i] as f32 / value_scale;
+            })
+        }
+        Opcode::MapTable { .. } => None,
+        Opcode::MapPolynomial { region, coeffs } => region_fn(g, region, move |_, _, _, v| {
+            // Polynomials map values normalised to [0, 1].
+            let x = (*v * value_scale / 65535.0) as f64;
+            let mut acc = 0f64;
+            for c in coeffs.iter().rev() {
+                acc = acc * x + c;
+            }
+            *v = (acc * 65535.0 / value_scale as f64) as f32;
+        }),
+        Opcode::DeltaPerRow { region, deltas } => region_fn(g, region, move |_, y, _, v| {
+            let i = (y - region.top as usize) / region.row_pitch as usize;
+            *v += deltas.get(i).copied().unwrap_or(0.0) * 65535.0 / value_scale;
+        }),
+        Opcode::DeltaPerColumn { region, deltas } => region_fn(g, region, move |x, _, _, v| {
+            let i = (x - region.left as usize) / region.col_pitch as usize;
+            *v += deltas.get(i).copied().unwrap_or(0.0) * 65535.0 / value_scale;
+        }),
+        Opcode::ScalePerRow { region, scales } => region_fn(g, region, move |_, y, _, v| {
+            let i = (y - region.top as usize) / region.row_pitch as usize;
+            *v *= scales.get(i).copied().unwrap_or(1.0);
+        }),
+        Opcode::ScalePerColumn { region, scales } => region_fn(g, region, move |x, _, _, v| {
+            let i = (x - region.left as usize) / region.col_pitch as usize;
+            *v *= scales.get(i).copied().unwrap_or(1.0);
+        }),
+        Opcode::GainMap { region, points_v, points_h, spacing_v, spacing_h, origin_v, origin_h, map_planes, gains } => {
+            let (pv, ph, mp) = (*points_v as usize, *points_h as usize, *map_planes as usize);
+            if pv == 0 || ph == 0 || mp == 0 || gains.len() < pv * ph * mp {
+                return Some(None);
+            }
+            let (fw, fh) = (g.full_width.max(1) as f64, g.full_height.max(1) as f64);
+            // Map positions are relative to the whole image (0..1). Horizontal
+            // interpolation weights are per column; vertical ones per row.
+            let pos = |rel: f64, origin: f64, spacing: f64, n: usize| -> (usize, usize, f32) {
+                let f = if spacing > 0.0 { ((rel - origin) / spacing).clamp(0.0, (n - 1) as f64) } else { 0.0 };
+                let i0 = (f.floor() as usize).min(n - 1);
+                (i0, (i0 + 1).min(n - 1), (f - i0 as f64) as f32)
+            };
+            let cols: Vec<(usize, usize, usize, f32)> = g
+                .columns(region)
+                .into_iter()
+                .map(|(x, off)| {
+                    let (h0, h1, t) = pos(x as f64 / fw, *origin_h, *spacing_h, ph);
+                    (off, h0, h1, t)
+                })
+                .collect();
+            let np = g.plane_count(region);
+            if cols.is_empty() || np == 0 {
+                return Some(None);
+            }
+            let (origin_v, spacing_v) = (*origin_v, *spacing_v);
+            Some(Box::new(move |y, row| {
+                if !row_selected(region, y) {
+                    return;
+                }
+                let (v0, v1, tv) = pos(y as f64 / fh, origin_v, spacing_v, pv);
+                let mut line = vec![0f32; ph];
+                for k in 0..np {
+                    let m = k.min(mp - 1);
+                    for (hi, l) in line.iter_mut().enumerate() {
+                        let a = gains[(v0 * ph + hi) * mp + m];
+                        let b = gains[(v1 * ph + hi) * mp + m];
+                        *l = a + (b - a) * tv;
+                    }
+                    for &(off, h0, h1, th) in &cols {
+                        if let Some(v) = row.get_mut(off + k) {
+                            *v *= line[h0] + (line[h1] - line[h0]) * th;
+                        }
+                    }
+                }
+            }))
+        }
+        Opcode::FixVignetteRadial { k, cx, cy } => {
+            let (fw, fh) = (g.full_width as f64, g.full_height as f64);
+            let (cx, cy) = (cx * fw, cy * fh);
+            // Squared distance to the farthest corner normalises r to 1 there.
+            let m2 = [(0.0, 0.0), (fw, 0.0), (0.0, fh), (fw, fh)]
+                .iter()
+                .map(|&(x, y): &(f64, f64)| (x - cx).powi(2) + (y - cy).powi(2))
+                .fold(0.0, f64::max);
+            if m2 <= 0.0 || !m2.is_finite() || g.planes == 0 {
+                return Some(None);
+            }
+            let (np, x0, full_h) = (g.planes, g.x0, g.full_height);
+            Some(Box::new(move |y, row| {
+                if y >= full_h {
+                    return;
+                }
+                let dy2 = (y as f64 - cy).powi(2);
+                for (i, px) in row.chunks_exact_mut(np).enumerate() {
+                    let r2 = (((x0 + i) as f64 - cx).powi(2) + dy2) / m2;
+                    let g = 1.0 + r2 * (k[0] + r2 * (k[1] + r2 * (k[2] + r2 * (k[3] + r2 * k[4]))));
+                    for v in px {
+                        *v *= g as f32;
+                    }
+                }
+            }))
+        }
+        _ => return None,
+    })
+}
+
+/// A list of row-local opcodes prepared for one window geometry, applied a row at a time
+/// (e.g. by a streaming pipeline that produces the rows band by band). For every row this
+/// gives exactly what [`apply`] gives on the whole window.
+pub struct RowOps<'a> {
+    fns: Vec<RowFn<'a>>,
+}
+
+impl<'a> RowOps<'a> {
+    /// Prepare `ops` for windows `width` pixels wide of `planes` samples per pixel, whose
+    /// first column is column `x0` of a `full_width x full_height` image (`value_scale` as
+    /// for [`apply`]). `None` when a pixel opcode is not row-local
+    /// ([`Opcode::is_row_local`]); geometric and unknown opcodes are left out, as by
+    /// [`apply`].
+    pub fn new(
+        ops: &'a [Opcode],
+        width: usize,
+        planes: usize,
+        x0: usize,
+        full_width: usize,
+        full_height: usize,
+        value_scale: f32,
+    ) -> Option<Self> {
+        let g = RowGeometry { width, planes, x0, full_width, full_height };
+        let mut fns = Vec::new();
+        for op in ops.iter().filter(|o| o.is_pixel_opcode()) {
+            if let Some(f) = row_op(op, &g, value_scale)? {
+                fns.push(f);
+            }
+        }
+        Some(RowOps { fns })
+    }
+
+    /// Whether no opcode changes anything.
+    pub fn is_empty(&self) -> bool {
+        self.fns.is_empty()
+    }
+
+    /// Apply the opcodes, in order, to window row `y` (whole-image coordinates; `row`:
+    /// `width * planes` samples).
+    pub fn apply(&self, y: usize, row: &mut [f32]) {
+        for f in &self.fns {
+            f(y, row);
+        }
+    }
+}
+
 /// Apply pixel opcodes to `img`, whose samples are in the units the list expects
 /// (OpcodeList1: stored values; OpcodeList2: linear reference values in [0,1];
 /// OpcodeList3: demosaiced values). `cfa_period` is the CFA repeat (2 for Bayer) used by
@@ -414,127 +658,21 @@ pub fn apply(
     parallel: bool,
 ) -> Vec<&'static str> {
     let mut skipped = Vec::new();
+    let g = RowGeometry {
+        width: img.width,
+        planes: img.planes,
+        x0: img.x0,
+        full_width: img.full_width,
+        full_height: img.full_height,
+    };
     for op in ops {
+        if let Some(f) = row_op(op, &g, value_scale) {
+            if let Some(f) = f {
+                img.each_row(parallel, &f);
+            }
+            continue;
+        }
         match op {
-            Opcode::MapTable { region, table } if !table.is_empty() => {
-                let last = (table.len() - 1) as f32;
-                img.for_region(region, parallel, |_, _, _, v| {
-                    let i = (*v * value_scale).round().clamp(0.0, last) as usize;
-                    *v = table[i] as f32 / value_scale;
-                });
-            }
-            Opcode::MapTable { .. } => {}
-            Opcode::MapPolynomial { region, coeffs } => img.for_region(region, parallel, |_, _, _, v| {
-                // Polynomials map values normalised to [0, 1].
-                let x = (*v * value_scale / 65535.0) as f64;
-                let mut acc = 0f64;
-                for c in coeffs.iter().rev() {
-                    acc = acc * x + c;
-                }
-                *v = (acc * 65535.0 / value_scale as f64) as f32;
-            }),
-            Opcode::DeltaPerRow { region, deltas } => img.for_region(region, parallel, |_, y, _, v| {
-                let i = (y - region.top as usize) / region.row_pitch as usize;
-                *v += deltas.get(i).copied().unwrap_or(0.0) * 65535.0 / value_scale;
-            }),
-            Opcode::DeltaPerColumn { region, deltas } => img.for_region(region, parallel, |x, _, _, v| {
-                let i = (x - region.left as usize) / region.col_pitch as usize;
-                *v += deltas.get(i).copied().unwrap_or(0.0) * 65535.0 / value_scale;
-            }),
-            Opcode::ScalePerRow { region, scales } => img.for_region(region, parallel, |_, y, _, v| {
-                let i = (y - region.top as usize) / region.row_pitch as usize;
-                *v *= scales.get(i).copied().unwrap_or(1.0);
-            }),
-            Opcode::ScalePerColumn { region, scales } => img.for_region(region, parallel, |x, _, _, v| {
-                let i = (x - region.left as usize) / region.col_pitch as usize;
-                *v *= scales.get(i).copied().unwrap_or(1.0);
-            }),
-            Opcode::GainMap {
-                region,
-                points_v,
-                points_h,
-                spacing_v,
-                spacing_h,
-                origin_v,
-                origin_h,
-                map_planes,
-                gains,
-            } => {
-                let (pv, ph, mp) = (*points_v as usize, *points_h as usize, *map_planes as usize);
-                if pv == 0 || ph == 0 || mp == 0 || gains.len() < pv * ph * mp {
-                    continue;
-                }
-                let (fw, fh) = (img.full_width.max(1) as f64, img.full_height.max(1) as f64);
-                // Map positions are relative to the whole image (0..1). Horizontal
-                // interpolation weights are per column; vertical ones per row.
-                let pos = |rel: f64, origin: f64, spacing: f64, n: usize| -> (usize, usize, f32) {
-                    let f = if spacing > 0.0 { ((rel - origin) / spacing).clamp(0.0, (n - 1) as f64) } else { 0.0 };
-                    let i0 = (f.floor() as usize).min(n - 1);
-                    (i0, (i0 + 1).min(n - 1), (f - i0 as f64) as f32)
-                };
-                let cols: Vec<(usize, usize, usize, f32)> = img
-                    .columns(region)
-                    .map(|(x, off)| {
-                        let (h0, h1, t) = pos(x as f64 / fw, *origin_h, *spacing_h, ph);
-                        (off, h0, h1, t)
-                    })
-                    .collect();
-                let np = img.plane_count(region);
-                if cols.is_empty() || np == 0 {
-                    continue;
-                }
-                img.rows(region, parallel, |y, row| {
-                    let (v0, v1, tv) = pos(y as f64 / fh, *origin_v, *spacing_v, pv);
-                    let mut line = vec![0f32; ph];
-                    for k in 0..np {
-                        let m = k.min(mp - 1);
-                        for (hi, l) in line.iter_mut().enumerate() {
-                            let a = gains[(v0 * ph + hi) * mp + m];
-                            let b = gains[(v1 * ph + hi) * mp + m];
-                            *l = a + (b - a) * tv;
-                        }
-                        for &(off, h0, h1, th) in &cols {
-                            if let Some(v) = row.get_mut(off + k) {
-                                *v *= line[h0] + (line[h1] - line[h0]) * th;
-                            }
-                        }
-                    }
-                });
-            }
-            Opcode::FixVignetteRadial { k, cx, cy } => {
-                let (fw, fh) = (img.full_width as f64, img.full_height as f64);
-                let (cx, cy) = (cx * fw, cy * fh);
-                // Squared distance to the farthest corner normalises r to 1 there.
-                let m2 = [(0.0, 0.0), (fw, 0.0), (0.0, fh), (fw, fh)]
-                    .iter()
-                    .map(|&(x, y): &(f64, f64)| (x - cx).powi(2) + (y - cy).powi(2))
-                    .fold(0.0, f64::max);
-                if m2 <= 0.0 || !m2.is_finite() {
-                    continue;
-                }
-                let all = Region {
-                    top: 0,
-                    left: 0,
-                    bottom: img.full_height as u32,
-                    right: img.full_width as u32,
-                    plane: 0,
-                    planes: img.planes as u32,
-                    row_pitch: 1,
-                    col_pitch: 1,
-                };
-                let np = img.planes;
-                let x0 = img.x0;
-                img.rows(&all, parallel, |y, row| {
-                    let dy2 = (y as f64 - cy).powi(2);
-                    for (i, px) in row.chunks_exact_mut(np).enumerate() {
-                        let r2 = (((x0 + i) as f64 - cx).powi(2) + dy2) / m2;
-                        let g = 1.0 + r2 * (k[0] + r2 * (k[1] + r2 * (k[2] + r2 * (k[3] + r2 * k[4]))));
-                        for v in px {
-                            *v *= g as f32;
-                        }
-                    }
-                });
-            }
             Opcode::FixBadPixelsConstant { constant, bayer_phase } => {
                 let c = *constant as f32 / value_scale;
                 fix_bad_pixels(img, cfa_period, *bayer_phase, |v: f32| v == c, &[], &[], parallel);
