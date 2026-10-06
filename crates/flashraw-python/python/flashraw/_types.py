@@ -593,7 +593,8 @@ class TileInfo:
 class CorruptInfo:
     """Structured cause of corrupt or truncated sensor data.
 
-    ``kind``: ``"truncated"`` or ``"invalid-unit"``; ``unit``: ``"strip"``, ``"tile"``,
+    ``kind``: ``"truncated"``, ``"invalid-unit"`` or (warnings only) ``"preview-fallback"``
+    (the frame holds the embedded preview, see ``preview_fallback``); ``unit``: ``"strip"``, ``"tile"``,
     ``"plane"`` or ``"payload"`` with its ``index``. For truncation, ``expected`` bytes were
     declared at ``offset`` but only ``available`` exist in the ``file_length``-byte input.
     """

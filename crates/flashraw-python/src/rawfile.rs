@@ -298,6 +298,7 @@ impl RawFile {
         demosaic: &str,
         apply_opcodes: bool,
         corruption_policy: &str,
+        preview_fallback: bool,
         limits: Limits,
     ) -> PyResult<Request> {
         let out = OutputFormat::parse(output).ok_or_else(|| {
@@ -354,7 +355,7 @@ impl RawFile {
             apply_opcodes,
             limits,
             corruption_policy: policy,
-            preview_fallback: false,
+            preview_fallback,
         };
         Ok(Request { opts, backend: be.name().to_string(), active, tile: None })
     }
@@ -522,7 +523,7 @@ impl RawFile {
     /// Decode the sensor data. Returns `(array, info)`.
     #[pyo3(signature = (
         output="raw-u16", backend="auto", threads=None, region=None, crop=None, demosaic="bilinear",
-        apply_opcodes=true, corruption_policy="recover", tile=None
+        apply_opcodes=true, corruption_policy="recover", tile=None, preview_fallback=false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn decode<'py>(
@@ -537,6 +538,7 @@ impl RawFile {
         apply_opcodes: bool,
         corruption_policy: &str,
         tile: Option<usize>,
+        preview_fallback: bool,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         let mut req = Self::parse_request(
             py,
@@ -548,6 +550,7 @@ impl RawFile {
             demosaic,
             apply_opcodes,
             corruption_policy,
+            preview_fallback,
             self.limits,
         )?;
         if tile.is_some() && req.opts.region.is_some() {

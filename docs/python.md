@@ -132,6 +132,7 @@ frame = raw.decode(
     demosaic="bilinear",         # or "half-size" (2x2 binning)
     apply_opcodes=True,          # DNG opcode lists (bad pixels, gain maps, ...)
     corruption_policy="recover", # or "strict"
+    preview_fallback=False,      # RGB outputs of undecodable sensor data: embedded full-size preview
 )
 raw.decode_region((0, 0, 512, 512))    # same as region=...
 raw.decode_tile(3)                      # one tile/strip of raw.tiles
@@ -158,7 +159,8 @@ A `Frame` carries everything needed to interpret the pixels:
 | `origin` | position of the frame in the sensor buffer (region/tile decodes, `crop="active"`) |
 | `cfa`, `layout`, `color_at(x, y)` | CFA pattern (anchored at sensor `(0, 0)`) and the colour at frame coordinates |
 | `black_level`, `white_level`, `white_balance`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8`, which has it applied) |
-| `warnings`, `incomplete` | repairs made under `corruption_policy="recover"` |
+| `warnings`, `incomplete` | repairs made under `corruption_policy="recover"` (and the `preview-fallback` substitution) |
+| `source` | `"sensor"`, or `"preview"` when `preview_fallback=True` returned the embedded preview of undecodable sensor data (Nikon High Efficiency NEF) |
 | `stats` | `total_ms`, per-stage `stages`, `backend` (`decode`, `simd`, `threads`, ...), `call_ms` (native call), `wall_ms` (Python call) |
 | `metadata` | the file's `Metadata` |
 

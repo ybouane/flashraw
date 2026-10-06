@@ -467,11 +467,12 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
             "output_bytes": s.output_bytes,
             "opcodes": s.opcodes,
         },
+        "source": f.source.name(),
         "warnings": f.warnings().iter().map(warning).collect::<Vec<_>>(),
     })
 }
 
-/// A structured corruption cause: `kind` (`truncated`, `invalid-unit`), `unit` (`strip`,
+/// A structured corruption cause: `kind` (`truncated`, `invalid-unit`, `preview-fallback`), `unit` (`strip`,
 /// `tile`, `plane`, `payload`), `index`, and for truncation the byte range (`offset`,
 /// `expected`, `available`, `file_length`).
 pub fn corrupt_reason(r: &CorruptReason) -> Value {
@@ -494,8 +495,7 @@ pub fn corrupt_reason(r: &CorruptReason) -> Value {
             v["available"] = json!(t.available);
             v["file_length"] = json!(t.file_len);
         }
-        CorruptReason::InvalidUnit { .. } => v["kind"] = json!("invalid-unit"),
-        _ => {}
+        _ => v["kind"] = json!(r.kind()),
     }
     v
 }

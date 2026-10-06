@@ -143,6 +143,32 @@ def test_strict_raises_structured_truncation(chdk_bytes: bytes) -> None:
     assert t.offset is not None and t.offset + t.available == len(cut)  # type: ignore[operator]
 
 
+# --- undecodable sensor data: preview fallback ---------------------------------------------
+
+
+def test_preview_fallback() -> None:
+    # Synthetic Nikon High Efficiency NEF (JPEG XS payload, 64x48 RGB preview in IFD0).
+    raw = flashraw.open(fixture_path("nikon-he-synthetic.nef"))
+    with pytest.raises(flashraw.UnsupportedCompressionError):
+        raw.decode("rgba8")
+    f = raw.decode("rgba8", preview_fallback=True)
+    assert f.source == "preview"
+    assert f.incomplete and len(f.warnings) == 1
+    assert f.warnings[0].kind == "preview-fallback"
+    assert "embedded full-size preview" in f.warnings[0].message
+    assert f.array.shape == (48, 64, 4)
+    assert tuple(f.array[0, 0]) == (0, 100, 200, 255)
+    with pytest.raises(flashraw.UnsupportedCompressionError):
+        raw.decode("raw-u16", preview_fallback=True)
+    lin = raw.decode("linear-rgb", preview_fallback=True)
+    assert lin.source == "preview" and lin.array.shape == (48, 64, 3)
+
+
+def test_decodable_file_reports_sensor_source(chdk_bytes: bytes) -> None:
+    f = flashraw.open(chdk_bytes).decode("rgba8", demosaic="half-size", preview_fallback=True)
+    assert f.source == "sensor" and f.warnings == ()
+
+
 def test_metadata_and_regions_do_not_need_missing_data(chdk_bytes: bytes) -> None:
     cut = _cut(chdk_bytes)
     assert flashraw.read_metadata(cut).width > 0

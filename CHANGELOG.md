@@ -203,6 +203,8 @@ First complete release of FlashRaw.
   warnings of kind `preview-fallback`.
 - JS: `decode({ previewFallback: true })`, `frame.source` (`FrameSource`), warning kind
   `preview-fallback`.
+- Python: `decode(..., preview_fallback=True)`, `Frame.source`, warning kind
+  `preview-fallback`.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,

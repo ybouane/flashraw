@@ -194,6 +194,7 @@ class Frame:
         "orientation",
         "stats",
         "warnings",
+        "source",
         "metadata",
         "_data_address",
     )
@@ -217,6 +218,8 @@ class Frame:
     orientation: int
     stats: DecodeStats
     warnings: Tuple[DecodeWarning, ...]
+    #: ``"sensor"``, or ``"preview"`` when ``preview_fallback`` returned the embedded preview.
+    source: str
     metadata: Metadata
 
     def __init__(self, array: "np.ndarray", info: Dict[str, Any], metadata: Metadata, wall_ms: float = 0.0) -> None:
@@ -240,6 +243,7 @@ class Frame:
         self.orientation = info["orientation"]
         self.stats = DecodeStats._from(info["stats"], wall_ms)
         self.warnings = tuple(DecodeWarning._from(w) for w in info["warnings"])
+        self.source = info.get("source", "sensor")
         self.metadata = metadata
         self._data_address = info.get("data_address", 0)
 
@@ -466,6 +470,7 @@ class RawFile:
         demosaic: str = "bilinear",
         apply_opcodes: bool = True,
         corruption_policy: str = "recover",
+        preview_fallback: bool = False,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
 
@@ -485,6 +490,11 @@ class RawFile:
             apply_opcodes: apply DNG opcode lists (bad pixels, gain maps...).
             corruption_policy: ``"recover"`` (default; zero-fill what is missing and report it
                 in :attr:`Frame.warnings`) or ``"strict"`` (raise :class:`CorruptFileError`).
+            preview_fallback: RGB outputs (``"rgba8"``, ``"linear-rgb"``) of files whose
+                sensor data cannot be decoded (:class:`UnsupportedCompressionError`, e.g.
+                Nikon High Efficiency NEF): return the embedded full-size preview instead of
+                raising. The frame then has ``source == "preview"`` and a
+                ``"preview-fallback"`` warning. Never applies to raw outputs or regions.
         """
         t0 = time.perf_counter()
         array, info = self._native.decode(
@@ -497,6 +507,7 @@ class RawFile:
             apply_opcodes,
             corruption_policy,
             None,
+            preview_fallback,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 
