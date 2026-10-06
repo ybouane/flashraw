@@ -160,8 +160,25 @@ pub struct DbCamera {
     /// Orientation policy override and vendor-record layout.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub orientation: Option<DbOrientation>,
+    /// The camera's own image area per active-area size, measured from the image size the
+    /// camera itself records (see "Default crops" in docs/camera-db.md).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_crops: Vec<DbImageCrop>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification: Option<DbVerification>,
+}
+
+/// The image area a camera produces from an active area of a given size.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbImageCrop {
+    /// Active-area size `[width, height]` the rule applies to.
+    pub area: [u32; 2],
+    /// `[x, y, width, height]`, with x/y relative to the active area's top-left corner.
+    pub crop: [u32; 4],
+    /// Files the rule was measured from.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub files: u32,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]

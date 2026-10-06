@@ -44,10 +44,10 @@ mod source;
 
 pub use flashraw_core::{
     BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, CorruptReason, DataUnit,
-    DecodeUnit, DecodeWarning, DngExtras, DngProfileInfo, Error, ExposureInfo, FrameInfo, GpsInfo, Illuminant,
-    LensInfo, Limits, Orientation, OrientationMetadata, OrientationPolicy, OrientationSource, PreviewEncoding,
-    PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result, SampleFormat, SensorLayout, Stage,
-    Truncation, WhiteBalance, WhiteLevel,
+    DecodeUnit, DecodeWarning, DngExtras, DngProfileInfo, EXTRA_CROP_SOURCE, EXTRA_IMAGE_SIZE, Error, ExposureInfo,
+    FrameInfo, GpsInfo, Illuminant, LensInfo, Limits, Orientation, OrientationMetadata, OrientationPolicy,
+    OrientationSource, PreviewEncoding, PreviewInfo, PreviewKind, RandomAccess, RawFormat, RawMetadata, Rect, Result,
+    SampleFormat, SensorLayout, Stage, Truncation, WhiteBalance, WhiteLevel,
 };
 pub use frame::{BackendReport, DecodeStatistics, RawFrame, RawPixelData};
 pub use options::{Backend, CorruptionPolicy, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};

@@ -390,6 +390,100 @@ fn p_len_area(x: &PreviewInfo) -> u64 {
     x.width as u64 * x.height as u64
 }
 
+/// `size` (either orientation) as an image size inside a `width x height` active area: it
+/// must fit, differ from the area, and span (nearly) the whole area in one direction,
+/// the camera's own output being the area minus a few border pixels, or a narrower
+/// aspect ratio (1:1, 4:3, 16:9, DX/APS-C) of it.
+fn image_size_fit(width: u32, height: u32, size: (u32, u32)) -> Option<(u32, u32)> {
+    let ok = |(w, h): (u32, u32)| {
+        w > 0
+            && h > 0
+            && w <= width
+            && h <= height
+            && (w, h) != (width, height)
+            && (w as u64 * 100 >= width as u64 * 97 || h as u64 * 100 >= height as u64 * 97)
+            && w as u64 * 2 >= width as u64
+            && h as u64 * 2 >= height as u64
+    };
+    [size, (size.1, size.0)].into_iter().find(|&s| ok(s))
+}
+
+/// Move `r` so its origin has the same (even) parity as `within`'s, keeping the CFA phase
+/// of the cropped image equal to the active area's; stays inside `within`.
+pub fn even_crop_origin(r: Rect, within: Rect) -> Rect {
+    let fix = |pos: u32, len: u32, lo: u32, hi: u32| {
+        if (pos.wrapping_sub(lo)) % 2 == 0 {
+            pos
+        } else if pos > lo {
+            pos - 1
+        } else if pos + 1 + len <= hi {
+            pos + 1
+        } else {
+            pos
+        }
+    };
+    Rect::new(
+        fix(r.x, r.width, within.x, within.right()),
+        fix(r.y, r.height, within.y, within.bottom()),
+        r.width,
+        r.height,
+    )
+}
+
+/// The rectangle of `w x h` centred in `area`, on an even offset from its origin.
+pub fn centred_crop(area: Rect, w: u32, h: u32) -> Rect {
+    let off = |a: u32, b: u32| (a.saturating_sub(b) / 2) & !1;
+    Rect::new(area.x + off(area.width, w), area.y + off(area.height, h), w.min(area.width), h.min(area.height))
+}
+
+/// Default crop for formats without a crop field of their own: the camera's image area.
+///
+/// When the format left `crop` equal to the active area, the image size the camera
+/// itself produced decides: the size the file records ([`RawMetadata::image_size`]:
+/// EXIF pixel dimensions, vendor maker-note fields), else the embedded full-size JPEG
+/// preview. It is placed at the camera database's measured offset for that body and
+/// active-area size, or centred. Without a size in the file, the database's measured
+/// image area for that active-area size applies. DNG keeps its own DefaultCrop.
+pub fn resolve_default_crop(format: RawFormat, meta: &mut RawMetadata, info: &mut FrameInfo) {
+    if format == RawFormat::Dng {
+        return;
+    }
+    let aa = info.active_area;
+    if info.crop != aa {
+        meta.set_extra(EXTRA_CROP_SOURCE, "file");
+        return;
+    }
+    if aa.is_empty() || aa.right() > info.width || aa.bottom() > info.height {
+        return;
+    }
+    let cam = flashraw_camera_db::find(&meta.make, &meta.model, meta.extra("mode").unwrap_or(""))
+        .or_else(|| flashraw_camera_db::find_any(&meta.make, &meta.model));
+    let preview = meta
+        .previews
+        .iter()
+        .filter(|p| p.encoding == PreviewEncoding::Jpeg && p.kind == PreviewKind::FullSize)
+        .max_by_key(|p| p.width as u64 * p.height as u64)
+        .map(|p| (p.width, p.height));
+    let size = [("image-size", meta.image_size()), ("preview", preview)]
+        .into_iter()
+        .find_map(|(src, s)| s.and_then(|s| image_size_fit(aa.width, aa.height, s)).map(|s| (src, s)));
+    let at = |c: [u32; 4]| Rect::new(aa.x + c[0], aa.y + c[1], c[2], c[3]);
+    let (source, crop) = match size {
+        Some((src, (w, h))) => {
+            let db = cam.and_then(|c| c.image_crop(aa.width, aa.height, Some((w, h))));
+            (src, db.map(at).unwrap_or_else(|| centred_crop(aa, w, h)))
+        }
+        None => match cam.and_then(|c| c.image_crop(aa.width, aa.height, None)) {
+            Some(c) => ("camera-db", at(c)),
+            None => return,
+        },
+    };
+    if let Some(c) = crop.intersect(&aa).filter(|c| *c == crop && *c != aa) {
+        info.crop = c;
+        meta.set_extra(EXTRA_CROP_SOURCE, source);
+    }
+}
+
 /// Fill derived metadata fields from frame info.
 pub fn finish_metadata(meta: &mut RawMetadata, info: &FrameInfo, format: RawFormat) {
     meta.format = Some(format);
@@ -428,6 +522,7 @@ pub struct SimpleDecoder<'a> {
 impl<'a> SimpleDecoder<'a> {
     pub fn new(format: RawFormat, mut meta: RawMetadata, mut info: FrameInfo, decode: Box<DecodeFn<'a>>) -> Self {
         info.sanitize();
+        resolve_default_crop(format, &mut meta, &mut info);
         finish_metadata(&mut meta, &info, format);
         SimpleDecoder {
             format,

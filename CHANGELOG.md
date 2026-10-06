@@ -140,6 +140,19 @@ First complete release of FlashRaw.
 - Entries are checked against FlashRaw's decodes of the corpus; 24 cameras come from corpus files.
 - Orientation policies per make (`orientation_rules`) and per camera (`orientation`: policy
   override, Canon CameraInfo orientation / Auto Rotate offsets for 25 EOS bodies).
+- Default crops are the camera's own image area: formats without a crop field of their own
+  now crop to the image size the camera produced (EXIF pixel dimensions, Sony FullImageSize,
+  Minolta PRD image size, else the embedded full-size JPEG), per file, so aspect-ratio and
+  DX/APS-C modes follow the file; Canon uses SensorInfo's valid-image rectangle (now
+  inclusive of its last row/column) narrowed by AspectInfo. Examples: D850 8288×5520 →
+  8256×5504, Z 9 8280×5520 → 8256×5504, Z 6 6064×4040 → 6048×4024, EOS R6 5496×3670 →
+  5472×3648, EOS R5 8191×5463 → 8192×5464, EOS 250D 1:1 → 4000×4000. RGB outputs and
+  `metadata.width/height` follow; DNG keeps its DefaultCrop. `RawMetadata::extra` reports
+  `image_size` and `crop_source`.
+- `image_crops` per camera (877 entries, 1,026 rules): the camera's image area per
+  active-area size, measured from 6,337 corpus and real-world files, with positions located
+  by matching the camera's JPEG against the raw data (`flashraw camera-db crops --register`,
+  `tools/camera_db_crops.py`); the fallback for files that record no size.
 
 ### Platforms
 - `flashraw` CLI: info, decode, preview, thumbnail, benchmark, verify,

@@ -319,8 +319,8 @@ fn open_bayer<'a>(
             g = Geometry {
                 left,
                 top,
-                width: (s.crop.right as u32).saturating_sub(left),
-                height: (s.crop.bottom as u32).saturating_sub(top),
+                width: (s.crop.right as u32 + 1).saturating_sub(left),
+                height: (s.crop.bottom as u32 + 1).saturating_sub(top),
             };
         }
     }
@@ -385,7 +385,11 @@ fn open_bayer<'a>(
     info.compression = Compression::LosslessJpeg;
     info.orientation = orientation;
     info.active_area = Rect::new(g.left, g.top, g.width, g.height).clamp_to(raw_w, raw_h);
-    info.crop = info.active_area;
+    info.crop = mn
+        .image_area(raw_w, raw_h, false)
+        .and_then(|r| r.intersect(&info.active_area))
+        .map(|r| even_crop_origin(r, info.active_area))
+        .unwrap_or(info.active_area);
     info.cfa = Some(buf_cfa);
     info.layout = SensorLayout::Bayer;
     match black {
@@ -542,7 +546,8 @@ fn open_sraw<'a>(
     info.compression = Compression::CanonSraw;
     info.orientation = orientation;
     info.active_area = if full_frame { Rect::new(left, top, width, height) } else { Rect::full(out_w, out_h) };
-    info.crop = info.active_area;
+    info.crop =
+        mn.image_area(out_w, out_h, true).and_then(|r| r.intersect(&info.active_area)).unwrap_or(info.active_area);
     info.white_level = WhiteLevel::uniform(0x3fff);
     info.black_level = BlackLevel::uniform(0.0);
     if let Some([r, g0, b, g2]) = mn.as_shot_wb() {

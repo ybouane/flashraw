@@ -87,6 +87,13 @@ pub fn read_exif(e: &Ifd, meta: &mut RawMetadata) {
     if meta.serial.is_none() {
         meta.serial = e.string(tags::BODY_SERIAL);
     }
+    // The size of the image the camera itself renders (its JPEG), when the raw's EXIF
+    // mirrors it.
+    if meta.image_size().is_none() {
+        if let (Some(w), Some(h)) = (e.u32(tags::PIXEL_X_DIMENSION), e.u32(tags::PIXEL_Y_DIMENSION)) {
+            meta.set_image_size(w, h);
+        }
+    }
     let l = &mut meta.lens;
     if l.make.is_none() {
         l.make = e.string(tags::LENS_MAKE);

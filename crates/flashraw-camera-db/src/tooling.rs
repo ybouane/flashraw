@@ -119,6 +119,19 @@ pub fn validate(db: &DbFile) -> Vec<String> {
                 problems.push(format!("{id}: negative crop origin"));
             }
         }
+        let mut crops = BTreeMap::new();
+        for r in &c.image_crops {
+            let [aw, ah] = r.area;
+            let [x, y, w, h] = r.crop;
+            if aw == 0 || ah == 0 || w == 0 || h == 0 {
+                problems.push(format!("{id}: image crop with a zero dimension"));
+            } else if x + w > aw || y + h > ah {
+                problems.push(format!("{id}: image crop {:?} outside its {aw}x{ah} area", r.crop));
+            }
+            if crops.insert((aw, ah, w, h), ()).is_some() {
+                problems.push(format!("{id}: duplicate image crop {w}x{h} for area {aw}x{ah}"));
+            }
+        }
         if let Some(o) = &c.orientation {
             if !o.policy.is_empty() && !ORIENTATION_POLICIES.contains(&o.policy.as_str()) {
                 problems.push(format!("{id}: unknown orientation policy {:?}", o.policy));
@@ -191,6 +204,9 @@ pub fn compare(a: &DbFile, b: &DbFile) -> Vec<String> {
                 }
                 if ca.orientation != cb.orientation {
                     diffs.push("orientation".into());
+                }
+                if ca.image_crops != cb.image_crops {
+                    diffs.push("image crops".into());
                 }
                 if diffs.is_empty() {
                     diffs.push("other fields".into());

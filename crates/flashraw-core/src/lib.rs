@@ -34,7 +34,8 @@ pub use error::{Error, Result};
 pub use image::{Limits, PixelData, RawImage, alloc_zeroed, max_nonneg_bits};
 pub use integrity::{CorruptReason, DataUnit, DecodeWarning, RowGeometry, SensorBytes, Truncation};
 pub use metadata::{
-    DngExtras, DngProfileInfo, ExposureInfo, GpsInfo, LensInfo, PreviewEncoding, PreviewInfo, PreviewKind, RawMetadata,
+    DngExtras, DngProfileInfo, EXTRA_CROP_SOURCE, EXTRA_IMAGE_SIZE, ExposureInfo, GpsInfo, LensInfo, PreviewEncoding,
+    PreviewInfo, PreviewKind, RawMetadata,
 };
 pub use orientation::{OrientationMetadata, OrientationPolicy, OrientationSource};
 pub use profile::{Profiler, Stage};

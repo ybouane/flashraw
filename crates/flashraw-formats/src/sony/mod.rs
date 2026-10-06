@@ -124,6 +124,18 @@ impl Levels {
     }
 }
 
+/// The camera's image size from the maker note's FullImageSize and the EXIF pixel
+/// dimensions. FullImageSize is the 3:2 (or native) size; the EXIF size selects another
+/// aspect ratio (16:9) when it has one, while for the native ratio older bodies write a
+/// padded or raw-sized value there.
+fn image_size(full: (u32, u32), exif: Option<(u32, u32)>) -> (u32, u32) {
+    let ratio = |(w, h): (u32, u32)| w as f64 / h.max(1) as f64;
+    match exif {
+        Some(e) if (ratio(e) / ratio(full) - 1.0).abs() > 0.03 => (e.0.min(full.0), e.1.min(full.1)),
+        _ => full,
+    }
+}
+
 pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Box<dyn RawDecoder + 'a>> {
     let mut meta = RawMetadata::default();
     for ifd in &tiff.ifds {
@@ -135,6 +147,10 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
             meta.set_extra("ifd0_model", meta.model.clone());
             meta.model = m.to_string();
         }
+    }
+    if let Some(size) = model_id::makernote_full_image_size(data, &tiff) {
+        let size = image_size(size, meta.image_size());
+        meta.set_image_size(size.0, size.1);
     }
     let model = meta.model.clone();
     if srf::is_srf(&model) {

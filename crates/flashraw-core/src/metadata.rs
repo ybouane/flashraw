@@ -240,7 +240,27 @@ pub struct RawMetadata {
     pub dng: Option<DngExtras>,
 }
 
+/// [`RawMetadata::extra`] key: the camera's own image size as the file records it
+/// (`"<width>x<height>"`, from the EXIF pixel dimensions or a maker-note field).
+pub const EXTRA_IMAGE_SIZE: &str = "image_size";
+/// [`RawMetadata::extra`] key: where the default crop came from: `file` (the format's own
+/// crop field), `image-size` ([`EXTRA_IMAGE_SIZE`]), `preview` (the embedded full-size
+/// JPEG) or `camera-db`. Absent when the crop is the active area.
+pub const EXTRA_CROP_SOURCE: &str = "crop_source";
+
 impl RawMetadata {
+    /// The camera's own image size recorded by the file ([`EXTRA_IMAGE_SIZE`]).
+    pub fn image_size(&self) -> Option<(u32, u32)> {
+        let (w, h) = self.extra(EXTRA_IMAGE_SIZE)?.split_once('x')?;
+        Some((w.parse().ok()?, h.parse().ok()?)).filter(|&(w, h)| w > 0 && h > 0)
+    }
+    /// Record the camera's own image size ([`EXTRA_IMAGE_SIZE`]); zero sizes are ignored.
+    pub fn set_image_size(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.set_extra(EXTRA_IMAGE_SIZE, format!("{width}x{height}"));
+        }
+    }
+
     /// Metadata with the given make and model as written in the file; everything else
     /// empty.
     pub fn new(make: impl Into<String>, model: impl Into<String>) -> Self {

@@ -57,6 +57,17 @@ pub struct Camera {
     pub no_size_match: bool,
     /// Orientation policy override and vendor-record layout.
     pub orientation: Option<CameraOrientation>,
+    /// The camera's own image area per active-area size (measured from files).
+    pub image_crops: &'static [ImageCrop],
+}
+
+/// The image area a camera produces from an active area of `area` size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageCrop {
+    /// Active-area `[width, height]`.
+    pub area: [u32; 2],
+    /// `[x, y, width, height]`, x/y relative to the active area's top-left corner.
+    pub crop: [u32; 4],
 }
 
 /// Per-camera orientation data (see `orientation` in docs/camera-db.md).
@@ -211,6 +222,17 @@ impl Camera {
         let w = (w as u32).min(width - x as u32);
         let h = (h as u32).min(height - y as u32);
         Some((x as u32, y as u32, w, h))
+    }
+    /// The camera's image area inside an active area of `width x height`, as
+    /// `[x, y, w, h]` relative to the active area. With `size`, only a rule producing an
+    /// image of that size (either orientation) matches.
+    pub fn image_crop(&self, width: u32, height: u32, size: Option<(u32, u32)>) -> Option<[u32; 4]> {
+        self.image_crops
+            .iter()
+            .filter(|r| r.area == [width, height])
+            .filter(|r| r.crop[0] + r.crop[2] <= width && r.crop[1] + r.crop[3] <= height)
+            .find(|r| size.is_none_or(|(w, h)| (r.crop[2], r.crop[3]) == (w, h) || (r.crop[2], r.crop[3]) == (h, w)))
+            .map(|r| r.crop)
     }
     /// Canonical model name for the given raw model string (alias aware).
     pub fn canonical_model_for(&self, model: &str) -> &'static str {
@@ -370,7 +392,15 @@ mod tests {
             hints: &[],
             no_size_match: false,
             orientation: None,
+            image_crops: &[
+                ImageCrop { area: [100, 50], crop: [2, 1, 96, 48] },
+                ImageCrop { area: [100, 50], crop: [26, 1, 48, 48] },
+            ],
         };
         assert_eq!(c.resolve_crop(100, 50), Some((10, 4, 82, 46)));
+        assert_eq!(c.image_crop(100, 50, None), Some([2, 1, 96, 48]));
+        assert_eq!(c.image_crop(100, 50, Some((48, 48))), Some([26, 1, 48, 48]));
+        assert_eq!(c.image_crop(100, 50, Some((40, 30))), None);
+        assert_eq!(c.image_crop(98, 50, None), None);
     }
 }
