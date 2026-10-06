@@ -61,7 +61,8 @@ pub fn camera_to_srgb(cm: &ColorMatrices) -> [[f32; 3]; 3] {
 }
 
 /// Measure per-position black levels from masked (optical black) areas.
-/// Returns a pattern with the CFA's dimensions (or 1x1 without CFA), anchored at buffer (0, 0).
+/// Returns a pattern with the CFA's dimensions (or 1x1 without CFA), anchored at buffer (0, 0);
+/// images with several samples per pixel get one value per sample.
 pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel> {
     black_from_masked_at(img, info, (0, 0))
 }
@@ -70,10 +71,13 @@ pub fn black_from_masked(img: &RawImage, info: &FrameInfo) -> Option<BlackLevel>
 /// (region decodes): `info.masked_areas` are buffer coordinates, the pattern is still
 /// anchored at buffer (0, 0).
 pub fn black_from_masked_at(img: &RawImage, info: &FrameInfo, origin: (u32, u32)) -> Option<BlackLevel> {
-    if info.masked_areas.is_empty() || img.cpp != 1 {
+    if info.masked_areas.is_empty() {
         return None;
     }
     let data = img.data.as_u16()?;
+    if img.cpp != 1 {
+        return black_per_sample(data, img, info, origin);
+    }
     let (pw, ph) = info.cfa.map(|p| (p.width(), p.height())).unwrap_or((1, 1));
     let w = img.width as usize;
     let (ox, oy) = (origin.0 as usize, origin.1 as usize);
@@ -121,6 +125,33 @@ pub fn black_from_masked_at(img: &RawImage, info: &FrameInfo, origin: (u32, u32)
     }
     let values: Vec<f32> = sum.iter().zip(&cnt).map(|(s, &c)| (s / c as f64) as f32).collect();
     Some(BlackLevel::pattern(ph, pw, values))
+}
+
+/// Masked-area black of a multi-sample image (Foveon, linear RGB): one mean per sample.
+fn black_per_sample(data: &[u16], img: &RawImage, info: &FrameInfo, origin: (u32, u32)) -> Option<BlackLevel> {
+    let (w, cpp) = (img.width as usize, img.cpp as usize);
+    let frame = Rect::new(origin.0, origin.1, img.width, img.height);
+    let mut sum = vec![0u64; cpp];
+    let mut cnt = 0u64;
+    for r in &info.masked_areas {
+        let Some(r) = r.intersect(&frame) else { continue };
+        for y in r.y as usize..r.bottom() as usize {
+            let row = (y - origin.1 as usize) * w;
+            let px = &data
+                [(row + r.x as usize - origin.0 as usize) * cpp..(row + r.right() as usize - origin.0 as usize) * cpp];
+            for p in px.chunks_exact(cpp) {
+                for (s, &v) in sum.iter_mut().zip(p) {
+                    *s += v as u64;
+                }
+            }
+            cnt += r.width as u64;
+        }
+    }
+    if cnt == 0 {
+        return None;
+    }
+    let values = sum.iter().map(|&s| (s as f64 / cnt as f64) as f32).collect();
+    Some(BlackLevel { rows: 1, cols: 1, samples: cpp as u8, values, row_deltas: vec![], col_deltas: vec![] })
 }
 
 fn gcd(a: usize, b: usize) -> usize {
@@ -889,6 +920,27 @@ mod tests {
         info.masked_areas = vec![Rect::new(1, 0, 3, 6), Rect::new(0, 4, 10, 2)];
         let b = black_from_masked(&img, &info).unwrap();
         assert_eq!(b.values, vec![100.0, 110.0, 120.0, 130.0]);
+    }
+
+    #[test]
+    fn masked_black_per_sample() {
+        // Three samples per pixel (Foveon): one black per sample, rows 0 and 5 masked.
+        let mut img = RawImage::new_u16(4, 6, 3, &Limits::default()).unwrap();
+        for (i, px) in img.u16_mut().chunks_exact_mut(3).enumerate() {
+            let masked = i / 4 == 0 || i / 4 == 5;
+            px.copy_from_slice(&if masked { [10 + (i % 2) as u16 * 2, 20, 30] } else { [500, 600, 700] });
+        }
+        let mut info = FrameInfo::new(4, 6, 12);
+        info.layout = SensorLayout::Foveon;
+        info.masked_areas = vec![Rect::new(0, 0, 4, 1), Rect::new(0, 5, 4, 1)];
+        let b = black_from_masked(&img, &info).unwrap();
+        assert_eq!((b.samples, b.values.clone()), (3, vec![11.0, 20.0, 30.0]));
+        // Region decodes: the masked rows outside the region are not counted.
+        let region = img.crop(Rect::new(0, 4, 4, 2)).unwrap();
+        let b = black_from_masked_at(&region, &info, (0, 4)).unwrap();
+        assert_eq!(b.values, vec![11.0, 20.0, 30.0]);
+        info.masked_areas.clear();
+        assert!(black_from_masked(&img, &info).is_none());
     }
 
     #[test]
