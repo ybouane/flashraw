@@ -228,21 +228,7 @@ impl TrueHeader {
 
     /// The prefix code (symbol = diff bit length).
     pub fn code(&self) -> Result<PrefixCode> {
-        let codes: Vec<(u32, u32, u32)> = self
-            .table
-            .iter()
-            .enumerate()
-            .filter(|(_, (len, _))| *len != 0)
-            .map(|(i, &(len, code))| {
-                let len = len as u32;
-                let c = if len <= 8 { (code as u32 >> (8 - len)) & 0xFF } else { u32::MAX };
-                (c, len, i as u32)
-            })
-            .collect();
-        if codes.iter().any(|&(c, _, _)| c == u32::MAX) {
-            return Err(Error::corrupt("X3F TRUE code longer than 8 bits"));
-        }
-        PrefixCode::new(&codes)
+        true_code(&self.table)
     }
 
     /// Byte ranges `(start, end)` of each plane within `data` (relative to the data start).
@@ -262,6 +248,25 @@ impl TrueHeader {
         }
         Ok(out)
     }
+}
+
+/// Prefix code of a TRUE-style `(code_size, code)` table: the symbol of entry `i` is `i`
+/// (the bit length of the difference that follows), codes are left-aligned in a byte.
+fn true_code(table: &[(u8, u8)]) -> Result<PrefixCode> {
+    let codes: Vec<(u32, u32, u32)> = table
+        .iter()
+        .enumerate()
+        .filter(|(_, (len, _))| *len != 0)
+        .map(|(i, &(len, code))| {
+            let len = len as u32;
+            let c = if len <= 8 { (code as u32 >> (8 - len)) & 0xFF } else { u32::MAX };
+            (c, len, i as u32)
+        })
+        .collect();
+    if codes.iter().any(|&(c, _, _)| c == u32::MAX) {
+        return Err(Error::corrupt("X3F TRUE code longer than 8 bits"));
+    }
+    PrefixCode::new(&codes)
 }
 
 const TT_BITS: u32 = 14;
@@ -492,6 +497,206 @@ pub fn decode_simple(
     Ok(())
 }
 
+/// Largest decoded CAMF block accepted (real files hold up to a few MiB).
+pub const CAMF_MAX_DECODED: usize = 64 << 20;
+
+/// Coding state of a [`CamfStream`].
+enum CamfCoding<'a> {
+    /// Fully decoded (type 2, or a finished stream).
+    Done,
+    /// Type 5: running byte sum.
+    Bytes { code: TrueTable, bits: BitPumpMsb<'a>, acc: i32 },
+    /// Type 4: 12-bit samples with 2x2-phase prediction, two per three bytes.
+    Samples {
+        code: TrueTable,
+        bits: BitPumpMsb<'a>,
+        cols: usize,
+        rows: usize,
+        row: usize,
+        col: usize,
+        acc: [i32; 2],
+        row_start: [[i32; 2]; 2],
+        half: Option<i32>,
+    },
+}
+
+/// Incremental decoder of an X3F `SECc` (CAMF calibration) section.
+///
+/// `section` is the whole section starting at its `SECc` signature: a 28-byte header
+/// (signature, version, coding type, four type-specific words) followed by the coded
+/// data. Three codings exist:
+/// - type 2 (SD9 … SD14): bytes XOR-ed with a pseudo-random stream seeded by word 3;
+/// - type 4 (DP1 … Merrill): a TRUE-style prefix code (table at the start of the data,
+///   bit stream at data offset 32) over `block_size x block_count` (words 2 and 3)
+///   12-bit samples with the TRUE 2x2-phase prediction (seed in word 1), packed two
+///   samples per three bytes and cut to the decoded size in word 0;
+/// - type 5 (Quattro): the same code over a running byte sum (seed in word 1), one
+///   symbol per decoded byte (decoded size in word 0).
+///
+/// The decoded block is a sequence of `CMb*` entries. Blocks run to several MiB (mostly
+/// spatial gain and defect tables after the colour calibration), so they are decoded on
+/// demand: [`CamfStream::fill`] extends [`CamfStream::decoded`] as far as needed.
+pub struct CamfStream<'a> {
+    out: Vec<u8>,
+    size: usize,
+    coding: CamfCoding<'a>,
+}
+
+impl<'a> CamfStream<'a> {
+    /// Parse the section header (type 2 blocks are decoded at once).
+    pub fn new(section: &'a [u8]) -> Result<Self> {
+        let word = |i: usize| -> Result<u32> {
+            let b = section.get(i * 4..i * 4 + 4).ok_or_else(|| Error::corrupt("truncated X3F CAMF header"))?;
+            Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        };
+        let kind = word(2)?;
+        let w = [word(3)?, word(4)?, word(5)?, word(6)?];
+        let data = &section[28..];
+        if kind == 2 {
+            let mut key = w[3];
+            let out: Vec<u8> = data
+                .iter()
+                .map(|&b| {
+                    key = key.wrapping_mul(1597).wrapping_add(51749) % 244_944;
+                    let tmp = ((key as u64 * 301_593_171) >> 24) as u32;
+                    b ^ ((((key << 8).wrapping_sub(tmp) >> 1).wrapping_add(tmp) >> 17) as u8)
+                })
+                .collect();
+            return Ok(CamfStream { size: out.len(), out, coding: CamfCoding::Done });
+        }
+        if kind != 4 && kind != 5 {
+            return Err(Error::corrupt(format!("unknown X3F CAMF coding {kind}")));
+        }
+        let size = w[0] as usize;
+        // Every symbol takes at least one bit and yields at most 1.5 bytes.
+        if size > CAMF_MAX_DECODED || size > data.len().saturating_mul(12) {
+            return Err(Error::corrupt(format!("X3F CAMF block of {size} bytes")));
+        }
+        let mut table = Vec::new();
+        for pair in data.chunks_exact(2) {
+            if pair[0] == 0 {
+                break;
+            }
+            table.push((pair[0], pair[1]));
+        }
+        let code = TrueTable::new(true_code(&table)?);
+        let bits = BitPumpMsb::new(data.get(32..).ok_or_else(|| Error::corrupt("truncated X3F CAMF data"))?);
+        let coding = if kind == 5 {
+            CamfCoding::Bytes { code, bits, acc: w[1] as i32 }
+        } else {
+            let seed = w[1] as i32;
+            CamfCoding::Samples {
+                code,
+                bits,
+                cols: w[2] as usize,
+                rows: w[3] as usize,
+                row: 0,
+                col: 0,
+                acc: [0; 2],
+                row_start: [[seed; 2]; 2],
+                half: None,
+            }
+        };
+        Ok(CamfStream { out: Vec::new(), size, coding })
+    }
+
+    /// The bytes decoded so far.
+    pub fn decoded(&self) -> &[u8] {
+        &self.out
+    }
+
+    /// True when the whole block is decoded.
+    pub fn is_done(&self) -> bool {
+        matches!(self.coding, CamfCoding::Done)
+    }
+
+    /// Decode until at least `len` bytes (or the whole block) are available.
+    pub fn fill(&mut self, len: usize) -> Result<()> {
+        let target = len.min(self.size);
+        if self.out.len() >= target {
+            return Ok(());
+        }
+        self.out.reserve(target - self.out.len());
+        let out = &mut self.out;
+        let size = self.size;
+        let finished = match &mut self.coding {
+            CamfCoding::Done => return Ok(()),
+            CamfCoding::Bytes { code, bits, acc } => {
+                while out.len() < target {
+                    *acc = acc.wrapping_add(code.diff(bits)?);
+                    out.push(*acc as u8);
+                }
+                if bits.exhausted() {
+                    return Err(Error::corrupt("X3F CAMF data truncated"));
+                }
+                out.len() >= size
+            }
+            CamfCoding::Samples { code, bits, cols, rows, row, col, acc, row_start, half } => {
+                'rows: while *row < *rows {
+                    while *col < *cols {
+                        let d = code.diff(bits)?;
+                        let phase = *col & 1;
+                        let start = &mut row_start[*row & 1][phase];
+                        let v = if *col < 2 { *start } else { acc[phase] }.wrapping_add(d);
+                        acc[phase] = v;
+                        if *col < 2 {
+                            *start = v;
+                        }
+                        *col += 1;
+                        match half.take() {
+                            None => {
+                                out.push((v >> 4) as u8);
+                                *half = Some(v);
+                            }
+                            Some(p) => {
+                                out.push(((p << 4) as u8 & 0xf0) | ((v >> 8) as u8 & 0x0f));
+                                out.push(v as u8);
+                            }
+                        }
+                        if out.len() >= size {
+                            break 'rows;
+                        }
+                        if out.len() >= target {
+                            break;
+                        }
+                    }
+                    if *col >= *cols {
+                        *col = 0;
+                        *row += 1;
+                        *acc = [0; 2];
+                    }
+                    if out.len() >= target {
+                        break;
+                    }
+                }
+                if bits.exhausted() {
+                    return Err(Error::corrupt("X3F CAMF data truncated"));
+                }
+                let finished = out.len() >= size || *row >= *rows;
+                if finished {
+                    if let Some(p) = half.take() {
+                        out.push((p << 4) as u8 & 0xf0);
+                    }
+                    // Blocks with fewer samples than the declared size leave the rest zero.
+                    out.resize(size, 0);
+                }
+                finished
+            }
+        };
+        if finished {
+            self.coding = CamfCoding::Done;
+        }
+        Ok(())
+    }
+}
+
+/// Decode a whole CAMF section (see [`CamfStream`]).
+pub fn decode_camf(section: &[u8]) -> Result<Vec<u8>> {
+    let mut s = CamfStream::new(section)?;
+    s.fill(usize::MAX)?;
+    Ok(s.out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -671,5 +876,100 @@ mod tests {
         decode_simple(&data, 8, &mapping, 10, 2, 1, &mut out, false).unwrap();
         assert_eq!(out, vec![10, 20, 30, 11, 22, 33]);
         assert!(decode_simple(&data[..6], 8, &mapping, 10, 2, 1, &mut out, false).is_err());
+    }
+
+    /// A `SECc` section: header words then the coded data.
+    fn camf_section(kind: u32, words: [u32; 4], data: &[u8]) -> Vec<u8> {
+        let mut s = b"SECc".to_vec();
+        for w in [0x0002_0000, kind, words[0], words[1], words[2], words[3]] {
+            s.extend_from_slice(&u32::to_le_bytes(w));
+        }
+        s.extend_from_slice(data);
+        s
+    }
+
+    /// Code table padded to the 32 bytes that precede a CAMF bit stream.
+    fn camf_table() -> Vec<u8> {
+        let mut d: Vec<u8> = table().iter().flat_map(|&(a, b)| [a, b]).collect();
+        d.resize(32, 0);
+        d
+    }
+
+    #[test]
+    fn camf_type2_is_its_own_inverse() {
+        let plain: Vec<u8> = b"CMbT entries".iter().copied().cycle().take(300).collect();
+        let coded = decode_camf(&camf_section(2, [0, 0, 0, 0x6149_13eb], &plain)).unwrap();
+        assert_ne!(coded, plain);
+        assert_eq!(decode_camf(&camf_section(2, [0, 0, 0, 0x6149_13eb], &coded)).unwrap(), plain);
+    }
+
+    #[test]
+    fn camf_type5_running_bytes() {
+        let plain: Vec<u8> = (0..500u32).map(|i| (100 + (i * 37 % 41) as i32 - 20) as u8).collect();
+        let bias = 90u32;
+        let mut w = W::new();
+        let mut prev = bias as i32;
+        for &b in &plain {
+            encode_diff(&mut w, b as i32 - prev);
+            prev = b as i32;
+        }
+        let mut data = camf_table();
+        data.extend_from_slice(&w.finish());
+        let section = camf_section(5, [plain.len() as u32, bias, 0, 0], &data);
+        assert_eq!(decode_camf(&section).unwrap(), plain);
+        // Decoded on demand: a partial fill stops early and resumes.
+        let mut s = CamfStream::new(&section).unwrap();
+        s.fill(10).unwrap();
+        assert!(s.decoded().len() >= 10 && s.decoded().len() < plain.len() && !s.is_done());
+        s.fill(usize::MAX).unwrap();
+        assert!(s.is_done());
+        assert_eq!(s.decoded(), &plain[..]);
+        // Truncated data and implausible sizes are errors.
+        assert!(decode_camf(&section[..section.len() - 40]).is_err());
+        assert!(decode_camf(&camf_section(5, [u32::MAX, 0, 0, 0], &data)).is_err());
+        assert!(decode_camf(&camf_section(7, [0; 4], &data)).is_err());
+        assert!(CamfStream::new(&section[..20]).is_err());
+    }
+
+    #[test]
+    fn camf_type4_packed_samples() {
+        // 12-bit samples with the TRUE 2x2 prediction, packed two per three bytes.
+        let (cols, rows, seed) = (6usize, 4usize, 2048i32);
+        let vals: Vec<i32> = (0..cols * rows).map(|i| 2048 + ((i * 13) % 29) as i32 - 14).collect();
+        let mut w = W::new();
+        let mut row_start = [[seed; 2]; 2];
+        for r in 0..rows {
+            let mut acc = [0i32; 2];
+            for c in 0..cols {
+                let v = vals[r * cols + c];
+                let p = if c < 2 { row_start[r & 1][c & 1] } else { acc[c & 1] };
+                encode_diff(&mut w, v - p);
+                acc[c & 1] = v;
+                if c < 2 {
+                    row_start[r & 1][c & 1] = v;
+                }
+            }
+        }
+        let mut packed = Vec::new();
+        for pair in vals.chunks(2) {
+            packed.push((pair[0] >> 4) as u8);
+            packed.push(((pair[0] << 4) as u8 & 0xf0) | ((pair[1] >> 8) as u8 & 0x0f));
+            packed.push(pair[1] as u8);
+        }
+        let mut data = camf_table();
+        data.extend_from_slice(&w.finish());
+        // Cut to an odd size: the last byte holds half a sample.
+        let size = packed.len() - 1;
+        let section = camf_section(4, [size as u32, seed as u32, cols as u32, rows as u32], &data);
+        assert_eq!(decode_camf(&section).unwrap(), &packed[..size]);
+        let mut s = CamfStream::new(&section).unwrap();
+        s.fill(7).unwrap();
+        s.fill(20).unwrap();
+        s.fill(usize::MAX).unwrap();
+        assert_eq!(s.decoded(), &packed[..size]);
+        // A declared size beyond the samples leaves zeros.
+        let section = camf_section(4, [packed.len() as u32 + 5, seed as u32, cols as u32, rows as u32], &data);
+        let out = decode_camf(&section).unwrap();
+        assert_eq!((&out[..packed.len()], &out[packed.len()..]), (&packed[..], &[0u8; 5][..]));
     }
 }
