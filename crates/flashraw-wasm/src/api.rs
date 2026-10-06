@@ -54,6 +54,8 @@ pub enum Pixels {
         buf: Vec<f32>,
         len: usize,
     },
+    /// IEEE half floats (as u16 bits) produced by the decode itself (`linear-rgb-f16`).
+    F16Bits(Vec<u16>),
 }
 
 impl Pixels {
@@ -62,7 +64,7 @@ impl Pixels {
             Pixels::U8(_) => "u8",
             Pixels::U16(_) => "u16",
             Pixels::F32(_) => "f32",
-            Pixels::F16 { .. } => "f16",
+            Pixels::F16 { .. } | Pixels::F16Bits(_) => "f16",
         }
     }
     /// Number of elements.
@@ -72,6 +74,7 @@ impl Pixels {
             Pixels::U16(v) => v.len(),
             Pixels::F32(v) => v.len(),
             Pixels::F16 { len, .. } => *len,
+            Pixels::F16Bits(v) => v.len(),
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -84,6 +87,7 @@ impl Pixels {
             Pixels::U16(v) => v.as_ptr() as usize,
             Pixels::F32(v) => v.as_ptr() as usize,
             Pixels::F16 { buf, .. } => buf.as_ptr() as usize,
+            Pixels::F16Bits(v) => v.as_ptr() as usize,
         }
     }
 }
@@ -129,6 +133,17 @@ fn parse_json(s: &str) -> ApiResult<Value> {
     Ok(v)
 }
 
+fn f32_opt(o: &Value, key: &str) -> ApiResult<Option<f32>> {
+    match o.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_f64()
+            .filter(|x| x.is_finite())
+            .map(|x| Some(x as f32))
+            .ok_or_else(|| ApiError::invalid(format!("option `{key}` must be a finite number"))),
+    }
+}
+
 fn str_opt<'a>(o: &'a Value, key: &str) -> ApiResult<Option<&'a str>> {
     match o.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -166,10 +181,14 @@ pub fn parse_open_options(s: &str) -> ApiResult<Limits> {
 /// Options handled by this layer on top of [`DecodeOptions`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ApiExtras {
-    /// `sampleType: 'f16'` (normalized output as half floats).
+    /// `sampleType: 'f16'` on `normalized` (converted to half floats after the decode;
+    /// `linear-rgb` with `sampleType: 'f16'` becomes the `linear-rgb-f16` output instead).
     pub f16: bool,
     /// `crop: 'active'`: raw outputs cropped to the active area.
     pub active: bool,
+    /// `linear-rgb` with `sampleType: 'f16'`: decoded as `linear-rgb-f16`, reported as
+    /// `linear-rgb` with `dataType: 'f16'` (like `normalized`).
+    pub rgb_f16: bool,
 }
 
 /// Parse decode options. Returns the options and the requested backend name.
@@ -192,7 +211,8 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
     if let Some(out) = str_opt(&v, "output")? {
         o.output = OutputFormat::parse(out).ok_or_else(|| {
             ApiError::invalid(format!(
-                "unknown output `{out}` (expected raw-u16, raw-f32, normalized, linear-rgb or rgba8)"
+                "unknown output `{out}` (expected raw-u16, raw-f32, normalized, linear-rgb, linear-rgb16, \
+                 linear-rgb-f16, rgba8 or rgb16)"
             ))
         })?;
     }
@@ -212,12 +232,20 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
     }
     match str_opt(&v, "sampleType")? {
         None | Some("f32") => {}
-        Some("f16") => {
-            if o.output.host_equivalent() != OutputFormat::NormalizedF32 || o.output.is_gpu_resident() {
-                return Err(ApiError::invalid("sampleType \"f16\" requires output \"normalized\""));
+        Some("f16") => match o.output {
+            OutputFormat::NormalizedF32 => extras.f16 = true,
+            // Half floats straight from the fused develop (no f32 frame).
+            OutputFormat::LinearRgbF32 => {
+                o.output = OutputFormat::LinearRgbF16;
+                extras.rgb_f16 = true;
             }
-            extras.f16 = true;
-        }
+            OutputFormat::LinearRgbF16 => {}
+            _ => {
+                return Err(ApiError::invalid(
+                    "sampleType \"f16\" requires output \"normalized\", \"linear-rgb\" or \"linear-rgb-f16\"",
+                ));
+            }
+        },
         Some(t) => return Err(ApiError::invalid(format!("unknown sampleType `{t}` (expected f32 or f16)"))),
     }
     if let Some(p) = str_opt(&v, "corruptionPolicy")? {
@@ -229,6 +257,9 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
         Some(Value::Bool(b)) => o.apply_opcodes = *b,
         Some(_) => return Err(ApiError::invalid("option `applyOpcodes` must be a boolean")),
     }
+    o.exposure = f32_opt(&v, "exposure")?.unwrap_or(0.0);
+    o.black_point = f32_opt(&v, "blackPoint")?.unwrap_or(0.0);
+    o.white_point = f32_opt(&v, "whitePoint")?.unwrap_or(1.0);
     if let Some(r) = v.get("region").filter(|r| !r.is_null()) {
         o.region = Some(parse_rect(r)?);
     }
@@ -251,24 +282,9 @@ fn apply_active_crop(raw: &FlashRaw<'_>, o: &mut DecodeOptions, x: ApiExtras) {
     }
 }
 
-/// f32 → IEEE half bits, round to nearest even; finite values beyond the half range saturate
-/// to ±65504, NaN stays NaN (Fabian Giesen's `float_to_half_fast3_rtne`).
-#[inline(always)]
-pub fn f32_to_f16(x: f32) -> u16 {
-    // Branch-free (selects) so the block loop below vectorises.
-    let b = x.to_bits();
-    let sign = (b >> 16) & 0x8000;
-    let a = b & 0x7fff_ffff;
-    let odd = (a >> 13) & 1;
-    let normal = a.wrapping_add(0xc800_0fff).wrapping_add(odd) >> 13;
-    // Below the smallest normal half: let the FPU round into the subnormal range.
-    let sub = (f32::from_bits(a) + 0.5).to_bits().wrapping_sub(0x3f00_0000);
-    let mut h = if a < 0x3880_0000 { sub } else { normal };
-    // >= 65520 would round to infinity: saturate (NaN stays NaN).
-    let big = if a > 0x7f80_0000 { 0x7e00 } else { 0x7bff };
-    h = if a >= 0x477f_f000 { big } else { h };
-    (sign | h) as u16
-}
+/// f32 → IEEE half bits (round to nearest even, saturating at ±65504), shared with the
+/// fused develop's `linear-rgb-f16` output.
+pub use flashraw::process::f32_to_f16;
 
 /// Convert `v` to halves in place (half `i` lands in bytes `2i..2i+2`, which only overlap
 /// floats `< i` that are already converted). Blocks `[m, 2m)` read bytes `[4m, 8m)` and write
@@ -328,11 +344,15 @@ fn into_decoded(frame: flashraw::RawFrame, backend: &str) -> ApiResult<Decoded> 
     into_decoded_x(frame, backend, ApiExtras::default())
 }
 
-fn into_decoded_x(frame: flashraw::RawFrame, backend: &str, x: ApiExtras) -> ApiResult<Decoded> {
+fn into_decoded_x(mut frame: flashraw::RawFrame, backend: &str, x: ApiExtras) -> ApiResult<Decoded> {
+    if x.rgb_f16 {
+        frame.output = OutputFormat::LinearRgbF32;
+    }
     let info = json::frame(&frame, backend).to_string();
     let pixels = match frame.data {
         flashraw::RawPixelData::U8(v) => Pixels::U8(v),
         flashraw::RawPixelData::U16(v) => Pixels::U16(v),
+        flashraw::RawPixelData::F16(v) => Pixels::F16Bits(v),
         flashraw::RawPixelData::F32(v) if x.f16 => to_f16_in_place(v),
         flashraw::RawPixelData::F32(v) => Pixels::F32(v),
         #[allow(unreachable_patterns)]
@@ -675,6 +695,44 @@ mod tests {
         // SAFETY: `len` halves at the start of `buf`.
         let got = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u16, len) };
         assert_eq!(got, &expect[..]);
+    }
+
+    #[test]
+    fn sixteen_bit_rgb_outputs_and_levels() {
+        let Some(bytes) = corpus_file("Canon/EOS 5D Mark IV/B13A0729.CR2") else { return };
+        let raw = open(bytes, "").unwrap();
+        let o = r#"{"output":"linear-rgb","demosaic":"half-size","exposure":0.5,"blackPoint":0.01}"#;
+        let f32s = decode(&raw, o).unwrap();
+        let Pixels::F32(lin) = &f32s.pixels else { panic!() };
+        let want: Vec<u16> = lin.iter().map(|&v| f32_to_f16(v)).collect();
+        // `sampleType: 'f16'` on linear-rgb is the fused `linear-rgb-f16` output (reported as
+        // `linear-rgb` with f16 samples, like `normalized`).
+        for (o, name) in [
+            (
+                r#"{"output":"linear-rgb","sampleType":"f16","demosaic":"half-size","exposure":0.5,"blackPoint":0.01}"#,
+                "linear-rgb",
+            ),
+            (
+                r#"{"output":"linear-rgb-f16","demosaic":"half-size","exposure":0.5,"blackPoint":0.01}"#,
+                "linear-rgb-f16",
+            ),
+        ] {
+            let h = decode(&raw, o).unwrap();
+            assert_eq!(h.pixels.kind(), "f16");
+            let Pixels::F16Bits(v) = &h.pixels else { panic!() };
+            assert_eq!(v, &want);
+            let info: Value = serde_json::from_str(&h.info).unwrap();
+            assert_eq!(info["output"], name);
+        }
+        let r = decode(&raw, r#"{"output":"rgb16","demosaic":"half-size"}"#).unwrap();
+        let info: Value = serde_json::from_str(&r.info).unwrap();
+        assert_eq!(
+            (r.pixels.kind(), info["channels"].as_u64(), info["orientation"].as_u64()),
+            ("u16", Some(3), Some(1))
+        );
+        assert_eq!(decode(&raw, r#"{"output":"rgb16","whitePoint":0}"#).unwrap_err().kind, "InvalidArgument");
+        assert_eq!(decode(&raw, r#"{"output":"rgb16","exposure":"x"}"#).unwrap_err().kind, "InvalidArgument");
+        assert_eq!(decode(&raw, r#"{"output":"rgba8","sampleType":"f16"}"#).unwrap_err().kind, "InvalidArgument");
     }
 
     #[test]

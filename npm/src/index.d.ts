@@ -385,7 +385,23 @@ export interface TileInfo {
 
 // --------------------------------------------------------------------------------- decoding
 
-export type OutputFormat = 'raw-u16' | 'raw-f32' | 'normalized' | 'linear-rgb' | 'rgba8';
+/**
+ * - `raw-u16`, `raw-f32`: sensor samples as stored. `normalized`: black/white-normalised samples.
+ * - `linear-rgb` (f32), `linear-rgb-f16` (half floats as `Uint16Array` bits, half the memory),
+ *   `linear-rgb16` (`[0, 1]` → `[0, 65535]` integers): demosaiced, white-balanced linear sRGB
+ *   primaries in the sensor orientation (`frame.orientation` says what to apply).
+ * - `rgba8` (`Uint8ClampedArray`, for `ImageData`) and `rgb16` (`Uint16Array`, 3 channels):
+ *   display-ready sRGB with the orientation applied.
+ */
+export type OutputFormat =
+  | 'raw-u16'
+  | 'raw-f32'
+  | 'normalized'
+  | 'linear-rgb'
+  | 'linear-rgb16'
+  | 'linear-rgb-f16'
+  | 'rgba8'
+  | 'rgb16';
 
 /** Outputs left on the GPU (WebGPU build, `init({ gpu: true })`): a `GpuFrame`. */
 export type GpuOutputFormat = 'gpu-raw-u16' | 'gpu-normalized' | 'gpu-linear-rgb' | 'gpu-rgba8';
@@ -403,7 +419,10 @@ export type DecodeResult<O extends OutputFormat | GpuOutputFormat, S extends Sam
     ? DecodedFrame<O, S>
     : never;
 
-/** Sample type of `normalized` output: `f16` = IEEE half floats as `Uint16Array` bits. */
+/**
+ * Sample type of `normalized` and `linear-rgb` outputs: `f16` = IEEE half floats as `Uint16Array`
+ * bits (`dataType: 'f16'`).
+ */
 export type SampleType = 'f32' | 'f16';
 
 // WebGPU types resolve to the real ones when they are in scope (e.g. `@webgpu/types`), else `object`.
@@ -472,11 +491,25 @@ export interface DecodeOptions {
    */
   crop?: boolean | 'active';
   /**
-   * `normalized` only: `'f16'` returns IEEE half floats (as `Uint16Array` bits, round to
-   * nearest even, saturating at 65504; `dataType: 'f16'`) — half the memory and upload size of
-   * `'f32'` (default), converted in place in WASM memory.
+   * `normalized` and `linear-rgb` only: `'f16'` returns IEEE half floats (as `Uint16Array` bits,
+   * round to nearest even, saturating at 65504; `dataType: 'f16'`) — half the memory and upload
+   * size of `'f32'` (default). `normalized` is converted in place in WASM memory; `linear-rgb`
+   * is developed straight to halves (the `linear-rgb-f16` output, reported as `linear-rgb`).
    */
   sampleType?: SampleType;
+  /**
+   * RGB outputs: exposure in EV (stops), applied to linear values after the colour conversion
+   * and before `blackPoint`/`whitePoint` and the output encoding (range [-32, 32], default 0).
+   * A convenience control: no tone curve or highlight recovery.
+   */
+  exposure?: number;
+  /** RGB outputs: linear value (after exposure) mapped to black. Default 0. */
+  blackPoint?: number;
+  /**
+   * RGB outputs: linear value (after exposure) mapped to white; must be above `blackPoint`.
+   * Integer outputs clip outside [black, white]; float outputs keep the values. Default 1.
+   */
+  whitePoint?: number;
   /**
    * Apply DNG opcode lists (bad pixels, lens-shading gain maps, vignetting) in their
    * specified stages. Geometric opcodes are never applied. Default true.
@@ -534,14 +567,18 @@ export interface FrameData {
   'raw-f32': Float32Array<ArrayBuffer>;
   normalized: Float32Array<ArrayBuffer>;
   'linear-rgb': Float32Array<ArrayBuffer>;
+  'linear-rgb16': Uint16Array<ArrayBuffer>;
+  /** IEEE half floats as bits. */
+  'linear-rgb-f16': Uint16Array<ArrayBuffer>;
   rgba8: Uint8ClampedArray<ArrayBuffer>;
+  rgb16: Uint16Array<ArrayBuffer>;
 }
 
-/** `data` of a frame: `FrameData[O]`, or `Uint16Array` half floats for `normalized` + `sampleType: 'f16'`. */
-export type FrameDataFor<O extends OutputFormat, S extends SampleType = 'f32'> = O extends 'normalized'
+/** `data` of a frame: `FrameData[O]`, or `Uint16Array` half floats for `normalized` / `linear-rgb` + `sampleType: 'f16'`. */
+export type FrameDataFor<O extends OutputFormat, S extends SampleType = 'f32'> = O extends 'normalized' | 'linear-rgb'
   ? S extends 'f16'
     ? Uint16Array<ArrayBuffer>
-    : Float32Array<ArrayBuffer>
+    : FrameData[O]
   : FrameData[O];
 
 /** Element type of `data`. */
@@ -551,7 +588,7 @@ export type DataType = 'u8' | 'u16' | 'f16' | 'f32';
 export interface FrameFields<O extends OutputFormat = OutputFormat> {
   width: number;
   height: number;
-  /** Samples per pixel: 1 (CFA), 3 (linear RGB / linear DNG), 4 (rgba8). */
+  /** Samples per pixel: 1 (CFA), 3 (linear RGB outputs, rgb16, linear DNG), 4 (rgba8). */
   channels: number;
   output: O;
   dataType: DataType;
@@ -568,7 +605,7 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   whiteLevel: number[];
   whiteBalance: [number, number, number, number] | null;
   colorMatrices: ColorMatrices;
-  /** Orientation still to apply (always 1 for rgba8, which is already oriented). */
+  /** Orientation still to apply (always 1 for rgba8 and rgb16, which are already oriented). */
   orientation: Orientation;
   backend: BackendReport;
   timings: Timings;
