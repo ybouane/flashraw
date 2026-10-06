@@ -199,6 +199,8 @@ First complete release of FlashRaw.
   marked `RawFrame::source == FrameSource::Preview` with a `CorruptReason::PreviewFallback`
   warning. Raw outputs and region decodes never fall back. `CorruptReason::kind()` names
   every reason.
+- CLI: `decode --preview-fallback`; the decode JSON has `source` (`sensor` / `preview`) and
+  warnings of kind `preview-fallback`.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
