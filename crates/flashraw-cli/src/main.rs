@@ -1,5 +1,6 @@
 //! `flashraw` command-line tool.
 
+mod crops;
 mod output;
 
 use clap::{Args, Parser, Subcommand};
@@ -124,6 +125,19 @@ enum CameraDbCmd {
     Compare { a: PathBuf, b: PathBuf },
     /// Show statistics of the compiled-in database.
     Stats,
+    /// Measure the camera's own image area from files (JSON lines): active area, resolved
+    /// default crop and its source, recorded image size, embedded full-size JPEG size.
+    /// Aggregated into `image_crops` entries by tools/camera_db_crops.py.
+    Crops {
+        files: Vec<PathBuf>,
+        /// Locate the embedded full-size JPEG inside the active area by matching it
+        /// against the developed raw data.
+        #[arg(long)]
+        register: bool,
+        /// Also decode to RGBA8 (half size) and report the output dimensions.
+        #[arg(long)]
+        rgba: bool,
+    },
 }
 
 fn parse_rect(s: &str) -> Result<Rect, String> {
@@ -318,6 +332,12 @@ fn camera_db(c: CameraDbCmd) -> Result<ExitCode, String> {
                 println!("{d}");
             }
             println!("{} differences", diffs.len());
+            Ok(ExitCode::SUCCESS)
+        }
+        CameraDbCmd::Crops { files, register, rgba } => {
+            for f in &files {
+                println!("{}", crops::measure(f, register, rgba));
+            }
             Ok(ExitCode::SUCCESS)
         }
         CameraDbCmd::Stats => {
