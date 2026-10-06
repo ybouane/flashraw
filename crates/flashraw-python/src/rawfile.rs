@@ -175,7 +175,8 @@ fn with_pool<T: Send>(opts: &mut DecodeOptions, f: impl FnOnce(DecodeOptions) ->
     thread_local! {
         static POOLS: RefCell<HashMap<usize, Arc<rayon::ThreadPool>>> = RefCell::new(HashMap::new());
     }
-    let Some(n) = opts.threads else { return f(opts.clone()) };
+    // `threads=1` runs on the calling thread inside the library; no pool is needed.
+    let Some(n) = opts.threads.filter(|&n| n > 1) else { return f(opts.clone()) };
     let pool = POOLS.with(|p| {
         let mut p = p.borrow_mut();
         if let Some(pool) = p.get(&n) {

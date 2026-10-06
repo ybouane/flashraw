@@ -181,6 +181,12 @@ impl<'a> FlashRaw<'a> {
 
     /// Decode the sensor data.
     pub fn decode(&self, opts: DecodeOptions) -> Result<RawFrame> {
+        // One thread: run on the calling thread rather than on a one-worker pool, so the
+        // decode keeps the caller's scheduling class (a lone pool worker may be placed on
+        // an efficiency core).
+        if opts.threads == Some(1) {
+            return flashraw_core::par::sequential(|| self.decode_inner(&opts));
+        }
         let pool = thread_pool(opts.threads);
         match pool {
             #[cfg(feature = "rayon")]
@@ -568,9 +574,29 @@ fn thread_pool(threads: Option<usize>) -> Option<std::sync::Arc<rayon::ThreadPoo
     if let Some(p) = pools.get(&n) {
         return Some(p.clone());
     }
-    let p = Arc::new(rayon::ThreadPoolBuilder::new().num_threads(n).build().ok()?);
+    let p =
+        Arc::new(rayon::ThreadPoolBuilder::new().num_threads(n).start_handler(|_| raise_worker_qos()).build().ok()?);
     pools.insert(n, p.clone());
     Some(p)
+}
+
+/// Give a pool worker the scheduling class of interactive work on Apple platforms
+/// (`QOS_CLASS_USER_INITIATED`), so it is scheduled like the thread that asked for the
+/// decode rather than as background work on efficiency cores.
+#[cfg(feature = "rayon")]
+fn raise_worker_qos() {
+    #[cfg(target_vendor = "apple")]
+    {
+        const QOS_CLASS_USER_INITIATED: u32 = 0x19;
+        unsafe extern "C" {
+            fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+        }
+        // SAFETY: the call only changes the scheduling class of the calling thread; it takes
+        // plain integers and has no memory-safety preconditions. Failure leaves the default.
+        unsafe {
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+        }
+    }
 }
 
 #[cfg(not(feature = "rayon"))]

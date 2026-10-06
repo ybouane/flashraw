@@ -120,8 +120,8 @@ cameras still decode when the file is self-describing (DNG always is).
 **Safety.** All parsing is bounds-checked; offsets use checked arithmetic; IFD
 traversal tracks visited offsets and depth; allocations are limit-checked before they
 happen; entropy decoders stop on overrun. `unsafe` is confined to: zeroed allocation,
-`GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook, the
-mmap call and the pointer handling at the C ABI boundary (`flashraw-capi`,
+`GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook, the Apple
+worker quality-of-service call, the mmap call and the pointer handling at the C ABI boundary (`flashraw-capi`,
 `flashraw-libraw-compat`) — each with a `SAFETY:` justification and tests. Nine fuzz targets plus a
 malformed-file suite run in CI.
 

@@ -397,10 +397,11 @@ such kernels with `par::memory_bound_workers()` (threads/4, clamped to 2–8) wh
 entropy decoders and the develop pass use all cores. Large output buffers are
 advised as transparent huge pages (`MADV_HUGEPAGE`), cutting page faults ~500×.
 
-On macOS, prefer a single global thread count (`RAYON_NUM_THREADS`) over a per-decode
-`threads: 1` pool for single-threaded decoding: a dedicated one-thread pool runs the decode on
-a worker thread that the scheduler may put on an efficiency core (about 3× slower on the M1
-Ultra), while the global setting keeps it on the calling thread.
+A single-threaded decode (`threads: 1`, `--threads 1`) runs on the calling thread, exactly like
+`RAYON_NUM_THREADS=1`. (It used to run on a dedicated one-worker pool, whose thread macOS
+could schedule on an efficiency core: about 3× slower on the M1 Ultra in one benchmark round.)
+Explicit pools (`threads: n`) run their workers with the user-initiated quality of service on
+Apple platforms.
 
 ## GPU (Apple M1 Ultra, Metal)
 

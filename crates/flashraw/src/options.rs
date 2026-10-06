@@ -160,7 +160,10 @@ pub struct DecodeOptions {
     pub backend: Backend,
     /// What the decode produces. Default: [`OutputFormat::RawU16`].
     pub output: OutputFormat,
-    /// Worker threads (None = all cores; Some(1) = single-threaded).
+    /// Worker threads. `None` (the default) uses all cores (the global thread pool);
+    /// `Some(1)` decodes single-threaded on the calling thread; `Some(n)` uses a pool of `n`
+    /// workers (shared by decodes with the same count; on Apple platforms its threads run
+    /// with the user-initiated quality of service).
     pub threads: Option<usize>,
     /// Decode only this region (sensor-buffer coordinates).
     pub region: Option<Rect>,

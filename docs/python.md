@@ -217,9 +217,9 @@ are available:
   single sequential entropy stream are decoded on all cores by speculation, so one file at a time
   usually saturates the machine.
 - **Across files**: decode from several Python threads (`concurrent.futures.ThreadPoolExecutor`).
-  With `threads=None` all decodes share the global pool; with an explicit `threads=n` each Python
-  thread gets its own pool of `n` workers, so `threads=1` per decode scales with the number of
-  Python threads.
+  With `threads=None` all decodes share the global pool; `threads=1` decodes on the calling Python
+  thread itself (the GIL is released), and an explicit `threads=n` gives each Python thread its own
+  pool of `n` workers, so per-decode thread counts scale with the number of Python threads.
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
