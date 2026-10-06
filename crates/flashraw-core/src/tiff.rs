@@ -92,6 +92,8 @@ pub mod tags {
     pub const FOCAL_LENGTH: u16 = 0x920A;
     pub const MAKER_NOTE: u16 = 0x927C;
     pub const SUBSEC_TIME_ORIGINAL: u16 = 0x9291;
+    pub const PIXEL_X_DIMENSION: u16 = 0xA002;
+    pub const PIXEL_Y_DIMENSION: u16 = 0xA003;
     pub const CFA_PATTERN: u16 = 0xA302;
     pub const FOCAL_LENGTH_35MM: u16 = 0xA405;
     pub const BODY_SERIAL: u16 = 0xA431;
