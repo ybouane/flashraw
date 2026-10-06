@@ -201,6 +201,8 @@ First complete release of FlashRaw.
   every reason.
 - CLI: `decode --preview-fallback`; the decode JSON has `source` (`sensor` / `preview`) and
   warnings of kind `preview-fallback`.
+- JS: `decode({ previewFallback: true })`, `frame.source` (`FrameSource`), warning kind
+  `preview-fallback`.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
