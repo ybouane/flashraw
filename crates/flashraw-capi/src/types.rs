@@ -36,10 +36,19 @@ pub enum flashraw_output_format {
     FLASHRAW_OUTPUT_RAW_F32 = 1,
     /// Black-subtracted, white-normalised sensor samples in [0, 1] (`float`, CFA layout kept).
     FLASHRAW_OUTPUT_NORMALIZED_F32 = 2,
-    /// Demosaiced, white-balanced linear RGB with sRGB primaries, 3 `float`s per pixel.
+    /// Demosaiced, white-balanced linear RGB with sRGB primaries, 3 `float`s per pixel. Sensor
+    /// orientation (`flashraw_frame_orientation()` says what to apply).
     FLASHRAW_OUTPUT_LINEAR_RGB_F32 = 3,
     /// Display-ready 8-bit sRGB RGBA, orientation applied.
     FLASHRAW_OUTPUT_RGBA8 = 4,
+    /// Display-ready 16-bit sRGB RGB (3 `uint16_t` per pixel, no alpha), orientation applied.
+    FLASHRAW_OUTPUT_RGB16 = 5,
+    /// `FLASHRAW_OUTPUT_LINEAR_RGB_F32` as 16-bit integers: [0, 1] clipped and scaled to
+    /// [0, 65535], 3 `uint16_t` per pixel. Sensor orientation.
+    FLASHRAW_OUTPUT_LINEAR_RGB16 = 6,
+    /// `FLASHRAW_OUTPUT_LINEAR_RGB_F32` as IEEE half floats (`FLASHRAW_SAMPLE_F16`), half the
+    /// memory; values beyond +-65504 saturate. Sensor orientation.
+    FLASHRAW_OUTPUT_LINEAR_RGB_F16 = 7,
 }
 
 /// Demosaic algorithm for the RGB outputs (`flashraw_decode_options.demosaic`).
@@ -69,10 +78,12 @@ pub enum flashraw_corruption_policy {
 pub enum flashraw_sample_type {
     /// `uint8_t` (RGBA8 output).
     FLASHRAW_SAMPLE_U8 = 1,
-    /// `uint16_t` (raw-u16 output).
+    /// `uint16_t` (raw-u16, rgb16 and linear-rgb16 outputs).
     FLASHRAW_SAMPLE_U16 = 2,
     /// `float` (raw-f32, normalized and linear-rgb outputs).
     FLASHRAW_SAMPLE_F32 = 3,
+    /// IEEE 754 binary16 (half float) bit patterns in `uint16_t` (linear-rgb-f16 output).
+    FLASHRAW_SAMPLE_F16 = 4,
 }
 
 /// Colour of one CFA site (DNG colour indices, plus emerald).
@@ -362,6 +373,16 @@ pub struct flashraw_decode_options {
     pub max_dimension: u32,
     /// Maximum number of samples (0 = the file's open limit).
     pub max_samples: u64,
+    /// RGB outputs: exposure in EV, applied to linear values after the colour conversion and
+    /// before the black/white points and the output encoding (range [-32, 32]; default 0).
+    pub exposure: f32,
+    /// RGB outputs: linear value (after exposure) mapped to black (default 0).
+    pub black_point: f32,
+    /// RGB outputs: linear value (after exposure) mapped to white; must be above
+    /// `black_point` (default 1). Integer outputs clip outside [black, white].
+    pub white_point: f32,
+    /// Must be zero.
+    pub reserved0: u32,
 }
 
 /// Size of the first published layout of each versioned struct. Callers built against an
@@ -464,6 +485,9 @@ pub(crate) fn output_from(v: i32) -> FfiResult<OutputFormat> {
         2 => OutputFormat::NormalizedF32,
         3 => OutputFormat::LinearRgbF32,
         4 => OutputFormat::Rgba8,
+        5 => OutputFormat::Rgb16,
+        6 => OutputFormat::LinearRgb16,
+        7 => OutputFormat::LinearRgbF16,
         _ => return Err(FfiError::invalid(format!("unknown output format {v}"))),
     })
 }
@@ -475,6 +499,9 @@ pub(crate) fn output_to(o: OutputFormat) -> i32 {
         OutputFormat::NormalizedF32 => 2,
         OutputFormat::LinearRgbF32 => 3,
         OutputFormat::Rgba8 => 4,
+        OutputFormat::Rgb16 => 5,
+        OutputFormat::LinearRgb16 => 6,
+        OutputFormat::LinearRgbF16 => 7,
         _ => -1,
     }
 }
@@ -570,7 +597,9 @@ mod tests {
         // These are ABI: the v1 layouts. Growing a struct is allowed (append fields);
         // changing these numbers is not.
         assert_eq!(size_of::<flashraw_open_options>(), flashraw_open_options::MIN_SIZE);
-        assert_eq!(size_of::<flashraw_decode_options>(), flashraw_decode_options::MIN_SIZE);
+        assert_eq!(flashraw_decode_options::MIN_SIZE, 64);
+        // Grown since: exposure, black_point, white_point, reserved0.
+        assert_eq!(size_of::<flashraw_decode_options>(), 80);
         assert_eq!(size_of::<flashraw_preview_info>(), flashraw_preview_info::MIN_SIZE);
         assert_eq!(size_of::<flashraw_decode_stats>(), flashraw_decode_stats::MIN_SIZE);
         assert_eq!(size_of::<flashraw_rect>(), 16);

@@ -52,6 +52,10 @@ pub(crate) fn default_decode_options() -> flashraw_decode_options {
         region: flashraw_rect::default(),
         max_dimension: 0,
         max_samples: 0,
+        exposure: 0.0,
+        black_point: 0.0,
+        white_point: 1.0,
+        reserved0: 0,
     }
 }
 
@@ -81,7 +85,13 @@ pub(crate) fn to_decode_options(o: &flashraw_decode_options, base: flashraw::Lim
         apply_opcodes: o.apply_opcodes != 0,
         region: (o.use_region != 0).then(|| o.region.into()),
         limits: base,
+        exposure: o.exposure,
+        black_point: o.black_point,
+        white_point: o.white_point,
     };
+    if o.reserved0 != 0 {
+        return Err(FfiError::invalid("flashraw_decode_options.reserved0 must be zero"));
+    }
     if o.max_samples != 0 {
         d.limits = d.limits.with_max_samples(o.max_samples);
     }
@@ -208,6 +218,7 @@ pub unsafe extern "C" fn flashraw_frame_sample_type(frame: *const flashraw_frame
             RawPixelData::U8(_) => flashraw_sample_type::FLASHRAW_SAMPLE_U8 as i32,
             RawPixelData::U16(_) => flashraw_sample_type::FLASHRAW_SAMPLE_U16 as i32,
             RawPixelData::F32(_) => flashraw_sample_type::FLASHRAW_SAMPLE_F32 as i32,
+            RawPixelData::F16(_) => flashraw_sample_type::FLASHRAW_SAMPLE_F16 as i32,
             #[allow(unreachable_patterns)]
             _ => 0,
         })
@@ -235,7 +246,7 @@ pub unsafe extern "C" fn flashraw_frame_data(frame: *const flashraw_frame) -> *c
     with_frame(frame, std::ptr::null(), |f| {
         Ok(match &f.frame.data {
             RawPixelData::U8(v) if !v.is_empty() => v.as_ptr() as *const c_void,
-            RawPixelData::U16(v) if !v.is_empty() => v.as_ptr() as *const c_void,
+            RawPixelData::U16(v) | RawPixelData::F16(v) if !v.is_empty() => v.as_ptr() as *const c_void,
             RawPixelData::F32(v) if !v.is_empty() => v.as_ptr() as *const c_void,
             _ => std::ptr::null(),
         })
