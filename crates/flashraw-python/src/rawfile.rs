@@ -354,6 +354,7 @@ impl RawFile {
             apply_opcodes,
             limits,
             corruption_policy: policy,
+            preview_fallback: false,
         };
         Ok(Request { opts, backend: be.name().to_string(), active, tile: None })
     }

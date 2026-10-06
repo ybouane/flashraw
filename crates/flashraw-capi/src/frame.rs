@@ -81,6 +81,7 @@ pub(crate) fn to_decode_options(o: &flashraw_decode_options, base: flashraw::Lim
         apply_opcodes: o.apply_opcodes != 0,
         region: (o.use_region != 0).then(|| o.region.into()),
         limits: base,
+        preview_fallback: false,
     };
     if o.max_samples != 0 {
         d.limits = d.limits.with_max_samples(o.max_samples);

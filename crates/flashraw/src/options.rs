@@ -179,6 +179,14 @@ pub struct DecodeOptions {
     /// [`crate::RawFrame::warnings`] ([`CorruptionPolicy::Recover`], the default) or fail
     /// ([`CorruptionPolicy::Strict`]).
     pub corruption_policy: CorruptionPolicy,
+    /// When the sensor data cannot be decoded ([`crate::Error::UnsupportedCompression`],
+    /// e.g. Nikon High Efficiency NEF), return the embedded full-size preview for the RGB
+    /// outputs ([`OutputFormat::Rgba8`], [`OutputFormat::LinearRgbF32`]) instead of
+    /// failing. The frame is marked [`crate::FrameSource::Preview`] and carries a
+    /// [`crate::CorruptReason::PreviewFallback`] warning. Needs a preview covering at
+    /// least 90% of the default crop in each dimension; never applies to sensor-domain
+    /// outputs or region decodes. Default: false (the error is returned).
+    pub preview_fallback: bool,
 }
 
 impl Default for DecodeOptions {
@@ -193,6 +201,7 @@ impl Default for DecodeOptions {
             apply_opcodes: true,
             limits: Limits::default(),
             corruption_policy: CorruptionPolicy::Recover,
+            preview_fallback: false,
         }
     }
 }

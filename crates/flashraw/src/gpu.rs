@@ -354,6 +354,7 @@ async fn run(
         metadata: raw.metadata().clone(),
         stats,
         warnings: dctx.take_warnings(),
+        source: crate::FrameSource::Sensor,
     })
 }
 

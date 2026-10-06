@@ -397,6 +397,18 @@ same truncation details. A file cut inside its directory structure, before the r
 IFD, fails with `Error::CorruptFile`: a thumbnail or preview is never decoded in place of
 the sensor image.
 
+### Undecodable sensor data
+
+Sensor data in a codec FlashRaw cannot decode (Nikon High Efficiency NEF) fails with
+`Error::UnsupportedCompression`, also for RGB outputs. With
+`DecodeOptions::preview_fallback`, `Rgba8` and `LinearRgbF32` decodes return the embedded
+full-size preview instead, explicitly marked: `frame.source == FrameSource::Preview` and a
+`DecodeWarning` whose reason is `CorruptReason::PreviewFallback`. Such a frame is the
+camera's 8-bit rendering, not sensor data; raw outputs and regions never fall back. The
+CLI (`--preview-fallback`), JavaScript (`previewFallback`), Python (`preview_fallback=`)
+and C (`flashraw_decode_options.preview_fallback`, `flashraw_frame_source()`) expose the
+same option.
+
 ### GPU
 
 Build with `--features gpu`. Packed/uncompressed payloads are unpacked on the GPU;

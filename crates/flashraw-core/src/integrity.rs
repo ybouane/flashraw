@@ -144,6 +144,13 @@ pub enum CorruptReason {
         /// What the decoder reported.
         message: String,
     },
+    /// The sensor data could not be decoded (e.g. an unsupported compression) and the
+    /// frame holds the embedded full-size preview instead. Only reported as a warning, when
+    /// the caller opted into the preview fallback.
+    PreviewFallback {
+        /// Why the sensor data was not decoded (the decoder's error).
+        message: String,
+    },
 }
 
 impl CorruptReason {
@@ -152,6 +159,16 @@ impl CorruptReason {
         match self {
             CorruptReason::Truncated(t) => t.unit,
             CorruptReason::InvalidUnit { unit, .. } => *unit,
+            CorruptReason::PreviewFallback { .. } => DataUnit::Payload,
+        }
+    }
+
+    /// Machine-friendly kind: `"truncated"`, `"invalid-unit"` or `"preview-fallback"`.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            CorruptReason::Truncated(_) => "truncated",
+            CorruptReason::InvalidUnit { .. } => "invalid-unit",
+            CorruptReason::PreviewFallback { .. } => "preview-fallback",
         }
     }
 
@@ -169,11 +186,14 @@ impl fmt::Display for CorruptReason {
         match self {
             CorruptReason::Truncated(t) => t.fmt(f),
             CorruptReason::InvalidUnit { unit, message } => write!(f, "corrupt {unit}: {message}"),
+            CorruptReason::PreviewFallback { message } => write!(f, "sensor data not decoded: {message}"),
         }
     }
 }
 
-/// Something a decode under the recover policy repaired instead of failing.
+/// Something a decode repaired or substituted instead of failing: under the recover policy
+/// (truncated or corrupt units), or with the preview fallback (see
+/// [`CorruptReason::PreviewFallback`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
@@ -190,12 +210,9 @@ impl DecodeWarning {
         DecodeWarning { reason, samples_filled }
     }
 
-    /// Machine-friendly kind: `"truncated"` or `"invalid-unit"`.
+    /// Machine-friendly kind: `"truncated"`, `"invalid-unit"` or `"preview-fallback"`.
     pub fn kind(&self) -> &'static str {
-        match self.reason {
-            CorruptReason::Truncated(_) => "truncated",
-            CorruptReason::InvalidUnit { .. } => "invalid-unit",
-        }
+        self.reason.kind()
     }
 }
 
@@ -209,6 +226,9 @@ impl fmt::Display for DecodeWarning {
             ),
             CorruptReason::InvalidUnit { unit, message } => {
                 write!(f, "recovered corrupt {unit} ({message}); its {} samples were zero-filled", self.samples_filled)
+            }
+            CorruptReason::PreviewFallback { message } => {
+                write!(f, "sensor data not decoded ({message}); the frame holds the embedded full-size preview")
             }
         }
     }

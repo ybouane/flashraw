@@ -192,6 +192,13 @@ First complete release of FlashRaw.
   builders; `decode_preview_rgb` returns a `PreviewImage`; `FromStr`/`Display` for
   `Backend`, `OutputFormat` and `Demosaic` (`ParseOptionError`); internals (`low_level`, `process`, `decode_raw_image`) are
   hidden from the documented API; the `RawFile` alias is gone (use `FlashRaw`).
+- Explicit preview fallback for sensor data FlashRaw cannot decode (Nikon High Efficiency
+  NEF): `decode` fails with `UnsupportedCompression` by default, also for RGB outputs; with
+  `DecodeOptions::preview_fallback` the `Rgba8` / `LinearRgbF32` outputs return the embedded
+  full-size preview (at least 90% of the default crop; orientation applied for `Rgba8`),
+  marked `RawFrame::source == FrameSource::Preview` with a `CorruptReason::PreviewFallback`
+  warning. Raw outputs and region decodes never fall back. `CorruptReason::kind()` names
+  every reason.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
