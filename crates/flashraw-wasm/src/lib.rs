@@ -18,6 +18,7 @@
 //!   `worker_threads` ([`thread_pool_build`] + [`thread_run`]) and runs every call that may use
 //!   the pool on a *coordinator* worker through the pointer-based `job*` exports, because the
 //!   browser main thread is not allowed to block (`memory.atomic.wait` traps there);
+//! - feature `jpegxl`: JPEG XL DNG support, combined with the SIMD and threaded variants;
 //! - feature `gpu`: WebGPU backend through wgpu, with asynchronous exports (`gpuInit`,
 //!   `RawFile.decodeGpu`) and GPU-resident outputs ([`GpuOutput`]).
 //!
@@ -96,7 +97,7 @@ mod bindings {
         }
     }
 
-    /// Build features of this binary as JSON (`{ simd, gpu, threads }`).
+    /// Build features of this binary as JSON (`{ simd, gpu, threads, jpegxl }`).
     #[wasm_bindgen(js_name = buildInfo)]
     pub fn build_info() -> String {
         serde_json::json!({
@@ -106,6 +107,7 @@ mod bindings {
             "gpu": cfg!(feature = "gpu"),
             "gpuAvailable": flashraw::gpu_available(),
             "threads": cfg!(feature = "threads"),
+            "jpegxl": cfg!(feature = "jpegxl"),
             "threadCount": thread_count(),
             "maxSamples": api::DEFAULT_MAX_SAMPLES,
         })

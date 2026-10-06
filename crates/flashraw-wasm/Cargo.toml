@@ -20,6 +20,9 @@ gpu = ["flashraw/gpu", "dep:wasm-bindgen-futures"]
 # rayon in every decoder; the JS layer starts the thread pool in Web Workers / worker_threads
 # (`threadPoolBuild` + `threadRun`) and runs heavy calls on a coordinator worker (`job*`).
 threads = ["flashraw/rayon", "dep:rayon"]
+# JPEG XL DNG (compression 52546; forwards to flashraw/jpegxl, needs Rust 1.88). Shipped as the
+# separate `*_jxl.wasm` variants, which the JS layer loads only when a file needs them.
+jpegxl = ["flashraw/jpegxl"]
 
 [dependencies]
 flashraw = { workspace = true, features = ["simd"] }
