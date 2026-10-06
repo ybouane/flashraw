@@ -1,7 +1,8 @@
 // Node.js entry point: WASM loaded from disk, file paths accepted everywhere an input is.
 //
 // Environment: FLASHRAW_WASM_SIMD=0 forces the scalar fallback binary (benchmarks, debugging);
-// FLASHRAW_WASM_THREADS=0 forces the single-threaded binary, =N sets the thread count.
+// FLASHRAW_WASM_THREADS=0 forces the single-threaded binary, =N sets the thread count;
+// FLASHRAW_WASM_JPEGXL=auto|always|never sets the default of init({ jpegxl }).
 
 import { readFile, open } from 'node:fs/promises';
 import { availableParallelism, cpus } from 'node:os';
@@ -24,6 +25,8 @@ const FILES = {
   fallback: 'flashraw.wasm',
   threads: 'flashraw_simd_threads.wasm',
   gpu: 'flashraw_simd_gpu.wasm',
+  'simd-jxl': 'flashraw_simd_jxl.wasm',
+  'threads-jxl': 'flashraw_simd_threads_jxl.wasm',
 };
 
 function wasmUrl(variant, options) {
@@ -35,8 +38,28 @@ function wasmUrl(variant, options) {
       return new URL('./flashraw_simd_threads.wasm', import.meta.url);
     case 'gpu':
       return new URL('./flashraw_simd_gpu.wasm', import.meta.url);
+    case 'simd-jxl':
+      return new URL('./flashraw_simd_jxl.wasm', import.meta.url);
+    case 'threads-jxl':
+      return new URL('./flashraw_simd_threads_jxl.wasm', import.meta.url);
     default:
       return new URL('./flashraw.wasm', import.meta.url);
+  }
+}
+
+// Glue of the dynamically loaded binaries (each its own module: two instances can coexist).
+function glueOf(variant) {
+  switch (variant) {
+    case 'threads':
+      return import('./flashraw_bindgen_threads.js');
+    case 'gpu':
+      return import('./flashraw_bindgen_gpu.js');
+    case 'simd-jxl':
+      return import('./flashraw_bindgen_jxl.js');
+    case 'threads-jxl':
+      return import('./flashraw_bindgen_threads_jxl.js');
+    default:
+      throw new Error(`no glue for ${variant}`);
   }
 }
 
@@ -73,7 +96,7 @@ function wrapWorker(w) {
 _setPlatform({
   name: 'node',
   load: (variant, options) => readFile(wasmUrl(variant, options)),
-  glue: (variant) => (variant === 'threads' ? import('./flashraw_bindgen_threads.js') : import('./flashraw_bindgen_gpu.js')),
+  glue: glueOf,
   defaultSimd() {
     const v = process.env.FLASHRAW_WASM_SIMD;
     if (v === '0' || v === 'false') return false;
@@ -86,6 +109,11 @@ _setPlatform({
     if (v === '0' || v === 'false' || v === 'off') return false;
     const n = Number(v);
     return Number.isInteger(n) && n > 0 ? n : undefined;
+  },
+  // FLASHRAW_WASM_JPEGXL=auto|always|never (see init({ jpegxl })).
+  defaultJpegxl() {
+    const v = process.env.FLASHRAW_WASM_JPEGXL;
+    return v === undefined || v === '' ? undefined : v;
   },
   threadSupport() {
     try {

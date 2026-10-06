@@ -25,7 +25,22 @@ export interface InitOptions {
   gpu?: boolean;
   /** Custom URL of `thread-worker.browser.js` / `thread-worker.node.js` (threads). */
   threadWorkerUrl?: string | URL;
+  /**
+   * JPEG XL DNG support (DNG 1.7 compression 52546), which lives in separate, larger binaries
+   * (`flashraw_simd_jxl.wasm`, `flashraw_simd_threads_jxl.wasm`):
+   * - `'auto'` (default): load the small build; the first decode of a JPEG XL DNG loads the
+   *   matching JPEG XL variant (once) and decodes that file with it. Other files never load it.
+   * - `'always'`: load the JPEG XL variant of the selected build up front, instead of the small one.
+   * - `'never'`: never load it; decoding a JPEG XL DNG throws `UnsupportedCompressionError`.
+   * Requires the SIMD build. Node.js: `FLASHRAW_WASM_JPEGXL`.
+   */
+  jpegxl?: JpegXlMode;
+  /** Explicit module source of the JPEG XL variant (like `wasm`; must match the threaded or
+   * single-threaded selection). */
+  jpegxlWasm?: BufferSource | WebAssembly.Module | Response | Promise<Response> | URL | string;
 }
+
+export type JpegXlMode = 'auto' | 'always' | 'never';
 
 export interface BuildInfo {
   version: string;
@@ -37,6 +52,11 @@ export interface BuildInfo {
   gpuAvailable: boolean;
   /** Whether the loaded binary is the multithreaded build. */
   threads: boolean;
+  /** Whether the loaded binary includes the JPEG XL codec (`jpegxl: 'always'`). */
+  jpegxl: boolean;
+  jpegxlMode: JpegXlMode;
+  /** Why JPEG XL DNGs cannot be decoded (null when they can, loading the variant if needed). */
+  jpegxlReason: string | null;
   /** Worker threads started (0 when single-threaded). */
   threadCount: number;
   maxSamples: number;
@@ -54,8 +74,10 @@ export interface BuildInfo {
   initMs: number;
 }
 
-/** `simd`: flashraw_simd.wasm, `fallback`: flashraw.wasm, `threads`: flashraw_simd_threads.wasm, `gpu`: flashraw_simd_gpu.wasm. */
-export type WasmBinary = 'simd' | 'fallback' | 'threads' | 'gpu';
+/** `simd`: flashraw_simd.wasm, `fallback`: flashraw.wasm, `threads`: flashraw_simd_threads.wasm,
+ * `gpu`: flashraw_simd_gpu.wasm, `simd-jxl`: flashraw_simd_jxl.wasm, `threads-jxl`:
+ * flashraw_simd_threads_jxl.wasm. */
+export type WasmBinary = 'simd' | 'fallback' | 'threads' | 'gpu' | 'simd-jxl' | 'threads-jxl';
 
 export interface Limits {
   /** Maximum width*height*channels of a decoded image (default 400M on WASM). */
@@ -527,6 +549,11 @@ export interface BackendReport {
   gpuAdapter: string | null;
   /** Why the requested backend was not used (e.g. GPU not built / no WebGPU). */
   fallbackReason: string | null;
+  /** The WASM binary that decoded the frame (`'simd-jxl'` / `'threads-jxl'` for JPEG XL DNGs
+   * opened with the small build). */
+  binary: WasmBinary;
+  /** Whether that binary includes the JPEG XL codec. */
+  jpegxl: boolean;
 }
 
 export interface FrameData {
@@ -725,6 +752,9 @@ export declare class FlashRaw {
   readonly previews: PreviewDescriptor[];
   readonly byteLength: number;
   readonly parseMs: number;
+  /** The WASM binary serving this file (changes to the JPEG XL variant on the first decode of a
+   * JPEG XL DNG in `jpegxl: 'auto'` mode). */
+  readonly binary: WasmBinary;
 
   /** Largest embedded preview, or null if there is none. */
   preview<T extends PreviewOptions | undefined = undefined>(options?: T): Promise<PreviewFor<T> | null>;
@@ -804,6 +834,19 @@ export interface Capabilities {
     reason: string | null;
     adapter: GpuAdapterInfo | null;
   };
+  jpegxl: {
+    mode: JpegXlMode | null;
+    /** The selected binary has the JPEG XL codec (`'always'`). */
+    compiled: boolean;
+    /** A binary with the JPEG XL codec is loaded. */
+    loaded: boolean;
+    /** That binary (`'simd-jxl'` / `'threads-jxl'`), or null. */
+    binary: WasmBinary | null;
+    /** JPEG XL DNGs can be decoded (possibly after loading the variant). */
+    available: boolean;
+    /** Why they cannot, or why the last load failed. */
+    reason: string | null;
+  };
   outputs: (OutputFormat | GpuOutputFormat)[];
   backends: Backend[];
   limits: { maxSamples: number | null };
@@ -828,6 +871,12 @@ export function getCapabilities(): Promise<Capabilities>;
  * `getCapabilities().threads.reason`).
  */
 export function initThreads(count?: number): Promise<number>;
+
+/** Load the JPEG XL variant now instead of on the first JPEG XL decode; resolves to its binary
+ * name. Rejects with `NotAvailableError` (`jpegxl: 'never'`, no SIMD, load failure). */
+export function loadJpegXlSupport(): Promise<WasmBinary>;
+
+export const JPEGXL_MODES: readonly JpegXlMode[];
 
 /** The `GPUDevice` FlashRaw uses (WebGPU build), or null without WebGPU. Requests it if needed. */
 export function getGpuDevice(): Promise<FlashRawGPUDevice | null>;

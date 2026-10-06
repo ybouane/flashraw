@@ -24,7 +24,7 @@ export interface WorkerPoolOptions {
   /** Number of workers (default: min(4, hardwareConcurrency - 1), at least 1). Spawned lazily. */
   size?: number;
   /** Options for `init()` in each worker (e.g. `{ simd: false }`). */
-  init?: Omit<InitOptions, 'wasm'>;
+  init?: Omit<InitOptions, 'wasm' | 'jpegxlWasm'>;
   /** Custom worker script URL (must serve `worker-entry.browser.js` / `worker-entry.node.js`). */
   workerUrl?: string | URL;
   /** Full control over worker creation (e.g. bundler-specific `?worker` imports). */

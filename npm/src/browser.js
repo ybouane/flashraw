@@ -13,6 +13,8 @@ const FILES = {
   fallback: 'flashraw.wasm',
   threads: 'flashraw_simd_threads.wasm',
   gpu: 'flashraw_simd_gpu.wasm',
+  'simd-jxl': 'flashraw_simd_jxl.wasm',
+  'threads-jxl': 'flashraw_simd_threads_jxl.wasm',
 };
 
 function wasmUrl(variant, options) {
@@ -24,8 +26,28 @@ function wasmUrl(variant, options) {
       return new URL('./flashraw_simd_threads.wasm', import.meta.url);
     case 'gpu':
       return new URL('./flashraw_simd_gpu.wasm', import.meta.url);
+    case 'simd-jxl':
+      return new URL('./flashraw_simd_jxl.wasm', import.meta.url);
+    case 'threads-jxl':
+      return new URL('./flashraw_simd_threads_jxl.wasm', import.meta.url);
     default:
       return new URL('./flashraw.wasm', import.meta.url);
+  }
+}
+
+// Glue of the dynamically loaded binaries (each its own module: two instances can coexist).
+function glueOf(variant) {
+  switch (variant) {
+    case 'threads':
+      return import('./flashraw_bindgen_threads.js');
+    case 'gpu':
+      return import('./flashraw_bindgen_gpu.js');
+    case 'simd-jxl':
+      return import('./flashraw_bindgen_jxl.js');
+    case 'threads-jxl':
+      return import('./flashraw_bindgen_threads_jxl.js');
+    default:
+      throw new Error(`no glue for ${variant}`);
   }
 }
 
@@ -48,7 +70,7 @@ _setPlatform({
   name: typeof window === 'undefined' && typeof self !== 'undefined' ? 'worker' : 'browser',
   // fetch() + instantiateStreaming compiles while downloading (served as application/wasm).
   load: (variant, options) => fetch(wasmUrl(variant, options)),
-  glue: (variant) => (variant === 'threads' ? import('./flashraw_bindgen_threads.js') : import('./flashraw_bindgen_gpu.js')),
+  glue: glueOf,
   // SharedArrayBuffer (and so shared WebAssembly.Memory) requires cross-origin isolation:
   // COOP `same-origin` + COEP `require-corp` (or `credentialless`) on the page.
   threadSupport() {
