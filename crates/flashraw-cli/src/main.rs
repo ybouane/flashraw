@@ -19,7 +19,8 @@ struct DecodeArgs {
     /// Backend: auto, cpu, simd, gpu.
     #[arg(long, default_value = "auto")]
     backend: String,
-    /// Output: raw-u16, raw-f32, normalized, linear-rgb, rgba8.
+    /// Output: raw-u16, raw-f32, normalized, linear-rgb, linear-rgb16, linear-rgb-f16, rgba8,
+    /// rgb16.
     #[arg(long, default_value = "raw-u16")]
     output: String,
     /// Decode only a region: x,y,width,height (sensor coordinates).
@@ -37,6 +38,15 @@ struct DecodeArgs {
     /// Do not apply DNG opcode lists (bad pixels, lens shading, ...).
     #[arg(long)]
     no_opcodes: bool,
+    /// RGB outputs: exposure in EV, applied to linear values before encoding.
+    #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+    exposure: f32,
+    /// RGB outputs: linear value mapped to black (after exposure).
+    #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+    black_point: f32,
+    /// RGB outputs: linear value mapped to white (after exposure).
+    #[arg(long, default_value_t = 1.0)]
+    white_point: f32,
     /// Fail on truncated or corrupt sensor data instead of zero-filling what is missing
     /// (with a warning, the default).
     #[arg(long)]
@@ -60,7 +70,8 @@ enum Cmd {
     /// Print all metadata as JSON.
     DumpMetadata { file: PathBuf },
     /// Decode sensor data (or RGB) to a file. Format from --format or extension:
-    /// .raw (u16 LE samples), .pgm/.ppm (16-bit Netpbm), .tif/.tiff, .jpg (RGB outputs).
+    /// .raw (u16 LE samples; half-float bits for linear-rgb-f16), .pgm/.ppm (16-bit Netpbm),
+    /// .tif/.tiff (16-bit), .jpg (rgba8).
     Decode {
         file: PathBuf,
         out: PathBuf,
@@ -148,6 +159,9 @@ fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
         demosaic: if a.demosaic.starts_with("half") { Demosaic::HalfSize } else { Demosaic::Bilinear },
         apply_opcodes: !a.no_opcodes,
         corruption_policy: policy(a.strict),
+        exposure: a.exposure,
+        black_point: a.black_point,
+        white_point: a.white_point,
         ..Default::default()
     })
 }

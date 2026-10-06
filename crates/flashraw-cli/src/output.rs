@@ -194,6 +194,10 @@ fn u16_samples(f: &RawFrame) -> Result<std::borrow::Cow<'_, [u16]>, String> {
     if let Some(v) = f.as_u16() {
         return Ok(v.into());
     }
+    if let Some(v) = f.as_f16_bits() {
+        let to16 = |h: u16| (flashraw::process::f16_to_f32(h) * 65535.0).round().clamp(0.0, 65535.0) as u16;
+        return Ok(v.iter().map(|&h| to16(h)).collect::<Vec<_>>().into());
+    }
     if let Some(v) = f.as_f32() {
         let scale = if f.output == OutputFormat::RawF32 { 1.0 } else { 65535.0 };
         return Ok(v.iter().map(|x| (x * scale).round().clamp(0.0, 65535.0) as u16).collect::<Vec<_>>().into());
@@ -210,7 +214,11 @@ pub fn write_frame(f: &RawFrame, out: &Path, fmt: &str) -> Result<(), String> {
     let e = |e: std::io::Error| e.to_string();
     match fmt {
         "raw" | "u16" | "bin" => {
-            let s = u16_samples(f)?;
+            // Raw dumps keep half floats as their bit patterns.
+            let s = match f.as_f16_bits() {
+                Some(v) => v.into(),
+                None => u16_samples(f)?,
+            };
             for v in s.iter() {
                 w.write_all(&v.to_le_bytes()).map_err(e)?;
             }
