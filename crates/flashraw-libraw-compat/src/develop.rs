@@ -160,6 +160,11 @@ pub fn dcraw_process(d: &mut libraw_data_t, st: &mut State) -> c_int {
         }
     }
     params.cam_to_rgb = m;
+    // Four-colour sensors: the same output conversion after the 3x4 camera matrix.
+    params.cam4_to_rgb = params
+        .cam4_to_rgb
+        .filter(|_| d.params.output_color != 0)
+        .map(|m4| std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| out[i][k] * m4[k][j]).sum())));
     let dev = match develop(&img, &info, (0, 0), &params, true) {
         Ok(v) => v,
         Err(e) => {
