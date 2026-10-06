@@ -37,6 +37,9 @@ class _RawFile:
         apply_opcodes: bool = True,
         corruption_policy: str = "recover",
         tile: Optional[int] = None,
+        exposure: float = 0.0,
+        black_point: float = 0.0,
+        white_point: float = 1.0,
     ) -> Tuple[np.ndarray, Dict[str, Any]]: ...
     def preview_bytes(self, which: Union[str, int, None] = None) -> Tuple[bytes, Dict[str, Any]]: ...
     def decode_preview(self, which: Union[str, int, None] = None) -> Tuple[np.ndarray, Dict[str, Any]]: ...
