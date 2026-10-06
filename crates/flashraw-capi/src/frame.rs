@@ -52,6 +52,8 @@ pub(crate) fn default_decode_options() -> flashraw_decode_options {
         region: flashraw_rect::default(),
         max_dimension: 0,
         max_samples: 0,
+        preview_fallback: 0,
+        reserved0: 0,
     }
 }
 
@@ -81,8 +83,11 @@ pub(crate) fn to_decode_options(o: &flashraw_decode_options, base: flashraw::Lim
         apply_opcodes: o.apply_opcodes != 0,
         region: (o.use_region != 0).then(|| o.region.into()),
         limits: base,
-        preview_fallback: false,
+        preview_fallback: o.preview_fallback != 0,
     };
+    if o.reserved0 != 0 {
+        return Err(FfiError::invalid("flashraw_decode_options.reserved0 must be zero"));
+    }
     if o.max_samples != 0 {
         d.limits = d.limits.with_max_samples(o.max_samples);
     }
@@ -426,6 +431,21 @@ pub unsafe extern "C" fn flashraw_frame_color_matrix(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn flashraw_frame_is_incomplete(frame: *const flashraw_frame) -> bool {
     with_frame(frame, false, |f| Ok(f.frame.is_incomplete()))
+}
+
+/// Where the frame's pixels come from (`flashraw_pixel_source`): the sensor data, or the
+/// embedded preview substituted by `flashraw_decode_options.preview_fallback`.
+///
+/// # Safety
+/// `frame` must be NULL or a live frame.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flashraw_frame_source(frame: *const flashraw_frame) -> i32 {
+    with_frame(frame, flashraw_pixel_source::FLASHRAW_SOURCE_SENSOR as i32, |f| {
+        Ok(match f.frame.source {
+            flashraw::FrameSource::Preview => flashraw_pixel_source::FLASHRAW_SOURCE_PREVIEW,
+            _ => flashraw_pixel_source::FLASHRAW_SOURCE_SENSOR,
+        } as i32)
+    })
 }
 
 /// Number of recovery warnings.

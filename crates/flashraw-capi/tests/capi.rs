@@ -406,6 +406,39 @@ fn versioned_structs() {
 }
 
 #[test]
+fn preview_fallback() {
+    let path = CString::new(fixture("nikon-he-synthetic.nef").to_str().unwrap()).unwrap();
+    // SAFETY: live handles, freed below.
+    unsafe {
+        let mut f = null_mut();
+        assert_eq!(flashraw_open_path(path.as_ptr(), null(), &mut f), flashraw_status::FLASHRAW_OK);
+        let mut o = options();
+        assert_eq!(o.preview_fallback, 0);
+        o.output = flashraw_output_format::FLASHRAW_OUTPUT_RGBA8 as i32;
+        assert_eq!(decode(f, &o), Err(flashraw_status::FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION));
+        o.preview_fallback = 1;
+        let fr = decode(f, &o).unwrap();
+        assert_eq!(flashraw_frame_source(fr), flashraw_pixel_source::FLASHRAW_SOURCE_PREVIEW as i32);
+        assert!(flashraw_frame_is_incomplete(fr));
+        assert!(cstr(flashraw_frame_warning(fr, 0)).unwrap().contains("embedded full-size preview"));
+        assert_eq!((flashraw_frame_width(fr), flashraw_frame_height(fr), flashraw_frame_cpp(fr)), (64, 48, 4));
+        let j = flashraw_frame_json(fr);
+        let v: serde_json::Value = serde_json::from_str(cstr(j).unwrap()).unwrap();
+        flashraw_string_free(j);
+        assert_eq!(v["source"], "preview");
+        assert_eq!(v["warnings"][0]["kind"], "preview-fallback");
+        flashraw_frame_free(fr);
+        // Raw outputs never fall back; reserved fields must stay zero.
+        o.output = flashraw_output_format::FLASHRAW_OUTPUT_RAW_U16 as i32;
+        assert_eq!(decode(f, &o), Err(flashraw_status::FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION));
+        o.reserved0 = 1;
+        assert_eq!(decode(f, &o), Err(flashraw_status::FLASHRAW_ERROR_INVALID_ARGUMENT));
+        flashraw_file_free(f);
+        assert_eq!(flashraw_frame_source(null()), flashraw_pixel_source::FLASHRAW_SOURCE_SENSOR as i32);
+    }
+}
+
+#[test]
 fn corruption_policies() {
     let bytes = truncated_dng(6);
     // SAFETY: `bytes` outlives the borrowed handle.

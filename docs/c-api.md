@@ -125,14 +125,17 @@ All functions are prefixed `flashraw_`. Handles are opaque (`flashraw_file`, `fl
 **Decoding**: `decode_options_init(&o)` then set `backend` (`FLASHRAW_BACKEND_*`), `output`
 (`FLASHRAW_OUTPUT_RAW_U16`, `_RAW_F32`, `_NORMALIZED_F32`, `_LINEAR_RGB_F32`, `_RGBA8`),
 `threads` (0 = all cores), `use_region` + `region`, `crop`, `demosaic` (`BILINEAR`,
-`HALF_SIZE`), `apply_opcodes`, `corruption_policy` (`RECOVER` default, `STRICT`), and limits;
-`decode(file, &o, &frame)`.
+`HALF_SIZE`), `apply_opcodes`, `corruption_policy` (`RECOVER` default, `STRICT`),
+`preview_fallback` (non-zero: RGB outputs of undecodable sensor data, e.g. Nikon High Efficiency
+NEF, return the embedded full-size preview instead of `FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`),
+and limits; `decode(file, &o, &frame)`.
 
 **Frames**: `frame_width/height/cpp`, `frame_sample_type` (`U8`/`U16`/`F32`), `frame_data`,
 `frame_data_len` (bytes), `frame_sample_count`, `frame_output_format`, `frame_active_area`,
 `frame_crop`, `frame_origin`, `frame_cfa`, `frame_color_at`, `frame_black_level` (measured),
 `frame_white_level`, `frame_white_balance`, `frame_color_matrix*`, `frame_orientation`,
-`frame_bits_per_sample`, `frame_is_incomplete`, `frame_warning_count/warning`,
+`frame_bits_per_sample`, `frame_is_incomplete`, `frame_warning_count/warning`, `frame_source`
+(`FLASHRAW_SOURCE_SENSOR`, or `_PREVIEW` for a preview fallback),
 `frame_samples_filled`, `frame_stats` (total and per-stage milliseconds, threads, sizes),
 `frame_backend/postprocess_backend/simd`, `frame_json()`, `frame_free()`.
 

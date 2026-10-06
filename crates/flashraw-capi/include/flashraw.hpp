@@ -289,6 +289,8 @@ struct decode_options {
     /// Limits (0 = the file's open limits).
     std::uint32_t max_dimension = 0;
     std::uint64_t max_samples = 0;
+    /// RGB outputs of undecodable sensor data: return the embedded full-size preview.
+    bool preview_fallback = false;
 
     flashraw_decode_options to_c() const {
         flashraw_decode_options o;
@@ -306,6 +308,7 @@ struct decode_options {
         }
         o.max_dimension = max_dimension;
         o.max_samples = max_samples;
+        o.preview_fallback = preview_fallback ? 1 : 0;
         return o;
     }
 };
@@ -451,8 +454,11 @@ public:
         return detail::matrices(h(), kind, flashraw_frame_color_matrix_count, flashraw_frame_color_matrix);
     }
 
-    /// True when some samples were zero-filled while recovering from corrupt input.
+    /// True when some samples were zero-filled while recovering from corrupt input, or the
+    /// embedded preview was substituted (`from_preview()`).
     bool is_incomplete() const { return flashraw_frame_is_incomplete(h()); }
+    /// True when `decode_options::preview_fallback` returned the embedded preview.
+    bool from_preview() const { return flashraw_frame_source(h()) == FLASHRAW_SOURCE_PREVIEW; }
     std::vector<std::string> warnings() const {
         std::vector<std::string> w;
         std::size_t n = flashraw_frame_warning_count(h());

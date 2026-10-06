@@ -63,6 +63,17 @@ pub enum flashraw_corruption_policy {
     FLASHRAW_CORRUPTION_STRICT = 1,
 }
 
+/// Where a frame's pixels come from (`flashraw_frame_source()`).
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum flashraw_pixel_source {
+    /// Decoded from the sensor data.
+    FLASHRAW_SOURCE_SENSOR = 0,
+    /// The embedded full-size preview (`flashraw_decode_options.preview_fallback`); the frame
+    /// also carries a `preview-fallback` warning.
+    FLASHRAW_SOURCE_PREVIEW = 1,
+}
+
 /// Element type of a frame's sample buffer.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -362,6 +373,13 @@ pub struct flashraw_decode_options {
     pub max_dimension: u32,
     /// Maximum number of samples (0 = the file's open limit).
     pub max_samples: u64,
+    /// Non-zero: when the sensor data cannot be decoded (`FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`,
+    /// e.g. Nikon High Efficiency NEF), RGB outputs return the embedded full-size preview
+    /// instead (`flashraw_frame_source()` is then `FLASHRAW_SOURCE_PREVIEW`). Default 0: the
+    /// error is returned.
+    pub preview_fallback: i32,
+    /// Reserved, must be zero.
+    pub reserved0: i32,
 }
 
 /// Size of the first published layout of each versioned struct. Callers built against an
@@ -570,7 +588,8 @@ mod tests {
         // These are ABI: the v1 layouts. Growing a struct is allowed (append fields);
         // changing these numbers is not.
         assert_eq!(size_of::<flashraw_open_options>(), flashraw_open_options::MIN_SIZE);
-        assert_eq!(size_of::<flashraw_decode_options>(), flashraw_decode_options::MIN_SIZE);
+        assert_eq!(flashraw_decode_options::MIN_SIZE, 64);
+        assert_eq!(size_of::<flashraw_decode_options>(), 72); // + preview_fallback, reserved0
         assert_eq!(size_of::<flashraw_preview_info>(), flashraw_preview_info::MIN_SIZE);
         assert_eq!(size_of::<flashraw_decode_stats>(), flashraw_decode_stats::MIN_SIZE);
         assert_eq!(size_of::<flashraw_rect>(), 16);

@@ -205,6 +205,10 @@ First complete release of FlashRaw.
   `preview-fallback`.
 - Python: `decode(..., preview_fallback=True)`, `Frame.source`, warning kind
   `preview-fallback`.
+- C API: `flashraw_decode_options.preview_fallback` (appended with a zero `reserved0`; the
+  struct grows to 72 bytes, older 64-byte callers keep the default), `flashraw_frame_source()`
+  (`FLASHRAW_SOURCE_SENSOR` / `_PREVIEW`), frame JSON `source`; C++
+  `decode_options::preview_fallback` and `frame::from_preview()`.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
