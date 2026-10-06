@@ -250,6 +250,7 @@ impl<'a> FlashRaw<'a> {
         let simd_level = flashraw_core::simd::kernel_level();
         let use_simd = !matches!(opts.backend, Backend::Cpu) && cfg!(feature = "simd");
         let threads = flashraw_core::par::threads();
+        let levels = process::Levels::new(opts.exposure, opts.black_point, opts.white_point)?;
         if opts.backend == Backend::Gpu && !gpu_available() {
             return Err(Error::GpuUnavailable(
                 "FlashRaw was built without the `gpu` feature or no adapter was found".into(),
@@ -337,36 +338,23 @@ impl<'a> FlashRaw<'a> {
             | OutputFormat::GpuNormalizedF32
             | OutputFormat::GpuLinearRgbF32
             | OutputFormat::GpuRgba8 => return Err(Error::GpuUnavailable("GPU-resident output".into())),
-            OutputFormat::LinearRgbF32 | OutputFormat::Rgba8 => {
+            OutputFormat::LinearRgbF32
+            | OutputFormat::Rgba8
+            | OutputFormat::Rgb16
+            | OutputFormat::LinearRgb16
+            | OutputFormat::LinearRgbF16 => {
                 postprocess = Some(format!("CPU x{threads}"));
+                let enc = opts.output.rgb_encoding().expect("RGB output");
                 let crop = if opts.crop { translate(info.crop) } else { Rect::full(img.width, img.height) };
                 let crop = if crop.is_empty() { Rect::full(img.width, img.height) } else { crop };
-                let params = process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop);
+                let mut params = process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop);
+                params.levels = levels;
                 let staged =
                     opts.apply_opcodes && lists.as_ref().is_some_and(|l| l.has_pixel_ops(1) || l.has_pixel_ops(2));
-                if let Some(l) = lists.as_mut().filter(|_| staged) {
-                    profiler.time(Stage::Postprocess, || {
-                        l.develop(
-                            &img,
-                            &frame_info_for_post,
-                            origin,
-                            opts.demosaic,
-                            crop,
-                            opts.output == OutputFormat::Rgba8,
-                            ctx.parallel,
-                        )
-                    })?
-                } else if opts.output == OutputFormat::Rgba8 {
-                    let (w, h, px) = profiler.time(Stage::Postprocess, || {
-                        process::develop_rgba8(&img, &frame_info_for_post, origin, &params, ctx.parallel)
-                    })?;
-                    (w, h, 4, RawPixelData::U8(px))
-                } else {
-                    let dev = profiler.time(Stage::Postprocess, || {
-                        process::develop(&img, &frame_info_for_post, origin, &params, ctx.parallel)
-                    })?;
-                    (dev.width, dev.height, 3, RawPixelData::F32(dev.rgb))
-                }
+                profiler.time(Stage::Postprocess, || match lists.as_mut().filter(|_| staged) {
+                    Some(l) => l.develop(&img, &frame_info_for_post, origin, &params, enc, ctx.parallel),
+                    None => process::develop_encoded(&img, &frame_info_for_post, origin, &params, enc, ctx.parallel),
+                })?
             }
         };
         if let Some(l) = lists.as_mut().filter(|_| opts.apply_opcodes) {
@@ -419,7 +407,7 @@ impl<'a> FlashRaw<'a> {
             },
             white_balance: info.white_balance,
             color_matrices: info.color_matrices.clone(),
-            orientation: if opts.output == OutputFormat::Rgba8 { Orientation::Normal } else { info.orientation },
+            orientation: if opts.output.applies_orientation() { Orientation::Normal } else { info.orientation },
             metadata: self.metadata().clone(),
             stats,
             warnings: ctx.take_warnings(),

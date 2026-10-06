@@ -45,9 +45,20 @@ pub enum OutputFormat {
     /// Black-subtracted, white-normalised sensor samples in `[0, 1]` (f32, CFA layout kept).
     NormalizedF32,
     /// Demosaiced, white-balanced linear camera RGB → linear sRGB primaries, f32 RGB.
+    /// Sensor orientation (see [`crate::RawFrame::orientation`]); values are not clipped.
     LinearRgbF32,
     /// Display-ready 8-bit sRGB RGBA (orientation applied), e.g. for `ImageData`.
     Rgba8,
+    /// Display-ready 16-bit sRGB RGB (orientation applied, no alpha): the transfer curve of
+    /// [`OutputFormat::Rgba8`] at 16-bit precision, e.g. for 16-bit PNG/TIFF.
+    Rgb16,
+    /// [`OutputFormat::LinearRgbF32`] as 16-bit integers: linear sRGB primaries, `[0, 1]`
+    /// clipped and scaled to `[0, 65535]`. Sensor orientation, like the f32 output.
+    LinearRgb16,
+    /// [`OutputFormat::LinearRgbF32`] as IEEE half floats ([`crate::RawPixelData::F16`]),
+    /// half the memory. Rounded to nearest; values beyond ±65504 saturate. Sensor
+    /// orientation, like the f32 output.
+    LinearRgbF16,
     // GPU-resident outputs (feature `gpu`): same content as the host variant, returned
     // as `RawPixelData::Gpu` without downloading (see `crate::gpu` and `RawFrame::download`).
     /// [`OutputFormat::RawU16`] kept on the GPU (u16 pairs per 32-bit word).
@@ -71,6 +82,29 @@ impl OutputFormat {
                 | OutputFormat::GpuRgba8
         )
     }
+    /// True for the outputs that have the EXIF orientation applied (the display outputs
+    /// [`OutputFormat::Rgba8`], [`OutputFormat::Rgb16`] and [`OutputFormat::GpuRgba8`]);
+    /// other outputs keep the sensor orientation and report it in
+    /// [`crate::RawFrame::orientation`].
+    pub fn applies_orientation(self) -> bool {
+        matches!(self.host_equivalent(), OutputFormat::Rgba8 | OutputFormat::Rgb16)
+    }
+    /// True for the demosaiced RGB outputs (host or GPU-resident).
+    pub fn is_rgb(self) -> bool {
+        self.rgb_encoding().is_some()
+    }
+    /// Sample encoding of an RGB output.
+    pub(crate) fn rgb_encoding(self) -> Option<crate::process::RgbEncoding> {
+        use crate::process::RgbEncoding as E;
+        Some(match self.host_equivalent() {
+            OutputFormat::Rgba8 => E::Rgba8,
+            OutputFormat::Rgb16 => E::Srgb16,
+            OutputFormat::LinearRgb16 => E::Linear16,
+            OutputFormat::LinearRgbF16 => E::LinearF16,
+            OutputFormat::LinearRgbF32 => E::LinearF32,
+            _ => return None,
+        })
+    }
     /// The host-memory variant with the same content (identity for host variants).
     pub fn host_equivalent(self) -> Self {
         match self {
@@ -85,8 +119,9 @@ impl OutputFormat {
 
 impl OutputFormat {
     /// Parse an output name as accepted by the CLI and the JS bindings (`raw-u16`,
-    /// `raw-f32`, `normalized`, `linear-rgb`, `rgba8`, `gpu-raw-u16`, `gpu-normalized`,
-    /// `gpu-linear-rgb`, `gpu-rgba8`, plus a few aliases; case-insensitive, `_` or `-`).
+    /// `raw-f32`, `normalized`, `linear-rgb`, `rgba8`, `rgb16`, `linear-rgb16`,
+    /// `linear-rgb-f16`, `gpu-raw-u16`, `gpu-normalized`, `gpu-linear-rgb`, `gpu-rgba8`,
+    /// plus a few aliases; case-insensitive, `_` or `-`).
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.to_ascii_lowercase().replace('_', "-").as_str() {
             "raw" | "raw-u16" | "u16" => OutputFormat::RawU16,
@@ -94,6 +129,9 @@ impl OutputFormat {
             "normalized" | "normalized-f32" => OutputFormat::NormalizedF32,
             "linear-rgb" | "linear-rgb-f32" | "rgb-f32" => OutputFormat::LinearRgbF32,
             "rgba8" | "rgba" | "imagedata" => OutputFormat::Rgba8,
+            "rgb16" | "srgb16" | "rgb-u16" => OutputFormat::Rgb16,
+            "linear-rgb16" | "linear-rgb-u16" => OutputFormat::LinearRgb16,
+            "linear-rgb-f16" | "rgb-f16" | "linear-rgb-half" => OutputFormat::LinearRgbF16,
             "gpu-raw-u16" | "gpu-raw" | "gpu-u16" => OutputFormat::GpuRawU16,
             "gpu-normalized" | "gpu-normalized-f32" => OutputFormat::GpuNormalizedF32,
             "gpu-linear-rgb" | "gpu-linear-rgb-f32" => OutputFormat::GpuLinearRgbF32,
@@ -180,6 +218,19 @@ pub struct DecodeOptions {
     /// [`crate::RawFrame::warnings`] ([`CorruptionPolicy::Recover`], the default) or fail
     /// ([`CorruptionPolicy::Strict`]).
     pub corruption_policy: CorruptionPolicy,
+    /// Exposure of RGB outputs in EV (stops): linear values are multiplied by
+    /// `2^exposure` after the colour conversion, before the black/white points and the
+    /// output encoding. A convenience control; tone curves and highlight recovery are
+    /// left to editors. Range `[-32, 32]`. Default: 0.
+    pub exposure: f32,
+    /// Black point of RGB outputs in normalised linear units (after exposure): this value
+    /// maps to 0. Integer outputs clip below it; float outputs keep the (negative) values.
+    /// Default: 0.
+    pub black_point: f32,
+    /// White point of RGB outputs in normalised linear units (after exposure): this value
+    /// maps to 1. Integer outputs clip above it; float outputs keep larger values. Must be
+    /// above `black_point`. Default: 1.
+    pub white_point: f32,
 }
 
 impl Default for DecodeOptions {
@@ -194,6 +245,9 @@ impl Default for DecodeOptions {
             apply_opcodes: true,
             limits: Limits::default(),
             corruption_policy: CorruptionPolicy::Recover,
+            exposure: 0.0,
+            black_point: 0.0,
+            white_point: 1.0,
         }
     }
 }
@@ -238,6 +292,9 @@ impl OutputFormat {
             OutputFormat::NormalizedF32 => "normalized",
             OutputFormat::LinearRgbF32 => "linear-rgb",
             OutputFormat::Rgba8 => "rgba8",
+            OutputFormat::Rgb16 => "rgb16",
+            OutputFormat::LinearRgb16 => "linear-rgb16",
+            OutputFormat::LinearRgbF16 => "linear-rgb-f16",
             OutputFormat::GpuRawU16 => "gpu-raw-u16",
             OutputFormat::GpuNormalizedF32 => "gpu-normalized",
             OutputFormat::GpuLinearRgbF32 => "gpu-linear-rgb",
@@ -298,6 +355,9 @@ mod tests {
             OutputFormat::NormalizedF32,
             OutputFormat::LinearRgbF32,
             OutputFormat::Rgba8,
+            OutputFormat::Rgb16,
+            OutputFormat::LinearRgb16,
+            OutputFormat::LinearRgbF16,
             OutputFormat::GpuRawU16,
             OutputFormat::GpuNormalizedF32,
             OutputFormat::GpuLinearRgbF32,

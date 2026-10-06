@@ -121,6 +121,13 @@ impl Opcode {
             Opcode::Other { .. } => "Other",
         }
     }
+    /// Whether [`apply`] computes each sample of this opcode from that sample and its
+    /// coordinates alone (no neighbours): such opcodes give the same result applied to
+    /// any window of rows (e.g. band by band) as applied to the whole image. True for
+    /// everything except the bad-pixel repairs.
+    pub fn is_row_local(&self) -> bool {
+        !matches!(self, Opcode::FixBadPixelsConstant { .. } | Opcode::FixBadPixelsList { .. })
+    }
     /// Whether [`apply`] implements this opcode.
     pub fn is_pixel_opcode(&self) -> bool {
         !matches!(
