@@ -16,7 +16,7 @@ where
     }
     let chunk = row_len * rows_per_chunk.max(1);
     #[cfg(feature = "rayon")]
-    if parallel && data.len() >= PAR_MIN_SAMPLES && rayon::current_num_threads() > 1 {
+    if parallel && data.len() >= PAR_MIN_SAMPLES && threads() > 1 {
         use rayon::prelude::*;
         data.par_chunks_mut(chunk).enumerate().for_each(|(i, c)| f(i * rows_per_chunk.max(1), c));
         return;
@@ -58,7 +58,7 @@ where
     F: Fn(I) -> O + Sync + Send,
 {
     #[cfg(feature = "rayon")]
-    if parallel && items.len() > 1 && rayon::current_num_threads() > 1 {
+    if parallel && items.len() > 1 && threads() > 1 {
         use rayon::prelude::*;
         return items.into_par_iter().map(f).collect();
     }
@@ -72,7 +72,7 @@ where
     F: Fn(usize) + Sync + Send,
 {
     #[cfg(feature = "rayon")]
-    if parallel && n > 1 && rayon::current_num_threads() > 1 {
+    if parallel && n > 1 && threads() > 1 {
         use rayon::prelude::*;
         (0..n).into_par_iter().for_each(f);
         return;
@@ -81,11 +81,39 @@ where
     (0..n).for_each(f);
 }
 
-/// Number of worker threads available to parallel helpers.
+#[cfg(feature = "rayon")]
+std::thread_local! {
+    /// Set while [`sequential`] runs on this thread.
+    static SEQUENTIAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` on the calling thread with every parallel helper sequential: inside `f`,
+/// [`threads`] returns 1 and no work is handed to a thread pool. This is how a
+/// single-threaded decode runs, so it stays on the caller's thread (and on the CPU core
+/// class the operating system picked for it) instead of moving to a pool worker.
+pub fn sequential<R>(f: impl FnOnce() -> R) -> R {
+    #[cfg(feature = "rayon")]
+    {
+        struct Restore(bool);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SEQUENTIAL.with(|s| s.set(self.0));
+            }
+        }
+        let _restore = Restore(SEQUENTIAL.with(|s| s.replace(true)));
+        f()
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        f()
+    }
+}
+
+/// Number of worker threads available to parallel helpers (1 inside [`sequential`]).
 pub fn threads() -> usize {
     #[cfg(feature = "rayon")]
     {
-        rayon::current_num_threads()
+        if SEQUENTIAL.with(|s| s.get()) { 1 } else { rayon::current_num_threads() }
     }
     #[cfg(not(feature = "rayon"))]
     {
@@ -205,7 +233,7 @@ where
         Ctx { bands: parts.into_iter().map(Mutex::new).collect(), first_rows, edges, pending, nblocks, geo, halo, f };
 
     #[cfg(feature = "rayon")]
-    if nbands > 1 && rayon::current_num_threads() > 1 {
+    if nbands > 1 && threads() > 1 {
         fn run<'s, T, F>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s, T, F>, k: usize, j: usize)
         where
             T: Copy + Default + Send + Sync,
@@ -252,6 +280,26 @@ pub fn split_disjoint<'a, T>(mut data: &'a mut [T], bounds: &[(usize, usize)]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sequential_runs_everything_on_the_calling_thread() {
+        let me = std::thread::current().id();
+        let outer = threads();
+        let r = sequential(|| {
+            assert_eq!(threads(), 1);
+            let ids = map((0..64).collect::<Vec<_>>(), true, |_| std::thread::current().id());
+            assert!(ids.iter().all(|&i| i == me));
+            for_each_index(64, true, |_| assert_eq!(std::thread::current().id(), me));
+            let mut v = vec![0u8; PAR_MIN_SAMPLES * 2];
+            for_each_row_chunk(&mut v, 1024, 1, true, |_, _| assert_eq!(std::thread::current().id(), me));
+            // Nested calls keep the setting and restore it on the way out.
+            sequential(|| assert_eq!(threads(), 1));
+            assert_eq!(threads(), 1);
+            7
+        });
+        assert_eq!(r, 7);
+        assert_eq!(threads(), outer);
+    }
 
     #[test]
     fn row_chunks_cover_everything() {

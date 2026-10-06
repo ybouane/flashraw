@@ -425,15 +425,13 @@ def cmd_run(a):
                     "rgb-gpu": ["--output", "rgba8", "--backend", "gpu"]}[mode]
             if mode != "rgb-gpu":
                 cmd += ["--backend", "simd"]  # CPU only (a GPU build's `auto` may pick the GPU)
-            # Single thread: RAYON_NUM_THREADS=1 (set in env_one), so that, as with the other
-            # libraries, the decode runs on the calling thread. (`--threads 1` would run it on
-            # a pool worker thread, which macOS may schedule on an efficiency core.)
+            # Single thread: RAYON_NUM_THREADS=1 (set in env_one); like `--threads 1`, the
+            # decode then runs on the calling thread, as with the other libraries.
             j, err, _ = run_one(cmd + [path], env)
             rec = {"ok": False, "error": err} if j is None or "total_ms_median" not in j else {
                 "ok": True, "ms": j["total_ms_median"], "ms_min": j.get("total_ms_min"),
-                # The CLI reports ru_maxrss as is: bytes on macOS, KiB elsewhere.
                 "mp": j.get("megapixels"),
-                "rss_mb": (j.get("maxrss_kb") or 0) / (1024 * 1024 if sys.platform == "darwin" else 1024),
+                "rss_mb": (j.get("maxrss_kb") or 0) / 1024,
                 "camera": j.get("camera"), "format": j.get("format"), "compression": j.get("compression"),
                 "backend": (j.get("backend") or {}).get("decode"),
                 "postprocess": (j.get("backend") or {}).get("postprocess")}

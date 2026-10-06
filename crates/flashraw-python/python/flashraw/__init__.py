@@ -125,7 +125,16 @@ __all__ = [
     "ERROR_KINDS",
 ]
 
-OUTPUTS: Tuple[str, ...] = ("raw-u16", "raw-f32", "normalized", "linear-rgb", "rgba8")
+OUTPUTS: Tuple[str, ...] = (
+    "raw-u16",
+    "raw-f32",
+    "normalized",
+    "linear-rgb",
+    "linear-rgb16",
+    "linear-rgb-f16",
+    "rgba8",
+    "rgb16",
+)
 """Output formats accepted by :meth:`RawFile.decode`."""
 
 BACKENDS: Tuple[str, ...] = ("auto", "cpu", "simd", "gpu")
@@ -163,10 +172,11 @@ class Frame:
     """A decoded frame: the pixels as a NumPy array plus everything needed to interpret them.
 
     ``array`` has shape ``(height, width)`` for one sample per pixel (CFA / monochrome raw
-    data) or ``(height, width, channels)`` (3 for linear RGB, 4 for RGBA8, 3 for linear raw
-    DNG / Foveon data), with dtype ``uint16`` (``raw-u16``), ``float32`` (``raw-f32``,
-    ``normalized``, ``linear-rgb``) or ``uint8`` (``rgba8``). The array owns the decoder's
-    buffer (no copy was made); it stays valid after the :class:`RawFile` is closed.
+    data) or ``(height, width, channels)`` (3 for the RGB outputs, 4 for RGBA8, 3 for linear
+    raw DNG / Foveon data), with dtype ``uint16`` (``raw-u16``, ``rgb16``, ``linear-rgb16``),
+    ``float16`` (``linear-rgb-f16``), ``float32`` (``raw-f32``, ``normalized``,
+    ``linear-rgb``) or ``uint8`` (``rgba8``). The array owns the decoder's buffer (no copy was
+    made); it stays valid after the :class:`RawFile` is closed.
 
     Rectangles (``active_area``, ``crop``, ``masked_areas``) are in frame coordinates;
     ``origin`` is the frame's position in the sensor buffer (non-zero for region and tile
@@ -466,6 +476,9 @@ class RawFile:
         demosaic: str = "bilinear",
         apply_opcodes: bool = True,
         corruption_policy: str = "recover",
+        exposure: float = 0.0,
+        black_point: float = 0.0,
+        white_point: float = 1.0,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
 
@@ -473,8 +486,12 @@ class RawFile:
             output: ``"raw-u16"`` (sensor samples as stored, uint16), ``"raw-f32"``
                 (as float32), ``"normalized"`` (black-subtracted, white-normalised float32
                 in [0, 1], CFA layout kept), ``"linear-rgb"`` (demosaiced, white-balanced
-                linear sRGB primaries, float32 ``(h, w, 3)``) or ``"rgba8"`` (display-ready
-                sRGB with orientation applied, uint8 ``(h, w, 4)``).
+                linear sRGB primaries, float32 ``(h, w, 3)``), ``"linear-rgb-f16"`` (the same
+                as float16, half the memory), ``"linear-rgb16"`` (the same clipped to [0, 1] as
+                uint16), ``"rgba8"`` (display-ready sRGB with orientation applied, uint8
+                ``(h, w, 4)``) or ``"rgb16"`` (display-ready sRGB with orientation applied,
+                uint16 ``(h, w, 3)``). Linear outputs keep the sensor orientation
+                (:attr:`Frame.orientation`).
             backend: ``"auto"``, ``"cpu"`` (scalar), ``"simd"`` or ``"gpu"``.
             threads: worker threads for this decode (``None``: all cores; ``1``:
                 single-threaded).
@@ -485,6 +502,11 @@ class RawFile:
             apply_opcodes: apply DNG opcode lists (bad pixels, gain maps...).
             corruption_policy: ``"recover"`` (default; zero-fill what is missing and report it
                 in :attr:`Frame.warnings`) or ``"strict"`` (raise :class:`CorruptFileError`).
+            exposure: RGB outputs: exposure in EV, applied to linear values after the colour
+                conversion (a convenience control; no tone curve or highlight recovery).
+            black_point: RGB outputs: linear value (after exposure) mapped to black.
+            white_point: RGB outputs: linear value (after exposure) mapped to white. Integer
+                outputs clip outside [black_point, white_point]; float outputs keep the values.
         """
         t0 = time.perf_counter()
         array, info = self._native.decode(
@@ -497,6 +519,9 @@ class RawFile:
             apply_opcodes,
             corruption_policy,
             None,
+            exposure,
+            black_point,
+            white_point,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 
@@ -514,11 +539,25 @@ class RawFile:
         demosaic: str = "bilinear",
         apply_opcodes: bool = True,
         corruption_policy: str = "recover",
+        exposure: float = 0.0,
+        black_point: float = 0.0,
+        white_point: float = 1.0,
     ) -> Frame:
         """Decode one independently decodable tile/strip (see :attr:`tiles`)."""
         t0 = time.perf_counter()
         array, info = self._native.decode(
-            output, backend, threads, None, True, demosaic, apply_opcodes, corruption_policy, int(index)
+            output,
+            backend,
+            threads,
+            None,
+            True,
+            demosaic,
+            apply_opcodes,
+            corruption_policy,
+            int(index),
+            exposure,
+            black_point,
+            white_point,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 

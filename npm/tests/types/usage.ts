@@ -80,6 +80,17 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const lin = await raw.decode({ output: 'linear-rgb', demosaic: 'half-size' });
   const f32: Float32Array = lin.data;
 
+  // 16-bit and half-float RGB, with exposure and black/white points.
+  const rgb16 = await raw.decode({ output: 'rgb16', exposure: 0.5, blackPoint: 0.01, whitePoint: 0.95 });
+  const rgb16Data: Uint16Array = rgb16.data;
+  const lin16: Uint16Array = (await raw.decode({ output: 'linear-rgb16' })).data;
+  const linHalf: Uint16Array = (await raw.decode({ output: 'linear-rgb-f16' })).data;
+  const linHalf2: Uint16Array = (await raw.decode({ output: 'linear-rgb', sampleType: 'f16' })).data;
+  // @ts-expect-error f16 linear data is not a Float32Array
+  const notF32Lin: Float32Array = (await raw.decode({ output: 'linear-rgb', sampleType: 'f16' })).data;
+  // @ts-expect-error exposure is a number
+  await raw.decode({ output: 'rgb16', exposure: '1' });
+
   const dflt = await raw.decode();
   const dfltData: Uint16Array = dflt.data;
 

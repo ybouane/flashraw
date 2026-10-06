@@ -17,9 +17,14 @@ def test_array_wraps_the_decoder_buffer(mlv_path: pathlib.Path, output: str) -> 
     with flashraw.open(mlv_path) as raw:
         f = raw.decode(output)
     a = f.array
-    # The array does not own its memory: its base object holds the Rust allocation...
+    # The array does not own its memory: its base object holds the Rust allocation (half
+    # floats are a float16 view of the uint16 array that holds it)...
     assert not a.flags.owndata
-    assert a.base is not None and not isinstance(a.base, np.ndarray)
+    owner = a.base
+    if a.dtype == np.float16:
+        assert isinstance(owner, np.ndarray) and owner.dtype == np.uint16
+        owner = owner.base
+    assert owner is not None and not isinstance(owner, np.ndarray)
     # ...and it points at exactly the buffer the decoder filled (no copy in between).
     assert a.ctypes.data == f._data_address
     assert a.__array_interface__["data"][0] == f._data_address

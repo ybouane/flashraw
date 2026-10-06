@@ -8,8 +8,12 @@ use flashraw_core::*;
 pub enum RawPixelData {
     /// 8-bit samples ([`OutputFormat::Rgba8`]).
     U8(Vec<u8>),
-    /// 16-bit samples ([`OutputFormat::RawU16`]).
+    /// 16-bit integer samples ([`OutputFormat::RawU16`], [`OutputFormat::Rgb16`],
+    /// [`OutputFormat::LinearRgb16`]).
     U16(Vec<u16>),
+    /// IEEE 754 binary16 (half-float) samples, stored as their bit patterns
+    /// ([`OutputFormat::LinearRgbF16`]): view them as `f16` / `Float16Array` / `numpy.float16`.
+    F16(Vec<u16>),
     /// `f32` samples ([`OutputFormat::RawF32`], [`OutputFormat::NormalizedF32`],
     /// [`OutputFormat::LinearRgbF32`]).
     F32(Vec<f32>),
@@ -23,7 +27,7 @@ impl RawPixelData {
     pub fn len(&self) -> usize {
         match self {
             RawPixelData::U8(v) => v.len(),
-            RawPixelData::U16(v) => v.len(),
+            RawPixelData::U16(v) | RawPixelData::F16(v) => v.len(),
             RawPixelData::F32(v) => v.len(),
             #[cfg(feature = "gpu")]
             RawPixelData::Gpu(g) => g.len(),
@@ -33,10 +37,18 @@ impl RawPixelData {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    /// The samples if stored as `u16` in host memory; `None` otherwise.
+    /// The samples if stored as `u16` integers in host memory; `None` otherwise (also for
+    /// half floats, see [`RawPixelData::as_f16_bits`]).
     pub fn as_u16(&self) -> Option<&[u16]> {
         match self {
             RawPixelData::U16(v) => Some(v),
+            _ => None,
+        }
+    }
+    /// The bit patterns of half-float samples in host memory; `None` otherwise.
+    pub fn as_f16_bits(&self) -> Option<&[u16]> {
+        match self {
+            RawPixelData::F16(v) => Some(v),
             _ => None,
         }
     }
@@ -58,7 +70,7 @@ impl RawPixelData {
     pub fn byte_len(&self) -> usize {
         match self {
             RawPixelData::U8(v) => v.len(),
-            RawPixelData::U16(v) => v.len() * 2,
+            RawPixelData::U16(v) | RawPixelData::F16(v) => v.len() * 2,
             RawPixelData::F32(v) => v.len() * 4,
             #[cfg(feature = "gpu")]
             RawPixelData::Gpu(g) => g.byte_len(),
@@ -114,11 +126,12 @@ impl DecodeStatistics {
 #[non_exhaustive]
 pub struct RawFrame {
     /// Width of `data` in pixels: the region width for region decodes, the crop width
-    /// for cropped RGB outputs, and after orientation for [`OutputFormat::Rgba8`].
+    /// for cropped RGB outputs, and after orientation for the display outputs
+    /// ([`OutputFormat::Rgba8`], [`OutputFormat::Rgb16`]).
     pub width: u32,
     /// Height of `data` in pixels (see `width`).
     pub height: u32,
-    /// Samples per pixel (1 for CFA/mono, 3 for linear/RGB outputs, 4 for RGBA8).
+    /// Samples per pixel (1 for CFA/mono, 3 for the RGB outputs, 4 for RGBA8).
     pub cpp: u32,
     /// Region of `data` holding valid image pixels.
     pub active_area: Rect,
@@ -151,8 +164,9 @@ pub struct RawFrame {
     pub white_balance: Option<WhiteBalance>,
     /// Colour calibration of the camera.
     pub color_matrices: ColorMatrices,
-    /// Orientation still to apply for display; [`Orientation::Normal`] for
-    /// [`OutputFormat::Rgba8`], which already has it applied.
+    /// Orientation still to apply for display; [`Orientation::Normal`] for the display
+    /// outputs ([`OutputFormat::Rgba8`], [`OutputFormat::Rgb16`]), which already have it
+    /// applied (see [`OutputFormat::applies_orientation`]).
     pub orientation: Orientation,
     /// Normalised file metadata (as returned by [`crate::FlashRaw::metadata`]).
     pub metadata: RawMetadata,
@@ -200,6 +214,10 @@ impl RawFrame {
     /// Sample slice for 8-bit outputs ([`OutputFormat::Rgba8`]).
     pub fn as_u8(&self) -> Option<&[u8]> {
         self.data.as_u8()
+    }
+    /// Half-float bit patterns for [`OutputFormat::LinearRgbF16`].
+    pub fn as_f16_bits(&self) -> Option<&[u16]> {
+        self.data.as_f16_bits()
     }
     /// CFA colour at frame coordinates (accounts for region origin).
     pub fn color_at(&self, x: u32, y: u32) -> Option<CfaColor> {

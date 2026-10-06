@@ -77,6 +77,10 @@ fn workload(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Workload> {
         OutputFormat::NormalizedF32 => WorkOutput::Normalized,
         OutputFormat::LinearRgbF32 => WorkOutput::Rgb { bytes_per_px: 12, half_size },
         OutputFormat::Rgba8 => WorkOutput::Rgb { bytes_per_px: 4, half_size },
+        // Computed as 4-sample 16-bit pixels, downloaded as 3.
+        OutputFormat::Rgb16 | OutputFormat::LinearRgb16 | OutputFormat::LinearRgbF16 => {
+            WorkOutput::Rgb { bytes_per_px: 8, half_size }
+        }
         _ => return None,
     };
     let bytes_per_sample = if info.sample_format == SampleFormat::F32 { 4 } else { 2 };
@@ -225,6 +229,7 @@ async fn run(
         None => full,
     };
     let threads = flashraw_core::par::threads();
+    let levels = process::Levels::new(opts.exposure, opts.black_point, opts.white_point)?;
     let mut black = info.black_level.clone();
     let packed = gpu_packed(raw);
     let img: Option<RawImage>;
@@ -269,7 +274,11 @@ async fn run(
     let op = match base {
         OutputFormat::RawU16 => GpuOp::Unpack,
         OutputFormat::NormalizedF32 => GpuOp::Normalize,
-        OutputFormat::LinearRgbF32 | OutputFormat::Rgba8 => {
+        OutputFormat::LinearRgbF32
+        | OutputFormat::Rgba8
+        | OutputFormat::Rgb16
+        | OutputFormat::LinearRgb16
+        | OutputFormat::LinearRgbF16 => {
             let crop = if opts.crop { translate(info.crop) } else { Rect::full(fw, fh) };
             let crop = if crop.is_empty() { Rect::full(fw, fh) } else { crop };
             let params = process::DevelopParams::new(&post_info, opts.demosaic, crop);
@@ -279,7 +288,14 @@ async fn run(
                 wb: params.wb,
                 cam_to_rgb: params.cam_to_rgb,
                 orientation: params.orientation,
-                output: if base == OutputFormat::Rgba8 { DevelopOutput::Rgba8 } else { DevelopOutput::LinearRgbF32 },
+                output: match base {
+                    OutputFormat::Rgba8 => DevelopOutput::Rgba8,
+                    OutputFormat::Rgb16 => DevelopOutput::Rgb16,
+                    OutputFormat::LinearRgb16 => DevelopOutput::LinearRgb16,
+                    OutputFormat::LinearRgbF16 => DevelopOutput::LinearRgbF16,
+                    _ => DevelopOutput::LinearRgbF32,
+                },
+                levels: levels.map(|l| [l.scale, l.offset]),
             })
         }
         o => return Err(Error::InvalidArgument(format!("{o:?} is not produced by the GPU backend"))),
@@ -288,16 +304,22 @@ async fn run(
     let r = ctx.run(&frame, &post_info, &op).await?;
     profiler.record(Stage::GpuUpload, r.timings.upload_ms);
     profiler.record(Stage::GpuCompute, r.timings.compute_ms);
-    let (width, height, cpp) = (r.image.width(), r.image.height(), r.image.channels());
+    let (width, height) = (r.image.width(), r.image.height());
+    // 16-bit RGB outputs are computed as 4-sample pixels and downloaded as 3.
+    let rgb16 = matches!(base, OutputFormat::Rgb16 | OutputFormat::LinearRgb16 | OutputFormat::LinearRgbF16);
+    let cpp = if rgb16 { 3 } else { r.image.channels() };
     // The Arc only makes frames cheap to clone. On wasm32 WebGPU handles are not Send, but
     // the GPU build is single-threaded there, so nothing crosses threads.
     #[allow(clippy::arc_with_non_send_sync)]
     let data = if resident {
         RawPixelData::Gpu(Arc::new(r.image))
     } else {
-        let (px, ms) = r.image.download_async().await?;
+        let (px, ms) = r.image.download_rgb_async().await?;
         profiler.record(Stage::GpuDownload, ms);
-        host_data(px)
+        match (base, host_data(px)) {
+            (OutputFormat::LinearRgbF16, RawPixelData::U16(v)) => RawPixelData::F16(v),
+            (_, d) => d,
+        }
     };
     let adapter = ctx.info().to_string();
     let mut post = format!("GPU {adapter}");
@@ -350,7 +372,7 @@ async fn run(
         white_level: info.white_level.clone(),
         white_balance: info.white_balance,
         color_matrices: info.color_matrices.clone(),
-        orientation: if base == OutputFormat::Rgba8 { Orientation::Normal } else { info.orientation },
+        orientation: if base.applies_orientation() { Orientation::Normal } else { info.orientation },
         metadata: raw.metadata().clone(),
         stats,
         warnings: dctx.take_warnings(),

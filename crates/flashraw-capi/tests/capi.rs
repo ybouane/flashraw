@@ -210,6 +210,9 @@ fn metadata_and_raw_decode_match_expected() {
             (flashraw_output_format::FLASHRAW_OUTPUT_LINEAR_RGB_F32, 3, flashraw_sample_type::FLASHRAW_SAMPLE_F32),
             (flashraw_output_format::FLASHRAW_OUTPUT_NORMALIZED_F32, 1, flashraw_sample_type::FLASHRAW_SAMPLE_F32),
             (flashraw_output_format::FLASHRAW_OUTPUT_RAW_F32, 1, flashraw_sample_type::FLASHRAW_SAMPLE_F32),
+            (flashraw_output_format::FLASHRAW_OUTPUT_RGB16, 3, flashraw_sample_type::FLASHRAW_SAMPLE_U16),
+            (flashraw_output_format::FLASHRAW_OUTPUT_LINEAR_RGB16, 3, flashraw_sample_type::FLASHRAW_SAMPLE_U16),
+            (flashraw_output_format::FLASHRAW_OUTPUT_LINEAR_RGB_F16, 3, flashraw_sample_type::FLASHRAW_SAMPLE_F16),
         ] {
             let mut o = options();
             o.output = out as i32;
@@ -217,13 +220,39 @@ fn metadata_and_raw_decode_match_expected() {
             let fr = decode(f, &o).unwrap();
             assert_eq!(flashraw_frame_cpp(fr), cpp);
             assert_eq!(flashraw_frame_sample_type(fr), ty as i32);
-            let elem = if ty == flashraw_sample_type::FLASHRAW_SAMPLE_U8 { 1 } else { 4 };
+            assert_eq!(flashraw_frame_output_format(fr), out as i32);
+            let elem = match ty {
+                flashraw_sample_type::FLASHRAW_SAMPLE_U8 => 1,
+                flashraw_sample_type::FLASHRAW_SAMPLE_U16 | flashraw_sample_type::FLASHRAW_SAMPLE_F16 => 2,
+                _ => 4,
+            };
             assert_eq!(
                 flashraw_frame_data_len(fr),
                 (flashraw_frame_width(fr) * flashraw_frame_height(fr) * cpp) as usize * elem
             );
             flashraw_frame_free(fr);
         }
+        // Exposure and black/white points: +1 EV doubles linear values.
+        let mut o = options();
+        o.output = flashraw_output_format::FLASHRAW_OUTPUT_LINEAR_RGB_F32 as i32;
+        o.demosaic = flashraw_demosaic::FLASHRAW_DEMOSAIC_HALF_SIZE as i32;
+        let base = decode(f, &o).unwrap();
+        o.exposure = 1.0;
+        let bright = decode(f, &o).unwrap();
+        let n = flashraw_frame_sample_count(base);
+        let a = std::slice::from_raw_parts(flashraw_frame_data(base) as *const f32, n);
+        let b = std::slice::from_raw_parts(flashraw_frame_data(bright) as *const f32, n);
+        assert!(a.iter().zip(b).all(|(x, y)| *y == *x * 2.0));
+        flashraw_frame_free(base);
+        flashraw_frame_free(bright);
+        o.exposure = 0.0;
+        o.black_point = 0.5;
+        o.white_point = 0.5;
+        let mut fr = null_mut();
+        assert_eq!(flashraw_decode(f, &o, &mut fr), flashraw_status::FLASHRAW_ERROR_INVALID_ARGUMENT);
+        o.white_point = 1.0;
+        o.reserved0 = 1;
+        assert_eq!(flashraw_decode(f, &o, &mut fr), flashraw_status::FLASHRAW_ERROR_INVALID_ARGUMENT);
         // Half-size demosaic.
         let mut o = options();
         o.output = flashraw_output_format::FLASHRAW_OUTPUT_RGBA8 as i32;

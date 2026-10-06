@@ -73,6 +73,7 @@ no adapter exists.
 | normalise (per-position black pattern = lcm(CFA, black repeat), row/col deltas, per-colour white, origin-anchored) | `process::normalize` | ≤ 1e-5 (measured: 0) |
 | develop (bilinear Bayer, 3x3 same-colour for X-Trans/other CFAs, RGB planes, mono; WB, clip, matrix) → linear f32 | `process::develop` | ≤ 1e-4 (measured ≤ 3.6e-7) |
 | develop → sRGB RGBA8 with all 8 EXIF orientations | `process::develop_rgba8` | ±1 on < 0.1 % of samples (synthetic: 0; real files ≤ 0.0002 %) |
+| develop → 16-bit sRGB (`Rgb16`, oriented), linear 16-bit, linear half floats, with and without exposure/black/white points | `process::develop_encoded` | one code / one half-float ULP on < 1 % of samples (Metal: ≤ 0.21 % synthetic, ≤ 0.07 % on real files; software Vulkan: 0) |
 | half-size 2x2 superpixel | `process::develop` (HalfSize) | same as above |
 
 The GPU path reproduces the CPU semantics exactly:
@@ -84,7 +85,13 @@ The GPU path reproduces the CPU semantics exactly:
   * Bayer sums in the same order as the CPU fast path;
   * white balance, then clip, then the matrix.
 * **sRGB encode** uses the same 4097-entry LUT, indexed by
-  `trunc(clamp(v, 0, 1) * 4096)`.
+  `trunc(clamp(v, 0, 1) * 4096)`; the 16-bit encode interpolates the same 16385-entry curve
+  table as the CPU.
+* **Half floats** are converted with the CPU's integer algorithm (round to nearest even,
+  saturating at ±65504), not `pack2x16float`, which needs an optional shader capability and
+  leaves rounding to the implementation.
+* **Levels** (`exposure`, `black_point`, `white_point`) apply after the matrix as
+  `v * scale - offset`, like the CPU.
 
 Remaining differences are FMA/division rounding of a few ULP in f32.
 
@@ -114,7 +121,11 @@ store.
      data), the CPU decodes and the u16/f32 samples are uploaded once.
 2. **Compute.** One dispatch per band. There is one band unless the frame exceeds the
    adapter's buffer limits (see [Tiling](#tiling-frames-beyond-the-adapter-limits)).
-3. **Output.** Downloaded for `RawU16`, `NormalizedF32`, `LinearRgbF32` and `Rgba8`.
+3. **Output.** Downloaded for `RawU16`, `NormalizedF32`, `LinearRgbF32`, `Rgba8`, `Rgb16`,
+   `LinearRgb16` and `LinearRgbF16`. The three 16-bit RGB outputs are computed as 16-bit
+   RGBA (two 32-bit words per pixel, so no two invocations share a word) and the fourth
+   sample is dropped while copying out of the device buffer (`GpuImage::download_rgb`):
+   the host never holds a 4-channel copy. They have no GPU-resident variant.
    The `Gpu*` variants (`GpuRawU16`, `GpuNormalizedF32`, `GpuLinearRgbF32`, `GpuRgba8`)
    leave it on the device and return `RawPixelData::Gpu(Arc<GpuImage>)`.
    `RawFrame::download()` / `download_async()` convert later.

@@ -291,6 +291,7 @@ fn gpu_develop_matches_cpu() {
                     cam_to_rgb: params.cam_to_rgb,
                     orientation,
                     output,
+                    levels: None,
                 };
                 let frame = GpuFrame::from_u16(img.u16(), w, h, case.cpp).with_origin(origin);
                 let what = format!("{} half={half} orient={orientation:?}", case.name);
@@ -346,6 +347,7 @@ fn gpu_develop_from_packed_and_f32() {
             cam_to_rgb: params.cam_to_rgb,
             orientation: Orientation::Normal,
             output: DevelopOutput::LinearRgbF32,
+            levels: None,
         };
         let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec)).unwrap();
         let HostPixels::F32(got) = run.image.download().unwrap().0 else { panic!() };
@@ -372,6 +374,7 @@ fn gpu_develop_from_packed_and_f32() {
         cam_to_rgb: params.cam_to_rgb,
         orientation: Orientation::Normal,
         output: DevelopOutput::LinearRgbF32,
+        levels: None,
     };
     let run = ctx.run_blocking(&GpuFrame::from_f32(data, 64, 48, 1), &info, &GpuOp::Develop(spec)).unwrap();
     let HostPixels::F32(got) = run.image.download().unwrap().0 else { panic!() };
@@ -395,6 +398,7 @@ fn gpu_image_to_texture() {
         cam_to_rgb: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         orientation: Orientation::Rotate90,
         output: DevelopOutput::Rgba8,
+        levels: None,
     };
     let run = ctx.run_blocking(&GpuFrame::from_u16(img.u16(), 40, 30, 1), &info, &GpuOp::Develop(spec)).unwrap();
     let tex = run.image.to_texture().unwrap();
@@ -507,6 +511,7 @@ fn gpu_tiled_develop_matches_untiled_and_cpu() {
                         cam_to_rgb: params.cam_to_rgb,
                         orientation,
                         output,
+                        levels: None,
                     });
                     let base = ctx.run_blocking(&frame, &info, &op).unwrap();
                     assert_eq!(base.timings.bands, 1);
@@ -619,6 +624,7 @@ fn gpu_tiled_packed_develop_and_texture() {
                 cam_to_rgb: [[1.6, -0.4, -0.2], [-0.2, 1.4, -0.2], [0.0, -0.5, 1.5]],
                 orientation,
                 output: DevelopOutput::Rgba8,
+                levels: None,
             });
             let base = ctx.run_blocking(&frame, &info, &op).unwrap();
             let want = download(&base);
@@ -675,4 +681,97 @@ fn read_texture(ctx: &flashraw_gpu::GpuContext, tex: &flashraw_gpu::wgpu::Textur
         out.extend_from_slice(&view[y * bpr as usize..y * bpr as usize + tw as usize * 4]);
     }
     out
+}
+
+/// Runs everywhere: the GPU's 16-bit sRGB table is the CPU's.
+#[test]
+fn srgb16_table_matches_cpu() {
+    assert_eq!(flashraw_gpu::srgb16_table(), process::srgb16_lut());
+}
+
+/// 16-bit samples within one step (one code, or one half-float ULP when `half`) on < 1 % of
+/// the samples: 16 bits resolve the few-ULP f32 differences (FMA, division) that the f32
+/// output's 1e-4 tolerance absorbs (measured on Metal: <= 0.21 %; software Vulkan: 0).
+fn cmp_u16(got: &[u16], want: &[u16], half: bool, what: &str) {
+    assert_eq!(got.len(), want.len(), "{what}: length");
+    // Half floats are ordered like their sign-magnitude bit patterns.
+    let key = |h: u16| if half && h & 0x8000 != 0 { -((h & 0x7fff) as i32) } else { h as i32 };
+    let mut off = 0usize;
+    for (a, b) in got.iter().zip(want) {
+        let d = (key(*a) - key(*b)).abs();
+        assert!(d <= 1, "{what}: diff {d} ({a:#06x} vs {b:#06x})");
+        off += (d > 0) as usize;
+    }
+    let frac = off as f64 / got.len() as f64;
+    eprintln!("{what}: {off} of {} samples differ by one step ({:.4}%)", got.len(), frac * 100.0);
+    assert!(frac < 1e-2, "{what}: too many off-by-one samples ({frac})");
+}
+
+#[test]
+fn gpu_develop_16bit_outputs_match_cpu() {
+    let _serial = serial();
+    let Some(ctx) = gpu() else { return };
+    let (w, h) = (157u32, 93u32);
+    let cm = ColorMatrices {
+        color: vec![
+            ColorMatrix::new(Illuminant::D65, 3, vec![0.6, -0.1, -0.05, -0.4, 1.2, 0.2, -0.1, 0.25, 0.6]).unwrap(),
+        ],
+        ..Default::default()
+    };
+    let levels = [None, process::Levels::new(1.5, 0.05, 0.8).unwrap()];
+    for (name, cfa, cpp) in [("bayer", Some(CfaPattern::RGGB), 1), ("xtrans", Some(xtrans()), 1), ("rgb", None, 3)] {
+        let mut info = calibrated_info(w, h, cfa, cpp);
+        info.color_matrices = cm.clone();
+        let img = synthetic_u16(w, h, cpp, 5);
+        let origin = (1, 3);
+        let frame = GpuFrame::from_u16(img.u16(), w, h, cpp).with_origin(origin);
+        for half in [false, true] {
+            for orientation in
+                [Orientation::Normal, Orientation::Rotate90, Orientation::Rotate180, Orientation::Transverse]
+            {
+                for lv in levels {
+                    let crop = Rect::new(5, 4, w - 9, h - 7);
+                    let demosaic = if half { flashraw::Demosaic::HalfSize } else { flashraw::Demosaic::Bilinear };
+                    let mut params = DevelopParams::new(&info, demosaic, crop);
+                    params.orientation = orientation;
+                    params.levels = lv;
+                    for (output, enc) in [
+                        (DevelopOutput::Rgb16, process::RgbEncoding::Srgb16),
+                        (DevelopOutput::LinearRgb16, process::RgbEncoding::Linear16),
+                        (DevelopOutput::LinearRgbF16, process::RgbEncoding::LinearF16),
+                    ] {
+                        let what = format!("{name} half={half} {orientation:?} {output:?} levels={lv:?}");
+                        let (ow, oh, ch, want) =
+                            process::develop_encoded(&img, &info, origin, &params, enc, false).unwrap();
+                        let spec = DevelopSpec {
+                            crop,
+                            half_size: half,
+                            wb: params.wb,
+                            cam_to_rgb: params.cam_to_rgb,
+                            orientation,
+                            output,
+                            levels: lv.map(|l| [l.scale, l.offset]),
+                        };
+                        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec)).unwrap();
+                        assert_eq!(
+                            (run.image.width(), run.image.height(), run.image.channels()),
+                            (ow, oh, 4),
+                            "{what}"
+                        );
+                        assert_eq!(ch, 3);
+                        let HostPixels::U16(got) = run.image.download_rgb().unwrap().0 else { panic!() };
+                        let want = match &want {
+                            flashraw::RawPixelData::F16(v) | flashraw::RawPixelData::U16(v) => v,
+                            _ => panic!("{what}"),
+                        };
+                        cmp_u16(&got, want, enc == process::RgbEncoding::LinearF16, &what);
+                        // The full 4-sample download carries alpha (65535 or half 1.0).
+                        let HostPixels::U16(all) = run.image.download().unwrap().0 else { panic!() };
+                        let alpha = if enc == process::RgbEncoding::LinearF16 { 0x3c00 } else { 0xffff };
+                        assert!(all.chunks_exact(4).all(|p| p[3] == alpha), "{what}");
+                    }
+                }
+            }
+        }
+    }
 }

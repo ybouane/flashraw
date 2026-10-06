@@ -7,6 +7,7 @@
 //! The same operations exist as WGSL compute shaders in `flashraw-gpu`; tests check
 //! both paths agree.
 
+use crate::RawPixelData;
 use crate::options::Demosaic;
 use flashraw_core::*;
 
@@ -208,7 +209,37 @@ pub fn normalize(img: &RawImage, info: &FrameInfo, origin: (u32, u32), parallel:
     out
 }
 
+/// Exposure and black/white points of RGB outputs, applied in linear space after the
+/// colour conversion: `v' = (v * 2^exposure - black) / (white - black)`, i.e.
+/// `v * scale - offset`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Levels {
+    pub scale: f32,
+    pub offset: f32,
+}
+
+impl Levels {
+    /// Validated levels; `None` for the identity (0 EV, black 0, white 1), which leaves
+    /// outputs bit-identical to a develop without levels.
+    pub fn new(exposure: f32, black: f32, white: f32) -> Result<Option<Levels>> {
+        if !exposure.is_finite() || exposure.abs() > 32.0 {
+            return Err(Error::InvalidArgument(format!("exposure {exposure} EV outside [-32, 32]")));
+        }
+        if !black.is_finite() || !white.is_finite() || white <= black {
+            return Err(Error::InvalidArgument(format!(
+                "white point {white} must be finite and above the black point {black}"
+            )));
+        }
+        if exposure == 0.0 && black == 0.0 && white == 1.0 {
+            return Ok(None);
+        }
+        let range = white as f64 - black as f64;
+        Ok(Some(Levels { scale: (2f64.powf(exposure as f64) / range) as f32, offset: (black as f64 / range) as f32 }))
+    }
+}
+
 /// Parameters of the fused develop pass.
+#[derive(Debug, Clone)]
 pub struct DevelopParams {
     pub demosaic: Demosaic,
     pub crop: Rect,
@@ -216,6 +247,8 @@ pub struct DevelopParams {
     pub wb: [f32; 4],
     pub cam_to_rgb: [[f32; 3]; 3],
     pub orientation: Orientation,
+    /// Exposure / black / white points (`None`: none).
+    pub levels: Option<Levels>,
 }
 
 impl DevelopParams {
@@ -227,9 +260,72 @@ impl DevelopParams {
             wb,
             cam_to_rgb: camera_to_srgb(&info.color_matrices),
             orientation: info.orientation,
+            levels: None,
+        }
+    }
+
+    /// The same develop up to camera RGB: no white balance, identity matrix, no levels.
+    pub(crate) fn camera_rgb(&self) -> Self {
+        DevelopParams {
+            wb: [1.0; 4],
+            cam_to_rgb: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            levels: None,
+            ..self.clone()
         }
     }
 }
+
+/// White balance, clip at sensor saturation, camera → linear sRGB, levels.
+#[inline(always)]
+pub(crate) fn finish_rgb(rgb: [f32; 3], wb: &[f32; 4], m: &[[f32; 3]; 3], levels: Option<Levels>) -> [f32; 3] {
+    let r = (rgb[0] * wb[0]).clamp(0.0, 1.0);
+    let g = (rgb[1] * wb[1]).clamp(0.0, 1.0);
+    let b = (rgb[2] * wb[2]).clamp(0.0, 1.0);
+    let mut o = [
+        m[0][0] * r + m[0][1] * g + m[0][2] * b,
+        m[1][0] * r + m[1][1] * g + m[1][2] * b,
+        m[2][0] * r + m[2][1] * g + m[2][2] * b,
+    ];
+    if let Some(l) = levels {
+        for v in &mut o {
+            *v = *v * l.scale - l.offset;
+        }
+    }
+    o
+}
+
+/// Sample encoding of an RGB output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RgbEncoding {
+    /// sRGB 8-bit RGBA (alpha 255), orientation applied.
+    Rgba8,
+    /// sRGB 16-bit RGB, orientation applied.
+    Srgb16,
+    /// Linear 16-bit RGB (`[0, 1]` → `[0, 65535]`).
+    Linear16,
+    /// Linear IEEE half-float RGB (bit patterns).
+    LinearF16,
+    /// Linear f32 RGB.
+    LinearF32,
+}
+
+impl RgbEncoding {
+    /// Display encodings apply the EXIF orientation; linear ones keep the sensor's.
+    pub fn oriented(self) -> bool {
+        matches!(self, RgbEncoding::Rgba8 | RgbEncoding::Srgb16)
+    }
+    /// Samples per pixel.
+    pub fn channels(self) -> u32 {
+        if self == RgbEncoding::Rgba8 { 4 } else { 3 }
+    }
+}
+
+/// Fills frame row `y` (all `width * cpp` samples) with the values the demosaic reads,
+/// replacing the black/white normalisation (staged DNG opcode develop).
+pub(crate) type RowSource<'a> = dyn Fn(usize, &mut [f32]) + Sync + 'a;
+/// Processes a band of developed camera-RGB rows (`first` = index of its first developed
+/// row) before white balance and colour conversion (DNG OpcodeList3).
+pub(crate) type BandHook<'a> = dyn Fn(usize, &mut [[f32; 3]]) + Sync + 'a;
 
 /// Output of [`develop`].
 pub struct Developed {
@@ -245,8 +341,10 @@ const STRIP: u32 = 16;
 type NeighbourList = (Vec<(isize, isize)>, f32);
 
 /// Per-image state of the fused develop kernel.
-struct Kernel<'a> {
+pub(crate) struct Kernel<'a> {
     img: &'a RawImage,
+    /// Replaces [`Kernel::normalize_row`] when set.
+    source: Option<&'a RowSource<'a>>,
     calibs: Vec<Calib>,
     origin: (usize, usize),
     cfa: Option<CfaPattern>,
@@ -256,6 +354,7 @@ struct Kernel<'a> {
     ph: usize,
     wb: [f32; 4],
     m: [[f32; 3]; 3],
+    levels: Option<Levels>,
     crop: Rect,
     half: bool,
 }
@@ -280,13 +379,17 @@ impl RowCache {
         let i = (0..4).min_by_key(|&i| self.tick[i]).unwrap();
         self.tick[i] = self.clock;
         self.rows[i].0 = y;
-        k.normalize_row(y, &mut self.rows[i].1);
+        match k.source {
+            Some(f) => f(y, &mut self.rows[i].1),
+            None => k.normalize_row(y, &mut self.rows[i].1),
+        }
         i
     }
 }
 
 impl Kernel<'_> {
-    fn normalize_row(&self, y: usize, out: &mut [f32]) {
+    /// Black-subtracted, white-normalised samples of frame row `y`.
+    pub(crate) fn normalize_row(&self, y: usize, out: &mut [f32]) {
         let img = self.img;
         let (w, cpp) = (img.width as usize, img.cpp as usize);
         let (ox, oy) = self.origin;
@@ -351,15 +454,7 @@ impl Kernel<'_> {
 
     #[inline(always)]
     fn finish(&self, rgb: [f32; 3]) -> [f32; 3] {
-        let m = &self.m;
-        let r = (rgb[0] * self.wb[0]).clamp(0.0, 1.0);
-        let g = (rgb[1] * self.wb[1]).clamp(0.0, 1.0);
-        let b = (rgb[2] * self.wb[2]).clamp(0.0, 1.0);
-        [
-            m[0][0] * r + m[0][1] * g + m[0][2] * b,
-            m[1][0] * r + m[1][1] * g + m[1][2] * b,
-            m[2][0] * r + m[2][1] * g + m[2][2] * b,
-        ]
+        finish_rgb(rgb, &self.wb, &self.m, self.levels)
     }
 
     /// Develop output row `oy` (crop/half coordinates) into `out` (one RGB per output pixel).
@@ -502,6 +597,23 @@ fn kernel<'a>(
     params: &DevelopParams,
     crop: Rect,
 ) -> Kernel<'a> {
+    kernel_with(img, info, origin, params, crop, None)
+}
+
+/// A kernel that only normalises rows ([`Kernel::normalize_row`]) of `img` at `origin`.
+pub(crate) fn normalizer<'a>(img: &'a RawImage, info: &FrameInfo, origin: (u32, u32)) -> Kernel<'a> {
+    let full = Rect::full(img.width, img.height);
+    kernel(img, info, origin, &DevelopParams::new(info, Demosaic::Bilinear, full), full)
+}
+
+fn kernel_with<'a>(
+    img: &'a RawImage,
+    info: &FrameInfo,
+    origin: (u32, u32),
+    params: &DevelopParams,
+    crop: Rect,
+    source: Option<&'a RowSource<'a>>,
+) -> Kernel<'a> {
     let cpp = img.cpp as usize;
     let (pw, ph) = info.cfa.map(|p| (p.width(), p.height())).unwrap_or((1, 1));
     let mut neigh = Vec::with_capacity(pw * ph);
@@ -538,6 +650,7 @@ fn kernel<'a>(
     }
     Kernel {
         img,
+        source,
         calibs: (0..cpp).map(|c| Calib::new(info, c)).collect(),
         origin: (origin.0 as usize, origin.1 as usize),
         cfa: info.cfa,
@@ -546,6 +659,7 @@ fn kernel<'a>(
         ph,
         wb: params.wb,
         m: params.cam_to_rgb,
+        levels: params.levels,
         crop,
         half: params.demosaic == Demosaic::HalfSize,
     }
@@ -604,64 +718,178 @@ pub fn develop_rgba8(
 ) -> Result<(u32, u32, Vec<u8>)> {
     let (crop, w, h) = output_dims(img, params)?;
     let k = kernel(img, info, origin, params, crop);
-    let lut = srgb_lut();
-    let o = params.orientation;
-    let swap = o.swaps_dimensions();
-    let (dw, dh) = if swap { (h, w) } else { (w, h) };
-    let mut out = vec![0u8; dw as usize * dh as usize * 4];
-    // Destination strips: horizontal (rows) normally, vertical (columns) when transposing,
-    // so each strip corresponds to a contiguous range of source rows.
-    let (tw, th) = if swap { (STRIP, dh) } else { (dw, STRIP) };
-    let grid = par::GridWriter::new(&mut out, dw, dh, 4, (0, 0), tw, th, dw, dh)
-        .ok_or_else(|| Error::InvalidArgument("invalid output size".into()))?;
-    let n = if swap { grid.tiles_x() } else { grid.tiles_y() } as usize;
+    run_oriented(&k, w as usize, h as usize, params.orientation, parallel, None, rgba8_encoder())
+}
+
+/// Fused develop to any [`RgbEncoding`] (no intermediate RGB image; display encodings
+/// apply `params.orientation`, linear ones keep the sensor orientation). Returns
+/// `(width, height, channels, pixels)`.
+pub fn develop_encoded(
+    img: &RawImage,
+    info: &FrameInfo,
+    origin: (u32, u32),
+    params: &DevelopParams,
+    enc: RgbEncoding,
+    parallel: bool,
+) -> Result<(u32, u32, u32, RawPixelData)> {
+    if enc == RgbEncoding::LinearF32 {
+        let d = develop(img, info, origin, params, parallel)?;
+        return Ok((d.width, d.height, 3, RawPixelData::F32(d.rgb)));
+    }
+    develop_staged(img, info, origin, params, enc, parallel, None, None)
+}
+
+/// [`develop_encoded`] with the stage hooks of the DNG opcode develop: `rows` replaces
+/// the normalisation of sensor rows, and `camera` (when set) receives bands of demosaiced
+/// camera RGB before white balance, colour conversion and levels.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn develop_staged(
+    img: &RawImage,
+    info: &FrameInfo,
+    origin: (u32, u32),
+    params: &DevelopParams,
+    enc: RgbEncoding,
+    parallel: bool,
+    rows: Option<&RowSource<'_>>,
+    camera: Option<&BandHook<'_>>,
+) -> Result<(u32, u32, u32, RawPixelData)> {
+    let (crop, w, h) = output_dims(img, params)?;
     let (w, h) = (w as usize, h as usize);
-    let enc = |p: [f32; 3]| -> [u8; 4] {
+    let o = if enc.oriented() { params.orientation } else { Orientation::Normal };
+    let finish = |first: usize, band: &mut [[f32; 3]]| {
+        if let Some(f) = camera {
+            f(first, band);
+        }
+        for p in band.iter_mut() {
+            *p = finish_rgb(*p, &params.wb, &params.cam_to_rgb, params.levels);
+        }
+    };
+    let (k, band): (Kernel, Option<&BandHook<'_>>) = match camera {
+        Some(_) => (kernel_with(img, info, origin, &params.camera_rgb(), crop, rows), Some(&finish)),
+        None => (kernel_with(img, info, origin, params, crop, rows), None),
+    };
+    let ch = enc.channels();
+    Ok(match enc {
+        RgbEncoding::Rgba8 => {
+            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, rgba8_encoder())?;
+            (dw, dh, ch, RawPixelData::U8(px))
+        }
+        RgbEncoding::Srgb16 => {
+            let lut = srgb16_lut();
+            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, |p: [f32; 3]| p.map(|v| srgb16(v, lut)))?;
+            (dw, dh, ch, RawPixelData::U16(px))
+        }
+        RgbEncoding::Linear16 => {
+            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, |p: [f32; 3]| p.map(linear16))?;
+            (dw, dh, ch, RawPixelData::U16(px))
+        }
+        RgbEncoding::LinearF16 => {
+            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, |p: [f32; 3]| p.map(f32_to_f16))?;
+            (dw, dh, ch, RawPixelData::F16(px))
+        }
+        RgbEncoding::LinearF32 => {
+            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, |p: [f32; 3]| p)?;
+            (dw, dh, ch, RawPixelData::F32(px))
+        }
+    })
+}
+
+fn rgba8_encoder() -> impl Fn([f32; 3]) -> [u8; 4] + Sync {
+    let lut = srgb_lut();
+    move |p: [f32; 3]| {
         [
             lut[(p[0].clamp(0.0, 1.0) * 4096.0) as usize],
             lut[(p[1].clamp(0.0, 1.0) * 4096.0) as usize],
             lut[(p[2].clamp(0.0, 1.0) * 4096.0) as usize],
             255,
         ]
+    }
+}
+
+/// Develop `w x h` output pixels with `k` and store them encoded by `enc` (`N` samples per
+/// pixel) under orientation `o`. Without `band`, rows are developed and stored one at a
+/// time; with it, each task develops its strip of rows, hands it to `band` (in developed
+/// row order), then stores it.
+fn run_oriented<T, const N: usize>(
+    k: &Kernel,
+    w: usize,
+    h: usize,
+    o: Orientation,
+    parallel: bool,
+    band: Option<&BandHook<'_>>,
+    enc: impl Fn([f32; 3]) -> [T; N] + Sync,
+) -> Result<(u32, u32, Vec<T>)>
+where
+    T: Copy + Default + Send + Sync,
+{
+    let swap = o.swaps_dimensions();
+    let (dw, dh) = if swap { (h, w) } else { (w, h) };
+    let mut out = vec![T::default(); dw * dh * N];
+    // Destination strips: horizontal (rows) normally, vertical (columns) when transposing,
+    // so each strip corresponds to a contiguous range of developed rows.
+    let (tw, th) = if swap { (STRIP, dh as u32) } else { (dw as u32, STRIP) };
+    let grid = par::GridWriter::new(&mut out, dw as u32, dh as u32, N as u32, (0, 0), tw, th, dw as u32, dh as u32)
+        .ok_or_else(|| Error::InvalidArgument("invalid output size".into()))?;
+    let n = if swap { grid.tiles_x() } else { grid.tiles_y() } as usize;
+    // Destination row (or column) `d` shows developed row `d`, or `h - 1 - d` when reversed;
+    // inside it, output pixel `i` is developed column `i` or `w - 1 - i`.
+    let (rev_y, rev_x) = if swap {
+        (
+            matches!(o, Orientation::Rotate90 | Orientation::Transverse),
+            matches!(o, Orientation::Rotate270 | Orientation::Transverse),
+        )
+    } else {
+        (
+            matches!(o, Orientation::Rotate180 | Orientation::FlipV),
+            matches!(o, Orientation::FlipH | Orientation::Rotate180),
+        )
     };
     par::for_each_index(n, parallel, |t| {
         let Some(mut tile) = (if swap { grid.claim(t as u32, 0) } else { grid.claim(0, t as u32) }) else { return };
-        let mut cache = RowCache::new(img.width as usize * img.cpp as usize);
-        let mut rgb = vec![[0f32; 3]; w];
+        let mut cache = RowCache::new(k.img.width as usize * k.img.cpp as usize);
         let (tw_, th_) = tile.size();
-        if !swap {
-            for ty in 0..th_ {
-                let oy = t * STRIP as usize + ty;
-                let sy = match o {
-                    Orientation::Rotate180 | Orientation::FlipV => h - 1 - oy,
-                    _ => oy,
-                };
-                k.row(&mut cache, sy, &mut rgb);
-                let flip = matches!(o, Orientation::FlipH | Orientation::Rotate180);
-                let row = tile.row(ty);
-                for ox in 0..w {
-                    let sx = if flip { w - 1 - ox } else { ox };
-                    row[ox * 4..ox * 4 + 4].copy_from_slice(&enc(rgb[sx]));
+        let count = if swap { tw_ } else { th_ };
+        let src_row = |i: usize| {
+            let d = t * STRIP as usize + i;
+            if rev_y { h - 1 - d } else { d }
+        };
+        let mut put = |i: usize, rgb: &[[f32; 3]]| {
+            if !swap {
+                let row = tile.row(i);
+                for (ox, px) in row.chunks_exact_mut(N).enumerate().take(w) {
+                    px.copy_from_slice(&enc(rgb[if rev_x { w - 1 - ox } else { ox }]));
+                }
+            } else {
+                for oy in 0..th_ {
+                    let sx = if rev_x { w - 1 - oy } else { oy };
+                    tile.row(oy)[i * N..i * N + N].copy_from_slice(&enc(rgb[sx]));
                 }
             }
-        } else {
-            for tx in 0..tw_ {
-                let ox = t * STRIP as usize + tx;
-                let sy = match o {
-                    Orientation::Rotate90 | Orientation::Transverse => h - 1 - ox,
-                    _ => ox,
-                };
-                k.row(&mut cache, sy, &mut rgb);
-                let rev = matches!(o, Orientation::Rotate270 | Orientation::Transverse);
-                for oy in 0..th_ {
-                    let sx = if rev { w - 1 - oy } else { oy };
-                    tile.row(oy)[tx * 4..tx * 4 + 4].copy_from_slice(&enc(rgb[sx]));
+        };
+        match band {
+            None => {
+                let mut rgb = vec![[0f32; 3]; w];
+                for i in 0..count {
+                    k.row(&mut cache, src_row(i), &mut rgb);
+                    put(i, &rgb);
+                }
+            }
+            Some(hook) => {
+                let first = if rev_y { src_row(count - 1) } else { src_row(0) };
+                let mut buf = vec![[0f32; 3]; w * count];
+                for (j, r) in buf.chunks_exact_mut(w).enumerate() {
+                    k.row(&mut cache, first + j, r);
+                }
+                hook(first, &mut buf);
+                for i in 0..count {
+                    let s = src_row(i) - first;
+                    put(i, &buf[s * w..(s + 1) * w]);
                 }
             }
         }
     });
     drop(grid);
-    Ok((dw, dh, out))
+    Ok((dw as u32, dh as u32, out))
 }
 
 /// Linear → sRGB-encoded 8-bit lookup (4096 entries over [0, 1]).
@@ -679,14 +907,98 @@ fn srgb_lut() -> &'static [u8; 4097] {
     })
 }
 
+/// Segments of the 16-bit sRGB curve table.
+pub const SRGB16_SEGMENTS: usize = 16384;
+
+/// The sRGB transfer curve scaled to 16 bits at `SRGB16_SEGMENTS + 1` evenly spaced
+/// points of `[0, 1]` (exact in f64, stored as f32), interpolated linearly by [`srgb16`].
+pub fn srgb16_lut() -> &'static [f32] {
+    use std::sync::OnceLock;
+    static LUT: OnceLock<Vec<f32>> = OnceLock::new();
+    LUT.get_or_init(|| {
+        (0..=SRGB16_SEGMENTS)
+            .map(|i| {
+                let x = i as f64 / SRGB16_SEGMENTS as f64;
+                let s = if x <= 0.003_130_8 { 12.92 * x } else { 1.055 * x.powf(1.0 / 2.4) - 0.055 };
+                (s * 65535.0) as f32
+            })
+            .collect()
+    })
+}
+
+/// Linear `[0, 1]` → sRGB-encoded 16-bit sample (within one code of the exact curve).
+#[inline(always)]
+pub fn srgb16(v: f32, lut: &[f32]) -> u16 {
+    let x = v.clamp(0.0, 1.0) * SRGB16_SEGMENTS as f32;
+    let i = (x as usize).min(SRGB16_SEGMENTS - 1);
+    let t = x - i as f32;
+    let (a, b) = (lut[i], lut[i + 1]);
+    (a + (b - a) * t + 0.5) as u16
+}
+
+/// Linear `[0, 1]` → 16-bit sample (clipped, rounded).
+#[inline(always)]
+pub fn linear16(v: f32) -> u16 {
+    (v.clamp(0.0, 1.0) * 65535.0 + 0.5) as u16
+}
+
+/// f32 → IEEE binary16 bits, rounded to nearest even; finite values beyond the half range
+/// saturate to ±65504, NaN stays NaN. Branch-free (selects), so loops over it vectorise.
+#[inline(always)]
+pub fn f32_to_f16(x: f32) -> u16 {
+    let b = x.to_bits();
+    let sign = (b >> 16) & 0x8000;
+    let a = b & 0x7fff_ffff;
+    let odd = (a >> 13) & 1;
+    let normal = a.wrapping_add(0xc800_0fff).wrapping_add(odd) >> 13;
+    // Below the smallest normal half: let the FPU round into the subnormal range.
+    let sub = (f32::from_bits(a) + 0.5).to_bits().wrapping_sub(0x3f00_0000);
+    let mut h = if a < 0x3880_0000 { sub } else { normal };
+    // >= 65520 would round to infinity: saturate (NaN stays NaN).
+    let big = if a > 0x7f80_0000 { 0x7e00 } else { 0x7bff };
+    h = if a >= 0x477f_f000 { big } else { h };
+    (sign | h) as u16
+}
+
+/// IEEE binary16 bits → f32 (exact).
+pub fn f16_to_f32(h: u16) -> f32 {
+    let sign = ((h as u32) & 0x8000) << 16;
+    let e = ((h >> 10) & 0x1f) as u32;
+    let m = (h & 0x3ff) as u32;
+    let bits = match e {
+        0 if m == 0 => sign,
+        0 => {
+            // Subnormal: m * 2^-24.
+            let v = m as f32 * f32::from_bits(0x3380_0000);
+            return if sign != 0 { -v } else { v };
+        }
+        31 => sign | 0x7f80_0000 | (m << 13),
+        _ => sign | ((e + 112) << 23) | (m << 13),
+    };
+    f32::from_bits(bits)
+}
+
 /// Encode linear RGB to sRGB RGBA8 and apply EXIF orientation.
 pub fn to_rgba8(d: &Developed, orientation: Orientation, parallel: bool) -> (u32, u32, Vec<u8>) {
-    let lut = srgb_lut();
+    let (w, h, px) = encode_developed(d, rgba8_encoder(), orientation, parallel);
+    (w, h, px)
+}
+
+/// Encode a developed image with `enc` (`N` samples per pixel) under `orientation`.
+fn encode_developed<T, const N: usize>(
+    d: &Developed,
+    enc: impl Fn([f32; 3]) -> [T; N] + Sync,
+    orientation: Orientation,
+    parallel: bool,
+) -> (u32, u32, Vec<T>)
+where
+    T: Copy + Default + Send,
+{
     let (w, h) = (d.width as usize, d.height as usize);
     let (ow, oh) = if orientation.swaps_dimensions() { (h, w) } else { (w, h) };
-    let mut out = vec![0u8; ow * oh * 4];
-    par::for_each_row_chunk(&mut out, ow * 4, 16, parallel, |first, chunk| {
-        for (i, row) in chunk.chunks_mut(ow * 4).enumerate() {
+    let mut out = vec![T::default(); ow * oh * N];
+    par::for_each_row_chunk(&mut out, ow * N, 16, parallel, |first, chunk| {
+        for (i, row) in chunk.chunks_mut(ow * N).enumerate() {
             let oy = first + i;
             for ox in 0..ow {
                 // Map output pixel back to source pixel.
@@ -701,15 +1013,42 @@ pub fn to_rgba8(d: &Developed, orientation: Orientation, parallel: bool) -> (u32
                     Orientation::Rotate270 => (w - 1 - oy, ox),
                 };
                 let s = &d.rgb[(sy * w + sx) * 3..(sy * w + sx) * 3 + 3];
-                let p = &mut row[ox * 4..ox * 4 + 4];
-                for c in 0..3 {
-                    p[c] = lut[(s[c].clamp(0.0, 1.0) * 4096.0) as usize];
-                }
-                p[3] = 255;
+                row[ox * N..ox * N + N].copy_from_slice(&enc([s[0], s[1], s[2]]));
             }
         }
     });
     (ow as u32, oh as u32, out)
+}
+
+/// Encode a developed image (`d`: linear RGB after colour conversion) to `enc`.
+pub(crate) fn encode_image(
+    d: Developed,
+    enc: RgbEncoding,
+    orientation: Orientation,
+    parallel: bool,
+) -> (u32, u32, u32, RawPixelData) {
+    let o = if enc.oriented() { orientation } else { Orientation::Normal };
+    let ch = enc.channels();
+    match enc {
+        RgbEncoding::Rgba8 => {
+            let (w, h, px) = encode_developed(&d, rgba8_encoder(), o, parallel);
+            (w, h, ch, RawPixelData::U8(px))
+        }
+        RgbEncoding::Srgb16 => {
+            let lut = srgb16_lut();
+            let (w, h, px) = encode_developed(&d, |p: [f32; 3]| p.map(|v| srgb16(v, lut)), o, parallel);
+            (w, h, ch, RawPixelData::U16(px))
+        }
+        RgbEncoding::Linear16 => {
+            let (w, h, px) = encode_developed(&d, |p: [f32; 3]| p.map(linear16), o, parallel);
+            (w, h, ch, RawPixelData::U16(px))
+        }
+        RgbEncoding::LinearF16 => {
+            let (w, h, px) = encode_developed(&d, |p: [f32; 3]| p.map(f32_to_f16), o, parallel);
+            (w, h, ch, RawPixelData::F16(px))
+        }
+        RgbEncoding::LinearF32 => (d.width, d.height, ch, RawPixelData::F32(d.rgb)),
+    }
 }
 
 #[cfg(test)]
@@ -927,5 +1266,174 @@ mod tests {
         // Rotate 90 CW: left pixel (red) ends on top.
         assert_eq!(&px[0..3], &[255, 0, 0]);
         assert_eq!(&px[4..7], &[0, 0, 255]);
+    }
+
+    /// A Bayer and an X-Trans test image with calibration, white balance and a colour matrix.
+    fn test_images() -> Vec<(RawImage, FrameInfo)> {
+        let (w, h) = (37u32, 23u32);
+        let mut img = RawImage::new_u16(w, h, 1, &Limits::default()).unwrap();
+        for (i, v) in img.u16_mut().iter_mut().enumerate() {
+            *v = ((i * 7919) % 4100 + 20) as u16;
+        }
+        let mut out = Vec::new();
+        for cfa in [CfaPattern::RGGB, CfaPattern::parse("GGRGGB/GGBGGR/BRGRBG/GGBGGR/GGRGGB/RBGBRG").unwrap()] {
+            let mut info = FrameInfo::new(w, h, 12);
+            info.cfa = Some(cfa);
+            info.black_level = BlackLevel::uniform(64.0);
+            info.white_level = WhiteLevel::uniform(4095);
+            info.white_balance = WhiteBalance::from_multipliers(2.0, 1.0, 1.5, 1.0);
+            info.color_matrices = ColorMatrices {
+                color: vec![
+                    ColorMatrix::new(Illuminant::D65, 3, vec![0.6, -0.1, -0.05, -0.4, 1.2, 0.2, -0.1, 0.25, 0.6])
+                        .unwrap(),
+                ],
+                ..Default::default()
+            };
+            out.push((img.clone(), info));
+        }
+        out
+    }
+
+    /// Reference: develop to f32, then encode each pixel with `enc` and orient like `to_rgba8`.
+    fn reference<T: Copy + Default + Send, const N: usize>(
+        img: &RawImage,
+        info: &FrameInfo,
+        p: &DevelopParams,
+        o: Orientation,
+        enc: impl Fn([f32; 3]) -> [T; N] + Sync,
+    ) -> (u32, u32, Vec<T>) {
+        let d = develop(img, info, (3, 1), p, false).unwrap();
+        encode_developed(&d, enc, o, false)
+    }
+
+    #[test]
+    fn encoded_outputs_match_the_f32_develop() {
+        let lut = srgb16_lut();
+        for (img, mut info) in test_images() {
+            for demosaic in [Demosaic::Bilinear, Demosaic::HalfSize] {
+                for o in 1..=8 {
+                    info.orientation = Orientation::from_exif(o);
+                    let p = DevelopParams::new(&info, demosaic, Rect::new(1, 2, 33, 19));
+                    let run = |enc| develop_encoded(&img, &info, (3, 1), &p, enc, true).unwrap();
+                    let o = info.orientation;
+                    let (w, h, c, px) = run(RgbEncoding::Srgb16);
+                    let want = reference(&img, &info, &p, o, |v: [f32; 3]| v.map(|x| srgb16(x, lut)));
+                    assert_eq!((w, h, c, px.as_u16().unwrap()), (want.0, want.1, 3, &want.2[..]), "rgb16 {o:?}");
+                    // Linear encodings keep the sensor orientation.
+                    let n = Orientation::Normal;
+                    let (w, h, _, px) = run(RgbEncoding::Linear16);
+                    let want = reference(&img, &info, &p, n, |v: [f32; 3]| v.map(linear16));
+                    assert_eq!((w, h, px.as_u16().unwrap()), (want.0, want.1, &want.2[..]), "linear16 {o:?}");
+                    let (w, h, _, px) = run(RgbEncoding::LinearF16);
+                    let want = reference(&img, &info, &p, n, |v: [f32; 3]| v.map(f32_to_f16));
+                    assert_eq!((w, h, px.as_f16_bits().unwrap()), (want.0, want.1, &want.2[..]), "f16 {o:?}");
+                    let (w, h, c, px) = run(RgbEncoding::Rgba8);
+                    let want = develop_rgba8(&img, &info, (3, 1), &p, false).unwrap();
+                    assert_eq!((w, h, c, px.as_u8().unwrap()), (want.0, want.1, 4, &want.2[..]), "rgba8 {o:?}");
+                    let (_, _, _, px) = run(RgbEncoding::LinearF32);
+                    assert_eq!(px.as_f32().unwrap(), &develop(&img, &info, (3, 1), &p, false).unwrap().rgb[..]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn levels_scale_linear_values_after_the_matrix() {
+        assert_eq!(Levels::new(0.0, 0.0, 1.0).unwrap(), None);
+        assert!(Levels::new(f32::NAN, 0.0, 1.0).is_err());
+        assert!(Levels::new(40.0, 0.0, 1.0).is_err());
+        assert!(Levels::new(0.0, 0.5, 0.5).is_err());
+        assert!(Levels::new(0.0, 0.0, f32::INFINITY).is_err());
+        let l = Levels::new(1.0, 0.1, 0.9).unwrap().unwrap();
+        assert!((l.scale - 2.5).abs() < 1e-6 && (l.offset - 0.125).abs() < 1e-6, "{l:?}");
+        for (img, info) in test_images() {
+            let full = Rect::full(img.width, img.height);
+            let p = DevelopParams::new(&info, Demosaic::Bilinear, full);
+            let base = develop(&img, &info, (0, 0), &p, true).unwrap();
+            let lp = DevelopParams { levels: Some(l), ..p.clone() };
+            let got = develop(&img, &info, (0, 0), &lp, true).unwrap();
+            for (g, b) in got.rgb.iter().zip(&base.rgb) {
+                assert_eq!(*g, *b * l.scale - l.offset);
+            }
+            // Integer encodings clip the result.
+            let (_, _, _, px) = develop_encoded(&img, &info, (0, 0), &lp, RgbEncoding::Linear16, true).unwrap();
+            let want: Vec<u16> = got.rgb.iter().map(|&v| linear16(v)).collect();
+            assert_eq!(px.as_u16().unwrap(), &want[..]);
+        }
+    }
+
+    #[test]
+    fn srgb16_curve_is_accurate_and_monotonic() {
+        let lut = srgb16_lut();
+        let exact = |v: f64| {
+            let s = if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+            (s * 65535.0).round() as i64
+        };
+        let (mut prev, mut off) = (0u16, 0usize);
+        let n = 1_000_000;
+        for i in 0..=n {
+            let v = i as f32 / n as f32;
+            let got = srgb16(v, lut);
+            assert!(got >= prev, "not monotonic at {v}");
+            prev = got;
+            let d = (got as i64 - exact(v as f64)).abs();
+            assert!(d <= 1, "{v}: {got} vs {}", exact(v as f64));
+            off += (d != 0) as usize;
+        }
+        // Interpolation error stays below 0.1 code: off by one only next to a rounding
+        // boundary (measured: 0.19 % of samples).
+        assert!(off < n / 200, "{off} samples off by one");
+        assert_eq!((srgb16(-1.0, lut), srgb16(0.0, lut), srgb16(1.0, lut), srgb16(7.0, lut)), (0, 0, 65535, 65535));
+        // The 8-bit curve is the same function.
+        let l8 = srgb_lut();
+        for i in 0..=4096 {
+            let v = i as f32 / 4096.0;
+            assert!((srgb16(v, lut) as f32 / 257.0 - l8[i] as f32).abs() <= 0.51, "{v}");
+        }
+    }
+
+    #[test]
+    fn half_floats_round_to_nearest_even_and_saturate() {
+        // Nearest half by bisection over the bit patterns (monotonic for positive values).
+        let half_ref = |x: f32| -> u16 {
+            let s = if x.is_sign_negative() { 0x8000u16 } else { 0 };
+            let a = (x as f64).abs();
+            if a >= 65520.0 {
+                return s | 0x7bff;
+            }
+            let (mut lo, mut hi) = (0u16, 0x7bffu16);
+            while hi - lo > 1 {
+                let mid = (lo + hi) / 2;
+                if f16_to_f32(mid) as f64 <= a { lo = mid } else { hi = mid }
+            }
+            let (dl, dh) = (a - f16_to_f32(lo) as f64, f16_to_f32(hi) as f64 - a);
+            s | if dl < dh || (dl == dh && lo & 1 == 0) { lo } else { hi }
+        };
+        let mut x = 1u32;
+        for i in 0..100_000u32 {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            let v = if i % 2 == 0 { f32::from_bits(x) } else { (x as f32 / u32::MAX as f32) * 4.0 - 1.0 };
+            if v.is_nan() || v.is_infinite() {
+                continue;
+            }
+            assert_eq!(f32_to_f16(v), half_ref(v), "{v:e}");
+        }
+        for v in [0.0f32, 1.0, -1.0, 0.5, 65504.0, 65519.0, 65520.0, 1e9, -1e9, 5.960_464_5e-8, 2.9e-8, 6.1e-5] {
+            assert_eq!(f32_to_f16(v), half_ref(v), "{v:e}");
+        }
+        assert_eq!(f32_to_f16(f32::NAN) & 0x7e00, 0x7e00);
+        // Every finite half converts back exactly.
+        for h in 0..=0xffffu16 {
+            let e = (h >> 10) & 0x1f;
+            if e != 31 {
+                assert_eq!(f32_to_f16(f16_to_f32(h)), h, "{h:#06x}");
+            }
+        }
+        assert_eq!(f16_to_f32(0x3c00), 1.0);
+        assert_eq!(f16_to_f32(0x0001), 2f32.powi(-24));
+        assert_eq!(f16_to_f32(0x8001), -(2f32.powi(-24)));
+        assert!(f16_to_f32(0x7c00).is_infinite());
     }
 }

@@ -133,6 +133,12 @@ First complete release of FlashRaw.
   precomputed Rice parameters); Samsung V2: staged block decoding.
 - Floating-point DNG: fused predictor and float assembly, zlib-rs inflate,
   parallel float → integer conversion.
+- DNG OpcodeList2/OpcodeList3 develop streams through the fused pass (rows normalised with
+  list 2 as the demosaic reads them, list 3 per band of camera RGB) instead of full-frame f32
+  copies, with identical output: DJI Phantom 4 Pro RAW → RGBA8 peak memory 692 → 175 MB and
+  34 → 20 ms (M1 Ultra), 48 MP DJI 1.7 GB → 450 MB; phone DNGs with list 2 gain maps 18 → 12 ms.
+- `threads: 1` decodes on the calling thread (no one-worker pool), like `RAYON_NUM_THREADS=1`;
+  explicit pools run their workers at the user-initiated QoS on Apple platforms.
 
 ### Camera database
 - Single JSON database (`camera-db/cameras.json`): 1,624 camera entries, 814 fallback
@@ -195,6 +201,20 @@ First complete release of FlashRaw.
   `docs/libraw-compat.md`.
 
 ### API
+- New outputs: `Rgb16` (display-ready 16-bit sRGB, orientation applied), `LinearRgbF16`
+  (linear RGB as IEEE half floats, `RawPixelData::F16`: half the memory of `LinearRgbF32`, e.g.
+  1.24 GB → 620 MB for a 103 MP frame) and `LinearRgb16` (linear RGB as 16-bit integers), all
+  from the fused develop pass and on the GPU path. Display outputs apply the orientation
+  (`OutputFormat::applies_orientation`), linear outputs keep the sensor's. Names `rgb16`,
+  `linear-rgb-f16`, `linear-rgb16` in the CLI, JS (`Uint16Array`; `sampleType: 'f16'` also
+  applies to `linear-rgb`), Python (`uint16`, `float16`) and the C API
+  (`FLASHRAW_OUTPUT_RGB16`, `_LINEAR_RGB16`, `_LINEAR_RGB_F16`, `FLASHRAW_SAMPLE_F16`).
+- `DecodeOptions::exposure` (EV), `black_point` and `white_point`: convenience levels for RGB
+  outputs, applied to linear values after the colour conversion (`--exposure`,
+  `--black-point`, `--white-point`; `exposure`/`blackPoint`/`whitePoint` in JS; keyword
+  arguments in Python; appended fields of `flashraw_decode_options`).
+- `flashraw benchmark --json` reports `maxrss_kb` in KiB on every platform (it was bytes on
+  macOS).
 - Semver-ready surface: growable enums and result/metadata structs are
   `#[non_exhaustive]`; `RawMetadata::new`, `PreviewInfo::new`, `Limits::with_*`
   builders; `decode_preview_rgb` returns a `PreviewImage`; `FromStr`/`Display` for

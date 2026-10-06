@@ -64,8 +64,7 @@ for f in files:
                 "camera": rec.get("camera"), "format": rec.get("format"), "compression": rec.get("compression"),
                 "megapixels": rec.get("megapixels"), "ms": rec.get("total_ms_median"),
                 "ms_min": rec.get("total_ms_min"),
-                # The CLI reports ru_maxrss as is: bytes on macOS, KiB elsewhere.
-                "rss_mb": (rec.get("maxrss_kb") or 0) / (1024 * 1024 if sys.platform == "darwin" else 1024) or None,
+                "rss_mb": (rec.get("maxrss_kb") or 0) / 1024 or None,
                 "backend": (rec.get("backend") or {}).get("decode"), "stages": rec.get("stages"),
             })
         rows.append(row)

@@ -22,7 +22,7 @@ pub fn wgsl_sources() -> [(&'static str, &'static str); 4] {
     [("unpack", UNPACK_WGSL), ("normalize", NORMALIZE_WGSL), ("develop", DEVELOP_WGSL), ("to_texture", TO_TEXTURE_WGSL)]
 }
 
-/// Mirrors `struct Params` in `shaders/common.wgsl` (std140-compatible: 40 u32 then 4 vec4).
+/// Mirrors `struct Params` in `shaders/common.wgsl` (std140-compatible: 40 u32 then 5 vec4).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable, Default)]
 pub(crate) struct Params {
@@ -64,12 +64,13 @@ pub(crate) struct Params {
     pub dst_y: u32,
     pub dst_stride: u32,
     pub dst_off: u32,
-    pub pad0: u32,
+    pub off_srgb16: u32,
     pub pad1: u32,
     pub wb: [f32; 4],
     pub m0: [f32; 4],
     pub m1: [f32; 4],
     pub m2: [f32; 4],
+    pub levels: [f32; 4],
 }
 
 pub(crate) fn order_index(o: PackOrder) -> u32 {
@@ -186,6 +187,21 @@ pub(crate) fn srgb_table() -> Vec<u32> {
         .collect()
 }
 
+/// Linear -> sRGB curve scaled to 16 bits at 16385 evenly spaced points of `[0, 1]`
+/// (exact in f64, stored as f32; same table as the CPU `flashraw::process::srgb16_lut`).
+pub fn srgb16_table() -> &'static [f32] {
+    static T: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        (0..=16384)
+            .map(|i| {
+                let x = i as f64 / 16384.0;
+                let s = if x <= 0.003_130_8 { 12.92 * x } else { 1.055 * x.powf(1.0 / 2.4) - 0.055 };
+                (s * 65535.0) as f32
+            })
+            .collect()
+    })
+}
+
 /// Scalar models of the GPU kernels' addressing, written to mirror the WGSL line by
 /// line. They let the bit-level semantics be tested on machines without a GPU
 /// (against `flashraw_codecs::packed::unpack_row_scalar`), and serve as executable
@@ -248,8 +264,8 @@ mod tests {
 
     #[test]
     fn params_layout_matches_wgsl() {
-        // 40 scalars + 4 vec4<f32>: 224 bytes, 16-byte multiple (uniform buffer rules).
-        assert_eq!(std::mem::size_of::<Params>(), 224);
+        // 40 scalars + 5 vec4<f32>: 240 bytes, 16-byte multiple (uniform buffer rules).
+        assert_eq!(std::mem::size_of::<Params>(), 240);
         assert_eq!(std::mem::offset_of!(Params, wb), 160);
         // Every WGSL field name appears in the host struct in the same order.
         let src = include_str!("../../../shaders/common.wgsl");
@@ -300,12 +316,13 @@ mod tests {
             "dst_y",
             "dst_stride",
             "dst_off",
-            "pad0",
+            "off_srgb16",
             "pad1",
             "wb",
             "m0",
             "m1",
             "m2",
+            "levels",
         ];
         assert_eq!(names, expected);
     }

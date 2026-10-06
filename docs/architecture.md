@@ -67,7 +67,12 @@ accepted; the decoder is dropped first). Previews are returned as slices of the 
 the OS provides zero pages lazily, so a 60 MP buffer costs no memset) after a limit
 check. Codecs decode into row sinks or directly into tiles of the final buffer; no
 codec allocates a full-size intermediate. The fused develop pass goes from u16
-sensor data to oriented RGBA8 in one sweep with a 4-row ring of normalised rows.
+sensor data to the final encoding (RGBA8, 16-bit sRGB, linear 16-bit, half or full floats;
+display encodings oriented) in one sweep with a 4-row ring of normalised rows. DNG opcode
+lists 2 and 3 stream through the same pass: rows are normalised and list 2 applied as the
+demosaic reads them, and list 3 runs on each task's band of camera RGB before white
+balance and colour conversion (lists with bad-pixel repairs, which read neighbours, fall
+back to whole-frame buffers).
 
 **Parallelism that respects the format.** `flashraw_core::par` offers row-chunk,
 index and tile-grid parallelism (rayon on native, sequential elsewhere).
@@ -120,8 +125,8 @@ cameras still decode when the file is self-describing (DNG always is).
 **Safety.** All parsing is bounds-checked; offsets use checked arithmetic; IFD
 traversal tracks visited offsets and depth; allocations are limit-checked before they
 happen; entropy decoders stop on overrun. `unsafe` is confined to: zeroed allocation,
-`GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook, the
-mmap call and the pointer handling at the C ABI boundary (`flashraw-capi`,
+`GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook, the Apple
+worker quality-of-service call, the mmap call and the pointer handling at the C ABI boundary (`flashraw-capi`,
 `flashraw-libraw-compat`) — each with a `SAFETY:` justification and tests. Nine fuzz targets plus a
 malformed-file suite run in CI.
 

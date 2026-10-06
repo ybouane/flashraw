@@ -167,6 +167,9 @@ enum class output_format : std::int32_t {
     normalized_f32 = FLASHRAW_OUTPUT_NORMALIZED_F32,
     linear_rgb_f32 = FLASHRAW_OUTPUT_LINEAR_RGB_F32,
     rgba8 = FLASHRAW_OUTPUT_RGBA8,
+    rgb16 = FLASHRAW_OUTPUT_RGB16,
+    linear_rgb16 = FLASHRAW_OUTPUT_LINEAR_RGB16,
+    linear_rgb_f16 = FLASHRAW_OUTPUT_LINEAR_RGB_F16,
 };
 
 enum class demosaic : std::int32_t {
@@ -183,6 +186,8 @@ enum class sample_type : std::int32_t {
     u8 = FLASHRAW_SAMPLE_U8,
     u16 = FLASHRAW_SAMPLE_U16,
     f32 = FLASHRAW_SAMPLE_F32,
+    /// IEEE half floats as `std::uint16_t` bit patterns (`frame::f16_bits()`).
+    f16 = FLASHRAW_SAMPLE_F16,
 };
 
 enum class sensor_layout : std::int32_t {
@@ -289,6 +294,10 @@ struct decode_options {
     /// Limits (0 = the file's open limits).
     std::uint32_t max_dimension = 0;
     std::uint64_t max_samples = 0;
+    /// RGB outputs: exposure in EV and black/white points in linear units.
+    float exposure = 0.0f;
+    float black_point = 0.0f;
+    float white_point = 1.0f;
 
     flashraw_decode_options to_c() const {
         flashraw_decode_options o;
@@ -306,6 +315,9 @@ struct decode_options {
         }
         o.max_dimension = max_dimension;
         o.max_samples = max_samples;
+        o.exposure = exposure;
+        o.black_point = black_point;
+        o.white_point = white_point;
         return o;
     }
 };
@@ -424,6 +436,15 @@ public:
     span<const std::uint8_t> u8() const { return samples<std::uint8_t>(); }
     span<const std::uint16_t> u16() const { return samples<std::uint16_t>(); }
     span<const float> f32() const { return samples<float>(); }
+    /// Half-float samples (`output_format::linear_rgb_f16`) as IEEE binary16 bit patterns;
+    /// throws invalid_argument_error for other frames.
+    span<const std::uint16_t> f16_bits() const {
+        if (sample_type() != flashraw::sample_type::f16)
+            throw invalid_argument_error(FLASHRAW_ERROR_INVALID_ARGUMENT, "InvalidArgument",
+                                         "flashraw::frame::f16_bits: the frame does not hold half floats", "");
+        return span<const std::uint16_t>(static_cast<const std::uint16_t *>(flashraw_frame_data(h())),
+                                         flashraw_frame_sample_count(h()));
+    }
 
     rect active_area() const {
         rect r{};

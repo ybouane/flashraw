@@ -36,7 +36,16 @@ import {
 
 export * from './errors.js';
 
-export const OUTPUTS = Object.freeze(['raw-u16', 'raw-f32', 'normalized', 'linear-rgb', 'rgba8']);
+export const OUTPUTS = Object.freeze([
+  'raw-u16',
+  'raw-f32',
+  'normalized',
+  'linear-rgb',
+  'linear-rgb16',
+  'linear-rgb-f16',
+  'rgba8',
+  'rgb16',
+]);
 /** GPU-resident outputs (WebGPU build): the result stays in a `GPUBuffer`. */
 export const GPU_OUTPUTS = Object.freeze(['gpu-raw-u16', 'gpu-normalized', 'gpu-linear-rgb', 'gpu-rgba8']);
 export const BACKENDS = Object.freeze(['auto', 'cpu', 'cpu-simd', 'gpu']);

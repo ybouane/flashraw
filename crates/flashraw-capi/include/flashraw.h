@@ -169,13 +169,28 @@ enum flashraw_output_format
      */
     FLASHRAW_OUTPUT_NORMALIZED_F32 = 2,
     /**
-     * Demosaiced, white-balanced linear RGB with sRGB primaries, 3 `float`s per pixel.
+     * Demosaiced, white-balanced linear RGB with sRGB primaries, 3 `float`s per pixel. Sensor
+     * orientation (`flashraw_frame_orientation()` says what to apply).
      */
     FLASHRAW_OUTPUT_LINEAR_RGB_F32 = 3,
     /**
      * Display-ready 8-bit sRGB RGBA, orientation applied.
      */
     FLASHRAW_OUTPUT_RGBA8 = 4,
+    /**
+     * Display-ready 16-bit sRGB RGB (3 `uint16_t` per pixel, no alpha), orientation applied.
+     */
+    FLASHRAW_OUTPUT_RGB16 = 5,
+    /**
+     * `FLASHRAW_OUTPUT_LINEAR_RGB_F32` as 16-bit integers: [0, 1] clipped and scaled to
+     * [0, 65535], 3 `uint16_t` per pixel. Sensor orientation.
+     */
+    FLASHRAW_OUTPUT_LINEAR_RGB16 = 6,
+    /**
+     * `FLASHRAW_OUTPUT_LINEAR_RGB_F32` as IEEE half floats (`FLASHRAW_SAMPLE_F16`), half the
+     * memory; values beyond +-65504 saturate. Sensor orientation.
+     */
+    FLASHRAW_OUTPUT_LINEAR_RGB_F16 = 7,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -249,13 +264,17 @@ enum flashraw_sample_type
      */
     FLASHRAW_SAMPLE_U8 = 1,
     /**
-     * `uint16_t` (raw-u16 output).
+     * `uint16_t` (raw-u16, rgb16 and linear-rgb16 outputs).
      */
     FLASHRAW_SAMPLE_U16 = 2,
     /**
      * `float` (raw-f32, normalized and linear-rgb outputs).
      */
     FLASHRAW_SAMPLE_F32 = 3,
+    /**
+     * IEEE 754 binary16 (half float) bit patterns in `uint16_t` (linear-rgb-f16 output).
+     */
+    FLASHRAW_SAMPLE_F16 = 4,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -738,6 +757,24 @@ typedef struct flashraw_decode_options {
      * Maximum number of samples (0 = the file's open limit).
      */
     uint64_t max_samples;
+    /**
+     * RGB outputs: exposure in EV, applied to linear values after the colour conversion and
+     * before the black/white points and the output encoding (range [-32, 32]; default 0).
+     */
+    float exposure;
+    /**
+     * RGB outputs: linear value (after exposure) mapped to black (default 0).
+     */
+    float black_point;
+    /**
+     * RGB outputs: linear value (after exposure) mapped to white; must be above
+     * `black_point` (default 1). Integer outputs clip outside [black, white].
+     */
+    float white_point;
+    /**
+     * Must be zero.
+     */
+    uint32_t reserved0;
 } flashraw_decode_options;
 
 /**

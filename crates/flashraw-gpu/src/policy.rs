@@ -245,6 +245,7 @@ impl GpuContext {
             cam_to_rgb: [[1.6, -0.4, -0.2], [-0.2, 1.4, -0.2], [0.0, -0.5, 1.5]],
             orientation: Orientation::Normal,
             output: DevelopOutput::Rgba8,
+            levels: None,
         });
         // Warm-up compiles the pipelines and faults in allocations.
         let warm = self.run(&frame, &info, &dev).await?;

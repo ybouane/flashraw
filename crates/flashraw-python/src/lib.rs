@@ -147,7 +147,16 @@ fn build_info(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
         "threads": threads,
         "gpu": cfg!(feature = "gpu"),
         "jpegxl": cfg!(feature = "jpegxl"),
-        "outputs": ["raw-u16", "raw-f32", "normalized", "linear-rgb", "rgba8"],
+        "outputs": [
+            "raw-u16",
+            "raw-f32",
+            "normalized",
+            "linear-rgb",
+            "linear-rgb16",
+            "linear-rgb-f16",
+            "rgba8",
+            "rgb16"
+        ],
         "backends": ["auto", "cpu", "simd", "gpu"],
     });
     convert::to_py(py, &v)

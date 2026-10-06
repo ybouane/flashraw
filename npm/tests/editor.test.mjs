@@ -69,6 +69,45 @@ describe('DNG metadata for editors', () => {
   });
 });
 
+describe('16-bit and half-float RGB, exposure and black/white points', () => {
+  test('linear-rgb-f16 / sampleType f16, linear-rgb16, rgb16 and levels', async () => {
+    const raw = await FlashRaw.open(fixture('canon-5d3-mlv.dng'));
+    const opts = { demosaic: 'half-size', exposure: 0.5, blackPoint: 0.01, whitePoint: 0.9 };
+    const lin = await raw.decode({ output: 'linear-rgb', ...opts });
+    for (const o of [{ output: 'linear-rgb-f16' }, { output: 'linear-rgb', sampleType: 'f16' }]) {
+      const h = await raw.decode({ ...o, ...opts });
+      assert.equal(h.dataType, 'f16');
+      assert.equal(h.output, o.output);
+      assert.ok(h.data instanceof Uint16Array);
+      assert.equal(h.data.length, lin.data.length);
+      for (let i = 0; i < lin.data.length; i += 89) assert.equal(h.data[i], half(lin.data[i]), `sample ${i}`);
+    }
+    const l16 = await raw.decode({ output: 'linear-rgb16', ...opts });
+    assert.equal(l16.dataType, 'u16');
+    for (let i = 0; i < lin.data.length; i += 89) {
+      const want = Math.floor(Math.min(Math.max(lin.data[i], 0), 1) * 65535 + 0.5);
+      assert.ok(Math.abs(l16.data[i] - want) <= 1, `sample ${i}`);
+    }
+    // Exposure +1 EV doubles linear values.
+    const base = await raw.decode({ output: 'linear-rgb', demosaic: 'half-size' });
+    const bright = await raw.decode({ output: 'linear-rgb', demosaic: 'half-size', exposure: 1 });
+    for (let i = 0; i < base.data.length; i += 89) assert.equal(bright.data[i], base.data[i] * 2);
+    // rgb16: display sRGB, 3 channels, oriented like rgba8.
+    const rgb16 = await raw.decode({ output: 'rgb16' });
+    const rgba = await raw.decode({ output: 'rgba8' });
+    assert.equal(rgb16.channels, 3);
+    assert.equal(rgb16.orientation, 1);
+    assert.deepEqual([rgb16.width, rgb16.height], [rgba.width, rgba.height]);
+    for (let p = 0; p < rgba.width * rgba.height; p += 101) {
+      for (let c = 0; c < 3; c++) assert.ok(Math.abs(rgb16.data[p * 3 + c] / 257 - rgba.data[p * 4 + c]) <= 1.5);
+    }
+    await assert.rejects(raw.decode({ output: 'rgb16', whitePoint: 0 }), InvalidArgumentError);
+    await assert.rejects(raw.decode({ output: 'rgb16', exposure: 'x' }), InvalidArgumentError);
+    await assert.rejects(raw.decode({ output: 'rgba8', sampleType: 'f16' }), InvalidArgumentError);
+    raw.close();
+  });
+});
+
 describe('normalized f16 and active-area crop', () => {
   test('f16 equals f32 converted (fixture, full frame, zero-copy and copy)', async () => {
     const raw = await FlashRaw.open(fixture('canon-5d3-mlv.dng'));

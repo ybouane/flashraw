@@ -45,7 +45,7 @@ pub use context::{
     AdapterClass, GpuAdapterInfo, GpuContext, adapter_info, available, context, init, set_context, try_context,
 };
 pub use image::{GpuImage, GpuPixelFormat, GpuTile, HostPixels};
-pub use kernels::{reference, wgsl_sources};
+pub use kernels::{reference, srgb16_table, wgsl_sources};
 pub use run::{DevelopOutput, DevelopSpec, GpuFrame, GpuInput, GpuOp, GpuRun, GpuTimings};
 /// Re-export of the wgpu version used, for interop.
 pub use wgpu;

@@ -51,12 +51,13 @@ struct Params {
     dst_y: u32,
     dst_stride: u32,  // develop: pixels per row of that rectangle
     dst_off: u32,     // word offset of the band's first element inside the `dst` binding
-    pad0: u32,
+    off_srgb16: u32,  // 16385-entry linear -> sRGB16 curve in `tab` (OUT_MODE 2)
     pad1: u32,
     wb: vec4<f32>,
     m0: vec4<f32>,    // camera -> linear sRGB matrix rows
     m1: vec4<f32>,
     m2: vec4<f32>,
+    levels: vec4<f32>, // exposure/black/white: v * x - y when z != 0
 }
 
 @group(0) @binding(0) var<uniform> P: Params;
@@ -66,7 +67,7 @@ struct Params {
 @group(0) @binding(2) var<storage, read> tab: array<f32>;
 // Integer tables: linearisation LUT, sRGB LUT, CFA site descriptors.
 @group(0) @binding(3) var<storage, read> lut: array<u32>;
-// Output (u16 pairs, packed RGBA8, or f32 bits).
+// Output (u16 pairs, packed RGBA8, f32 bits, or 16-bit RGBA as two words per pixel).
 @group(0) @binding(4) var<storage, read_write> dst: array<u32>;
 
 // 0 = u16 samples (two per word), 1 = f32 samples, 2 = bit-packed payload.

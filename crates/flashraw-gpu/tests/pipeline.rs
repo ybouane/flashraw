@@ -91,6 +91,25 @@ fn gpu_backend_matches_cpu_on_files() {
             rgba_close(cpu.as_u8().unwrap(), gpu.as_u8().unwrap(), &format!("rgba8 {demosaic:?}"));
         }
 
+        // 16-bit and half-float RGB (computed as 4-sample pixels, downloaded as 3), with levels.
+        for output in [OutputFormat::Rgb16, OutputFormat::LinearRgb16, OutputFormat::LinearRgbF16] {
+            let o = DecodeOptions { exposure: 0.5, black_point: 0.01, ..opts(Backend::Cpu, output) };
+            let cpu = raw.decode(o.clone()).unwrap();
+            let gpu = raw.decode(DecodeOptions { backend: Backend::Gpu, ..o }).unwrap();
+            assert_eq!((cpu.width, cpu.height, cpu.cpp, cpu.orientation), (gpu.width, gpu.height, 3, gpu.orientation));
+            let (a, b, half) = match (&cpu.data, &gpu.data) {
+                (RawPixelData::U16(a), RawPixelData::U16(b)) => (a, b, false),
+                (RawPixelData::F16(a), RawPixelData::F16(b)) => (a, b, true),
+                _ => panic!("{output}: sample types differ"),
+            };
+            // Half floats compare in ULPs, ordered by their sign-magnitude bits (-0 == +0).
+            let key = |h: u16| if half && h & 0x8000 != 0 { -((h & 0x7fff) as i32) } else { h as i32 };
+            let off = a.iter().zip(b).filter(|(x, y)| key(**x) != key(**y)).count();
+            let worst = a.iter().zip(b).map(|(x, y)| (key(*x) - key(*y)).abs()).max().unwrap_or(0);
+            eprintln!("  {output}: {off} samples differ (max {worst} steps)");
+            assert!(worst <= 1 && (off as f64) < a.len() as f64 * 1e-3, "{output}");
+        }
+
         // Region decodes with an odd origin: linear RGB and normalised samples.
         let reg = Rect::new(1001, 503, 1200, 800);
         let cpu = raw.decode_region(reg, opts(Backend::Cpu, OutputFormat::LinearRgbF32)).unwrap();
@@ -128,6 +147,7 @@ fn gpu_backend_matches_cpu_on_files() {
             raw.decode(DecodeOptions { demosaic: Demosaic::HalfSize, ..opts(Backend::Gpu, OutputFormat::Rgba8) });
         let half = half.unwrap();
         let unpacked = caps.gpu_unpack.then(|| raw.decode(opts(Backend::Gpu, OutputFormat::RawU16)).unwrap());
+        let direct16 = raw.decode(opts(Backend::Gpu, OutputFormat::Rgb16)).unwrap();
         for (label, buffer) in [("subrange", None), ("tiled", Some(16u64 << 20))] {
             ctx.override_limits(Some(16 << 20), buffer);
             let t = raw.decode(opts(Backend::Gpu, OutputFormat::Rgba8)).unwrap();
@@ -135,6 +155,8 @@ fn gpu_backend_matches_cpu_on_files() {
             eprintln!("  {label}: {post}");
             assert!(post.contains("bands"), "{post}");
             assert!(t.as_u8() == direct.as_u8(), "{label}: tiled rgba8 differs");
+            let t16 = raw.decode(opts(Backend::Gpu, OutputFormat::Rgb16)).unwrap();
+            assert!(t16.as_u16() == direct16.as_u16(), "{label}: tiled rgb16 differs");
             let r = raw.decode(opts(Backend::Gpu, OutputFormat::GpuRgba8)).unwrap();
             let g = r.as_gpu().unwrap();
             assert_eq!(g.is_tiled(), buffer.is_some() || raw.frame_info().orientation.swaps_dimensions());

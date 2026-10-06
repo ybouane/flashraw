@@ -76,7 +76,10 @@ def test_exposure_lens_and_dng_extras() -> None:
         ("raw-f32", np.float32, None),
         ("normalized", np.float32, None),
         ("linear-rgb", np.float32, 3),
+        ("linear-rgb16", np.uint16, 3),
+        ("linear-rgb-f16", np.float16, 3),
         ("rgba8", np.uint8, 4),
+        ("rgb16", np.uint16, 3),
     ],
 )
 def test_output_dtype_and_shape(mlv_path: pathlib.Path, output: str, dtype: type, channels: int) -> None:
@@ -102,6 +105,28 @@ def test_output_dtype_and_shape(mlv_path: pathlib.Path, output: str, dtype: type
     assert f.stats.output_bytes == a.nbytes
     assert f.stats.backend.kind == "cpu"
     assert not f.incomplete and f.warnings == ()
+
+
+def test_rgb_encodings_and_levels(mlv_path: pathlib.Path) -> None:
+    with flashraw.open(mlv_path) as raw:
+        lin = raw.decode("linear-rgb").array
+        # Half floats and 16-bit integers are encodings of the same linear values.
+        np.testing.assert_array_equal(raw.decode("linear-rgb-f16").array, lin.astype(np.float16))
+        want16 = np.floor(np.clip(lin, 0, 1) * 65535 + 0.5).astype(np.uint16)
+        assert np.abs(raw.decode("linear-rgb16").array.astype(np.int32) - want16).max() <= 1
+        # Exposure +1 EV doubles linear values; black/white points rescale them.
+        np.testing.assert_array_equal(raw.decode("linear-rgb", exposure=1.0).array, lin * 2)
+        lv = raw.decode("linear-rgb", black_point=0.1, white_point=0.6).array
+        np.testing.assert_allclose(lv, (lin - 0.1) / 0.5, atol=1e-5)
+        # rgb16 is the 16-bit version of rgba8's curve (rgba8 indexes its table in 1/4096
+        # steps of linear values, a little over one 8-bit code in deep shadows).
+        rgb16 = raw.decode("rgb16").array
+        rgba8 = raw.decode("rgba8").array
+        assert np.abs(rgb16 / 257.0 - rgba8[..., :3]).max() <= 1.5
+        with pytest.raises(flashraw.InvalidArgumentError):
+            raw.decode("rgb16", black_point=0.5, white_point=0.5)
+        with pytest.raises(flashraw.InvalidArgumentError):
+            raw.decode("rgb16", exposure=float("nan"))
 
 
 def test_multichannel_raw_output_shape() -> None:

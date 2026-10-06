@@ -154,7 +154,7 @@ fn into_array<'py, T: Element>(py: Python<'py>, shape: &[usize], v: Vec<T>) -> P
 fn data_address(d: &RawPixelData) -> usize {
     match d {
         RawPixelData::U8(v) => v.as_ptr() as usize,
-        RawPixelData::U16(v) => v.as_ptr() as usize,
+        RawPixelData::U16(v) | RawPixelData::F16(v) => v.as_ptr() as usize,
         RawPixelData::F32(v) => v.as_ptr() as usize,
         #[allow(unreachable_patterns)]
         _ => 0,
@@ -175,7 +175,8 @@ fn with_pool<T: Send>(opts: &mut DecodeOptions, f: impl FnOnce(DecodeOptions) ->
     thread_local! {
         static POOLS: RefCell<HashMap<usize, Arc<rayon::ThreadPool>>> = RefCell::new(HashMap::new());
     }
-    let Some(n) = opts.threads else { return f(opts.clone()) };
+    // `threads=1` runs on the calling thread inside the library; no pool is needed.
+    let Some(n) = opts.threads.filter(|&n| n > 1) else { return f(opts.clone()) };
     let pool = POOLS.with(|p| {
         let mut p = p.borrow_mut();
         if let Some(pool) = p.get(&n) {
@@ -298,12 +299,16 @@ impl RawFile {
         demosaic: &str,
         apply_opcodes: bool,
         corruption_policy: &str,
+        levels: (f32, f32, f32),
         limits: Limits,
     ) -> PyResult<Request> {
         let out = OutputFormat::parse(output).ok_or_else(|| {
             invalid(
                 py,
-                format!("unknown output {output:?} (expected raw-u16, raw-f32, normalized, linear-rgb or rgba8)"),
+                format!(
+                    "unknown output {output:?} (expected raw-u16, raw-f32, normalized, linear-rgb, linear-rgb16, \
+                     linear-rgb-f16, rgba8 or rgb16)"
+                ),
             )
         })?;
         if out.is_gpu_resident() {
@@ -354,6 +359,9 @@ impl RawFile {
             apply_opcodes,
             limits,
             corruption_policy: policy,
+            exposure: levels.0,
+            black_point: levels.1,
+            white_point: levels.2,
         };
         Ok(Request { opts, backend: be.name().to_string(), active, tile: None })
     }
@@ -389,6 +397,8 @@ impl RawFile {
         let array = match data {
             RawPixelData::U8(v) => into_array(py, &shape, v)?,
             RawPixelData::U16(v) => into_array(py, &shape, v)?,
+            // Half floats: the u16 bit patterns viewed as float16 (no copy).
+            RawPixelData::F16(v) => into_array(py, &shape, v)?.call_method1("view", ("float16",))?,
             RawPixelData::F32(v) => into_array(py, &shape, v)?,
             #[allow(unreachable_patterns)]
             _ => return Err(make_error(py, "NotAvailable", "the frame is not in host memory", None, None)),
@@ -521,7 +531,8 @@ impl RawFile {
     /// Decode the sensor data. Returns `(array, info)`.
     #[pyo3(signature = (
         output="raw-u16", backend="auto", threads=None, region=None, crop=None, demosaic="bilinear",
-        apply_opcodes=true, corruption_policy="recover", tile=None
+        apply_opcodes=true, corruption_policy="recover", tile=None, exposure=0.0, black_point=0.0,
+        white_point=1.0
     ))]
     #[allow(clippy::too_many_arguments)]
     fn decode<'py>(
@@ -536,6 +547,9 @@ impl RawFile {
         apply_opcodes: bool,
         corruption_policy: &str,
         tile: Option<usize>,
+        exposure: f32,
+        black_point: f32,
+        white_point: f32,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         let mut req = Self::parse_request(
             py,
@@ -547,6 +561,7 @@ impl RawFile {
             demosaic,
             apply_opcodes,
             corruption_policy,
+            (exposure, black_point, white_point),
             self.limits,
         )?;
         if tile.is_some() && req.opts.region.is_some() {
