@@ -133,6 +133,9 @@ if(NOT WIN32)
     set(FLASHRAW_PC_LIBS_PRIVATE "-l${_pc_private}")
   endif()
   string(REPLACE "-l-framework " "-framework " FLASHRAW_PC_LIBS_PRIVATE "${FLASHRAW_PC_LIBS_PRIVATE}")
+  # Path from <libdir>/pkgconfig back to the install prefix (e.g. "../.."), so the file
+  # works wherever the tree is installed (`cmake --install --prefix ...`).
+  file(RELATIVE_PATH FLASHRAW_PC_TO_PREFIX "/p/${CMAKE_INSTALL_LIBDIR}/pkgconfig" "/p")
   configure_file(cmake/flashraw.pc.in "${CMAKE_CURRENT_BINARY_DIR}/flashraw.pc" @ONLY)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/flashraw.pc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 endif()
