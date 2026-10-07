@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 # Imported up front so the native module's first array creation does not pay for it.
 import numpy as np
+import numpy.typing as npt
 
 from . import _flashraw
 from ._errors import (
@@ -209,7 +210,7 @@ class Frame:
         "_data_address",
     )
 
-    array: "np.ndarray"
+    array: "npt.NDArray[Any]"
     output: str
     width: int
     height: int
@@ -232,7 +233,7 @@ class Frame:
     source: str
     metadata: Metadata
 
-    def __init__(self, array: "np.ndarray", info: Dict[str, Any], metadata: Metadata, wall_ms: float = 0.0) -> None:
+    def __init__(self, array: "npt.NDArray[Any]", info: Dict[str, Any], metadata: Metadata, wall_ms: float = 0.0) -> None:
         self.array = array
         self.output = info["output"]
         self.width = info["width"]
@@ -273,11 +274,11 @@ class Frame:
         """The array's shape."""
         return self.array.shape
 
-    def active_view(self) -> "np.ndarray":
+    def active_view(self) -> "npt.NDArray[Any]":
         """A view (no copy) of the array restricted to :attr:`active_area`."""
         return self.array[self.active_area.slices]
 
-    def crop_view(self) -> "np.ndarray":
+    def crop_view(self) -> "npt.NDArray[Any]":
         """A view (no copy) of the array restricted to the recommended :attr:`crop`."""
         return self.array[self.crop.slices]
 
@@ -301,7 +302,7 @@ class Frame:
             raise ImportError("`to_pil()` requires Pillow (pip install pillow)") from e
         return Image.frombuffer("RGBA", (self.width, self.height), self.array, "raw", "RGBA", 0, 1)
 
-    def __array__(self, dtype: Any = None, copy: Optional[bool] = None) -> "np.ndarray":
+    def __array__(self, dtype: Any = None, copy: Optional[bool] = None) -> "npt.NDArray[Any]":
         a = self.array
         if dtype is not None and a.dtype != dtype:
             if copy is False:
@@ -324,7 +325,7 @@ class Preview:
 
     __slots__ = ("info", "data", "array")
 
-    def __init__(self, info: PreviewInfo, data: Optional[bytes] = None, array: Optional["np.ndarray"] = None) -> None:
+    def __init__(self, info: PreviewInfo, data: Optional[bytes] = None, array: Optional["npt.NDArray[Any]"] = None) -> None:
         self.info = info
         self.data = data
         self.array = array
@@ -619,7 +620,7 @@ def supports(data: Source) -> bool:
     return detect_format(data) is not None
 
 
-def imread(source: Source, output: str = "rgba8", **options: Any) -> "np.ndarray":
+def imread(source: Source, output: str = "rgba8", **options: Any) -> "npt.NDArray[Any]":
     """Decode a RAW file straight to a NumPy array (default: display-ready RGBA8).
 
     Equivalent to ``open(source).decode(output, **options).array``; the file is closed

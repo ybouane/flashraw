@@ -4,22 +4,8 @@
 # published: wheels and the sdist are uploaded as workflow artifacts.
 name: python
 
+# Manual only: CI runs locally (tools/ci/local.sh, docs/testing.md).
 on:
-  push:
-    branches: [main]
-    paths:
-      - "crates/**"
-      - "npm/tests/fixtures/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/python.yml"
-  pull_request:
-    paths:
-      - "crates/**"
-      - "npm/tests/fixtures/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/python.yml"
   workflow_dispatch:
 
 env:

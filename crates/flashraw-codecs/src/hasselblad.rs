@@ -60,11 +60,9 @@ impl HasselbladHeader {
             }
             let seg = flashraw_core::bytes::slice_at(data, pos + 2, len - 2)?;
             match marker {
-                0xC3 => {
-                    if seg.len() >= 5 {
-                        height = seg.u16be(1)? as u32;
-                        width = seg.u16be(3)? as u32;
-                    }
+                0xC3 if seg.len() >= 5 => {
+                    height = seg.u16be(1)? as u32;
+                    width = seg.u16be(3)? as u32;
                 }
                 0xC4 => {
                     let mut p = 0usize;

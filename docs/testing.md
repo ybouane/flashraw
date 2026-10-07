@@ -91,17 +91,33 @@ cargo +nightly fuzz run -O open_decode fuzz/corpus/open_decode -- -max_total_tim
 
 ## CI
 
-- `ci.yml` (every PR): fmt, clippy (-D warnings), tests on Linux x86-64/ARM64, macOS
-  x86-64/ARM64, Windows; no-default-features build; a small corpus sample with
-  regression + malformed tests; camera-db validation; C API: CMake install and the C/C++
-  examples built against it on Linux/macOS/Windows, plus a check that the generated
-  `flashraw.h` is up to date (see [c-api.md](c-api.md#tests)); WASM builds (SIMD and not);
-  GPU feature build; fuzz smoke (30 s per target + regression replay); bench
-  compilation.
-- `nightly.yml`: decodes the full corpus (verify records as artifact), regression and
-  malformed suites over every file; 15-minute fuzzing per target.
-- `perf.yml`: benchmark set on PR vs. main on the same runner; fails beyond the
-  tolerance (see [benchmarks.md](benchmarks.md)).
-- `python.yml`: abi3 wheels for Linux (manylinux x86-64/ARM64), macOS (x86-64/ARM64)
-  and Windows plus an sdist; every wheel is installed and its pytest suite run on
-  CPython 3.9 and 3.13; strict type check of the package (see [python.md](python.md)).
+CI runs locally, not on hosted runners: the workflows in `.github/workflows/` are kept as
+references for the steps but only start on manual dispatch.
+
+```sh
+tools/ci/local.sh                 # everything on this machine (Linux or macOS)
+tools/ci/local.sh --quick         # without MSRV, fuzzing, browser/bundler tests, benches
+tools/ci/local.sh --only clippy,test-release
+FLASHRAW_MAC_SSH="-p 2222 -i key.pem user@mac" tools/ci/mac.sh   # same on a macOS host
+```
+
+`local.sh` runs, and summarises as PASS / FAIL / SKIP:
+
+- `fmt`, `clippy` (`-D warnings`, also with all features), `test-debug` (unit tests with
+  overflow checks), `test-release` (the workspace, including the C/C++ example clients),
+  `no-default-features`, `corpus` (regression + malformed suites; needs `FLASHRAW_CORPUS`);
+- `msrv` (Rust 1.85 for the library, 1.88 with every feature), `camera-db` (validation and
+  the support-matrix check), `c-header` (regenerated `flashraw.h` must match), `gpu`;
+- `c-api` (CMake install, then the C/C++ examples built against the install and run with
+  ctest) and `c-api-pkgconfig` (link through the installed `flashraw.pc`);
+- `wasm` (crate tests, wasm32 builds), `npm` (build, Node tests threaded and not, types,
+  pack), `npm-browser` (Chromium, Firefox, WebKit), `npm-bundlers`;
+- `python` (`maturin develop`, pytest, `mypy --strict`), `fuzz` (crash-regression replay and
+  30 s per target), `benches` (compile only).
+
+Steps whose tools are missing (CMake, Node.js, cbindgen, cargo-fuzz, the wasm32 target) are
+reported as SKIP. `mac.sh` copies the tree and a small corpus sample to the host, fetches
+portable CMake and Node.js into its work directory when needed, runs `local.sh` there and
+removes the directory afterwards (`--keep` to reuse it). Windows has no local runner:
+the Windows-specific paths (MSVC builds of the C APIs, `raw.dll`) are untested until one
+is available.

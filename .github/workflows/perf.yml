@@ -4,9 +4,8 @@
 # hardware runs use tighter settings (see docs/benchmarks.md).
 name: Performance
 
+# Manual only: CI runs locally (tools/ci/local.sh, docs/testing.md).
 on:
-  pull_request:
-    paths: ["crates/**", "Cargo.toml", "Cargo.lock"]
   workflow_dispatch:
 
 jobs:

@@ -2,10 +2,9 @@
 # WASM build, fuzz smoke tests, camera-db validation, bench compilation.
 name: CI
 
+# Manual only: CI runs locally (tools/ci/local.sh, docs/testing.md).
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

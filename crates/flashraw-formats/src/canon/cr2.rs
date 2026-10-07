@@ -503,7 +503,7 @@ fn open_sraw<'a>(
     // Frames whose aspect ratio is implausible take their geometry from SensorInfo.
     let mut full_frame = false;
     let ratio = raw_h as f32 / raw_w.max(1) as f32;
-    if let Some(s) = mn.sensor.filter(|s| (ratio < 0.57 || ratio > 0.75) && s.width > 1 && s.height > 1) {
+    if let Some(s) = mn.sensor.filter(|s| !(0.57..=0.75).contains(&ratio) && s.width > 1 && s.height > 1) {
         raw_w = s.width as u32;
         raw_h = s.height as u32;
         left = s.crop.left as u32;

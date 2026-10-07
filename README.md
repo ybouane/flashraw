@@ -6,7 +6,6 @@
 
 Rust core · C, C++, Python and JavaScript bindings · SIMD, all cores and the GPU · runs in the browser
 
-[![CI](https://github.com/ybouane/flashraw/actions/workflows/ci.yml/badge.svg)](https://github.com/ybouane/flashraw/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#-license)
 [![MSRV 1.85](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](#api-stability)
 

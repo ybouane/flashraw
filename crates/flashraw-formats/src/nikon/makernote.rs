@@ -81,11 +81,7 @@ pub fn parse(data: &[u8], entry: &Entry, file_order: ByteOrder, model: &str) -> 
     for e in &ifd.entries {
         let v = e.data;
         match e.tag {
-            0x0002 => {
-                if mn.iso.is_none() {
-                    mn.iso = e.u32(1).filter(|&i| i > 0);
-                }
-            }
+            0x0002 if mn.iso.is_none() => mn.iso = e.u32(1).filter(|&i| i > 0),
             0x000c if e.count == 4 && e.typ == types::RATIONAL => {
                 let f = |i| e.f32(i).unwrap_or(0.0);
                 mn.cam_mul = [f(0), f(2), f(1), f(3)];

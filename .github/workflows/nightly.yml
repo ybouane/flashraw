@@ -2,9 +2,8 @@
 # suite over every corpus file, and a longer fuzzing campaign.
 name: Nightly corpus
 
+# Manual only: CI runs locally (tools/ci/local.sh, docs/testing.md).
 on:
-  schedule:
-    - cron: "0 3 * * *"
   workflow_dispatch:
 
 jobs:

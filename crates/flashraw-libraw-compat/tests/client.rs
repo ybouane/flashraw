@@ -38,6 +38,18 @@ fn native_libs(dir: &Path) -> Vec<String> {
                 l.split("native-static-libs:").nth(1).map(|s| s.split_whitespace().map(String::from).collect())
             })
         })
+        .map(|mut libs: Vec<String>| {
+            // In a workspace build the library may include the GPU backend (features are
+            // unified across members), which on Apple platforms needs the Metal and
+            // Objective-C runtimes; the probe crate above does not report those.
+            if cfg!(target_os = "macos") {
+                for f in ["Metal", "QuartzCore", "Foundation", "CoreGraphics"] {
+                    libs.extend(["-framework".to_string(), f.to_string()]);
+                }
+                libs.push("-lobjc".into());
+            }
+            libs
+        })
         .unwrap_or_else(|| ["-lpthread", "-ldl", "-lm"].map(String::from).to_vec())
 }
 
