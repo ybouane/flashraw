@@ -55,6 +55,59 @@ pub fn matrix_from(e: &flashraw_camera_db::FallbackMatrix) -> ColorMatrices {
     out
 }
 
+/// XYZ(D65) → camera matrix from a camera → ROMM (ProPhoto RGB, D50) matrix as Phase One
+/// (IIQ tag 0x0106) and Leaf (`CaptProf_color_matrix`) record it. Those matrices apply to
+/// white-balanced camera RGB (their rows sum to 1), so the result maps D65 white to a
+/// neutral camera response; it is scaled to a unit green response. `None` for a matrix
+/// that is not finite, not white-preserving or singular.
+pub fn matrix_from_romm(romm_cam: &[f32]) -> Option<ColorMatrices> {
+    // ROMM → XYZ(D50), then Bradford D50 → D65.
+    const XYZ_FROM_ROMM: [[f64; 3]; 3] =
+        [[0.797_674_9, 0.135_191_7, 0.031_353_4], [0.288_040_2, 0.711_874_1, 0.000_085_7], [0.0, 0.0, 0.825_210_0]];
+    const D65_FROM_D50: [[f64; 3]; 3] = [
+        [0.955_576_6, -0.023_039_3, 0.063_163_6],
+        [-0.028_289_5, 1.009_941_6, 0.021_007_7],
+        [0.012_298_2, -0.020_483_0, 1.329_909_8],
+    ];
+    if romm_cam.len() != 9 || !romm_cam.iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let r: Vec<f64> = romm_cam.iter().map(|&v| v as f64).collect();
+    if r.chunks_exact(3).any(|row| (row.iter().sum::<f64>() - 1.0).abs() > 0.05) {
+        return None;
+    }
+    let mul = |a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]| {
+        let mut o = [[0f64; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                o[i][j] = (0..3).map(|k| a[i][k] * b[k][j]).sum();
+            }
+        }
+        o
+    };
+    let rc = [[r[0], r[1], r[2]], [r[3], r[4], r[5]], [r[6], r[7], r[8]]];
+    let [[a, b, c], [d, e, f], [g, h, i]] = mul(&mul(&D65_FROM_D50, &XYZ_FROM_ROMM), &rc);
+    let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if det.abs() < 1e-9 {
+        return None;
+    }
+    let inv = [
+        [(e * i - f * h) / det, (c * h - b * i) / det, (b * f - c * e) / det],
+        [(f * g - d * i) / det, (a * i - c * g) / det, (c * d - a * f) / det],
+        [(d * h - e * g) / det, (b * g - a * h) / det, (a * e - b * d) / det],
+    ];
+    const D65: [f64; 3] = [0.950_47, 1.0, 1.088_83];
+    let green: f64 = (0..3).map(|k| inv[1][k] * D65[k]).sum();
+    if green.abs() < 1e-9 {
+        return None;
+    }
+    let values: Vec<f32> = inv.iter().flatten().map(|&v| (v / green) as f32).collect();
+    let mut out = ColorMatrices::default();
+    out.color.push(ColorMatrix::new(Illuminant::D65, 3, values)?);
+    out.source = ColorSource::File;
+    Some(out)
+}
+
 /// Read `out.len()` 16-bit samples from `src` in byte order `order`; returns the number
 /// of samples actually available.
 pub fn read_u16s(src: &[u8], order: ByteOrder, out: &mut [u16]) -> usize {
@@ -136,6 +189,21 @@ impl ErrorSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn romm_matrix_to_xyz() {
+        // The camera → ROMM matrix of IQ3 100MP files gives the database matrix of that back.
+        let romm = [1.193, -0.2, 0.007, -0.018, 1.129, -0.111, 0.028, -0.173, 1.145];
+        let m = matrix_from_romm(&romm).unwrap();
+        assert_eq!(m.source, ColorSource::File);
+        let got: Vec<i32> = m.color[0].values.iter().map(|v| (v * 10000.0).round() as i32).collect();
+        assert_eq!(got, [10999, 354, -742, -4590, 13342, 937, -1060, 2166, 8120]);
+        // Not white-preserving / not finite / singular / short.
+        assert!(matrix_from_romm(&[1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 1.0]).is_none());
+        assert!(matrix_from_romm(&[f32::NAN; 9]).is_none());
+        assert!(matrix_from_romm(&[1.0 / 3.0; 9]).is_none());
+        assert!(matrix_from_romm(&[1.0; 3]).is_none());
+    }
 
     /// Representative corpus samples of every medium-format/Kodak payload kind.
     const SAMPLES: &[&str] = &[

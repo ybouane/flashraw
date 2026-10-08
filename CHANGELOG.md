@@ -136,6 +136,13 @@ First complete release of FlashRaw.
   multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
   matrices and of their white balance. GPU backends leave these to the CPU.
 
+- Phase One iXM-100, iXM-RS150F, iXU180 and iXU-RS1000 IIQs and the Leaf AFi-II 12 MOS
+  render with a colour matrix (they had none, so renders were desaturated to 0.3-0.7 of the
+  preview's saturation): where the camera database has no matrix, the file's own
+  camera → ROMM matrix (IIQ tag 0x0106, MOS `CaptProf_color_matrix`) is converted to
+  XYZ(D65) → camera (`ColorSource::File`). Mean R/G and B/G now follow the embedded
+  previews (e.g. iXU-RS1000 0.91/0.90 → 0.72/0.82, preview 0.66/0.70). The conversion
+  reproduces the database matrix of the IQ3 100MP from that back's own files.
 - SJCam 5000X Elite `.RAW` files (18,000,000 bytes, the size of the Kodak "12MP" YCbCr
   dump) decode as 4000x3000 12-bit packed RGGB instead of striped YCbCr: the two layouts
   are told apart by the data (read as 12-bit pairs, YCbCr bytes make every first sample

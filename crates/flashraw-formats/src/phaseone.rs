@@ -17,13 +17,17 @@
 //! applied to the raw buffer. FlashRaw reports the true sensor black (`t_black` plus the
 //! per-row / per-column references as deltas) and white (`0xfffc`).
 //!
+//! **Colour.** The camera database matrix where there is one; otherwise the file's own
+//! camera → ROMM matrix (IIQ tag 0x0106, MOS `CaptProf_color_matrix`), converted to an
+//! XYZ(D65) → camera matrix (iXM/iXU backs, Leaf AFi-II 12).
+//!
 //! ## Leaf MOS
 //! TIFF with a `PKTS` packet tree (tag 0x8606) holding the back type, neutrals and
 //! mosaic/rotation info. Payload: one lossless-JPEG tile, 16-bit uncompressed, or
 //! horizontal uncompressed bands.
 
 use crate::common::*;
-use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from};
+use crate::medium::{ErrorSlot, cfa_at_origin, even_margins, fallback_table, matrix_from, matrix_from_romm};
 use flashraw_codecs::phaseone::{IiqLParams, decode_l_row, decode_s_row, unscramble_pairs};
 use flashraw_core::bits::{BitPumpMsb, BitPumpMsb32};
 use flashraw_core::tiff::{Tiff, tags};
@@ -446,6 +450,13 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Result<Box<dyn RawDecoder
     if let Some(t) = fallback_table(&meta.canonical_make, &meta.canonical_model) {
         info.color_matrices = matrix_from(t);
     }
+    // Backs without a database matrix (iXM/iXU aerial and industrial bodies): the file's
+    // camera → ROMM matrix (tag 0x0106). The database keeps precedence where it has one.
+    if info.color_matrices.color.is_empty() && db_color(&meta, cam).color.is_empty() {
+        if let Some(m) = dir.floats(0x0106, 9).and_then(|m| matrix_from_romm(&m)) {
+            info.color_matrices = m;
+        }
+    }
     apply_db(
         &mut info,
         &meta,
@@ -527,6 +538,8 @@ struct LeafPackets {
     rows_flags: u32,
     body: Option<String>,
     serial: Option<String>,
+    /// Camera → ROMM matrix (`CaptProf_color_matrix`).
+    romm: Option<Vec<f32>>,
 }
 
 const LEAF_BACKS: [&str; 39] = [
@@ -615,6 +628,17 @@ fn parse_pkts(data: &[u8], mut pos: usize, depth: u32, out: &mut LeafPackets, bu
                 let v = ints(payload, 4);
                 if v.len() == 4 {
                     out.neutrals = Some([v[0], v[1], v[2], v[3]]);
+                }
+            }
+            "CaptProf_color_matrix" if out.romm.is_none() => {
+                let v: Vec<f32> = String::from_utf8_lossy(payload)
+                    .split(|c: char| c.is_whitespace() || c == '\0')
+                    .filter(|t| !t.is_empty())
+                    .map_while(|t| t.parse::<f32>().ok())
+                    .take(9)
+                    .collect();
+                if v.len() == 9 {
+                    out.romm = Some(v);
                 }
             }
             "CaptProf_number_of_planes" => {
@@ -775,6 +799,12 @@ fn open_mos<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Result<Bo
         if n[1] > 0 && n[2] > 0 && n[3] > 0 {
             let m = [n[0] as f32 / n[1] as f32, n[0] as f32 / n[2] as f32, n[0] as f32 / n[3] as f32];
             info.white_balance = WhiteBalance::from_multipliers(m[0], m[1], m[2], m[1]);
+        }
+    }
+    // Backs without a database matrix: the file's camera → ROMM matrix.
+    if db_color(&meta, cam).color.is_empty() {
+        if let Some(m) = pk.romm.as_deref().and_then(matrix_from_romm) {
+            info.color_matrices = m;
         }
     }
     // Back-specific geometry.
@@ -1028,6 +1058,11 @@ mod tests {
         pkt("NeutObj_neutrals", b"1000 500 800 600", &mut d);
         pkt("CaptProf_number_of_planes", b"1", &mut d);
         pkt("CaptProf_raw_data_rotation", b"90", &mut d);
+        pkt(
+            "CaptProf_color_matrix",
+            b"1.1054\n-0.4398\n0.3342\n0.096\n1.0262\n-0.1223\n0.0442\n-0.6145\n1.5694\0",
+            &mut d,
+        );
         let mut pk = LeafPackets { flip: -1, ..Default::default() };
         let mut budget = 100;
         parse_pkts(&d, 0, 0, &mut pk, &mut budget);
@@ -1036,5 +1071,9 @@ mod tests {
         assert_eq!(pk.neutrals, Some([1000, 500, 800, 600]));
         assert_eq!(pk.planes, 1);
         assert_eq!(pk.flip, 90);
+        let romm = pk.romm.unwrap();
+        assert_eq!(romm.len(), 9);
+        assert_eq!(romm[8], 1.5694);
+        assert!(matrix_from_romm(&romm).is_some());
     }
 }
