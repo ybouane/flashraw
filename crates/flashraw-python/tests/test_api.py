@@ -51,6 +51,8 @@ def test_metadata_matches_expected(fixture_name: str) -> None:
         assert fi.channels == exp["cpp"]
         assert fi.sample_format in ("u16", "f32")
         assert isinstance(fi.active_area, flashraw.Rect)
+        assert isinstance(fi.white_balance_applied, bool)
+        assert fi.white_balance_applied == m.white_balance_applied
 
 
 def test_metadata_is_frozen(mlv_path: pathlib.Path) -> None:
@@ -152,6 +154,9 @@ def test_frame_fields(mlv_path: pathlib.Path) -> None:
     assert f.bits_per_sample > 0
     assert isinstance(f.black_level, flashraw.BlackLevel)
     assert f.white_level and f.white_balance is not None
+    # Camera-native data: the as-shot balance is not applied in the samples.
+    assert f.white_balance_applied is False
+    assert m.white_balance_applied is False
     assert f.active_view().shape == (f.active_area.height, f.active_area.width)
     assert f.crop_view().shape == (f.crop.height, f.crop.width)
     assert np.shares_memory(f.active_view(), f.array)

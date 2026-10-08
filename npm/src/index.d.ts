@@ -277,6 +277,9 @@ export interface RawMetadata {
   whiteLevel: number[];
   /** As-shot multipliers [R, G, B, G2], normalised to G = 1. */
   whiteBalance: [number, number, number, number] | null;
+  /** True when the camera already applied `whiteBalance` to the samples (Sony lossless YCbCr
+   * M/S, Nikon sNEF): RGB outputs develop with unit multipliers; do not apply it again. */
+  whiteBalanceApplied: boolean;
   colorMatrices: ColorMatrices;
   previews: PreviewDescriptor[];
   /** Vendor-specific extras (mode names, quality, crop mode, ...). */
@@ -374,6 +377,8 @@ export interface FrameInfo {
   blackFromMasked: boolean;
   whiteLevel: number[];
   whiteBalance: [number, number, number, number] | null;
+  /** See `RawMetadata.whiteBalanceApplied`. */
+  whiteBalanceApplied: boolean;
   colorMatrices: ColorMatrices;
   orientation: Orientation;
   pixelAspect: number;
@@ -648,6 +653,8 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   blackLevel: BlackLevel;
   whiteLevel: number[];
   whiteBalance: [number, number, number, number] | null;
+  /** See `RawMetadata.whiteBalanceApplied`. */
+  whiteBalanceApplied: boolean;
   colorMatrices: ColorMatrices;
   /** Orientation still to apply (always 1 for rgba8 and rgb16, which are already oriented). */
   orientation: Orientation;
@@ -683,6 +690,8 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat, S exten
   readonly blackLevel: BlackLevel;
   readonly whiteLevel: number[];
   readonly whiteBalance: [number, number, number, number] | null;
+  /** See `RawMetadata.whiteBalanceApplied`. */
+  readonly whiteBalanceApplied: boolean;
   readonly colorMatrices: ColorMatrices;
   readonly orientation: Orientation;
   readonly backend: BackendReport;
@@ -731,6 +740,8 @@ export declare class GpuFrame<O extends GpuOutputFormat = GpuOutputFormat> {
   readonly blackLevel: BlackLevel;
   readonly whiteLevel: number[];
   readonly whiteBalance: [number, number, number, number] | null;
+  /** See `RawMetadata.whiteBalanceApplied`. */
+  readonly whiteBalanceApplied: boolean;
   readonly colorMatrices: ColorMatrices;
   readonly orientation: Orientation;
   readonly backend: BackendReport;

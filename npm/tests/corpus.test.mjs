@@ -54,3 +54,34 @@ describe('corpus DNGs vs native CLI', { skip: !corpusRoot || !cliBinary() ? 'cor
     });
   }
 });
+
+// Images the camera white-balanced itself: flagged, as-shot multipliers kept, and the
+// rgba8 develop does not apply them again (no magenta cast).
+const CAMERA_BALANCED = [
+  ['Sony/ILCE-7RM5/7RM5-LosslessCompressedMedium.ARW', true],
+  ['Nikon/D810/DSC_1888.NEF', true],
+  ['Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW', false],
+];
+
+describe('camera-applied white balance', { skip: !corpusRoot ? 'corpus unavailable' : false }, () => {
+  for (const [rel, applied] of CAMERA_BALANCED) {
+    const file = corpusFile(rel);
+    test(rel, { skip: !file && 'not in corpus' }, async () => {
+      const raw = await FlashRaw.openFile(file);
+      try {
+        assert.equal(raw.metadata.whiteBalanceApplied, applied);
+        assert.equal(raw.frameInfo.whiteBalanceApplied, applied);
+        assert.ok(raw.metadata.whiteBalance);
+        const f = await raw.decode({ output: 'rgba8', demosaic: 'half-size' });
+        assert.equal(f.whiteBalanceApplied, applied);
+        assert.deepEqual(f.whiteBalance, raw.metadata.whiteBalance);
+        const s = [0, 0, 0];
+        for (let i = 0; i < f.data.length; i += 4) for (let c = 0; c < 3; c++) s[c] += f.data[i + c];
+        // Not magenta: green is not the weakest of the three by a wide margin.
+        assert.ok(s[1] > 0.8 * Math.max(s[0], s[2]), `means ${s.map((v) => Math.round((v * 4) / f.data.length))}`);
+      } finally {
+        raw.close();
+      }
+    });
+  }
+});

@@ -218,6 +218,7 @@ pub fn frame_info(f: &FrameInfo) -> Value {
         "black_from_masked": f.black_from_masked,
         "white_level": white(&f.white_level),
         "white_balance": wb(f.white_balance),
+        "white_balance_applied": f.white_balance_applied,
         "color_matrices": colors(&f.color_matrices),
         "orientation": f.orientation.exif(),
         "pixel_aspect": f32v(f.pixel_aspect),
@@ -299,6 +300,7 @@ pub fn metadata(raw: &FlashRaw<'_>) -> Value {
         "black_level": black(&f.black_level),
         "white_level": white(&f.white_level),
         "white_balance": wb(f.white_balance),
+        "white_balance_applied": f.white_balance_applied,
         "color_matrices": colors(&f.color_matrices),
         "previews": previews(m),
         "extra": extra,
@@ -449,6 +451,7 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
         "black_level": black(&f.black_level),
         "white_level": white(&f.white_level),
         "white_balance": wb(f.white_balance),
+        "white_balance_applied": f.white_balance_applied,
         "color_matrices": colors(&f.color_matrices),
         "orientation": f.orientation.exif(),
         "stats": {

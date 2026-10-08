@@ -69,7 +69,34 @@ def test_raw_u16_hash_matches_cli(path: Path) -> None:
     assert (m.canonical_make, m.canonical_model) == (v["canonical_make"], v["canonical_model"])
     assert m.orientation == v["orientation"]
     assert frame.incomplete == v["incomplete"]
+    assert m.white_balance_applied == frame.white_balance_applied == v["wb_applied"]
     assert len(frame.warnings) == len(v["warnings"])
     # Same samples through a bytes input (zero-copy) as through the memory-mapped path.
     with flashraw.open(path.read_bytes()) as raw:
         assert format(flashraw._flashraw.fnv1a64(raw.decode().array), "016x") == v["hash_full"]
+
+
+# Images the camera white-balanced itself, and a full-size Bayer file of the same body.
+CAMERA_BALANCED = [
+    ("Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW", True),
+    ("Nikon/D4S/FU9_3802.NEF", True),
+    ("Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW", False),
+]
+
+
+@pytest.mark.parametrize("rel,applied", CAMERA_BALANCED, ids=[r for r, _ in CAMERA_BALANCED])
+def test_camera_applied_white_balance(rel: str, applied: bool) -> None:
+    root = corpus_root()
+    path = root / rel if root else None
+    if path is None or not path.exists():
+        pytest.skip(f"{rel} not in the corpus")
+    with flashraw.open(path) as raw:
+        assert raw.metadata.white_balance_applied is applied
+        assert raw.frame_info.white_balance_applied is applied
+        assert raw.metadata.white_balance is not None
+        f = raw.decode(output="rgba8", demosaic="half-size")
+    assert f.white_balance_applied is applied
+    assert f.white_balance == raw.metadata.white_balance
+    mean = f.array[..., :3].reshape(-1, 3).mean(axis=0)
+    # Not magenta: green is not the weakest channel by a wide margin.
+    assert mean[1] > 0.8 * max(mean[0], mean[2]), mean

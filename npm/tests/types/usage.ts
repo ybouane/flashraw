@@ -46,6 +46,7 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const h: number = raw.metadata.height;
   const cfa: string | undefined = raw.metadata.cfa?.pattern;
   const wb: [number, number, number, number] | null = raw.metadata.whiteBalance;
+  const wbApplied: boolean = raw.metadata.whiteBalanceApplied && raw.frameInfo.whiteBalanceApplied;
   const iso: number | null = raw.metadata.exposure.iso;
   const oi: OrientationInfo = raw.metadata.orientationInfo;
   const resolved: Orientation = oi.resolved;
@@ -73,6 +74,7 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const backend: string = frame.backend.decode;
   const total: number = frame.timings.totalMs;
   const pattern: string | undefined = frame.cfa?.pattern;
+  const frameWbApplied: boolean = frame.whiteBalanceApplied && frame.toJSON().whiteBalanceApplied;
 
   const img = await raw.decode({ output: 'rgba8' });
   const clamped: Uint8ClampedArray = img.data;
@@ -113,7 +115,7 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
       void kr;
     }
   }
-  void [halfBits, dt, origin, notF32, be, xy];
+  void [halfBits, dt, origin, notF32, be, xy, wbApplied, frameWbApplied];
   const tile = await raw.decodeTile(0);
   const zc = await raw.decode({ zeroCopy: true });
   zc.free();

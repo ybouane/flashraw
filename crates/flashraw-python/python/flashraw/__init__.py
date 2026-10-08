@@ -201,6 +201,7 @@ class Frame:
         "black_level",
         "white_level",
         "white_balance",
+        "white_balance_applied",
         "color_matrices",
         "orientation",
         "stats",
@@ -225,6 +226,9 @@ class Frame:
     black_level: BlackLevel
     white_level: Tuple[int, ...]
     white_balance: Optional[Tuple[float, ...]]
+    #: True when the camera already applied ``white_balance`` to the samples (see
+    #: :attr:`Metadata.white_balance_applied`).
+    white_balance_applied: bool
     color_matrices: ColorMatrices
     orientation: int
     stats: DecodeStats
@@ -250,6 +254,7 @@ class Frame:
         self.white_level = tuple(info["white_level"])
         wb = info["white_balance"]
         self.white_balance = tuple(wb) if wb is not None else None
+        self.white_balance_applied = bool(info.get("white_balance_applied", False))
         self.color_matrices = ColorMatrices._from(info["color_matrices"])
         self.orientation = info["orientation"]
         self.stats = DecodeStats._from(info["stats"], wall_ms)

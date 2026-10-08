@@ -109,7 +109,10 @@ for (const file of fixtures) {
         assert.deepEqual(JSON.parse(JSON.stringify(m)), m);
         // Cached: same object on repeated access.
         assert.equal(raw.metadata, m);
+        // The fixtures hold camera-native (not camera-balanced) data.
+        assert.equal(m.whiteBalanceApplied, false);
         const fi = raw.frameInfo;
+        assert.equal(fi.whiteBalanceApplied, false);
         assert.equal(fi.width, ref.width);
         assert.equal(fi.channels, ref.cpp);
         assert.ok(raw.capabilities.randomAccess.kind);
@@ -142,6 +145,8 @@ for (const file of fixtures) {
       assert.ok(frame.timings.wallMs >= frame.timings.copyMs);
       assert.equal(frame.zeroCopy, false);
       assert.equal(frame.outputBytes, frame.data.byteLength);
+      assert.equal(frame.whiteBalanceApplied, false);
+      assert.equal(frame.toJSON().whiteBalanceApplied, false);
     });
 
     test('scalar backend gives the same pixels', async () => {

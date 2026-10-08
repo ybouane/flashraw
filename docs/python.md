@@ -98,13 +98,14 @@ frozen dataclass. Everything is plain data: `dataclasses.asdict(m)` gives JSON-r
 | `orientation`, `orientation_info` | EXIF orientation (1–8) and how it was resolved: the EXIF tag, the vendor record, the camera's Auto Rotate setting, `source` and the per-vendor `policy` |
 | `cfa`, `layout` | `CfaPattern` (`pattern`, `width`, `height`, `color_at(x, y)`), `"bayer"`, `"x-trans"`, `"monochrome"`, `"linear"`, ... |
 | `black_level`, `white_level`, `white_balance` | `BlackLevel` (repeating pattern, per-row/column deltas, `mean`, `at(x, y)`), white level per colour, as-shot multipliers |
+| `white_balance_applied` | `True` when the camera already applied `white_balance` to the samples (Sony lossless YCbCr M/S, Nikon sNEF): RGB outputs develop with unit multipliers; do not apply it again to raw outputs |
 | `color_matrices` | `color`, `forward`, `calibration` (`ColorMatrix` with `illuminant`, `temperature`, `as_array()`), `analog_balance`, `source` |
 | `previews` | `PreviewInfo` for every embedded preview/thumbnail |
 | `dng_version`, `dng`, `opcodes` | DNG version, rendering hints (`baseline_exposure`, `as_shot_neutral`, `default_user_crop`, `noise_profile`, profile tags, ...), DNG opcodes with WarpRectilinear / FixVignetteRadial parameters |
 | `extra` | format-specific key/values |
 
 `RawFile.frame_info` describes the sensor buffer before decoding (active area, default crop,
-masked areas, sample format, ...), `RawFile.capabilities` the random access the format allows
+masked areas, sample format, `white_balance_applied`, ...), `RawFile.capabilities` the random access the format allows
 and `RawFile.tiles` its independently decodable tiles/strips.
 
 ## Previews
@@ -169,7 +170,7 @@ A `Frame` carries everything needed to interpret the pixels:
 | `active_area`, `crop`, `masked_areas` | `Rect`s in frame coordinates; `active_view()` / `crop_view()` return array views |
 | `origin` | position of the frame in the sensor buffer (region/tile decodes, `crop="active"`) |
 | `cfa`, `layout`, `color_at(x, y)` | CFA pattern (anchored at sensor `(0, 0)`) and the colour at frame coordinates |
-| `black_level`, `white_level`, `white_balance`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8` and `rgb16`, which have it applied) |
+| `black_level`, `white_level`, `white_balance`, `white_balance_applied`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8` and `rgb16`, which have it applied) |
 | `warnings`, `incomplete` | repairs made under `corruption_policy="recover"` (and the `preview-fallback` substitution) |
 | `source` | `"sensor"`, or `"preview"` when `preview_fallback=True` returned the embedded preview of undecodable sensor data (Nikon High Efficiency NEF) |
 | `stats` | `total_ms`, per-stage `stages`, `backend` (`decode`, `simd`, `threads`, ...), `call_ms` (native call), `wall_ms` (Python call) |

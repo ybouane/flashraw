@@ -233,6 +233,8 @@ m.orientationInfo;         // { exif, makerNote, autoRotate, resolved, source, p
 m.width; m.height; m.rawWidth; m.rawHeight; m.bitsPerSample; m.compression;
 m.cfa;                     // { pattern: "RGGB", width: 2, height: 2, colors: [...] } | null
 m.blackLevel; m.whiteLevel; m.whiteBalance; m.colorMatrices;
+m.whiteBalanceApplied;     // true when the camera already applied m.whiteBalance (Sony lossless YCbCr M/S,
+                           //   Nikon sNEF): rgba8/RGB outputs develop with unit multipliers; don't apply it again
 m.previews;                // [{ index, kind, encoding, mimeType, width, height, byteLength, offset, orientation }]
                            //   (each preview's orientation is resolved on its own: it can differ from m.orientation)
 m.extra;                   // vendor extras { key: value }
@@ -272,6 +274,7 @@ f.dataType;        // 'u8' | 'u16' | 'f16' | 'f32'
 f.channels;        // 1 (CFA), 3 (linear RGB outputs, rgb16, linear DNG), 4 (rgba8)
 f.orientation;     // still to apply: 1 for rgba8/rgb16 (already oriented); linear outputs keep the sensor's
 f.cfa; f.blackLevel; f.whiteLevel; f.whiteBalance; f.colorMatrices; f.activeArea; f.crop; f.origin;
+f.whiteBalanceApplied;  // see m.whiteBalanceApplied
 f.backend;         // { requested, kind: 'cpu', decode: 'CPU WASM SIMD128 x1 thread', simd, fallbackReason }
 f.timings;         // { totalMs, stages: { containerParse, entropyDecode, postprocess, ... }, copyMs, wallMs }
 f.incomplete;      // true when some samples hold no data (truncated/corrupt input recovered)

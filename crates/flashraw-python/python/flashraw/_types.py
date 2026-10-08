@@ -406,7 +406,10 @@ class Metadata:
 
     ``width`` / ``height`` are the visible image size, ``raw_width`` / ``raw_height`` the
     sensor buffer. ``white_level`` has one value per CFA colour/sample; ``white_balance`` is
-    the as-shot multipliers (or ``None``). ``extra`` holds format-specific key/values.
+    the as-shot multipliers (or ``None``). ``white_balance_applied`` is true when the camera
+    already applied them to the samples (Sony lossless YCbCr M/S, Nikon sNEF): RGB outputs
+    then develop with unit multipliers, and they must not be applied again to raw outputs.
+    ``extra`` holds format-specific key/values.
     """
 
     format: str
@@ -426,6 +429,7 @@ class Metadata:
     black_level: BlackLevel
     white_level: Tuple[int, ...]
     white_balance: Optional[Tuple[float, ...]]
+    white_balance_applied: bool
     color_matrices: ColorMatrices
     previews: Tuple[PreviewInfo, ...]
     software: Optional[str] = None
@@ -478,6 +482,7 @@ class Metadata:
             black_level=BlackLevel._from(d["black_level"]),
             white_level=_tuple(d["white_level"]),
             white_balance=_opt_tuple(d["white_balance"]),
+            white_balance_applied=d["white_balance_applied"],
             color_matrices=ColorMatrices._from(d["color_matrices"]),
             previews=tuple(PreviewInfo._from(p) for p in d["previews"]),
             software=d["software"],
@@ -497,7 +502,9 @@ class FrameInfo:
     """Geometry and calibration of the sensor buffer, known before decoding.
 
     ``sample_format`` is ``"u16"`` or ``"f32"`` (floating-point DNG); ``black_from_masked``
-    tells that the black level is measured from the masked areas at decode time.
+    tells that the black level is measured from the masked areas at decode time;
+    ``white_balance_applied`` that the camera already applied ``white_balance`` (see
+    :class:`Metadata`).
     """
 
     width: int
@@ -514,6 +521,7 @@ class FrameInfo:
     black_from_masked: bool
     white_level: Tuple[int, ...]
     white_balance: Optional[Tuple[float, ...]]
+    white_balance_applied: bool
     color_matrices: ColorMatrices
     orientation: int
     pixel_aspect: Optional[float]
@@ -536,6 +544,7 @@ class FrameInfo:
             d["black_from_masked"],
             _tuple(d["white_level"]),
             _opt_tuple(d["white_balance"]),
+            d["white_balance_applied"],
             ColorMatrices._from(d["color_matrices"]),
             d["orientation"],
             d["pixel_aspect"],
