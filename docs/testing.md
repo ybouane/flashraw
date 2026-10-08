@@ -96,13 +96,15 @@ CI runs locally, not on hosted runners: the workflows in `.github/workflows/` ar
 references for the steps but only start on manual dispatch.
 
 ```sh
-tools/ci/local.sh                 # everything on this machine (Linux or macOS)
-tools/ci/local.sh --quick         # without MSRV, fuzzing, browser/bundler tests, benches
-tools/ci/local.sh --only clippy,test-release
+tools/ci/local.sh                    # the steps the changes since origin/main need (default)
+tools/ci/local.sh --changed HEAD~3   # ... since another base
+tools/ci/local.sh --quick            # core steps whatever changed (~5 min)
+tools/ci/local.sh --full             # everything (before a release)
+tools/ci/local.sh --list             # show the selected steps without running them
 FLASHRAW_MAC_SSH="-p 2222 -i key.pem user@mac" tools/ci/mac.sh   # same on a macOS host
 ```
 
-`local.sh` runs, and summarises as PASS / FAIL / SKIP:
+Steps, summarised as PASS / FAIL / SKIP:
 
 - `fmt`, `clippy` (`-D warnings`, also with all features), `test-debug` (unit tests with
   overflow checks), `test-release` (the workspace, including the C/C++ example clients),
@@ -111,14 +113,22 @@ FLASHRAW_MAC_SSH="-p 2222 -i key.pem user@mac" tools/ci/mac.sh   # same on a mac
   the support-matrix check), `c-header` (regenerated `flashraw.h` must match), `gpu`;
 - `c-api` (CMake install, then the C/C++ examples built against the install and run with
   ctest) and `c-api-pkgconfig` (link through the installed `flashraw.pc`);
-- `wasm` (crate tests, wasm32 builds), `npm` (build, Node tests threaded and not, types,
-  pack), `npm-browser` (Chromium, Firefox, WebKit), `npm-bundlers`;
+- `wasm` (crate tests, wasm32 builds), `npm` (all six WASM variants, Node tests threaded and
+  not, types, pack), `npm-browser` (Chromium, Firefox, WebKit), `npm-bundlers`;
 - `python` (`maturin develop`, pytest, `mypy --strict`), `fuzz` (crash-regression replay and
   30 s per target), `benches` (compile only).
 
+`--changed` maps changed paths to steps: documentation alone runs nothing; decoder crates run
+the Rust lints and tests, the corpus suites and the WASM crate check; the facade crate adds
+the Python and C API steps; `npm/` and the WASM crate run the npm package; manifests add
+MSRV; `fuzz/` runs fuzzing. Browser tests, MSRV on non-manifest changes and fuzzing on
+decoder changes are left to `--full`.
+
 Steps whose tools are missing (CMake, Node.js, cbindgen, cargo-fuzz, the wasm32 target) are
-reported as SKIP. `mac.sh` copies the tree and a small corpus sample to the host, fetches
-portable CMake and Node.js into its work directory when needed, runs `local.sh` there and
-removes the directory afterwards (`--keep` to reuse it). Windows has no local runner:
+reported as SKIP. `mac.sh` keeps a warm work directory on the host (`~/flashraw-ci`: build
+cache, npm modules, the wasm-bindgen tool, the Python venv, a corpus sample) so repeat runs
+only rebuild what changed; it fetches portable CMake and Node.js into that directory when
+needed, drops the build cache when the host has less than `FLASHRAW_MAC_MIN_FREE_GB`
+(default 10) GB free, and `--clean` removes the directory. Windows has no local runner:
 the Windows-specific paths (MSVC builds of the C APIs, `raw.dll`) are untested until one
 is available.

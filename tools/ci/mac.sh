@@ -1,33 +1,49 @@
 #!/usr/bin/env bash
 # Run the local CI (tools/ci/local.sh) on a macOS host over SSH.
 #
-#   tools/ci/mac.sh [--keep] [local.sh arguments...]
+#   tools/ci/mac.sh [--clean] [local.sh arguments...]
 #
-# Copies the working tree (without target/, corpus/, node_modules/, reference/) and a small
-# corpus sample to ~/flashraw-ci on the host, fetches portable CMake and Node.js into that
-# directory when the host has none (no system-wide installs), runs local.sh there and
-# deletes ~/flashraw-ci afterwards unless --keep is given. Configure the host with:
-#   FLASHRAW_MAC_SSH   ssh destination and options, e.g. "-p 2222 -i key.pem user@host"
+# Keeps a warm work directory ~/flashraw-ci on the host (build cache, npm modules, the
+# wasm-bindgen tool, the Python venv and a small corpus sample), so repeat runs only rebuild
+# what changed. Each run syncs the working tree (without target/, corpus/, node_modules/,
+# reference/), fetches portable CMake and Node.js into the work directory when the host has
+# none (no system-wide installs), runs local.sh there and copies the logs back to
+# target/ci-logs-mac/. The build cache is dropped when the host has less than
+# FLASHRAW_MAC_MIN_FREE_GB (default 10) GB free; --clean removes ~/flashraw-ci entirely.
+#   FLASHRAW_MAC_SSH     ssh destination and options, e.g. "-p 2222 -i key.pem user@host"
 #   FLASHRAW_MAC_SAMPLE  corpus sample filter (regex on corpus paths; default below)
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 SSH_ARGS=(${FLASHRAW_MAC_SSH:?set FLASHRAW_MAC_SSH, e.g. \"-p 2222 -i key.pem user@host\"})
-KEEP=0
-if [ "${1:-}" = "--keep" ]; then KEEP=1; shift; fi
+MIN_FREE_GB="${FLASHRAW_MAC_MIN_FREE_GB:-10}"
 SAMPLE="${FLASHRAW_MAC_SAMPLE:-Leica/|Pentax/K-70|Blackmagic|Canon/EOS R5/|Nikon/Z 7/|Sony/ILCE-7M4/|Fujifilm/X-T3/|Panasonic/DC-GH5/|Olympus/E-M1MarkII/}"
 DIR=flashraw-ci
 RSH="ssh ${SSH_ARGS[*]:0:${#SSH_ARGS[@]}-1}"
 HOST="${SSH_ARGS[-1]}"
-
 remote() { ssh "${SSH_ARGS[@]}" "$@"; }
 
-echo "=== syncing tree to $HOST:~/$DIR"
+if [ "${1:-}" = "--clean" ]; then
+  shift
+  echo "=== removing ~/$DIR on $HOST"
+  remote "rm -rf ~/$DIR"
+  [ $# -eq 0 ] && exit 0
+fi
+
+# Free disk (GB) on the host's home volume.
+free_gb() { remote "df -g ~ | awk 'NR==2 {print \$4}'"; }
+if [ "$(free_gb)" -lt "$MIN_FREE_GB" ]; then
+  echo "=== less than $MIN_FREE_GB GB free on $HOST: dropping the build cache"
+  remote "rm -rf ~/$DIR/src/target"
+fi
+
+echo "=== syncing tree to $HOST:~/$DIR (warm cache kept)"
 remote "mkdir -p ~/$DIR/src ~/$DIR/corpus"
-rsync -a --delete -e "$RSH" --exclude target --exclude corpus --exclude reference --exclude node_modules \
-  --exclude .claude --exclude '*.whl' ./ "$HOST:$DIR/src/"
+# --delete keeps the copy exact, except for the caches the exclusions protect.
+rsync -a --delete -e "$RSH" --exclude /target --exclude /corpus --exclude /reference \
+  --exclude node_modules --exclude /npm/.tools --exclude /npm/dist --exclude .claude --exclude '*.whl' \
+  ./ "$HOST:$DIR/src/"
 if [ -d corpus ]; then
-  echo "=== syncing corpus sample"
   (cd corpus && find . -type f | sed 's|^\./||' | grep -E "$SAMPLE" || true) > target/ci-mac-sample.txt
   rsync -a -e "$RSH" --files-from=target/ci-mac-sample.txt corpus/ "$HOST:$DIR/corpus/"
 fi
@@ -57,10 +73,9 @@ remote "cd ~/$DIR/src && export PATH=\$HOME/.cargo/bin:\$HOME/$DIR/tools/node/bi
 mkdir -p target/ci-logs-mac
 rsync -a -e "$RSH" "$HOST:$DIR/src/target/ci-logs/" target/ci-logs-mac/ || true
 echo "=== logs copied to target/ci-logs-mac/"
-
-if [ "$KEEP" = 0 ]; then
-  echo "=== removing ~/$DIR on $HOST"
-  remote "rm -rf ~/$DIR"
+if [ "$(free_gb)" -lt "$MIN_FREE_GB" ]; then
+  echo "=== less than $MIN_FREE_GB GB free on $HOST: dropping the build cache"
+  remote "rm -rf ~/$DIR/src/target"
 fi
-remote "df -h ~ | tail -1"
+remote "du -sh ~/$DIR | cut -f1 | sed 's/^/work dir: /'; df -h ~ | tail -1"
 exit $status

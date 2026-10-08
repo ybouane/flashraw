@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
-# Local CI: the checks of .github/workflows/{ci,wasm,python}.yml, run on this machine.
+# Local CI: the checks of the former hosted workflows, run on this machine.
 #
-#   tools/ci/local.sh [--quick] [--only step,step] [--skip step,step]
+#   tools/ci/local.sh [--changed [BASE] | --quick | --full] [--only s,..] [--skip s,..] [--list]
 #
-# Steps run in order and the script continues past failures; a summary is printed at the
-# end and the exit status is non-zero if any step failed. A step whose tools are missing is
-# reported as SKIP (never as a pass). Environment:
+#   --changed [BASE]  (default) run the steps the changes since BASE need: committed changes
+#                     since BASE (default origin/main) plus uncommitted and untracked files
+#   --quick           the core steps whatever changed (Rust lints and tests, corpus,
+#                     camera database, WASM crate)
+#   --full            every step, including MSRV, the npm package in browsers and bundlers,
+#                     fuzzing and benchmark compilation (before a release)
+#   --only / --skip   restrict the selected steps; --list prints them without running
+#
+# Steps continue past failures; a summary is printed at the end and the exit status is
+# non-zero if any step failed. A step whose tools are missing is reported as SKIP (never as
+# a pass). Environment:
 #   FLASHRAW_CORPUS  corpus root for the regression/malformed suites (default: ./corpus)
 #   CMAKE, CTEST     CMake binaries (default: cmake / ctest on PATH)
 #   PYTHON_VENV      virtualenv for the Python bindings (default: target/ci-venv, created)
-#   CARGO_TARGET_DIR is honoured as usual.
-# --quick skips the slow steps (msrv, fuzz, browser and bundler tests, benches).
 
 set -uo pipefail
 cd "$(dirname "$0")/../.."
@@ -20,19 +26,74 @@ export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-always}"
 export FLASHRAW_CORPUS="${FLASHRAW_CORPUS:-$ROOT/corpus}"
 CMAKE="${CMAKE:-cmake}"
 CTEST="${CTEST:-ctest}"
-QUICK=0
+MODE=changed
+BASE=origin/main
 ONLY=""
 SKIP=""
+LIST=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --quick) QUICK=1 ;;
+    --changed) MODE=changed; if [ $# -gt 1 ] && [[ "$2" != --* ]]; then BASE="$2"; shift; fi ;;
+    --quick) MODE=quick ;;
+    --full) MODE=full ;;
     --only) ONLY=",$2,"; shift ;;
     --skip) SKIP=",$2,"; shift ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --list) LIST=1 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
 done
+
+ALL="fmt clippy test-debug test-release no-default-features corpus msrv camera-db c-header gpu c-api c-api-pkgconfig wasm npm npm-browser npm-bundlers python fuzz benches"
+QUICK="fmt clippy test-debug test-release corpus camera-db wasm"
+
+# --- Step selection -----------------------------------------------------------------------
+select_changed() {
+  local files
+  files=$( { git diff --name-only "$BASE"...HEAD 2>/dev/null || git diff --name-only "$BASE" 2>/dev/null;
+             git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u)
+  if [ -z "$files" ]; then echo ""; return; fi
+  local s=" "
+  add() { for x in "$@"; do [[ "$s" == *" $x "* ]] || s="$s$x "; done; }
+  local rust_core="fmt clippy test-debug test-release corpus"
+  while IFS= read -r f; do
+    case "$f" in
+      *.md|LICENSE*|docs/*|benches/results/*) ;;   # documentation and recorded results
+      Cargo.toml|Cargo.lock|*/Cargo.toml|rust-toolchain*)
+        add $rust_core no-default-features msrv wasm python c-api c-api-pkgconfig c-header ;;
+      crates/flashraw-core/*|crates/flashraw-codecs/*|crates/flashraw-formats/*)
+        add $rust_core no-default-features wasm ;;
+      crates/flashraw/*)
+        add $rust_core no-default-features wasm python c-api c-header ;;
+      crates/flashraw-camera-db/*|camera-db/*|tools/support_matrix.py|docs/support*)
+        add $rust_core camera-db ;;
+      crates/flashraw-gpu/*|shaders/*) add $rust_core gpu wasm npm ;;
+      crates/flashraw-cli/*) add $rust_core ;;
+      crates/flashraw-capi/*|examples/*) add fmt clippy test-release c-header c-api c-api-pkgconfig ;;
+      crates/flashraw-libraw-compat/*) add fmt clippy test-release ;;
+      crates/flashraw-wasm/*) add fmt clippy wasm npm ;;
+      npm/*) add npm npm-bundlers ;;
+      crates/flashraw-python/*) add fmt clippy python ;;
+      fuzz/*) add fuzz ;;
+      crates/*/benches/*) add fmt clippy benches ;;
+      tools/ci/*|tools/corpus/*|tests/*) add $rust_core ;;
+      *) add $rust_core ;;
+    esac
+  done <<< "$files"
+  echo "$s"
+}
+
+case "$MODE" in
+  full) STEPS=" $ALL " ;;
+  quick) STEPS=" $QUICK " ;;
+  changed)
+    STEPS=$(select_changed)
+    if [ -z "${STEPS// /}" ]; then
+      echo "=== nothing to check: no changes since $BASE (use --quick or --full to force)"
+      exit 0
+    fi ;;
+esac
 
 RESULTS=()
 FAILED=0
@@ -41,10 +102,15 @@ mkdir -p "$LOG_DIR"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 wanted() {
+  [[ "$STEPS" == *" $1 "* ]] || return 1
   [ -n "$ONLY" ] && [[ "$ONLY" != *",$1,"* ]] && return 1
   [[ "$SKIP" == *",$1,"* ]] && return 1
   return 0
 }
+if [ "$LIST" = 1 ]; then
+  for s in $ALL; do wanted "$s" && echo "$s"; done
+  exit 0
+fi
 skip() { RESULTS+=("SKIP  $1  ($2)"); echo "--- SKIP $1: $2"; }
 # step NAME COMMAND...: run COMMAND through bash, log to target/ci-logs/NAME.log.
 step() {
@@ -61,21 +127,27 @@ step() {
 }
 
 OS="$(uname -s)"
+T_START=$SECONDS
+echo "=== mode: $MODE$([ "$MODE" = changed ] && echo " (since $BASE)"); steps:$STEPS"
 
 # --- Rust: format, lints, tests ----------------------------------------------------------
 step fmt "cargo fmt --all --check"
 step clippy "cargo clippy --workspace --all-targets -- -D warnings && cargo clippy -p flashraw --all-features -- -D warnings"
 step test-debug "cargo test --lib -p flashraw-core -p flashraw-codecs -p flashraw-formats -p flashraw"
-step test-release "cargo test --workspace --release"
+# The C/C++ example tests link the cdylib/staticlib files, which `cargo test` does not
+# rebuild: build them first so the examples never pick up stale libraries.
+step test-release "cargo build --release -p flashraw-capi -p flashraw-libraw-compat && cargo test --workspace --release"
 step no-default-features "cargo test -p flashraw --no-default-features --release --lib"
-if [ -d "$FLASHRAW_CORPUS" ]; then
-  step corpus "cargo test --release -p flashraw --test regression -- --nocapture && cargo test --release -p flashraw --test malformed"
-else
-  wanted corpus && skip corpus "no corpus at $FLASHRAW_CORPUS (tools/corpus/fetch.py)"
+if wanted corpus; then
+  if [ -d "$FLASHRAW_CORPUS" ]; then
+    step corpus "cargo test --release -p flashraw --test regression -- --nocapture && cargo test --release -p flashraw --test malformed"
+  else
+    skip corpus "no corpus at $FLASHRAW_CORPUS (tools/corpus/fetch.py)"
+  fi
 fi
 
 # --- Minimum supported Rust versions ----------------------------------------------------
-if [ "$QUICK" = 0 ] && wanted msrv; then
+if wanted msrv; then
   if have rustup; then
     step msrv "rustup toolchain install 1.85 --profile minimal >/dev/null && rustup toolchain install 1.88 --profile minimal >/dev/null \
       && cargo +1.85 check -p flashraw --features serde && cargo +1.88 check --workspace --all-targets --all-features"
@@ -97,7 +169,7 @@ fi
 step gpu "cargo build -p flashraw-cli --features gpu --release && cargo test -p flashraw-gpu --release"
 
 # --- C API: CMake install, examples against the install, pkg-config ---------------------
-if wanted c-api; then
+if wanted c-api || wanted c-api-pkgconfig; then
   if have "$CMAKE"; then
     B="$ROOT/target/ci-capi"
     step c-api "rm -rf '$B' && '$CMAKE' -S crates/flashraw-capi -B '$B/capi' -DCMAKE_BUILD_TYPE=Release -DFLASHRAW_CARGO_TARGET_DIR='$ROOT/target' \
@@ -117,13 +189,15 @@ if wanted c-api; then
         && '$B/info' npm/tests/fixtures/canon-5d3-mlv.dng"
     fi
   else
-    skip c-api "cmake not found (set CMAKE=/path/to/cmake)"
+    wanted c-api && skip c-api "cmake not found (set CMAKE=/path/to/cmake)"
   fi
 fi
 
 # --- WASM and the npm package -----------------------------------------------------------
+HAVE_WASM32=0
+have rustup && rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown && HAVE_WASM32=1
 if wanted wasm; then
-  if have rustup && rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown; then
+  if [ "$HAVE_WASM32" = 1 ]; then
     step wasm "cargo test -p flashraw-wasm && cargo build -p flashraw-wasm --target wasm32-unknown-unknown --release \
       && RUSTFLAGS='-C target-feature=+simd128' cargo build -p flashraw-wasm --target wasm32-unknown-unknown --release \
       && cargo check -p flashraw-gpu --target wasm32-unknown-unknown"
@@ -131,18 +205,14 @@ if wanted wasm; then
     skip wasm "wasm32-unknown-unknown target not installed"
   fi
 fi
-HAVE_WASM32=0
-have rustup && rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown && HAVE_WASM32=1
-if wanted npm; then
+if wanted npm || wanted npm-browser || wanted npm-bundlers; then
   if [ "$HAVE_WASM32" = 0 ]; then
     skip npm "wasm32-unknown-unknown target not installed (rustup target add wasm32-unknown-unknown)"
   elif have npm && have node; then
     step npm "cargo build --release -p flashraw-cli --features jpegxl && cd npm && npm ci --no-audit --no-fund && npm run build \
       && npm test && FLASHRAW_WASM_THREADS=0 npm test && npm run test:types && npm pack --dry-run >/dev/null"
-    if [ "$QUICK" = 0 ]; then
-      step npm-browser "cd npm && npm run test:browser"
-      step npm-bundlers "cd npm && npm run test:bundlers"
-    fi
+    step npm-browser "cd npm && npm run test:browser"
+    step npm-bundlers "cd npm && npm run test:bundlers"
   else
     skip npm "node/npm not found"
   fi
@@ -165,7 +235,7 @@ if wanted python; then
 fi
 
 # --- Fuzz smoke, benches ----------------------------------------------------------------
-if [ "$QUICK" = 0 ] && wanted fuzz; then
+if wanted fuzz; then
   if have cargo-fuzz && rustup toolchain list 2>/dev/null | grep -q nightly; then
     step fuzz "cd fuzz && cargo +nightly fuzz build -O && for t in \$(cargo +nightly fuzz list); do \
       if [ -d regressions/\$t ]; then ./target/*/release/\$t regressions/\$t/* || exit 1; fi; \
@@ -174,10 +244,10 @@ if [ "$QUICK" = 0 ] && wanted fuzz; then
     skip fuzz "cargo-fuzz or the nightly toolchain not found"
   fi
 fi
-[ "$QUICK" = 0 ] && step benches "cargo bench --workspace --no-run"
+step benches "cargo bench --workspace --no-run"
 
 # --- Summary ----------------------------------------------------------------------------
 echo
-echo "=== local CI summary ($OS, $(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
+echo "=== local CI summary ($OS, $(git rev-parse --short HEAD 2>/dev/null || echo '?'), mode $MODE, $((SECONDS - T_START)) s)"
 printf '%s\n' "${RESULTS[@]}"
 exit $FAILED
