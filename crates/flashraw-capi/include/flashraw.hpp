@@ -471,6 +471,9 @@ public:
     flashraw::black_level black_level() const { return detail::black(h(), flashraw_frame_black_level); }
     std::vector<std::uint32_t> white_level() const { return detail::white(h(), flashraw_frame_white_level); }
     std::optional<std::array<float, 4>> white_balance() const { return detail::wb(h(), flashraw_frame_white_balance); }
+    /// True when the camera already applied `white_balance()` to the samples (Sony lossless
+    /// YCbCr M/S, Nikon sNEF): do not apply it again.
+    bool white_balance_applied() const { return flashraw_frame_white_balance_applied(h()); }
     std::vector<color_matrix> color_matrices(matrix_kind kind = matrix_kind::color) const {
         return detail::matrices(h(), kind, flashraw_frame_color_matrix_count, flashraw_frame_color_matrix);
     }
@@ -590,6 +593,10 @@ public:
     flashraw::black_level black_level() const { return detail::black(h(), flashraw_file_black_level); }
     std::vector<std::uint32_t> white_level() const { return detail::white(h(), flashraw_file_white_level); }
     std::optional<std::array<float, 4>> white_balance() const { return detail::wb(h(), flashraw_file_white_balance); }
+    /// True when the camera already applied `white_balance()` to the samples (Sony lossless
+    /// YCbCr M/S, Nikon sNEF): RGB outputs develop with unit multipliers; do not apply it to
+    /// raw outputs again.
+    bool white_balance_applied() const { return flashraw_file_white_balance_applied(h()); }
     std::vector<color_matrix> color_matrices(matrix_kind kind = matrix_kind::color) const {
         return detail::matrices(h(), kind, flashraw_file_color_matrix_count, flashraw_file_color_matrix);
     }

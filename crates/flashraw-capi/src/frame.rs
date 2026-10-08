@@ -399,6 +399,16 @@ pub unsafe extern "C" fn flashraw_frame_white_balance(frame: *const flashraw_fra
     with_frame(frame, false, |f| calib::white_balance(f.frame.white_balance, coeffs))
 }
 
+/// True when the camera already applied the as-shot white balance to the samples (see
+/// `flashraw_file_white_balance_applied`). False for NULL.
+///
+/// # Safety
+/// `frame` must be NULL or a live frame.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flashraw_frame_white_balance_applied(frame: *const flashraw_frame) -> bool {
+    with_frame(frame, false, |f| Ok(f.frame.white_balance_applied))
+}
+
 /// Number of matrices of `kind` (`flashraw_matrix_kind`).
 ///
 /// # Safety

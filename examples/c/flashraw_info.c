@@ -46,7 +46,9 @@ static void print_metadata(const flashraw_file *f) {
     printf("white:       %u\n", flashraw_file_white_level_max(f));
 
     float wb[4];
-    if (flashraw_file_white_balance(f, wb)) printf("wb:          %.3f %.3f %.3f %.3f\n", wb[0], wb[1], wb[2], wb[3]);
+    if (flashraw_file_white_balance(f, wb))
+        printf("wb:          %.3f %.3f %.3f %.3f%s\n", wb[0], wb[1], wb[2], wb[3],
+               flashraw_file_white_balance_applied(f) ? " (applied by the camera)" : "");
     if (flashraw_file_color_matrix_count(f, FLASHRAW_MATRIX_COLOR) > 0) {
         flashraw_color_matrix m;
         if (flashraw_file_color_matrix(f, FLASHRAW_MATRIX_COLOR, 0, &m) == FLASHRAW_OK)

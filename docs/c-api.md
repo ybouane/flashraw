@@ -116,7 +116,7 @@ All functions are prefixed `flashraw_`. Handles are opaque (`flashraw_file`, `fl
 |---|---|
 | strings | `file_string(f, FLASHRAW_STRING_*)` (make, model, canonical make/model, camera, format, compression, software, firmware, serial, artist, copyright, capture time, lens make/model/serial, unique camera model); shortcuts `file_make/model/canonical_make/canonical_model/format_name` |
 | geometry | `file_raw_width/height` (full buffer), `file_width/height` (default crop), `file_cpp`, `file_bits_per_sample`, `file_is_float`, `file_active_area`, `file_crop`, `file_masked_area_count/masked_area`, `file_orientation` (EXIF 1-8), `file_sensor_layout` |
-| calibration | `file_cfa`, `file_black_level`, `file_white_level`, `file_white_level_max`, `file_white_balance`, `file_color_matrix_count/color_matrix` (colour, forward, calibration), `file_color_source` |
+| calibration | `file_cfa`, `file_black_level`, `file_white_level`, `file_white_level_max`, `file_white_balance` (as-shot), `file_white_balance_applied` (true when the camera already applied it to the samples: Sony lossless YCbCr M/S, Nikon sNEF; RGB outputs then develop with unit multipliers, and raw-output consumers must not apply it again), `file_color_matrix_count/color_matrix` (colour, forward, calibration), `file_color_source` |
 | exposure | `file_iso`, `file_exposure_time`, `file_f_number`, `file_focal_length`, `file_focal_length_35mm`, `file_exposure_bias`, `file_lens_focal_range` (each returns `false` when not recorded) |
 | previews | `file_preview_count`, `file_largest_preview`, `file_smallest_preview`, `file_preview_info`, `file_preview_bytes` (zero-copy) |
 | tiles | `file_unit_count`, `file_unit` (rectangles to pass as decode regions) |
@@ -138,7 +138,7 @@ data, e.g. Nikon High Efficiency NEF, return the embedded full-size preview inst
 IEEE half-float bit patterns in `uint16_t`, C++ `frame::f16_bits()`), `frame_data`,
 `frame_data_len` (bytes), `frame_sample_count`, `frame_output_format`, `frame_active_area`,
 `frame_crop`, `frame_origin`, `frame_cfa`, `frame_color_at`, `frame_black_level` (measured),
-`frame_white_level`, `frame_white_balance`, `frame_color_matrix*`, `frame_orientation`,
+`frame_white_level`, `frame_white_balance`, `frame_white_balance_applied`, `frame_color_matrix*`, `frame_orientation`,
 `frame_bits_per_sample`, `frame_is_incomplete`, `frame_warning_count/warning`, `frame_source`
 (`FLASHRAW_SOURCE_SENSOR`, or `_PREVIEW` for a preview fallback),
 `frame_samples_filled`, `frame_stats` (total and per-stage milliseconds, threads, sizes),

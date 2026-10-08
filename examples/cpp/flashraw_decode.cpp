@@ -31,7 +31,8 @@ int main(int argc, char **argv) {
         if (auto iso = raw.iso()) std::cout << "ISO " << *iso << "\n";
         if (auto t = raw.exposure_time()) std::cout << "exposure " << *t << " s\n";
         if (auto wb = raw.white_balance())
-            std::cout << "WB " << (*wb)[0] << " " << (*wb)[1] << " " << (*wb)[2] << "\n";
+            std::cout << "WB " << (*wb)[0] << " " << (*wb)[1] << " " << (*wb)[2]
+                      << (raw.white_balance_applied() ? " (applied by the camera)" : "") << "\n";
         for (const auto &m : raw.color_matrices())
             std::cout << "colour matrix " << m.rows << "x" << m.cols << " (illuminant " << m.illuminant << ")\n";
         for (const auto &p : raw.previews())

@@ -145,6 +145,7 @@ fn metadata_and_raw_decode_match_expected() {
         let n = flashraw_file_white_level(f, white.as_mut_ptr(), white.len());
         assert!(n >= 1);
         assert_eq!(flashraw_file_white_level_max(f), 1023);
+        assert!(!flashraw_file_white_balance_applied(f));
         let mut bi = flashraw_black_level::default();
         let mut bv = [0f32; 64];
         let nb = flashraw_file_black_level(f, &mut bi, bv.as_mut_ptr(), bv.len());
@@ -175,6 +176,7 @@ fn metadata_and_raw_decode_match_expected() {
         assert_eq!(v["format"], "DNG");
         assert_eq!(v["metadata"]["make"], "Canon");
         assert_eq!(v["frame_info"]["width"], 2144);
+        assert_eq!(v["frame_info"]["white_balance_applied"], false);
         assert_eq!(v["abi_version"], 1);
 
         // Default decode: raw u16, full buffer, pinned hash.
@@ -187,6 +189,7 @@ fn metadata_and_raw_decode_match_expected() {
         let data = std::slice::from_raw_parts(flashraw_frame_data(fr) as *const u16, flashraw_frame_sample_count(fr));
         assert_eq!(format!("{:016x}", fnv_u16(data)), "b2dd16c3b6c17497");
         assert!(!flashraw_frame_is_incomplete(fr));
+        assert!(!flashraw_frame_white_balance_applied(fr));
         assert_eq!(flashraw_frame_warning_count(fr), 0);
         assert!(flashraw_frame_warning(fr, 0).is_null());
         assert!(cstr(flashraw_frame_backend(fr)).unwrap().starts_with("CPU"));
@@ -591,6 +594,44 @@ fn malformed_inputs_never_crash() {
                     assert!(fr.is_null());
                 }
             }
+            flashraw_file_free(f);
+        }
+    }
+}
+
+/// Camera-balanced images (Sony lossless YCbCr M/S, Nikon sNEF) report the flag on the
+/// file and the frame, and keep the as-shot multipliers (skipped without `FLASHRAW_CORPUS`).
+#[test]
+fn camera_applied_white_balance() {
+    let Some(root) = std::env::var_os("FLASHRAW_CORPUS").map(PathBuf::from).filter(|p| p.is_dir()) else {
+        eprintln!("FLASHRAW_CORPUS not set: skipping");
+        return;
+    };
+    for (rel, applied) in [
+        ("Sony/ILCE-7RM5/7RM5-LosslessCompressedMedium.ARW", true),
+        ("Nikon/D810/DSC_1888.NEF", true),
+        ("Nikon/D810/DSC_1887.NEF", false),
+    ] {
+        let p = root.join(rel);
+        if !p.exists() {
+            continue;
+        }
+        let f = open_path(&p);
+        // SAFETY: live handles, freed below.
+        unsafe {
+            assert_eq!(flashraw_file_white_balance_applied(f), applied, "{rel}");
+            let mut wb = [0f32; 4];
+            assert!(flashraw_file_white_balance(f, wb.as_mut_ptr()), "{rel}");
+            let j = flashraw_file_metadata_json(f);
+            let v: serde_json::Value = serde_json::from_str(cstr(j).unwrap()).unwrap();
+            flashraw_string_free(j);
+            assert_eq!(v["frame_info"]["white_balance_applied"], applied, "{rel}");
+            let fr = decode(f, &options()).unwrap();
+            assert_eq!(flashraw_frame_white_balance_applied(fr), applied, "{rel}");
+            let mut fwb = [0f32; 4];
+            assert!(flashraw_frame_white_balance(fr, fwb.as_mut_ptr()));
+            assert_eq!(fwb, wb);
+            flashraw_frame_free(fr);
             flashraw_file_free(f);
         }
     }

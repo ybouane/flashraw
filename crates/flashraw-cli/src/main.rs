@@ -268,6 +268,7 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
                 println!(
                     "{}",
                     serde_json::json!({"width": frame.width, "height": frame.height, "cpp": frame.cpp, "stats": frame.stats,
+                        "white_balance": frame.white_balance, "white_balance_applied": frame.white_balance_applied,
                         "source": frame.source.name(), "incomplete": frame.is_incomplete(), "warnings": output::warnings_json(frame.warnings())})
                 );
             } else {

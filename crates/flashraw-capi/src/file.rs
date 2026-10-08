@@ -530,6 +530,18 @@ pub unsafe extern "C" fn flashraw_file_white_balance(f: *const flashraw_file, co
     with_file(f, false, |f| calib::white_balance(f.raw.frame_info().white_balance, coeffs))
 }
 
+/// True when the camera already applied the as-shot white balance to the samples (Sony
+/// lossless YCbCr M/S, Nikon sNEF). `flashraw_file_white_balance` still returns the as-shot
+/// multipliers; RGB outputs develop with unit multipliers, and consumers of raw outputs must
+/// not apply them again. False for NULL.
+///
+/// # Safety
+/// `f` must be NULL or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flashraw_file_white_balance_applied(f: *const flashraw_file) -> bool {
+    with_file(f, false, |f| Ok(f.raw.frame_info().white_balance_applied))
+}
+
 /// Number of matrices of `kind` (`flashraw_matrix_kind`).
 ///
 /// # Safety

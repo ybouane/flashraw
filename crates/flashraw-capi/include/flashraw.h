@@ -1219,6 +1219,17 @@ uint32_t flashraw_file_white_level_max(const struct flashraw_file *f);
 bool flashraw_file_white_balance(const struct flashraw_file *f, float *coeffs);
 
 /**
+ * True when the camera already applied the as-shot white balance to the samples (Sony
+ * lossless YCbCr M/S, Nikon sNEF). `flashraw_file_white_balance` still returns the as-shot
+ * multipliers; RGB outputs develop with unit multipliers, and consumers of raw outputs must
+ * not apply them again. False for NULL.
+ *
+ * # Safety
+ * `f` must be NULL or a live handle.
+ */
+bool flashraw_file_white_balance_applied(const struct flashraw_file *f);
+
+/**
  * Number of matrices of `kind` (`flashraw_matrix_kind`).
  *
  * # Safety
@@ -1587,6 +1598,15 @@ size_t flashraw_frame_white_level(const struct flashraw_frame *frame,
  * `frame` must be NULL or a live frame; `coeffs` must point to 4 writable floats.
  */
 bool flashraw_frame_white_balance(const struct flashraw_frame *frame, float *coeffs);
+
+/**
+ * True when the camera already applied the as-shot white balance to the samples (see
+ * `flashraw_file_white_balance_applied`). False for NULL.
+ *
+ * # Safety
+ * `frame` must be NULL or a live frame.
+ */
+bool flashraw_frame_white_balance_applied(const struct flashraw_frame *frame);
 
 /**
  * Number of matrices of `kind` (`flashraw_matrix_kind`).

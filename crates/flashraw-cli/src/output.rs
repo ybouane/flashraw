@@ -24,6 +24,7 @@ pub fn frame_info_json(i: &FrameInfo) -> Value {
         "black_from_masked": i.black_from_masked,
         "white_level": i.white_level,
         "white_balance": i.white_balance,
+        "white_balance_applied": i.white_balance_applied,
         "color_matrices": i.color_matrices,
         "orientation": i.orientation,
         "compression": i.compression.name(),
@@ -125,7 +126,14 @@ pub fn print_info(path: &Path, raw: &FlashRaw) {
         i.white_level.values
     );
     if let Some(wb) = i.white_balance {
-        println!("  WB (as shot):  {:.4} {:.4} {:.4} {:.4}", wb.coeffs[0], wb.coeffs[1], wb.coeffs[2], wb.coeffs[3]);
+        println!(
+            "  WB (as shot):  {:.4} {:.4} {:.4} {:.4}{}",
+            wb.coeffs[0],
+            wb.coeffs[1],
+            wb.coeffs[2],
+            wb.coeffs[3],
+            if i.white_balance_applied { " (already applied by the camera)" } else { "" }
+        );
     }
     if let Some(cm) = i.color_matrices.preferred() {
         println!("  Color matrix:  {:?} illuminant {} ({:?})", cm.values, cm.illuminant.0, i.color_matrices.source);
@@ -538,6 +546,7 @@ pub fn verify(path: &Path, dump_dir: Option<&Path>, apply_opcodes: bool, policy:
         // both in the converted units.
         "white": frame.white_level.max(),
         "wb": info.white_balance.map(|w| w.coeffs),
+        "wb_applied": info.white_balance_applied,
         "color_matrix": info.color_matrices.preferred().map(|c| c.values.clone()),
         "orientation": info.orientation.exif(),
         "orientation_info": orientation_info_json(&m.orientation_info),
@@ -676,5 +685,14 @@ mod tests {
         let black = v["black4"][0].as_f64().unwrap();
         assert!((black - 163.0).abs() <= 1.0, "{v}");
         assert!(v["max"].as_u64().unwrap() <= white, "{v}");
+        assert_eq!(v["wb_applied"], false, "{v}");
+    }
+
+    #[test]
+    fn frame_info_json_reports_camera_applied_white_balance() {
+        let mut i = FrameInfo::new(4, 4, 14);
+        assert_eq!(frame_info_json(&i)["white_balance_applied"], false);
+        i.white_balance_applied = true;
+        assert_eq!(frame_info_json(&i)["white_balance_applied"], true);
     }
 }
