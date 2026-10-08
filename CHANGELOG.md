@@ -136,6 +136,11 @@ First complete release of FlashRaw.
   multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
   matrices and of their white balance. GPU backends leave these to the CPU.
 
+- SJCam 5000X Elite `.RAW` files (18,000,000 bytes, the size of the Kodak "12MP" YCbCr
+  dump) decode as 4000x3000 12-bit packed RGGB instead of striped YCbCr: the two layouts
+  are told apart by the data (read as 12-bit pairs, YCbCr bytes make every first sample
+  jump by multiples of 256). Raw buffers of these two corpus files change.
+
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
   (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed

@@ -35,7 +35,13 @@ pub fn open<'a>(data: &'a [u8], opts: &OpenOptions) -> Option<Result<Box<dyn Raw
     let size = data.len().to_string();
     let matches: Vec<&'static Camera> =
         flashraw_camera_db::all().iter().filter(|c| c.hint("filesize") == Some(size.as_str())).collect();
-    if let Some(c) = matches.iter().find(|c| c.mode.starts_with("naked-")) {
+    // The Kodak "12MP" YCbCr size also fits 12-bit packed Bayer dumps of action cameras.
+    let ycc_misfit = |c: &Camera| {
+        c.make == "Kodak"
+            && c.cfa.is_none()
+            && hint_u(c, "full_width").is_some_and(|w| crate::kodak::looks_like_packed12(data, w as usize))
+    };
+    if let Some(c) = matches.iter().find(|c| c.mode.starts_with("naked-") && !ycc_misfit(c)) {
         return Some(open_table(data, c, opts));
     }
     if let Some(c) = matches.iter().find(|c| c.mode.starts_with("chdk") && !c.no_size_match) {

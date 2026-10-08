@@ -199,7 +199,7 @@ Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 19, veri
 | RAW | Paralenz Dive Camera / + | uncompressed 16-bit | verified | decodes |
 | RAW | Pentax Optio S4 | packed 12-bit | verified | decodes |
 | RAW | SJCAM SJ6 LEGEND 12-bit (18325296 / 15972480 bytes) | uncompressed LSB packed | verified | decodes |
-| RAW | SJCam 5000X Elite ("Kodak 12MP" size) | kodak-ycbcr | verified | YCbCr 4:2:0 → RGB (cpp 3) |
+| RAW | SJCam 5000X Elite 12-bit (18000000 bytes, Kodak "12MP" size told apart by the data) | uncompressed LSB packed | verified | decodes (no colour matrix) |
 | RAW | Xiro Xplorer V | uncompressed LSB packed 10-bit | verified | decodes |
 | RAW | other file-size table entries (AVT, Agfa, Android dumps, Casio, Nikon, Sony, ...) | per table | experimental | same loaders; no corpus sample |
 | RW2 | RawFormat 4 (4:3/3:2/16:9/1:1) | panasonic-v4 | verified | 341 RW2 + 20 Leica RWL decode, regression-hashed; packet-parallel decoding; truncation/corruption tests |

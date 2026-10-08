@@ -5,7 +5,7 @@ RAW	Canon PowerShot G7 X CHDK	packed 12-bit	experimental	no verified sample; geo
 RAW	GITUP GIT2/GIT2P, SJCAM M20/SJ6, Xiaomi Yi (16-bit)	uncompressed 16-bit	verified	decodes
 RAW	Gitup G3 Duo 24000000 bytes (same size as a Samsung WB550 entry)	uncompressed 16-bit	verified	decodes
 RAW	SJCAM SJ6 LEGEND 12-bit (18325296 / 15972480 bytes)	uncompressed LSB packed	verified	decodes
-RAW	SJCam 5000X Elite ("Kodak 12MP" size)	kodak-ycbcr	verified	YCbCr 4:2:0 → RGB (cpp 3)
+RAW	SJCam 5000X Elite 12-bit (18000000 bytes, Kodak "12MP" size told apart by the data)	uncompressed LSB packed	verified	decodes (no colour matrix)
 RAW	Kodak C330 YRGB (4:2:2, optional 32-row gaps)	kodak-ycbcr	verified	decodes
 RAW	Kodak C603/C643 YRGB	kodak-ycbcr	verified	decodes
 RAW	Kodak C603/C643 CFAI/CCDI 8-bit	uncompressed 8-bit + curve	verified	file curve or a fixed gamma curve
