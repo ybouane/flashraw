@@ -194,6 +194,11 @@ pub struct RawFrame {
     pub white_level: WhiteLevel,
     /// As-shot white balance; `None` when the file records none.
     pub white_balance: Option<WhiteBalance>,
+    /// True when the camera already applied `white_balance` to the samples (Sony lossless
+    /// YCbCr M/S, Nikon sNEF; see [`crate::FrameInfo::white_balance_applied`]). The RGB
+    /// outputs then develop with unit multipliers; consumers of raw outputs must not apply
+    /// `white_balance` again.
+    pub white_balance_applied: bool,
     /// Colour calibration of the camera.
     pub color_matrices: ColorMatrices,
     /// Orientation still to apply for display; [`Orientation::Normal`] for the display

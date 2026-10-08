@@ -53,6 +53,10 @@ pub struct FrameInfo {
     pub white_level: WhiteLevel,
     /// As-shot white balance; `None` when the file records none.
     pub white_balance: Option<WhiteBalance>,
+    /// True when the camera already applied `white_balance` to the stored samples (Sony
+    /// lossless YCbCr M/S, Nikon sNEF): developing them needs unit multipliers, and
+    /// `white_balance` (still the as-shot multipliers) only serves to change the balance.
+    pub white_balance_applied: bool,
     /// Colour calibration (file or camera database).
     pub color_matrices: ColorMatrices,
     /// Orientation to apply for display.
@@ -99,6 +103,7 @@ impl FrameInfo {
             black_from_masked: false,
             white_level: WhiteLevel::uniform(if bits >= 16 { 65535 } else { (1u32 << bits) - 1 }),
             white_balance: None,
+            white_balance_applied: false,
             color_matrices: ColorMatrices::default(),
             orientation: Orientation::Normal,
             pixel_aspect: 1.0,

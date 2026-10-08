@@ -389,6 +389,9 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         mul = [1.0; 4];
     }
     info.white_balance = wb_from_cam_mul(mul);
+    // sNEF: the camera converted white-balanced RGB to YCbCr, so the samples already
+    // carry the as-shot balance.
+    info.white_balance_applied = matches!(payload, Payload::Ycbcr);
     info.color_matrices = conventions::color_from_table(fallback, &meta, cam);
     if info.cfa.and_then(|p| p.four_colour_order()).is_some() {
         // Complementary-colour Coolpix: the red and blue levels apply to the camera's

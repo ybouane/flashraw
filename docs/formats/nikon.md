@@ -51,6 +51,10 @@ D3000) are not decoded and stay zero.
 FlashRaw converts sNEF YCbCr to RGB with a fixed matrix, horizontal chroma
 interpolation and a tone curve (14-bit output, black 0, white 16383), and outputs
 the result as a 3-sample `Linear` image (verified on the D4S and D810 samples).
+The camera white-balances the image before its YCbCr conversion, so sNEF frames set
+`white_balance_applied`: the as-shot multipliers are still reported (to change the
+balance, divide them out and apply the new ones) and RGB outputs develop with unit
+multipliers.
 
 ### High efficiency (TicoRAW)
 

@@ -292,6 +292,8 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
         // for this mode.
         info.black_level = BlackLevel::uniform(1024.0);
         info.white_level = WhiteLevel::uniform(17536);
+        // The camera white-balanced the image before its YCbCr conversion.
+        info.white_balance_applied = true;
     }
     info.white_balance = lv.cam_mul.and_then(|m| sane_wb(&m));
     info.color_matrices = table::color(entry, &meta);

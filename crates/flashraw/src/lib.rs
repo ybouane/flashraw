@@ -417,6 +417,7 @@ impl<'a> FlashRaw<'a> {
                 None => info.white_level.clone(),
             },
             white_balance: info.white_balance,
+            white_balance_applied: info.white_balance_applied,
             color_matrices: info.color_matrices.clone(),
             orientation: if opts.output.applies_orientation() { Orientation::Normal } else { info.orientation },
             metadata: self.metadata().clone(),

@@ -339,6 +339,8 @@ impl DevelopParams {
         let cam4_to_rgb =
             info.cfa.and_then(|p| p.four_colour_order()).and_then(|_| camera4_to_srgb(&info.color_matrices));
         let wb = match info.white_balance {
+            // The camera already balanced the samples (YCbCr M/S and sNEF payloads).
+            _ if info.white_balance_applied => [1.0; 4],
             Some(w) => w.coeffs,
             // Four-colour sensors without a recorded balance: daylight from the matrix.
             None if cam4_to_rgb.is_some() => camera4_daylight_wb(&info.color_matrices).unwrap_or([1.0; 4]),
@@ -1224,6 +1226,19 @@ mod tests {
         let p = DevelopParams::new(&info, Demosaic::HalfSize, Rect::full(8, 8));
         let d = develop(&img, &info, (0, 0), &p, false).unwrap();
         assert_eq!((d.width, d.height), (4, 4));
+    }
+
+    #[test]
+    fn camera_applied_white_balance_develops_with_unit_multipliers() {
+        let mut info = FrameInfo::new(8, 8, 14);
+        info.cpp = 3;
+        info.layout = SensorLayout::Linear;
+        info.white_balance = WhiteBalance::from_multipliers(2.0, 1.0, 1.5, 1.0);
+        assert_eq!(DevelopParams::new(&info, Demosaic::Bilinear, Rect::full(8, 8)).wb, [2.0, 1.0, 1.5, 1.0]);
+        info.white_balance_applied = true;
+        assert_eq!(DevelopParams::new(&info, Demosaic::Bilinear, Rect::full(8, 8)).wb, [1.0; 4]);
+        info.white_balance = None;
+        assert_eq!(DevelopParams::new(&info, Demosaic::Bilinear, Rect::full(8, 8)).wb, [1.0; 4]);
     }
 
     #[test]

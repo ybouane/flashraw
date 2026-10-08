@@ -379,6 +379,7 @@ async fn run(
         black_level: black,
         white_level: info.white_level.clone(),
         white_balance: info.white_balance,
+        white_balance_applied: info.white_balance_applied,
         color_matrices: info.color_matrices.clone(),
         orientation: if base.applies_orientation() { Orientation::Normal } else { info.orientation },
         metadata: raw.metadata().clone(),

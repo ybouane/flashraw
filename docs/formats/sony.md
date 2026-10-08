@@ -34,7 +34,10 @@ largest non-preview IFD (a SubIFD of IFD0 for ARW/SR2, IFD0 itself for SRF).
   colour-table maximum.
 * **White balance**: `0x7303` (GRBG) / `0x7313` (RGGB) from the raw IFD or the SR2
   private directory (the latter wins); A100 from the MRW `WBG` block. Rejected when a
-  multiplier is zero or the spread exceeds 100x.
+  multiplier is zero or the spread exceeds 100x. Lossless YCbCr (S/M) images are
+  white-balanced by the camera before the YCbCr conversion: `white_balance_applied` is
+  set, the as-shot multipliers are still reported, and RGB outputs develop with unit
+  multipliers.
 * **SR2 private data**: IFD0 `DNGPrivateData` (0xC634) points to an IFD with
   `0x7200` (offset), `0x7201` (length) and `0x7221` (key, 4 UNDEFINED bytes). The
   block is decrypted with the key stream (`sony::crypt`) and parsed as an IFD whose

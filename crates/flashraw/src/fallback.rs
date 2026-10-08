@@ -90,6 +90,7 @@ pub(crate) fn preview_frame(raw: &FlashRaw<'_>, opts: &DecodeOptions, cause: Err
         black_level: BlackLevel::uniform(0.0),
         white_level: WhiteLevel::uniform(255),
         white_balance: None,
+        white_balance_applied: false,
         color_matrices: ColorMatrices::default(),
         orientation,
         metadata: raw.metadata().clone(),
