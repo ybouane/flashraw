@@ -45,6 +45,10 @@ pub struct MakerNote {
     /// Image rotation in degrees (clockwise) saved by Nikon's own software in the edit
     /// record (tag 0x0E01).
     pub edit_rotation: Option<u16>,
+    /// The camera's image area inside the sensor buffer (tag 0x0045): x, y, width, height.
+    /// Reduced-size Bayer files (RAW M/S) store more photosites than the camera's M/S
+    /// image has pixels and record the area it was scaled from here.
+    pub crop_area: Option<[u16; 4]>,
 }
 
 /// Parse the makernote stored in `entry` (an entry of the file's EXIF IFD, parsed from
@@ -104,6 +108,11 @@ pub fn parse(data: &[u8], entry: &Entry, file_order: ByteOrder, model: &str) -> 
             0x003d => {
                 if let (Some(a), Some(b), Some(c), Some(d)) = (e.u16(0), e.u16(1), e.u16(2), e.u16(3)) {
                     mn.black = Some([a, b, c, d]);
+                }
+            }
+            0x0045 => {
+                if let (Some(x), Some(y), Some(w), Some(h)) = (e.u16(0), e.u16(1), e.u16(2), e.u16(3)) {
+                    mn.crop_area = Some([x, y, w, h]);
                 }
             }
             0x0084 => {

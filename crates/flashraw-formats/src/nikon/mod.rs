@@ -364,6 +364,13 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     };
     info.active_area = Rect::new(geo.left, geo.top, geo.width, geo.height);
     info.crop = info.active_area;
+    if let Some([x, y, w, h]) = mn.crop_area {
+        let aa = info.active_area;
+        let c = Rect::new(aa.x + x as u32, aa.y + y as u32, w as u32, h as u32);
+        if w > 0 && h > 0 && c.intersect(&aa) == Some(c) {
+            info.crop = even_crop_origin(c, aa);
+        }
+    }
     info.white_level = WhiteLevel::uniform(maximum);
     info.orientation = resolve_orientation(&tiff, &mn, &mut meta, cam);
     if let Some(l) = layout_override {

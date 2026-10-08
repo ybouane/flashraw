@@ -12,11 +12,19 @@ use std::path::PathBuf;
 type Row = (&'static str, u32, u32, u32, u32, &'static str);
 
 const CORPUS: &[Row] = &[
-    // Nikon: the embedded full-size JPEG gives the size; the position is measured.
-    ("Nikon/D850/Nikon-D850-14bit-compressed.NEF", 16, 8, 8256, 5504, "preview"),
-    ("Nikon/D850/Nikon-D850-12bit-uncompressed.NEF", 16, 8, 8256, 5504, "preview"),
-    ("Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF", 12, 8, 8256, 5504, "preview"),
-    ("Nikon/Z 6/DSC_0750.NEF", 8, 8, 6048, 4024, "preview"),
+    // Nikon: the maker note's CropArea where the camera records it.
+    ("Nikon/D850/Nikon-D850-14bit-compressed.NEF", 16, 8, 8256, 5504, "file"),
+    ("Nikon/D850/Nikon-D850-12bit-uncompressed.NEF", 16, 8, 8256, 5504, "file"),
+    ("Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF", 12, 8, 8256, 5504, "file"),
+    ("Nikon/Z 6/DSC_0750.NEF", 8, 8, 6048, 4024, "file"),
+    // RAW M/S: Bayer data with more photosites than the camera's M/S image has pixels;
+    // CropArea is the area the camera scaled its image from (odd origins moved by one).
+    ("Nikon/D850/Nikon-D850-small.NEF", 12, 4, 6192, 4128, "file"),
+    ("Nikon/D850/Nikon-D850-medium.NEF", 14, 4, 7074, 4716, "file"),
+    ("Nikon/Z 7/8-Nikon-Z7-RAW-12bit-lossless-compressed-S.NEF", 12, 6, 6192, 4128, "file"),
+    ("Nikon/D500/Nikon_D500_RAWS_12bit_LosslessCompressed.NEF", 12, 4, 4176, 2784, "file"),
+    // Older bodies without CropArea: the embedded full-size JPEG gives the size; the
+    // position is measured.
     ("Nikon/D810/DSC_1882.NEF", 12, 8, 7360, 4912, "preview"),
     // Canon: SensorInfo's valid-image rectangle (crop modes included), AspectInfo.
     ("Canon/EOS R6/Canon_EOS_R6_RAW_ISO_100_nocrop_nodual.CR3", 84, 50, 5472, 3648, "file"),

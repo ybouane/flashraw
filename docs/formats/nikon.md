@@ -56,6 +56,14 @@ The camera white-balances the image before its YCbCr conversion, so sNEF frames 
 balance, divide them out and apply the new ones) and RGB outputs develop with unit
 multipliers.
 
+### RAW M/S on newer bodies
+
+The D500, D6, D850 and Z bodies record RAW M/S as reduced-size Bayer data (12-bit
+lossless Huffman), not sNEF. These buffers hold more photosites than the camera's M/S
+JPEG has pixels (about 8/7 of the M size and 3/2 of the S size in each direction); the
+maker note's CropArea (`0x0045`) is the area the camera scaled its JPEG from and becomes
+the default crop (odd origins moved to even).
+
 ### High efficiency (TicoRAW)
 
 Z 8, Z 9, Z f, Z6III, Z50II and Z5II "High Efficiency" / "High Efficiency★" files use
@@ -72,6 +80,7 @@ licensed open implementation. FlashRaw recognises the payload and returns
 | white level | `(1 << bps) - 1`, camera-database colour-table maximum when present, 4095 for 12-bit Huffman/packed DSLR data, 65504 for P7700/P7800, 16383 for sNEF |
 | white balance | `0x000C` WB_RBLevels; `0x0097` colour balance 0100 (D100), 0102 (D2H), 0103 (D70); versions 200–217 decrypted with the serial (`0x001D`) and shutter count (`0x00A7`) keystream; NRW `0x0014`; E-series `0x0014`. D1 multipliers are analog balance (reported as 1) |
 | CFA | raw IFD CFA pattern (TIFF-EP); D200 and Coolpix P overrides; camera database for interlaced E-series (the file pattern describes field order) |
+| default crop | `0x0045` CropArea when recorded (odd origins moved to even), else the camera's JPEG size (see the camera database's default crops) |
 | visible area | per-model trims (D1X, D3/D3S/D700, D40X…, D3100, D5000/D90, D5100/D7000/Coolpix A, D3200/D600/D610/D800, D4/Df, D2H, D2X, D300, D200, Nikon 1), then odd origins moved to even |
 | colour matrix | camera-database colour table (`find_matrix`), other camera-database entries otherwise |
 | previews | TIFF thumbnails, JpgFromRaw SubIFD, makernote preview IFD `0x0011` |
