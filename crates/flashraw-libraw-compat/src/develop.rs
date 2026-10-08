@@ -74,12 +74,14 @@ fn multipliers(d: &libraw_data_t, auto: Option<[f32; 4]>) -> [f32; 4] {
     let p = &d.params;
     let c = &d.color;
     let valid = |m: &[f32; 4]| m[0] > 0.0 && m[1] > 0.0 && m[2] > 0.0 && m.iter().all(|v| v.is_finite());
+    let applied = c.as_shot_wb_applied != 0;
     let mut m = if p.user_mul[0] > 0.0 && valid(&p.user_mul) {
         p.user_mul
     } else if let Some(a) = auto {
         a
     } else if p.use_camera_wb != 0 && valid(&c.cam_mul) {
-        c.cam_mul
+        // The camera already applied its white balance (Sony YCbCr, Nikon sNEF).
+        if applied { [1.0; 4] } else { c.cam_mul }
     } else if valid(&c.pre_mul) {
         c.pre_mul
     } else if valid(&c.cam_mul) {
@@ -87,6 +89,13 @@ fn multipliers(d: &libraw_data_t, auto: Option<[f32; 4]>) -> [f32; 4] {
     } else {
         [1.0; 4]
     };
+    // Camera-balanced data developed without the camera balance (daylight or user
+    // multipliers): divide the camera's balance out first, as `scale_colors` does.
+    if applied && p.use_camera_wb == 0 && p.use_auto_wb == 0 && valid(&c.cam_mul) {
+        for (v, cam) in m.iter_mut().zip(c.cam_mul).take(3) {
+            *v /= cam;
+        }
+    }
     if m[3] <= 0.0 {
         m[3] = if d.idata.colors < 4 { m[1] } else { 1.0 };
     }

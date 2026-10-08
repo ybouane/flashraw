@@ -34,6 +34,17 @@ pub mod err {
     pub const LIBRAW_MEMPOOL_OVERFLOW: c_int = -100013;
 }
 
+/// `enum LibRaw_As_Shot_WB_Applied_codes` (`color.as_shot_wb_applied`).
+pub mod aswb {
+    use std::ffi::c_int;
+    pub const LIBRAW_ASWB_APPLIED: c_int = 1;
+    pub const LIBRAW_ASWB_CANON: c_int = 2;
+    pub const LIBRAW_ASWB_NIKON: c_int = 4;
+    pub const LIBRAW_ASWB_NIKON_SRAW: c_int = 8;
+    pub const LIBRAW_ASWB_PENTAX: c_int = 16;
+    pub const LIBRAW_ASWB_SONY: c_int = 32;
+}
+
 /// `enum LibRaw_progress` bits used here.
 pub mod progress {
     pub const OPEN: u32 = 1;

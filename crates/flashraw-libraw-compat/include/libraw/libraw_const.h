@@ -156,6 +156,16 @@ enum LibRaw_errors {
 
 #define LIBRAW_FATAL_ERROR(ec) ((ec) < -100000)
 
+/* color.as_shot_wb_applied: the camera already applied the as-shot white balance. */
+enum LibRaw_As_Shot_WB_Applied_codes {
+    LIBRAW_ASWB_APPLIED = 1,
+    LIBRAW_ASWB_CANON = 2,
+    LIBRAW_ASWB_NIKON = 4,
+    LIBRAW_ASWB_NIKON_SRAW = 8,
+    LIBRAW_ASWB_PENTAX = 16,
+    LIBRAW_ASWB_SONY = 32
+};
+
 enum LibRaw_internal_thumbnail_formats {
     LIBRAW_INTERNAL_THUMBNAIL_UNKNOWN = 0,
     LIBRAW_INTERNAL_THUMBNAIL_KODAK_THUMB = 1,

@@ -95,6 +95,7 @@ Filled by `libraw_open_*` (metadata) unless noted:
 | `color.maximum`, `linear_max[]` | white level (refreshed by `libraw_unpack`) |
 | `color.data_maximum` | set by `libraw_raw2image` / `libraw_dcraw_process`: largest black-subtracted value in the visible area |
 | `color.cam_mul` | as-shot white balance, normalised to green = 1 |
+| `color.as_shot_wb_applied` | `LIBRAW_ASWB_APPLIED \| LIBRAW_ASWB_SONY` (0x21) for Sony lossless YCbCr S/M, `LIBRAW_ASWB_APPLIED \| LIBRAW_ASWB_NIKON_SRAW` (0x9) for Nikon sNEF (the camera already applied `cam_mul`), else 0 |
 | `color.cam_xyz`, `rgb_cam`, `pre_mul` | XYZ-to-camera matrix (file or FlashRaw camera database), camera-to-sRGB matrix and daylight multipliers derived from it |
 | `color.curve` | identity; `model2` (firmware), `UniqueCameraModel`, `raw_bps`, DNG `dng_levels` / `dng_color[]` basics |
 | `other.iso_speed`, `shutter`, `aperture`, `focal_len`, `timestamp`, `artist`, `parsed_gps`, `analogbalance` | from EXIF / DNG |
@@ -137,7 +138,9 @@ Processing (`libraw_dcraw_process` + `libraw_dcraw_make_mem_image`):
   containing clipped samples are skipped), else `cam_mul` with `use_camera_wb` when the file
   records one, else the daylight `pre_mul`; multipliers are normalised to a minimum of 1.
   LibRaw falls back to its automatic balance for some old cameras without a usable as-shot
-  balance; this implementation uses `pre_mul` there.
+  balance; this implementation uses `pre_mul` there. When `as_shot_wb_applied` is set,
+  `use_camera_wb` uses unit multipliers, and without `use_camera_wb` / `use_auto_wb` the
+  multipliers (`pre_mul` or `user_mul`) are divided by `cam_mul`, as LibRaw does.
 - Highlights are clipped (`highlight` modes are ignored). `adjust_maximum_thr`, `user_black`,
   `user_cblack`, `user_sat`, `bright`, `no_auto_bright`, `auto_bright_thr`, `gamm[0..1]`,
   `output_bps` (8/16), `user_flip` and `half_size` are honoured.

@@ -330,6 +330,16 @@ pub fn identify(d: &mut libraw_data_t, st: &mut State) -> c_int {
     if let Some(wb) = info.white_balance {
         c.cam_mul = wb.coeffs;
     }
+    if info.white_balance_applied {
+        // Sony lossless YCbCr (sony_ycbcr_load_raw) and Nikon sNEF (nikon_load_sraw).
+        use crate::types::aswb::*;
+        c.as_shot_wb_applied = LIBRAW_ASWB_APPLIED
+            | match make.as_str() {
+                "Sony" => LIBRAW_ASWB_SONY,
+                "Nikon" => LIBRAW_ASWB_NIKON_SRAW,
+                _ => 0,
+            };
+    }
     c.pre_mul = [1.0, 1.0, 1.0, 0.0];
     for i in 0..3 {
         c.rgb_cam[i][i] = 1.0;

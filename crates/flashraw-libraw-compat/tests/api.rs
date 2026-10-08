@@ -79,6 +79,7 @@ fn typical_client_sequence() {
     assert_eq!((d.color.black, d.color.maximum), (31, 1023));
     assert_eq!(d.other.iso_speed, 50.0);
     assert!(d.color.pre_mul[0] > 0.0 && d.color.rgb_cam[0][0] > 1.0);
+    assert_eq!(d.color.as_shot_wb_applied, 0);
     assert!(d.rawdata.raw_image.is_null());
     // SAFETY: live handle.
     unsafe {
@@ -175,6 +176,53 @@ fn typical_client_sequence() {
         assert_eq!(h.d().sizes.raw_width, 0);
         assert!(h.d().rawdata.raw_image.is_null());
         assert_eq!(libraw_unpack(h.0), err::LIBRAW_OUT_OF_ORDER_CALL);
+    }
+}
+
+/// Camera-balanced images (Sony lossless YCbCr M/S, Nikon sNEF): `as_shot_wb_applied` set,
+/// and processing with the camera balance uses unit multipliers (no magenta cast); without
+/// it the camera balance is divided out of the daylight multipliers. Runs on the CC0 corpus
+/// (`$FLASHRAW_CORPUS`), skipped when absent.
+#[test]
+fn camera_applied_white_balance() {
+    let Some(root) = std::env::var_os("FLASHRAW_CORPUS").map(PathBuf::from).filter(|p| p.is_dir()) else {
+        eprintln!("FLASHRAW_CORPUS not set: skipping");
+        return;
+    };
+    for (rel, code) in [
+        ("Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW", 0x21),
+        ("Nikon/D810/DSC_1888.NEF", 0x9),
+        ("Nikon/D810/DSC_1887.NEF", 0),
+    ] {
+        let p = root.join(rel);
+        if !p.exists() {
+            continue;
+        }
+        let mut h = Handle::new();
+        assert_eq!(h.open(&p), 0, "{rel}");
+        assert_eq!(h.d().color.as_shot_wb_applied, code, "{rel}");
+        let means = |h: &mut Handle| {
+            // SAFETY: live handle; the image is freed before returning.
+            unsafe {
+                assert_eq!(libraw_dcraw_process(h.0), 0);
+                let img = libraw_dcraw_make_mem_image(h.0, null_mut());
+                let p = &*img;
+                let px = std::slice::from_raw_parts(p.data.as_ptr(), p.data_size as usize);
+                let m: Vec<f64> =
+                    (0..3).map(|c| px.iter().skip(c).step_by(3).map(|&v| v as f64).sum::<f64>()).collect();
+                libraw_dcraw_clear_mem(img);
+                m
+            }
+        };
+        h.d_mut().params.half_size = 1;
+        // SAFETY: live handle.
+        assert_eq!(unsafe { libraw_unpack(h.0) }, 0);
+        h.d_mut().params.use_camera_wb = 1;
+        let camera = means(&mut h);
+        assert!(camera[1] > 0.8 * camera[0].max(camera[2]), "{rel}: camera WB means {camera:?}");
+        h.d_mut().params.use_camera_wb = 0;
+        let daylight = means(&mut h);
+        assert!(daylight[1] > 0.6 * daylight[0].max(daylight[2]), "{rel}: daylight means {daylight:?}");
     }
 }
 
