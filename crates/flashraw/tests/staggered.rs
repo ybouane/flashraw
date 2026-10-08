@@ -176,3 +176,20 @@ fn staggered_dng_rgb_has_square_pixels() {
         FlashRaw::open(&f[..]).unwrap().decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() });
     assert_eq!(rgb.map(|r| (r.width, r.height)).unwrap(), (W, H));
 }
+
+/// Non-square photosites on a rectangular grid: the Kodak DC120 (pixel aspect 1.53)
+/// renders 4:3 like its thumbnail; its raw output keeps the stored 848x976.
+#[test]
+fn non_square_pixels_are_stretched() {
+    let path = corpus().join("Kodak/DC120/RAW_KODAK_DC120.KDC");
+    if !path.exists() {
+        eprintln!("DC120: corpus file not found, skipped");
+        return;
+    }
+    let raw = FlashRaw::open_path(&path).unwrap();
+    let r = raw.decode(DecodeOptions::default()).unwrap();
+    assert_eq!((r.width, r.height), (raw.frame_info().width, raw.frame_info().height));
+    let f = raw.decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() }).unwrap();
+    let aspect = f.width as f64 / f.height as f64;
+    assert!((aspect / (4.0 / 3.0) - 1.0).abs() < 0.01, "{}x{}", f.width, f.height);
+}

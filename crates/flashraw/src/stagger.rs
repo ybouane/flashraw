@@ -1,4 +1,5 @@
-//! Staggered photosite lattices (Fujifilm SuperCCD, DNG `CFALayout` 2-5) for RGB outputs.
+//! Staggered photosite lattices (Fujifilm SuperCCD, DNG `CFALayout` 2-5) and non-square
+//! photosites (`FrameInfo::pixel_aspect`) for RGB outputs.
 //!
 //! Raw outputs keep the samples as stored. In a staggered buffer every other row (or
 //! column) sits half a photosite to the side of its neighbours, and the photosites are not
@@ -15,6 +16,7 @@
 //!   half a row lower).
 //! - DNG `CFALayout` 2/3 (even columns half a row lower / higher) and 4/5 (even rows half a
 //!   column right / left), with `DefaultScale` giving the photosite pitch.
+//! - Rectangular grids with `pixel_aspect` != 1 are stretched to square pixels.
 
 use crate::process::Developed;
 use flashraw_core::{FrameInfo, RawMetadata, Rect, SensorLayout, par};
@@ -37,6 +39,12 @@ pub(crate) struct Stagger {
 
 /// The staggered geometry of a frame, `None` for regular grids.
 pub(crate) fn of(meta: &RawMetadata, info: &FrameInfo) -> Option<Stagger> {
+    // Rectangular grids of non-square photosites (`FrameInfo::pixel_aspect`, e.g. the Kodak
+    // DC120): stretched, never shrunk.
+    let pa = info.pixel_aspect as f64;
+    if pa.is_finite() && pa > 0.0 && (pa - 1.0).abs() > 0.01 {
+        return Some(Stagger { rows: true, anchor: 0, along: pa.max(1.0), across: (1.0 / pa).max(1.0), offset: false });
+    }
     if info.layout != SensorLayout::OtherCfa {
         return None;
     }

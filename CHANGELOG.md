@@ -141,7 +141,10 @@ First complete release of FlashRaw.
   developed, then resampled to square pixels (e.g. E900 3462x2608, S3 Pro 3009x2014, S2 Pro
   3032x2036). All 15 corpus and 19 real-world SuperCCD renders match their embedded JPEGs in
   aspect (within 0.8%, before 2x off) and orientation. Raw outputs keep the stored grid.
-  Staggered DNGs (CFALayout 2-5) get the same resampling with their DefaultScale.
+  Staggered DNGs (CFALayout 2-5) get the same resampling with their DefaultScale (the 10
+  real-world FinePix S2Pro DNGs now match their thumbnails' 2:3), and rectangular grids of
+  non-square photosites (`FrameInfo::pixel_aspect`, e.g. the Kodak DC120) are stretched to
+  square pixels (DC120: 848x976 -> 1301x976, 4:3).
 - X3F RGB outputs: clipped highlights render white instead of yellow-green (SD1 Merrill):
   Foveon white-balance multipliers are scaled so the smallest is 1 (the top layer's is about
   0.6), so saturated samples stay saturated in every layer. Renders gain about +0.7 EV.
