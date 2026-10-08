@@ -347,7 +347,9 @@ impl DevelopParams {
         DevelopParams {
             demosaic,
             crop,
-            wb,
+            // Foveon balances scale a layer down (blue ~0.6): with the smallest multiplier
+            // at 1, saturated samples stay saturated in every layer and render white.
+            wb: if info.layout == SensorLayout::Foveon { normalized_min(wb) } else { wb },
             cam_to_rgb: camera_to_srgb(&info.color_matrices),
             cam4_to_rgb,
             orientation: info.orientation,
