@@ -42,6 +42,7 @@ mod fallback;
 #[doc(hidden)]
 pub mod process;
 mod source;
+mod stagger;
 
 pub use flashraw_core::{
     BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, CorruptReason, DataUnit,
@@ -362,10 +363,26 @@ impl<'a> FlashRaw<'a> {
                 params.levels = levels;
                 let staged =
                     opts.apply_opcodes && lists.as_ref().is_some_and(|l| l.has_pixel_ops(1) || l.has_pixel_ops(2));
-                profiler.time(Stage::Postprocess, || match lists.as_mut().filter(|_| staged) {
-                    Some(l) => l.develop(&img, &frame_info_for_post, origin, &params, enc, ctx.parallel),
-                    None => process::develop_encoded(&img, &frame_info_for_post, origin, &params, enc, ctx.parallel),
-                })?
+                // Staggered lattices (SuperCCD) develop to linear RGB in the stored grid, then
+                // are resampled to square pixels before encoding.
+                let stagger = stagger::of(self.metadata(), info);
+                let dev_enc = if stagger.is_some() { process::RgbEncoding::LinearF32 } else { enc };
+                let developed = profiler.time(Stage::Postprocess, || match lists.as_mut().filter(|_| staged) {
+                    Some(l) => l.develop(&img, &frame_info_for_post, origin, &params, dev_enc, ctx.parallel),
+                    None => {
+                        process::develop_encoded(&img, &frame_info_for_post, origin, &params, dev_enc, ctx.parallel)
+                    }
+                })?;
+                match (stagger, developed) {
+                    (Some(mut st), (w, h, _, RawPixelData::F32(rgb))) => profiler.time(Stage::Postprocess, || {
+                        st.offset = opts.demosaic != Demosaic::HalfSize;
+                        let d = process::Developed { width: w, height: h, rgb };
+                        let win = Rect::new(crop.x + origin.0, crop.y + origin.1, crop.width, crop.height);
+                        let d = st.resample(&d, win, ctx.parallel);
+                        Ok::<_, Error>(process::encode_image(d, enc, info.orientation, ctx.parallel))
+                    })?,
+                    (_, r) => r,
+                }
             }
         };
         if let Some(l) = lists.as_mut().filter(|_| opts.apply_opcodes) {

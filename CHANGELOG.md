@@ -136,6 +136,12 @@ First complete release of FlashRaw.
   multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
   matrices and of their white balance. GPU backends leave these to the CPU.
 
+- Fujifilm SuperCCD RAF RGB outputs have the camera's aspect ratio and orientation instead of
+  a 2x squeeze: the stored 45-degree lattice (every other line offset by half a photosite) is
+  developed, then resampled to square pixels (e.g. E900 3462x2608, S3 Pro 3009x2014, S2 Pro
+  3032x2036). All 15 corpus and 19 real-world SuperCCD renders match their embedded JPEGs in
+  aspect (within 0.8%, before 2x off) and orientation. Raw outputs keep the stored grid.
+  Staggered DNGs (CFALayout 2-5) get the same resampling with their DefaultScale.
 - X3F RGB outputs: clipped highlights render white instead of yellow-green (SD1 Merrill):
   Foveon white-balance multipliers are scaled so the smallest is 1 (the top layer's is about
   0.6), so saturated samples stay saturated in every layer. Renders gain about +0.7 EV.
