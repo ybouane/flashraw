@@ -136,6 +136,20 @@ First complete release of FlashRaw.
   multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
   matrices and of their white balance. GPU backends leave these to the CPU.
 
+- X3F RGB outputs: clipped highlights render white instead of yellow-green (SD1 Merrill):
+  Foveon white-balance multipliers are scaled so the smallest is 1 (the top layer's is about
+  0.6), so saturated samples stay saturated in every layer. Renders gain about +0.7 EV.
+- X3F lens shading: the CAMF spatial gain tables (classic SD9-SD15 and x530, DP1/DP2 per
+  preset, DP Merrill per aperture, SD1 Merrill per aperture and focal length) and the Merrill
+  colour shading factors are applied to RGB outputs as an OpcodeList2 gain map; raw buffers
+  are unchanged. The green/cyan cast towards the frame edges of Merrill renders is mostly
+  gone: corner-to-centre R/G and B/G error against the embedded previews (mean |log|) 0.34 /
+  0.33 -> 0.14 / 0.12 on Merrill bodies, 0.21 / 0.19 -> 0.11 / 0.12 over all X3F files.
+  Quattro bodies are unchanged.
+- X3F exposure at high ISO: the camera amplifies above `SensorISO` digitally, so the white
+  level is lowered by `CaptureISO / SensorISO`. Renders of ISO 800 / 6400 shots were 3 / 6 EV
+  darker than the previews; all 46 corpus and real-world X3F files now render within
+  -2.4..+0.1 EV of their previews (before: -7.1..-0.1).
 - Phase One iXM-100, iXM-RS150F, iXU180 and iXU-RS1000 IIQs and the Leaf AFi-II 12 MOS
   render with a colour matrix (they had none, so renders were desaturated to 0.3-0.7 of the
   preview's saturation): where the camera database has no matrix, the file's own

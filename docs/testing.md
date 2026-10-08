@@ -47,8 +47,9 @@ T4i/SL1/T6/5D Mark II/1D Mark III, Nikon D70/E5700, Kodak Z980 and Ektra) when
 redistributable); each set is skipped when absent.
 
 `crates/flashraw/tests/x3f_color.rs` develops every corpus X3F to RGBA8 and checks that the
-white balance and colour matrix come from the file and that the mean R/G and B/G follow the
-embedded preview's.
+white balance, colour matrix and lens shading come from the file, that the mean R/G and B/G
+follow the embedded preview's, that the exposure is within -2.6..+0.6 EV of it, and that
+clipped highlights render white.
 
 ## 4. Robustness
 

@@ -5,7 +5,7 @@
 //! version 4.x for Quattro bodies), a directory (`SECd`) at the offset stored in the
 //! last four bytes, and sections: `SECp` (UTF-16 property list: make, model, ISO,
 //! exposure, lens), `SECi` (images: raw, JPEG/RGB/Huffman thumbnails) and `SECc`
-//! (CAMF calibration block, see [`camf`]; only its colour calibration is used).
+//! (CAMF calibration block, see [`camf`]; its colour, shading and ISO calibration is used).
 //!
 //! ## Raw image types
 //! | type/format | cameras | coding |
@@ -37,6 +37,12 @@
 //!   [`FrameInfo::white_balance`] and an XYZ → camera matrix ([`ColorSource::File`]).
 //! - Black: the optically shielded rows (`DarkShieldTop`/`DarkShieldBottom`) of classic
 //!   and Merrill bodies become [`FrameInfo::masked_areas`] with `black_from_masked`.
+//! - Lens shading (classic, TRUE I and Merrill bodies): the spatial gain tables and the
+//!   Merrill colour shading factors ([`camf::shading`]) become an OpcodeList2 of three
+//!   GainMaps in [`FrameInfo::opcodes`], applied to RGB outputs; raw samples are as stored.
+//! - ISO: above `SensorISO` the camera amplifies digitally (the raw samples stay at base
+//!   gain); the white level is lowered by `CaptureISO / SensorISO` so RGB outputs have the
+//!   shot's exposure.
 //!
 //! Files without a usable CAMF block keep the database's fallback colour matrix and
 //! report no white balance.
@@ -45,6 +51,7 @@ mod camf;
 
 use crate::common::*;
 use flashraw_codecs::x3f;
+use flashraw_core::decoder::OpcodeLists;
 use flashraw_core::tiff::Tiff;
 use flashraw_core::*;
 
@@ -433,7 +440,32 @@ fn apply_camf(
     } else {
         meta.extra("white_balance").map(str::to_string).or_else(|| header_white_balance(data, version))
     };
-    let Some(cal) = camf::calibration(&mut camf, preset.as_deref().unwrap_or("Auto")) else { return };
+    // Above the sensor's base ISO the camera amplifies digitally: the raw samples stay at
+    // base gain and its output saturates at 1/gain of the range. The white level is that
+    // saturation point, so RGB outputs have the shot's exposure (before, renders were
+    // log2(gain) EV dark: -3 EV at ISO 800 on a DP1, -6 EV at ISO 6400 on Merrill bodies).
+    let gain = camf.scalar("CaptureISO").zip(camf.scalar("SensorISO")).map(|(c, s)| c / s);
+    if let Some(gain) = gain.filter(|g| g.is_finite() && *g > 1.05 && *g <= 1024.0) {
+        let black = info.black_level.values.first().copied().unwrap_or(0.0).max(0.0) as f64;
+        let white = info.white_level.max() as f64;
+        if white > black {
+            info.white_level = WhiteLevel::uniform((black + (white - black) / gain).round().max(black + 1.0) as u32);
+            meta.set_extra("digital_iso_gain", format!("{gain:.3}"));
+        }
+    }
+    let cal = camf::calibration(&mut camf, preset.as_deref().unwrap_or("Auto"));
+    // Lens shading, applied to RGB outputs as an OpcodeList2 gain map (raw samples stay as
+    // stored). Quattro bodies describe it differently and are left as they are.
+    let wb_name = cal.as_ref().map(|c| c.preset.as_str()).unwrap_or("Auto");
+    if let Some(mut grids) = camf::shading(&mut camf, wb_name, info.width, info.height).filter(|_| !quattro) {
+        if swap_rb {
+            grids.swap(0, 2);
+        }
+        let list = gain_map_list(&grids, info.width, info.height, info.active_area);
+        info.opcodes = Some(std::sync::Arc::new(OpcodeLists { lists: [Vec::new(), list, Vec::new()] }));
+        meta.set_extra("lens_shading", "CAMF");
+    }
+    let Some(cal) = cal else { return };
     let Some(mut matrix) = cal.color_matrix() else { return };
     let mut g = cal.gains;
     if swap_rb {
@@ -451,6 +483,35 @@ fn apply_camf(
     cm.source = ColorSource::File;
     info.color_matrices = cm;
     meta.set_extra("white_balance", cal.preset.as_str());
+}
+
+/// A DNG OpcodeList2 with one GainMap per layer. The grids' corner points sit on the
+/// corners of the `raw_w x raw_h` buffer; GainMap positions are relative to the active
+/// area.
+fn gain_map_list(grids: &[camf::GainGrid; 3], raw_w: u32, raw_h: u32, active: Rect) -> Vec<u8> {
+    let mut out = (grids.len() as u32).to_be_bytes().to_vec();
+    let (aw, ah) = (active.width.max(1) as f64, active.height.max(1) as f64);
+    for (plane, g) in grids.iter().enumerate() {
+        let mut p = Vec::with_capacity(76 + 4 * g.gains.len());
+        for v in [0, 0, active.height, active.width, plane as u32, 1, 1, 1, g.rows as u32, g.cols as u32] {
+            p.extend_from_slice(&v.to_be_bytes());
+        }
+        let spacing_v = raw_h.saturating_sub(1) as f64 / (g.rows - 1).max(1) as f64 / ah;
+        let spacing_h = raw_w.saturating_sub(1) as f64 / (g.cols - 1).max(1) as f64 / aw;
+        for v in [spacing_v, spacing_h, -(active.y as f64) / ah, -(active.x as f64) / aw] {
+            p.extend_from_slice(&v.to_be_bytes());
+        }
+        p.extend_from_slice(&1u32.to_be_bytes());
+        for v in &g.gains {
+            p.extend_from_slice(&v.to_be_bytes());
+        }
+        // GainMap (id 9), DNG 1.3, optional.
+        for v in [9u32, 0x0103_0000, 1, p.len() as u32] {
+            out.extend_from_slice(&v.to_be_bytes());
+        }
+        out.extend_from_slice(&p);
+    }
+    out
 }
 
 fn is_quattro(t: u32) -> bool {
@@ -773,6 +834,36 @@ fn replicate_lower_layers(img: &mut [u16], w: usize, h: usize, parallel: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gain_map_list_round_trips() {
+        let g = |v: f32| camf::GainGrid { rows: 2, cols: 3, gains: vec![v; 6] };
+        let list = gain_map_list(&[g(1.0), g(2.0), g(3.0)], 101, 51, Rect::new(10, 5, 81, 41));
+        let ops = flashraw_codecs::dng_opcodes::parse(&list).unwrap();
+        assert_eq!(ops.len(), 3);
+        for (plane, e) in ops.iter().enumerate() {
+            let flashraw_codecs::dng_opcodes::Opcode::GainMap {
+                region,
+                points_v,
+                points_h,
+                spacing_v,
+                spacing_h,
+                origin_v,
+                origin_h,
+                gains,
+                ..
+            } = e
+            else {
+                panic!("not a GainMap")
+            };
+            assert_eq!((region.plane, region.planes, region.bottom, region.right), (plane as u32, 1, 41, 81));
+            assert_eq!((*points_v, *points_h), (2, 3));
+            // Corner points on the buffer corners, positions relative to the active area.
+            assert!((origin_h + 10.0 / 81.0).abs() < 1e-12 && (origin_v + 5.0 / 41.0).abs() < 1e-12);
+            assert!((spacing_h - 50.0 / 81.0).abs() < 1e-12 && (spacing_v - 50.0 / 41.0).abs() < 1e-12);
+            assert!(gains.iter().all(|&v| v == (plane + 1) as f32));
+        }
+    }
 
     #[test]
     fn civil_dates() {

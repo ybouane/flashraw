@@ -82,9 +82,36 @@ without a usable block keep the colour-table matrix and report no white balance.
 fallback: actual levels vary per body and file, e.g. 16 vs 31 on DP2 Merrill, 69 vs 15 on SD14).
 Quattro bodies keep the database level (their lower layers fill the shielded rows only partly).
 
-Not applied: the lens- and aperture-dependent spatial gain tables (`SpatialGain*`, colour shading
-factors) that correct the colour shading towards the frame edges of Merrill bodies, colour-mode
-compensations and tone curves (renders are colorimetric).
+**Lens shading** (RGB outputs; the raw buffer stays as stored): the CAMF gain tables become an
+OpcodeList2 of three GainMaps (one per layer) in `FrameInfo::opcodes`, applied like a DNG's
+(`apply_opcodes`). The grids span the whole raw buffer, corner point on corner pixel, and are
+stored turned by 180 degrees relative to the decoded image.
+
+- SD9 … SD15, Polaroid x530: `SpatialGain` (`[rows, cols, 3]` float gains).
+- DP1/DP1s/DP2: the preset's `SpatialGainTables` entry (else `SpatialGain`).
+- DP Merrill: `SpatialGain{R,G,B}_<i>_INF` (12-bit tables, gain `MinGains + Delta x value` from
+  `SpatialGainsProps_<i>_INF`) for the apertures of `SpatialGain_Fstop`, interpolated over the
+  `CaptureAperture` in stops; the preset's `WhiteBalanceColorShadingFactor` (2x2) scales the bottom
+  and top layers by `1 + a r + b r^2` (`r`: distance from the centre over the half diagonal).
+- SD1 Merrill: `SpatialGainsProps_<f-number>_<focal length>`, interpolated over the aperture and
+  the focal length; none outside the calibrated focal lengths (other lenses).
+- Quattro: not applied (their shading is described by polynomial colouring coefficients).
+
+Measured against the embedded previews (corpus and real-world files), the corner-to-centre R/G and
+B/G error of the renders (mean |log|) went from 0.21 / 0.19 to 0.11 / 0.12; on Merrill bodies from
+0.34 / 0.33 to 0.14 / 0.12. Which tables apply and their 180-degree turn were chosen by that
+measurement (the closest-focus `_MOD` tables made it worse and are not used).
+
+**ISO**: above `SensorISO` the camera amplifies digitally and the raw samples stay at base gain.
+The white level is lowered to `black + (white - black) x SensorISO / CaptureISO` (the point where
+the camera's output saturates), so RGB outputs carry the shot's exposure (extra
+`digital_iso_gain`); renders of ISO 800 / 6400 shots were 3 / 6 EV darker than at base ISO.
+
+**Highlights**: Foveon balances scale a layer down (top layer ~0.6). RGB outputs scale the
+multipliers so the smallest is 1, so a saturated pixel stays saturated in every layer and renders
+white (the clipped light of the SD1 Merrill sample rendered yellow-green).
+
+Not applied: colour-mode compensations and tone curves (renders are colorimetric).
 
 ## Verification
 
