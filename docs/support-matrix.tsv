@@ -36,7 +36,7 @@ DNG	CFA / LinearRaw / mono, 8-16 bit	uncompressed (strips, tiles; MSB-packed 10/
 DNG	CFA / LinearRaw, 1-4 components	lossless JPEG (predictors 1-7, restart markers, 2-component tile rows)	verified	all corpus files decode incl. smartphones with per-row restarts and Pentax Pixel Shift (frame 0)
 DNG	CFA, 12-bit	SOF1 12-bit DCT tiles (Blackmagic)	verified	bit-exact with the scalar float IDCT
 DNG	CFA, float 16/24/32	deflate + floating-point predictors 3/34894/34895	verified	merged-HDR files; RawU16 output: when max(white, data maximum) lies outside 4096..32767 it is scaled to 16383, then clamped at 0 and truncated; big-endian files whose WhiteLevel LONG holds the bits of 1.0f and whose samples are little-endian (one HDR-merge writer) are read little-endian with white 1.0; float data whose integer Black/WhiteLevel tags are in another unit than the samples (e.g. samples below 0.08 with white 1023) decode as stored and render dark
-DNG	CFALayout 2-5	staggered layouts A-D	experimental	converted SuperCCD (S2Pro) files: samples returned as stored with the stored-grid CFA (`SensorLayout::OtherCfa`, extra `cfa_layout`), like native SuperCCD buffers; the half-photosite stagger is not undone (DefaultScale gives the pixel aspect); no corpus sample
+DNG	CFALayout 2-5	staggered layouts A-D	experimental	converted SuperCCD (S2Pro) files: raw outputs return the samples as stored with the stored-grid CFA (`SensorLayout::OtherCfa`, extra `cfa_layout`), like native SuperCCD buffers; RGB outputs are resampled to square pixels (half-photosite stagger, DefaultScale pitch); synthetic tests, no corpus sample
 DNG	CFALayout 6-9	staggered layouts E-H	unsupported	no samples; `CameraUnsupported` error
 DNG	LinearRaw	lossy JPEG (34892)	verified	converter-produced lossy files
 DNG	any	deflate + integer predictors 1/2/34892/34893	verified	
@@ -101,7 +101,7 @@ RAF	14-bit packed MSB32	uncompressed	verified	X-A3/A5/A7/A10, X-T100/T200, XF10;
 RAF	Bayer lossless compressed (GFX)	fuji-compressed	verified	14/16-bit GFX 50/100 series; 13 files decode
 RAF	Bayer lossy compressed (GFX)	fuji-compressed	verified	14/16-bit; 9 files decode
 RAF	DBP for GX680 tiled	uncompressed	verified	8 vertical big-endian tiles; 1 file decodes; reported unrotated as Bayer BGGR
-RAF	SuperCCD 16-bit words	uncompressed	partial	S2/S3/S5 Pro, S5000-S9600, S6000/S6500fd, S100FS, E550/E900: 14 files decode; stored (unrotated) buffer with true 2x4/4x2 CFA; no 45-degree rotation applied
+RAF	SuperCCD 16-bit words	uncompressed	partial	S2/S3/S5 Pro, S5000-S9600, S6000/S6500fd, S100FS, E550/E900: 14 files decode; raw outputs: stored (unrotated) buffer with true 2x4/4x2 CFA; RGB outputs resampled from the 45-degree lattice to square pixels (aspect and orientation of the camera JPEG)
 RAF	SuperCCD SR dual frame (F700/S20Pro)	uncompressed	partial	Main frame decoded (1 file); second (dark) frame not exposed
 RAF	X-Trans lossless compressed	fuji-compressed	verified	14-bit X-Trans III-V; 25 corpus files decode, regression-hashed; stripes decoded in parallel; truncation/corruption tests
 RAF	X-Trans lossy compressed	fuji-compressed	verified	Per-line quantiser + flat-area tables; 13 files decode
@@ -123,7 +123,7 @@ RAW	Kodak C603/C643 YRGB	kodak-ycbcr	verified	decodes
 RAW	Paralenz Dive Camera / +	uncompressed 16-bit	verified	decodes
 RAW	Pentax Optio S4	packed 12-bit	verified	decodes
 RAW	SJCAM SJ6 LEGEND 12-bit (18325296 / 15972480 bytes)	uncompressed LSB packed	verified	decodes
-RAW	SJCam 5000X Elite ("Kodak 12MP" size)	kodak-ycbcr	verified	YCbCr 4:2:0 → RGB (cpp 3)
+RAW	SJCam 5000X Elite 12-bit (18000000 bytes, Kodak "12MP" size told apart by the data)	uncompressed LSB packed	verified	decodes (no colour matrix)
 RAW	Xiro Xplorer V	uncompressed LSB packed 10-bit	verified	decodes
 RAW	other file-size table entries (AVT, Agfa, Android dumps, Casio, Nikon, Sony, ...)	per table	experimental	same loaders; no corpus sample
 RW2	RawFormat 4 (4:3/3:2/16:9/1:1)	panasonic-v4	verified	341 RW2 + 20 Leica RWL decode, regression-hashed; packet-parallel decoding; truncation/corruption tests

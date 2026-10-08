@@ -97,14 +97,26 @@ quantisation tables for every line quantiser present in a lossy file.
 ## SuperCCD
 
 Bodies with `fuji_width` set (S2/S3/S5 Pro, S5000–S9600, S6000fd/S6500fd, S100FS, E550,
-E900, F700) have diagonally arranged photosites. FlashRaw returns the stored samples and describes them as
-stored, without the 45° rotation a viewer needs for a rectangular image: the active band
-holds the photosites that the rotation reads (`fuji_width` columns, or twice that
-for layout 0), and the CFA is the true stored pattern, a 2x4 (layout 1) or 4x2 (layout 0) pattern of
-green rows/columns alternating with red/blue ones, derived from the diagonal photosite
-mapping (`SensorLayout::OtherCfa`). Keeping the stored geometry leaves every sample untouched;
-the rotation interpolates, so it belongs in post-processing. The DBP for GX680 back carries the same flag but
-is a plain BGGR Bayer back and is reported as such.
+E900, F700) have diagonally arranged photosites. Raw outputs return the stored samples and
+describe them as stored: the active band holds the photosites of the image (`fuji_width`
+columns, or twice that for layout 0), and the CFA is the true stored pattern, a 2x4 (layout 1)
+or 4x2 (layout 0) pattern of green rows/columns alternating with red/blue ones, derived from the
+diagonal photosite mapping (`SensorLayout::OtherCfa`, extra `fuji_rotate` = `layout1`/`layout0`).
+Keeping the stored geometry leaves every sample untouched.
+
+The stored grid is the 45° lattice read line by line: in layout 1, stored sample `(row, col)` of
+the active area lies at `y = row / √2`, `x = (2 col + (row & 1)) / √2` in the upright image (odd
+rows half a photosite to the right); layout 0 exchanges rows and columns. Developed as is, the
+grid looks squeezed by 2. RGB outputs are therefore developed in the stored grid (demosaic, white
+balance, colour) and then resampled to square pixels at the true photosite positions
+(`crates/flashraw/src/stagger.rs`): `width × √2` by `height / √2` for layout 1 (as many pixels as
+samples; e.g. 3462x2608 for the E900, 3009x2014 for the S3 Pro, 3032x2036 for the S2 Pro after its
+90° mounting rotation). Renders of all 15 corpus and 19 real-world SuperCCD files match their
+embedded JPEGs in aspect (within 0.8%) and orientation (`tests/staggered.rs`). Half-size
+developments resample with the same scale. GPU backends leave these frames to the CPU.
+
+The DBP for GX680 back carries the same flag but is a plain BGGR Bayer back and is reported as
+such.
 
 ## Verified vs not
 

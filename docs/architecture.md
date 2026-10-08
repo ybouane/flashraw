@@ -72,7 +72,10 @@ display encodings oriented) in one sweep with a 4-row ring of normalised rows. D
 lists 2 and 3 stream through the same pass: rows are normalised and list 2 applied as the
 demosaic reads them, and list 3 runs on each task's band of camera RGB before white
 balance and colour conversion (lists with bad-pixel repairs, which read neighbours, fall
-back to whole-frame buffers).
+back to whole-frame buffers). Staggered lattices (Fujifilm SuperCCD, DNG CFALayout 2-5) and
+non-square photosites are the exception: they develop to linear RGB in the stored grid, are
+resampled to square pixels (`stagger.rs`) and then encoded, so their RGB outputs differ in
+size from the crop.
 
 **Parallelism that respects the format.** `flashraw_core::par` offers row-chunk,
 index and tile-grid parallelism (rayon on native, sequential elsewhere).

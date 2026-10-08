@@ -109,11 +109,14 @@ fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuCon
     {
         return Ok(None);
     }
-    // Four-colour CFAs are developed on the CPU only (the GPU kernels have three channels).
+    // Four-colour CFAs and staggered lattices are developed on the CPU only (the GPU kernels
+    // have three channels and a square grid).
     let rgb = matches!(base, OutputFormat::LinearRgbF32 | OutputFormat::Rgba8);
-    if rgb && raw.frame_info().cfa.and_then(|p| p.four_colour_order()).is_some() {
+    let cpu_only = raw.frame_info().cfa.and_then(|p| p.four_colour_order()).is_some()
+        || crate::stagger::of(raw.metadata(), raw.frame_info()).is_some();
+    if rgb && cpu_only {
         if resident {
-            return Err(Error::NotAvailable("GPU-resident RGB output of a four-colour sensor".into()));
+            return Err(Error::NotAvailable("GPU-resident RGB output of a four-colour or staggered sensor".into()));
         }
         return Ok(None);
     }

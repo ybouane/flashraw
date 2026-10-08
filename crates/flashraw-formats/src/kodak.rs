@@ -667,7 +667,39 @@ pub fn open_headerless<'a>(data: &'a [u8], opts: &OpenOptions) -> Option<Result<
         (614400, 640, 480, 0, 3, 0, 0, 64, 0x94, "KAI-0340", 0),
     ];
     let &(_, rw, rh, lm, tm, rm, bm, lf, cf, model, offset) = TABLE.iter().find(|t| t.0 == data.len())?;
+    // 4000x3000 12-bit packed Bayer dumps (action cameras) share the "12MP" YCbCr size.
+    if cf == 0 && model == "12MP" && looks_like_packed12(data, rw as usize) {
+        return None;
+    }
     Some(open_dump(data, opts, rw, rh, Rect::new(lm, tm, rw - lm - rm, rh - tm - bm), lf, cf, model, offset))
+}
+
+/// Whether `data` reads as 12-bit little-endian packed sensor rows (two samples in three
+/// bytes) of `width` samples rather than 8-bit YCbCr bytes. Read as 12-bit pairs, YCbCr bytes
+/// put the low nibble of a byte into the top bits of every first sample, so first samples jump
+/// by multiples of 256 between neighbours while second samples stay smooth; real packed data
+/// is about as smooth in both (same-colour neighbours, two pixels apart).
+pub(crate) fn looks_like_packed12(data: &[u8], width: usize) -> bool {
+    let stride = width * 3 / 2;
+    if stride == 0 || data.len() < stride {
+        return false;
+    }
+    let rows = data.len() / stride;
+    let (mut first, mut second) = (0u64, 0u64);
+    for r in (0..rows).step_by((rows / 64).max(1)) {
+        let row = &data[r * stride..(r + 1) * stride];
+        let mut prev: Option<(i32, i32)> = None;
+        for t in row.chunks_exact(3) {
+            let (b0, b1, b2) = (t[0] as i32, t[1] as i32, t[2] as i32);
+            let p = (b0 | (b1 & 15) << 8, b1 >> 4 | b2 << 4);
+            if let Some(q) = prev {
+                first += (p.0 - q.0).unsigned_abs() as u64;
+                second += (p.1 - q.1).unsigned_abs() as u64;
+            }
+            prev = Some(p);
+        }
+    }
+    first < 3 * second.max(1)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -768,6 +800,41 @@ mod tests {
         assert_eq!(c.len(), 0x10000);
         assert_eq!(c[300], 2550);
         assert_eq!(w, 2550);
+    }
+
+    #[test]
+    fn packed12_versus_ycbcr_bytes() {
+        let (w, h) = (4000usize, 3000usize);
+        let mut seed = 1u32;
+        let mut noise = move || {
+            seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+            (seed >> 16) as i32 % 5 - 2
+        };
+        let smooth = |x: usize, y: usize| (x as f64 / 300.0).sin() * (y as f64 / 200.0).cos() * 0.4 + 0.5;
+        // 8-bit YCbCr-like bytes: smooth values with a little noise.
+        let ycc: Vec<u8> = (0..w * h * 3 / 2)
+            .map(|i| {
+                let (x, y) = (i % (w * 3 / 2), i / (w * 3 / 2));
+                (smooth(x, y) * 255.0) as i32 + noise()
+            })
+            .map(|v| v.clamp(0, 255) as u8)
+            .collect();
+        assert!(!looks_like_packed12(&ycc, w));
+        // 12-bit packed RGGB samples of the same scene.
+        let mut packed = Vec::with_capacity(w * h * 3 / 2);
+        for y in 0..h {
+            for x in (0..w).step_by(2) {
+                let gain = |x: usize| if (x + y) % 2 == 0 { 1.0 } else { 0.6 };
+                let mut s =
+                    |x: usize| ((smooth(x, y) * 3000.0 * gain(x)) as i32 + 200 + noise() * 8).clamp(0, 4095) as u32;
+                let (a, b) = (s(x), s(x + 1));
+                packed.extend_from_slice(&[a as u8, (a >> 8 | (b & 15) << 4) as u8, (b >> 4) as u8]);
+            }
+        }
+        assert!(looks_like_packed12(&packed, w));
+        // The packed dump is left to the generic size table; YCbCr-like bytes stay Kodak.
+        assert!(open_headerless(&packed, &OpenOptions::default()).is_none());
+        assert!(open_headerless(&ycc, &OpenOptions::default()).is_some());
     }
 
     #[test]

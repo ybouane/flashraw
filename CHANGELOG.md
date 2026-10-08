@@ -149,6 +149,40 @@ First complete release of FlashRaw.
   unchanged for full-size files, and the camera's image area for the Bayer RAW M/S files of
   the D500, D6, D850 and Z bodies (D850 RAW S 6216×4136 → 6192×4128). These keep more
   photosites than the camera's M/S JPEG has pixels (about 8/7 for M, 3/2 for S).
+- Fujifilm SuperCCD RAF RGB outputs have the camera's aspect ratio and orientation instead of
+  a 2x squeeze: the stored 45-degree lattice (every other line offset by half a photosite) is
+  developed, then resampled to square pixels (e.g. E900 3462x2608, S3 Pro 3009x2014, S2 Pro
+  3032x2036). All 15 corpus and 19 real-world SuperCCD renders match their embedded JPEGs in
+  aspect (within 0.8%, before 2x off) and orientation. Raw outputs keep the stored grid.
+  Staggered DNGs (CFALayout 2-5) get the same resampling with their DefaultScale (the 10
+  real-world FinePix S2Pro DNGs now match their thumbnails' 2:3), and rectangular grids of
+  non-square photosites (`FrameInfo::pixel_aspect`, e.g. the Kodak DC120) are stretched to
+  square pixels (DC120: 848x976 -> 1301x976, 4:3).
+- X3F RGB outputs: clipped highlights render white instead of yellow-green (SD1 Merrill):
+  Foveon white-balance multipliers are scaled so the smallest is 1 (the top layer's is about
+  0.6), so saturated samples stay saturated in every layer. Renders gain about +0.7 EV.
+- X3F lens shading: the CAMF spatial gain tables (classic SD9-SD15 and x530, DP1/DP2 per
+  preset, DP Merrill per aperture, SD1 Merrill per aperture and focal length) and the Merrill
+  colour shading factors are applied to RGB outputs as an OpcodeList2 gain map; raw buffers
+  are unchanged. The green/cyan cast towards the frame edges of Merrill renders is mostly
+  gone: corner-to-centre R/G and B/G error against the embedded previews (mean |log|) 0.34 /
+  0.33 -> 0.14 / 0.12 on Merrill bodies, 0.21 / 0.19 -> 0.11 / 0.12 over all X3F files.
+  Quattro bodies are unchanged.
+- X3F exposure at high ISO: the camera amplifies above `SensorISO` digitally, so the white
+  level is lowered by `CaptureISO / SensorISO`. Renders of ISO 800 / 6400 shots were 3 / 6 EV
+  darker than the previews; all 46 corpus and real-world X3F files now render within
+  -2.4..+0.1 EV of their previews (before: -7.1..-0.1).
+- Phase One iXM-100, iXM-RS150F, iXU180 and iXU-RS1000 IIQs and the Leaf AFi-II 12 MOS
+  render with a colour matrix (they had none, so renders were desaturated to 0.3-0.7 of the
+  preview's saturation): where the camera database has no matrix, the file's own
+  camera → ROMM matrix (IIQ tag 0x0106, MOS `CaptProf_color_matrix`) is converted to
+  XYZ(D65) → camera (`ColorSource::File`). Mean R/G and B/G now follow the embedded
+  previews (e.g. iXU-RS1000 0.91/0.90 → 0.72/0.82, preview 0.66/0.70). The conversion
+  reproduces the database matrix of the IQ3 100MP from that back's own files.
+- SJCam 5000X Elite `.RAW` files (18,000,000 bytes, the size of the Kodak "12MP" YCbCr
+  dump) decode as 4000x3000 12-bit packed RGGB instead of striped YCbCr: the two layouts
+  are told apart by the data (read as 12-bit pairs, YCbCr bytes make every first sample
+  jump by multiples of 256). Raw buffers of these two corpus files change.
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
