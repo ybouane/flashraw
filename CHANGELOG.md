@@ -136,6 +136,20 @@ First complete release of FlashRaw.
   multipliers. `CfaPattern::four_colour_order` documents the channel order of 4-row
   matrices and of their white balance. GPU backends leave these to the CPU.
 
+- Sony lossless YCbCr S/M ARW and Nikon sNEF renders are no longer magenta: the camera
+  white-balances these images before its YCbCr conversion, and the develop applied the
+  as-shot balance a second time (ILCE-7RM5 Medium centre 146/86/86 vs 81/99/49 for Large,
+  now 85/103/52; D810 sNEF 189/92/104, now 122/109/91 like the full-size frame).
+  `FrameInfo::white_balance_applied` / `RawFrame::white_balance_applied` mark them (JS
+  `whiteBalanceApplied`, Python `white_balance_applied`, C `flashraw_file_white_balance_applied`
+  / `flashraw_frame_white_balance_applied`, CLI JSON), `white_balance` keeps the as-shot
+  multipliers, and RGB outputs develop with unit multipliers. The compatibility layer sets
+  `as_shot_wb_applied`. Raw buffers are unchanged.
+- Nikon default crops come from the maker note's CropArea where the camera records it:
+  unchanged for full-size files, and the camera's image area for the Bayer RAW M/S files of
+  the D500, D6, D850 and Z bodies (D850 RAW S 6216×4136 → 6192×4128). These keep more
+  photosites than the camera's M/S JPEG has pixels (about 8/7 for M, 3/2 for S).
+
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
   (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed
