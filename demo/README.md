@@ -13,7 +13,12 @@ What the demo does with a file (nothing is uploaded):
    texture (plus a half-float mip pyramid for zoomed-out views).
 4. Adjustments (exposure, contrast, highlights, shadows, temperature, tint, vibrance,
    saturation, tone curve), sRGB encoding and the histogram run in a fragment shader: a slider
-   move is one draw call. Without WebGL2 the same pipeline runs in JavaScript
+   move is one draw call. All sliders at 0 mean the default "Film" look, calibrated against
+   the cameras' embedded JPEGs (`tests/look.mjs`): the file's DNG BaselineExposure (or a
+   camera default) plus a base exposure, a mild log-space S-curve, a saturation lift, a soft
+   highlight shoulder and neutralised clipped highlights (`LOOK` in `src/pipeline.ts`). The
+   tone-curve selector's "Linear" gives FlashRaw's neutral output; "Auto" sets Exposure so the
+   mean brightness matches the embedded preview. Without WebGL2 the same pipeline runs in JavaScript
    (`src/renderer-cpu.ts`; force it with `?renderer=cpu`).
 5. Downloads: the adjusted image at full resolution as PNG or JPEG (rendered in 2048 px tiles),
    and every embedded preview as stored.
@@ -184,6 +189,7 @@ node tests/e2e.mjs --browsers firefox,webkit     # smaller set per engine
 node scripts/serve.mjs --port 4174 --coep off &
 node scripts/serve.mjs --port 4175 --coep require-corp &
 node tests/modes.mjs --browsers chromium,firefox --widget   # headers, engines, CPU renderer, widget
+node tests/look.mjs                              # default look vs embedded previews (+ screenshots)
 ```
 
 Screenshots go to `test-results/` (`OUT=<dir>` to change). `DEMO_WEBKIT=<path>` (or

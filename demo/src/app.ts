@@ -13,7 +13,7 @@ import {
   type PreviewDescriptor,
   type RawMetadata,
 } from 'flashraw';
-import { DEFAULTS, SLIDERS, isDefault, orientedSize, uniforms, type Adjustments, type Uniforms } from './pipeline';
+import { DEFAULTS, LOOK, SLIDERS, isDefault, orientedSize, uniforms, type Adjustments, type Uniforms } from './pipeline';
 import { emptyHistogram, type Histogram, type Renderer, type Source } from './renderer';
 import { GlRenderer } from './renderer-gl';
 import { CpuRenderer } from './renderer-cpu';
@@ -97,6 +97,7 @@ const ui = {
   clipInfo: $('clip-info'),
   sliders: $('sliders'),
   tone: $<HTMLSelectElement>('tone'),
+  autoAdjust: $<HTMLButtonElement>('auto-adjust'),
   renderInfo: $('render-info'),
   dlPng: $<HTMLButtonElement>('dl-png'),
   dlJpeg: $<HTMLButtonElement>('dl-jpeg'),
@@ -129,6 +130,8 @@ let rawSize: [number, number] = [0, 0]; // displayed (oriented) size of the deco
 let source: Source = 'raw';
 let compare = false;
 let adjust: Adjustments = { ...DEFAULTS };
+/** the file's own exposure offset (DNG BaselineExposure), used by the film look */
+let baseline = 0;
 let caps: Capabilities | null = null;
 let lastFrameInfo: { width: number; height: number; demosaic: string; backend: DecodedFrame['backend']; warnings: number; incomplete: boolean } | null = null;
 
@@ -182,6 +185,7 @@ function setupViewer() {
     adjust.tone = Number(ui.tone.value) as 0 | 1;
     adjustmentsChanged();
   });
+  ui.autoAdjust.addEventListener('click', autoExposure);
   $('reset-adjust').addEventListener('click', () => {
     adjust = { ...DEFAULTS };
     syncSliders();
@@ -226,7 +230,7 @@ function setCompare(on: boolean) {
 }
 
 function currentUniforms(): Uniforms {
-  return uniforms(compare ? DEFAULTS : adjust);
+  return uniforms(compare ? DEFAULTS : adjust, baseline);
 }
 
 let raf = 0;
@@ -296,6 +300,7 @@ function drawHistogram(hg: Histogram) {
     ctx.stroke();
   }
   if (!hg.total) return;
+  ui.hist.dataset.mean = meanOf(hg.l).toFixed(2);
   let max = 1;
   for (const ch of [hg.r, hg.g, hg.b]) for (let i = 1; i < 255; i++) max = Math.max(max, ch[i]);
   const path = (bins: Uint32Array) => {
@@ -329,6 +334,53 @@ function drawHistogram(hg: Histogram) {
   const hi = Math.max(pct(hg.r[255]), pct(hg.g[255]), pct(hg.b[255]));
   const lo = pct(hg.l[0]);
   ui.clipInfo.textContent = `Clipped: highlights ${hi.toFixed(hi < 1 ? 2 : 1)} % · shadows ${lo.toFixed(lo < 1 ? 2 : 1)} %`;
+}
+
+// ------------------------------------------------------------------- auto exposure
+
+let previewMean: number | null = null;
+
+function meanOf(bins: Uint32Array): number {
+  let n = 0;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) {
+    n += bins[i];
+    sum += i * bins[i];
+  }
+  return n ? sum / n : 0;
+}
+
+/** Mean sRGB-encoded luma (0..255) of the embedded preview, on a 256 px downscale. */
+function bitmapMeanLuma(bmp: ImageBitmap): number {
+  const k = Math.min(1, 256 / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k));
+  const hh = Math.max(1, Math.round(bmp.height * k));
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = hh;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(bmp, 0, 0, w, hh);
+  const d = ctx.getImageData(0, 0, w, hh).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  return sum / (d.length / 4);
+}
+
+/** Auto: set Exposure so the rendering's mean brightness matches the camera's preview. */
+function autoExposure() {
+  if (!renderer || !hasRaw || previewMean === null) return;
+  const target = previewMean;
+  const meanAt = (ev: number) => meanOf(renderer!.histogram(uniforms({ ...adjust, exposure: ev }, baseline)).l);
+  let lo = -5;
+  let hi = 5;
+  for (let i = 0; i < 14; i++) {
+    const mid = (lo + hi) / 2;
+    if (meanAt(mid) < target) lo = mid;
+    else hi = mid;
+  }
+  adjust.exposure = Math.round(((lo + hi) / 2) * 20) / 20;
+  syncSliders();
+  adjustmentsChanged();
 }
 
 // ------------------------------------------------------------------- sliders
@@ -469,6 +521,10 @@ export async function openFile(file: File) {
   currentFile = file;
   timings?.preview?.bitmap?.close();
   timings = null;
+  baseline = 0;
+  previewMean = null;
+  ui.autoAdjust.disabled = true;
+  delete ui.hist.dataset.previewMean;
   renderer!.setPreview(null);
   for (const b of [ui.dlPng, ui.dlJpeg, ui.dlPreview, ui.redecode]) b.disabled = true;
   ui.srcPreview.disabled = true;
@@ -488,6 +544,7 @@ export async function openFile(file: File) {
     const info = r.frameInfo;
     const metaMs = now() - tm;
     timings = { openMs, parseMs: r.parseMs, metaMs, preview: null };
+    baseline = meta.dng?.baselineExposure != null ? meta.dng.baselineExposure + (meta.dng.profile?.baselineExposureOffset ?? 0) : LOOK.cameraEV;
     renderMetadata(ui.metaGrid, meta, info, file);
     ui.metaJson.textContent = JSON.stringify(meta, null, 2);
     renderPreviewsTable(r.previews);
@@ -506,6 +563,8 @@ export async function openFile(file: File) {
       if (my !== token) return;
       if (timings.preview?.bitmap) {
         renderer!.setPreview({ bitmap: timings.preview.bitmap, orientation: timings.preview.orientation });
+        previewMean = bitmapMeanLuma(timings.preview.bitmap);
+        ui.hist.dataset.previewMean = previewMean.toFixed(2);
         ui.srcPreview.disabled = false;
         ui.dlPreview.disabled = false;
         if (!hasRaw) setSource('preview');
@@ -549,10 +608,18 @@ async function loadPreview(r: FlashRaw): Promise<PreviewState | null> {
       bitmap = null;
     }
   }
+  // previews larger than the GPU's texture limit: let the browser downscale them
+  const max = renderer?.maxSize ?? 16384;
+  if (bitmap && Math.max(bitmap.width, bitmap.height) > max) {
+    const k = max / Math.max(bitmap.width, bitmap.height);
+    const small = await createImageBitmap(bitmap, { resizeWidth: Math.floor(bitmap.width * k), resizeHeight: Math.floor(bitmap.height * k), resizeQuality: 'high' });
+    bitmap.close();
+    bitmap = small;
+  }
   // Engines without `imageOrientation: 'none'` apply the JPEG's own EXIF orientation: then the
   // bitmap comes back with swapped sides and is already upright.
   let orientation = p.orientation;
-  if (bitmap && orientation >= 5 && p.width !== p.height && bitmap.width === p.height && bitmap.height === p.width) orientation = 1;
+  if (bitmap && orientation >= 5 && p.width !== p.height && bitmap.width > bitmap.height !== p.width > p.height) orientation = 1;
   return { desc: p, blob, bitmap, orientation, extractMs, decodeMs: now() - td };
 }
 
@@ -621,6 +688,7 @@ async function decodeAndShow(my: number, t0 = now()) {
     scheduleHistogram();
     overlay(null);
     for (const b of [ui.dlPng, ui.dlJpeg, ui.redecode]) b.disabled = false;
+    ui.autoAdjust.disabled = previewMean === null;
     ui.compare.disabled = isDefault(adjust);
     const mp = (fi.width * fi.height) / 1e6;
     setStatus(
@@ -773,7 +841,7 @@ async function download(type: 'image/png' | 'image/jpeg') {
   const t = now();
   try {
     ui.dlInfo.textContent = 'Rendering at full resolution…';
-    const canvas = await renderer.exportCanvas(uniforms(adjust), (f) => (ui.dlInfo.textContent = `Rendering at full resolution… ${Math.round(f * 100)} %`));
+    const canvas = await renderer.exportCanvas(uniforms(adjust, baseline), (f) => (ui.dlInfo.textContent = `Rendering at full resolution… ${Math.round(f * 100)} %`));
     ui.dlInfo.textContent = `Encoding ${type === 'image/png' ? 'PNG' : 'JPEG'}…`;
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, type, 0.92));
     const { width, height } = canvas;

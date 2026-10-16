@@ -11,7 +11,7 @@ export interface Adjustments {
   tint: number; // -100..100
   vibrance: number; // -100..100
   saturation: number; // -100..100
-  tone: 0 | 1; // 0 = linear + clip, 1 = soft highlight roll-off
+  tone: 0 | 1; // 1 = film look (default: base exposure, mild S-curve, soft shoulder), 0 = linear (neutral)
 }
 
 export const DEFAULTS: Adjustments = {
@@ -23,7 +23,7 @@ export const DEFAULTS: Adjustments = {
   tint: 0,
   vibrance: 0,
   saturation: 0,
-  tone: 0,
+  tone: 1,
 };
 
 export interface SliderDef {
@@ -64,7 +64,27 @@ export interface Uniforms {
   tone: number;
 }
 
-export function uniforms(a: Adjustments): Uniforms {
+/** The film look: what all sliders at 0 mean (with `tone: 1`). Calibrated so the default
+ * rendering lands close to the cameras' embedded JPEGs (see tests/look.mjs). */
+export const LOOK = {
+  /** EV added to every file before the curve */
+  baseEV: 0.65,
+  /** files without a DNG BaselineExposure: their usual offset (DNGs use their own tag) */
+  cameraEV: 0.3,
+  /** log-space contrast around mid grey (an S-curve: deeper shadows, brighter highlights) */
+  contrast: 0.28,
+  /** shoulder knee (display-linear) */
+  knee: 0.55,
+  /** saturation lift */
+  saturation: 0.22,
+};
+
+/**
+ * `baseline`: the file's own exposure offset (DNG BaselineExposure + profile offset), applied
+ * with the film look only.
+ */
+export function uniforms(a: Adjustments, baseline = 0): Uniforms {
+  const film = a.tone === 1;
   const t = a.temperature / 100;
   const g = a.tint / 100;
   let r = 2 ** (0.55 * t);
@@ -72,17 +92,17 @@ export function uniforms(a: Adjustments): Uniforms {
   let b = 2 ** (-0.55 * t);
   // keep the luminance of neutral grey constant
   const n = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
-  const e = 2 ** a.exposure;
+  const e = 2 ** (a.exposure + (film ? LOOK.baseEV + baseline : 0));
   r = (r / n) * e;
   gg = (gg / n) * e;
   b = (b / n) * e;
   return {
     gain: [r, gg, b],
-    contrast: (a.contrast / 100) * 0.65,
+    contrast: (a.contrast / 100) * 0.65 + (film ? LOOK.contrast : 0),
     highlights: (a.highlights / 100) * 1.6,
     shadows: (a.shadows / 100) * 1.6,
     vibrance: a.vibrance / 100,
-    saturation: a.saturation / 100,
+    saturation: a.saturation / 100 + (film ? LOOK.saturation : 0),
     tone: a.tone,
   };
 }
@@ -103,12 +123,19 @@ float srgbEncode(float x) {
 }
 
 float shoulder(float x) {
-  const float k = 0.7;
+  const float k = ${LOOK.knee.toFixed(4)};
   return x <= k ? x : k + (1.0 - k) * (1.0 - exp(-(x - k) / (1.0 - k)));
 }
 
 vec3 developPixel(vec3 c) {
-  c = max(c, vec3(0.0)) * u_gain;
+  c = max(c, vec3(0.0));
+  if (u_tone == 1) {
+    // clipped sensor highlights come out of the colour matrix with unequal channels: fade
+    // them to neutral so they roll off to white instead of a tint
+    float mx = max(c.r, max(c.g, c.b));
+    c = mix(c, vec3(dot(c, LUMA)), smoothstep(0.92, 1.25, mx));
+  }
+  c *= u_gain;
   float L = dot(c, LUMA);
   if (u_highlights != 0.0 || u_shadows != 0.0 || u_contrast != 0.0) {
     float l = max(L, 1e-6);
@@ -142,7 +169,8 @@ for (let i = 0; i <= SRGB_LUT_SIZE; i++) {
   const x = i / SRGB_LUT_SIZE;
   srgbLut[i] = Math.round(255 * (x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055));
 }
-const shoulder = (x: number) => (x <= 0.7 ? x : 0.7 + 0.3 * (1 - Math.exp(-(x - 0.7) / 0.3)));
+const K = LOOK.knee;
+const shoulder = (x: number) => (x <= K ? x : K + (1 - K) * (1 - Math.exp(-(x - K) / (1 - K))));
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -165,9 +193,21 @@ export function developPixels(
   const colour = u.vibrance !== 0 || u.saturation !== 0;
   for (let i = 0; i < count; i++) {
     const s = srcIndex(i);
-    let r = Math.max(src[s], 0) * gr;
-    let g = Math.max(src[s + 1], 0) * gg;
-    let b = Math.max(src[s + 2], 0) * gb;
+    let r = Math.max(src[s], 0);
+    let g = Math.max(src[s + 1], 0);
+    let b = Math.max(src[s + 2], 0);
+    if (u.tone === 1) {
+      const t = smoothstep(0.92, 1.25, Math.max(r, g, b));
+      if (t > 0) {
+        const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        r += (l - r) * t;
+        g += (l - g) * t;
+        b += (l - b) * t;
+      }
+    }
+    r *= gr;
+    g *= gg;
+    b *= gb;
     let L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     if (local) {
       const st = Math.log2(Math.max(L, 1e-6) / 0.18);
