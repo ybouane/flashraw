@@ -127,6 +127,7 @@ h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; margin: 0; }
 .hero-inner { padding-top: 76px; padding-bottom: 64px; max-width: 1040px; text-align: center; }
 .eyebrow { display: inline-block; margin: 0 0 18px; padding: 4px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); font-size: 0.84rem; font-weight: 600; }
 .hero h1 { font-size: clamp(2.3rem, 5.6vw, 4.1rem); font-weight: 800; letter-spacing: -0.035em; }
+.hero h1 .comma { margin-left: -0.06em; }
 .hl { background: linear-gradient(90deg, #4733e6, #5a47f2 50%, #3a26cf); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .lead { max-width: 760px; margin: 22px auto 0; font-size: clamp(1.04rem, 1.6vw, 1.2rem); color: var(--ink-2); }
 .hero-cta { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 32px; }
@@ -208,6 +209,8 @@ h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; margin: 0; }
 .side-card h3 { font-size: 0.98rem; font-weight: 700; }
 .side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .side-card > h3 { margin-bottom: 12px; }
+.side-actions { display: flex; gap: 12px; }
+.link-btn:disabled { color: var(--muted); opacity: 0.6; cursor: not-allowed; text-decoration: none; }
 .histogram { width: 100%; height: 110px; border-radius: 8px; background: #f7f6fc; }
 .hist-legend { display: flex; gap: 10px; list-style: none; margin: 0; padding: 0; font-size: 0.76rem; color: var(--muted); }
 .hist-legend li { display: inline-flex; align-items: center; gap: 4px; }

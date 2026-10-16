@@ -108,7 +108,7 @@
   <section class="hero">
     <div class="wrap hero-inner">
       <p class="eyebrow">Open source · Rust · MIT / Apache-2.0</p>
-      <h1>Camera RAW,<br> decoded <span class="hl">in a flash</span>.</h1>
+      <h1>Camera RAW<span class="comma">,</span><br> decoded <span class="hl">in a flash</span><span class="comma">.</span></h1>
       <p class="lead">FlashRaw is a fast, memory-safe camera RAW decoder. It reads ~40 RAW formats from every make
         and model on raw.pixls.us and hands you the sensor data, the metadata, the embedded previews or a
         display-ready image: natively from Rust, C, C++ and Python, on the GPU, or right here in your browser.</p>
@@ -193,14 +193,17 @@
           <div class="card side-card">
             <div class="side-head">
               <h3>Adjust</h3>
-              <button type="button" class="link-btn" id="reset-adjust">Reset</button>
+              <div class="side-actions">
+                <button type="button" class="link-btn" id="auto-adjust" disabled title="Match the brightness of the embedded camera preview">Auto</button>
+                <button type="button" class="link-btn" id="reset-adjust">Reset</button>
+              </div>
             </div>
             <div id="sliders" class="sliders"></div>
             <div class="field-row">
               <label for="tone">Tone curve</label>
               <select id="tone">
-                <option value="0">Linear (clip)</option>
-                <option value="1">Soft highlight roll-off</option>
+                <option value="1">Film (default look)</option>
+                <option value="0">Linear (neutral output)</option>
               </select>
             </div>
             <p class="muted small" id="render-info">Adjustments run on the linear-light decode in a WebGL2 shader.</p>
