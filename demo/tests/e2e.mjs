@@ -66,7 +66,9 @@ async function histogramInk(page) {
 
 async function run(name, launcher) {
   console.log(`\n=== ${name}`);
-  const browser = await launcher.launch({ args: name === 'chromium' ? ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : [] });
+  // DEMO_WEBKIT / DEMO_FIREFOX / DEMO_CHROMIUM=<path> override the engine executables
+  const executablePath = process.env[`DEMO_${name.toUpperCase()}`] || undefined;
+  const browser = await launcher.launch({ executablePath, args: name === 'chromium' ? ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] : [] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, acceptDownloads: true });
   const page = await ctx.newPage();
   const errors = [];
@@ -178,7 +180,8 @@ async function run(name, launcher) {
     await page.screenshot({ path: join(OUT, `${name}-demo-full.png`), fullPage: true });
   }
 
-  const relevant = errors.filter((e) => !/peeking/i.test(e));
+  // widget messages, and HTTPS loads in a WebKit build without TLS (glib-networking) support
+  const relevant = errors.filter((e) => !/peeking|TLS support is not available/i.test(e));
   relevant.length ? fail(`console errors: ${relevant.join(' || ')}`) : ok(`no console errors${errors.length ? ` (ignored ${errors.length} widget messages)` : ''}`);
   await ctx.close();
 

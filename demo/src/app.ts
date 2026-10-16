@@ -61,6 +61,8 @@ interface PreviewState {
   desc: PreviewDescriptor;
   blob: Blob;
   bitmap: ImageBitmap | null;
+  /** orientation still to apply to `bitmap` */
+  orientation: number;
   extractMs: number;
   decodeMs: number;
 }
@@ -154,7 +156,10 @@ function setupViewer() {
   }
   ui.stage.prepend(renderer.canvas);
   viewport = new Viewport(ui.stage);
-  viewport.onChange = requestRender;
+  viewport.onChange = () => {
+    ui.zoomLevel.textContent = `${Math.round(viewport!.view.scale * 100)}%`;
+    requestRender();
+  };
   viewport.onInteract = () => ui.hint.classList.add('gone');
 
   $('zoom-in').addEventListener('click', () => viewport!.zoomBy(1.25));
@@ -227,12 +232,23 @@ let raf = 0;
 function requestRender() {
   if (!raf) raf = requestAnimationFrame(renderNow);
 }
-function renderNow() {
-  raf = 0;
+let settleRaf = 0;
+function drawOnce() {
   if (!renderer || !viewport) return;
   const v = viewport.view;
   renderer.draw(v, currentUniforms(), source, v.scale >= 2);
   ui.zoomLevel.textContent = `${Math.round(v.scale * 100)}%`;
+}
+function renderNow() {
+  raf = 0;
+  drawOnce();
+  // WebKit can present the previous WebGL frame until the next one: draw the final state once
+  // more on the following frame (cheap: one draw call).
+  cancelAnimationFrame(settleRaf);
+  settleRaf = requestAnimationFrame(() => {
+    settleRaf = 0;
+    drawOnce();
+  });
 }
 
 let histTimer = 0;
@@ -388,7 +404,7 @@ function setSource(s: Source) {
 function previewSize(): [number, number] {
   const p = timings?.preview;
   if (!p?.bitmap) return [0, 0];
-  return orientedSize(p.bitmap.width, p.bitmap.height, p.desc.orientation);
+  return orientedSize(p.bitmap.width, p.bitmap.height, p.orientation);
 }
 
 function updateDims() {
@@ -488,7 +504,7 @@ export async function openFile(file: File) {
       }
       if (my !== token) return;
       if (timings.preview?.bitmap) {
-        renderer!.setPreview({ bitmap: timings.preview.bitmap, orientation: timings.preview.desc.orientation });
+        renderer!.setPreview({ bitmap: timings.preview.bitmap, orientation: timings.preview.orientation });
         ui.srcPreview.disabled = false;
         ui.dlPreview.disabled = false;
         if (!hasRaw) setSource('preview');
@@ -532,7 +548,11 @@ async function loadPreview(r: FlashRaw): Promise<PreviewState | null> {
       bitmap = null;
     }
   }
-  return { desc: p, blob, bitmap, extractMs, decodeMs: now() - td };
+  // Engines without `imageOrientation: 'none'` apply the JPEG's own EXIF orientation: then the
+  // bitmap comes back with swapped sides and is already upright.
+  let orientation = p.orientation;
+  if (bitmap && orientation >= 5 && p.width !== p.height && bitmap.width === p.height && bitmap.height === p.width) orientation = 1;
+  return { desc: p, blob, bitmap, orientation, extractMs, decodeMs: now() - td };
 }
 
 async function decodeAndShow(my: number, t0 = now()) {
@@ -646,7 +666,7 @@ function renderPreviewsTable(previews: PreviewDescriptor[]) {
     );
   }
   const table = h('table', { class: 'plain' },
-    h('thead', {}, h('tr', {}, ...['Kind', 'Encoding', 'Size', 'Bytes', 'Orientation', ''].map((t) => h('th', { scope: 'col', text: t })))),
+    h('thead', {}, h('tr', {}, ...['Kind', 'Encoding', 'Size', 'Bytes', 'Orientation', ''].map((t, i) => h('th', { scope: 'col', text: t, class: i >= 2 && i <= 4 ? 'num' : '' })))),
     tbody,
   );
   ui.previewsCard.append(h('div', { class: 'card previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));

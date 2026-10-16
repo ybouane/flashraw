@@ -300,7 +300,7 @@ select { width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var
 table.plain { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 table.plain th, table.plain td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 table.plain th { font-size: 0.78rem; color: var(--muted); font-weight: 650; }
-table.plain td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.plain td.num, table.plain th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .json-card { margin-top: 14px; padding: 12px 16px; }
 .json-card summary { cursor: pointer; font-weight: 650; font-size: 0.92rem; }
 pre.code { margin: 0; padding: 14px 16px; overflow: auto; background: #15142b; color: #e2e8f0; border-radius: 10px; font-size: 0.82rem; line-height: 1.55; }

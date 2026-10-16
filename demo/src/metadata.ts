@@ -138,7 +138,7 @@ export function renderMetadata(root: HTMLElement, m: RawMetadata, info: FrameInf
         ['Program', e.exposureProgram != null ? (PROGRAM[e.exposureProgram] ?? String(e.exposureProgram)) : null],
         ['Metering', e.meteringMode != null ? (METERING[e.meteringMode] ?? String(e.meteringMode)) : null],
         ['Flash', e.flash != null ? (e.flash & 1 ? 'Fired' : 'Did not fire') : null],
-        ['Captured', m.captureTime],
+        ['Captured', m.captureTime ? m.captureTime.replace('T', ' ').replace(/\.\d+/, '') : null],
       ]),
     ),
     card(

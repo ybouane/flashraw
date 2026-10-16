@@ -166,7 +166,7 @@ function cameraChart(root: HTMLElement, st: CamState) {
     svg.append(s('line', { class: 'grid', x1: x(t), x2: x(t), y1: top - 6, y2: height - 8, 'stroke-opacity': major ? 1 : 0.55 }));
     if (major || !narrow) svg.append(s('text', { x: x(t), y: 12, 'text-anchor': 'middle', class: 't-muted' }, `${t >= 1000 ? `${t / 1000}k` : t}`));
   }
-  svg.append(s('text', { x: x1 + 10, y: 12, class: 't-muted' }, 'ms'));
+  if (!narrow) svg.append(s('text', { x: 0, y: 12, class: 't-muted' }, 'Wall time (ms, log scale)'));
   svg.append(s('text', { x: width - 4, y: 12, 'text-anchor': 'end', class: 't-muted' }, `vs ${libName('libraw')}`));
 
   shown.forEach((r, i) => {
