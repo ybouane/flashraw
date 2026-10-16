@@ -146,10 +146,11 @@ function overlay(text: string | null) {
 
 function setupViewer() {
   if (renderer) return;
-  renderer = params.get('renderer') === 'cpu' ? null : GlRenderer.create();
+  const forceCpu = params.get('renderer') === 'cpu';
+  renderer = forceCpu ? null : GlRenderer.create();
   if (!renderer) {
     renderer = new CpuRenderer();
-    ui.renderInfo.textContent = 'WebGL2 is unavailable: adjustments run on the CPU (screen preview at reduced resolution; downloads are full resolution).';
+    ui.renderInfo.textContent = `${forceCpu ? 'CPU renderer selected' : 'WebGL2 is unavailable'}: adjustments run in JavaScript (screen preview at reduced resolution; downloads are full resolution).`;
   }
   if (renderer instanceof GlRenderer) {
     renderer.onLost = () => setStatus('The GPU context was lost; open the file again to continue.', true);
@@ -666,7 +667,8 @@ function renderPreviewsTable(previews: PreviewDescriptor[]) {
     );
   }
   const table = h('table', { class: 'plain' },
-    h('thead', {}, h('tr', {}, ...['Kind', 'Encoding', 'Size', 'Bytes', 'Orientation', ''].map((t, i) => h('th', { scope: 'col', text: t, class: i >= 2 && i <= 4 ? 'num' : '' })))),
+    h('thead', {}, h('tr', {}, ...['Kind', 'Encoding', 'Size', 'Bytes', 'Orientation'].map((t, i) => h('th', { scope: 'col', text: t, class: i >= 2 ? 'num' : '' })),
+        h('th', { scope: 'col' }, h('span', { class: 'visually-hidden', text: 'Download' })))),
     tbody,
   );
   ui.previewsCard.append(h('div', { class: 'card previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));

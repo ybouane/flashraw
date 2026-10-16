@@ -7,13 +7,12 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const repo = join(here, '..');
 
 /**
- * Cross-origin isolation (needed for the multithreaded WASM build). `require-corp` works in
- * every engine that supports isolation (Safari has no `credentialless`); the only cross-origin
- * script (the peeking widget) is loaded with `crossorigin="anonymous"` and served with CORS.
- * `DEMO_COEP=off` serves the page without isolation (single-threaded path),
- * `DEMO_COEP=credentialless` tries the alternative policy.
+ * Cross-origin isolation (needed for the multithreaded WASM build). `credentialless`, as in
+ * production: the peeking widget's analytics beacon has no CORP header, which `require-corp`
+ * blocks (see README.md, "Hosting headers"). `DEMO_COEP=off` serves the page without isolation
+ * (single-threaded path), `DEMO_COEP=require-corp` the stricter policy.
  */
-const coep = process.env.DEMO_COEP ?? 'require-corp';
+const coep = process.env.DEMO_COEP ?? 'credentialless';
 const isolationHeaders: Record<string, string> =
   coep === 'off'
     ? {}

@@ -183,7 +183,7 @@ h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; margin: 0; }
 .viewer-card { overflow: hidden; display: flex; flex-direction: column; }
 .viewer-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .seg { display: inline-flex; padding: 3px; background: var(--bg-alt); border: 1px solid var(--line); border-radius: 10px; }
-.seg button { border: 0; background: none; padding: 6px 12px; border-radius: 7px; font: 600 0.86rem var(--font); color: var(--ink-2); cursor: pointer; }
+.seg button { white-space: nowrap; border: 0; background: none; padding: 6px 12px; border-radius: 7px; font: 600 0.86rem var(--font); color: var(--ink-2); cursor: pointer; }
 .seg button[aria-checked='true'] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(21, 20, 43, 0.12); }
 .seg button:disabled { opacity: 0.45; cursor: not-allowed; }
 .zoom-tools { display: inline-flex; align-items: center; gap: 4px; }
@@ -369,11 +369,11 @@ table.compare tbody th { font-weight: 550; color: var(--ink); }
 table.compare tbody tr:last-child > * { border-bottom: 0; }
 table.compare .us { background: #f7f6ff; }
 table.compare thead .us { color: var(--accent-ink); background: #efedfd; }
-table.compare i { font-style: normal; display: inline-flex; gap: 7px; align-items: baseline; }
-table.compare i::before { flex-shrink: 0; font-weight: 800; width: 1em; text-align: center; }
+table.compare i { font-style: normal; display: block; position: relative; padding-left: 1.5em; }
+table.compare i::before { position: absolute; left: 0; top: 0; font-weight: 800; width: 1em; text-align: center; }
 table.compare i.y::before { content: '✓'; color: var(--good); }
 table.compare i.n::before { content: '✕'; color: var(--bad); }
-table.compare i.p::before { content: '◐'; color: var(--warn); }
+table.compare i.p::before { content: '~'; color: var(--warn); font-size: 1.1em; line-height: 1.3; }
 table.compare tbody tr:hover > * { background: #fbfaff; }
 table.compare tbody tr:hover > .us { background: #f0eeff; }
 
