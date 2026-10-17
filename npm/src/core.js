@@ -275,8 +275,7 @@ function sharedGlueError(binary) {
   const name = (b) => (b === 'simd' ? 'SIMD' : 'scalar');
   const other = binary === 'simd' ? 'fallback' : 'simd';
   return new NotAvailableError(
-    `the ${name(binary)} build cannot be loaded next to the ${name(other)} build already in use: both share one ` +
-      'wasm-bindgen glue module, which holds a single instance per page (reload the page to switch between them)',
+    `the ${name(binary)} build cannot be loaded next to the ${name(other)} build already in use: both share one wasm-bindgen glue module, which holds a single instance per page (reload the page to switch between them)`,
   );
 }
 
