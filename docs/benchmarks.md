@@ -1,73 +1,121 @@
 # Benchmarks
 
 Every number here was measured on real camera files with the tools in this repository, and
-can be reproduced with them. FlashRaw is compared with the two widely used open-source RAW
-decoders, [LibRaw](https://www.libraw.org/) and [RawSpeed](https://github.com/darktable-org/rawspeed),
-built from source on the same machines.
+can be reproduced with them. FlashRaw is compared, on the same files and the same machines,
+with the open-source RAW decoders people use today, each built from source (or installed the
+way its users install it):
+
+- [LibRaw](https://www.libraw.org/), the most widely used RAW library (C++), decode and its
+  `dcraw_process()` development to RGB;
+- the **LibRaw + [Little CMS](https://www.littlecms.com/)** pipeline: LibRaw develops to a
+  linear wide-gamut image and the Little CMS colour-management engine converts it to sRGB, the
+  usual way to get colour-managed output from LibRaw (Little CMS is not a RAW decoder: it is
+  measured as that pipeline's colour stage);
+- [RawSpeed](https://github.com/darktable-org/rawspeed), darktable's decoder (C++, raw data
+  only);
+- [rawler](https://crates.io/crates/rawler), the Rust decoder of
+  [dnglab](https://github.com/dnglab/dnglab), decode and its `RawDevelop` pipeline;
+- [rawpy](https://github.com/letmaik/rawpy), the Python binding of LibRaw (what a Python user
+  gets from `pip install rawpy`);
+- [dcraw](https://www.dechifro.org/dcraw/), the C program LibRaw grew out of.
 
 ## Headline
 
-Speedup of FlashRaw (other library's time ÷ FlashRaw's time; > 1 = FlashRaw faster), over the
-62 files of [`benches/popular-cameras.tsv`](../benches/popular-cameras.tsv) and over all 159
-files (popular cameras + one large and one median file of every format/codec pair in
-[`benches/benchmark-set.tsv`](../benches/benchmark-set.tsv)).
+Median speedup of FlashRaw over the 62 files of
+[`benches/popular-cameras.tsv`](../benches/popular-cameras.tsv) (other library's time ÷
+FlashRaw's on the same file; > 1 = FlashRaw faster), its geometric mean, and the number of
+files where FlashRaw is faster, out of the files both decode. dcraw has no threads: its
+one-thread time is used in the all-cores rows.
 
-Each cell: geometric mean / median speedup · files where FlashRaw is faster.
+| Comparison | threads | 🐧 median | 🐧 geomean | 🐧 FlashRaw faster | 🍎 median | 🍎 geomean | 🍎 FlashRaw faster |
+|---|---|---:|---:|---:|---:|---:|---:|
+| decode vs LibRaw | all | **7.87×** | 6.20× | 57/59 | **11.4×** | 9.11× | 59/59 |
+| decode vs LibRaw | 1 | **2.90×** | 2.40× | 57/59 | **1.81×** | 2.02× | 57/59 |
+| decode vs RawSpeed | all | **2.15×** | 2.00× | 46/49 | **1.50×** | 2.00× | 38/49 |
+| decode vs RawSpeed | 1 | **1.29×** | 1.27× | 41/49 | **0.83×** | 0.85× | 13/49 |
+| decode vs rawler | all | **2.95×** | 2.61× | 58/59 | **2.66×** | 3.08× | 58/59 |
+| decode vs rawler | 1 | **1.66×** | 1.71× | 57/59 | **1.50×** | 1.54× | 56/59 |
+| decode vs rawpy | all | **8.37×** | 6.74× | 58/59 | **14.3×** | 13.6× | 59/59 |
+| decode vs rawpy | 1 | **3.08×** | 2.61× | 58/59 | **1.85×** | 2.07× | 57/59 |
+| decode vs dcraw | all | **14.5×** | 14.3× | 42/42 | **29.1×** | 27.6× | 42/42 |
+| decode vs dcraw | 1 | **3.72×** | 3.99× | 40/42 | **3.98×** | 4.24× | 40/42 |
+| RAW→RGB vs LibRaw | all | **8.81×** | 7.91× | 59/59 | **15.4×** | 14.1× | 59/59 |
+| RAW→RGB vs LibRaw | 1 | **2.06×** | 1.88× | 59/59 | **1.77×** | 1.74× | 59/59 |
+| RAW→sRGB vs LibRaw + Little CMS | all | **15.0×** | 15.0× | 59/59 | **21.8×** | 19.9× | 59/59 |
+| RAW→sRGB vs LibRaw + Little CMS | 1 | **12.8×** | 12.2× | 59/59 | **10.6×** | 11.0× | 59/59 |
+| RAW→RGB vs rawler | all | **6.56×** | 6.42× | 58/59 | **6.67×** | 5.81× | 58/59 |
+| RAW→RGB vs rawler | 1 | **4.70×** | 4.38× | 58/59 | **3.61×** | 3.55× | 58/59 |
+| RAW→RGB vs rawpy | all | **9.50×** | 8.72× | 59/59 | **20.5×** | 17.3× | 59/59 |
+| RAW→RGB vs rawpy | 1 | **2.20×** | 2.09× | 59/59 | **1.77×** | 1.75× | 59/59 |
+| RAW→RGB vs dcraw | all | **9.98×** | 9.17× | 42/42 | **23.0×** | 19.0× | 42/42 |
+| RAW→RGB vs dcraw | 1 | **1.98×** | 1.81× | 40/42 | **1.95×** | 1.87× | 40/42 |
+| RAW→RGB, FlashRaw GPU vs LibRaw | all | – | – | – | **17.9×** | 17.1× | 52/52 |
 
-| Comparison | threads | 🐧 popular (62) | 🐧 all (159) | 🍎 popular (62) | 🍎 all (159) |
-|---|---|---:|---:|---:|---:|
-| decode vs LibRaw | all cores | **6.14×** / 8.26× · 57/59 | **6.30×** / 7.66× · 151/156 | **9.15×** / 11.2× · 59/59 | **8.59×** / 10.9× · 149/156 |
-| decode vs LibRaw | 1 | **2.39×** / 2.92× · 57/59 | **2.54×** / 2.51× · 143/156 | **2.01×** / 1.81× · 57/59 | **2.24×** / 1.86× · 139/156 |
-| decode vs RawSpeed | all cores | **2.21×** / 2.26× · 47/49 | **2.60×** / 2.30× · 114/126 | **2.00×** / 1.44× · 37/49 | **2.44×** / 2.64× · 94/126 |
-| decode vs RawSpeed | 1 | **1.26×** / 1.26× · 39/49 | **1.48×** / 1.25× · 95/126 | 0.86× / 0.84× · 14/49 | **1.08×** / 0.85× · 42/126 |
-| RAW → RGB vs LibRaw | all cores | **7.32×** / 8.42× · 59/59 | **7.50×** / 8.45× · 156/156 | **13.5×** / 15.1× · 59/59 | **14.2×** / 16.6× · 156/156 |
-| RAW → RGB vs LibRaw | 1 | **1.74×** / 1.81× · 58/59 | **1.67×** / 1.67× · 151/156 | **1.62×** / 1.63× · 58/59 | **1.60×** / 1.62× · 152/156 |
+<p align="center"><img src="charts/decode-speed.svg" alt="Bar chart: decode time relative to FlashRaw" width="100%"></p>
+<p align="center"><img src="charts/rgb-speed.svg" alt="Bar chart: RAW to sRGB time relative to FlashRaw" width="100%"></p>
+<p align="center"><img src="charts/cameras.svg" alt="Dot plot: per-camera decode and RAW to RGB times" width="100%"></p>
 
-- **Against LibRaw** FlashRaw wins on almost every file, single-threaded too: LibRaw's
-  decoders are mostly sequential and its RGB pipeline (`dcraw_process`) is 7–16× slower.
-- **Against RawSpeed**, the fastest raw-only decoder, FlashRaw wins with all cores on most
-  files because it parallelises the codecs RawSpeed runs on one thread (lossless JPEG,
-  Nikon, Pentax, Hasselblad, Olympus, Panasonic v8 …). **On one thread RawSpeed is often as
-  fast or faster**, especially on Apple Silicon; see [where FlashRaw is not the fastest](#where-flashraw-is-not-the-fastest).
-- Popular-camera tables: [Linux](#popular-cameras-linux-x86-64) · [macOS](#popular-cameras-apple-m1-ultra).
-  Per format: [table](#per-format). Raw data: [`benches/results/`](../benches/results/).
+- **With all cores FlashRaw is the fastest decoder on almost every file.** It decodes in
+  parallel even the codecs whose data is one sequential stream (lossless JPEG, Nikon, Pentax,
+  Hasselblad, Panasonic v8, Sony ARW1), which the others decode on one thread; LibRaw
+  parallelises only its CR3, Fuji-compressed and Panasonic v8 decoders.
+- **RAW → sRGB is where the gap is largest**: FlashRaw develops in one fused, multithreaded
+  pass, where LibRaw (and rawpy, which is LibRaw), dcraw and rawler run several full-image
+  passes (LibRaw's and dcraw's mostly on one thread). Colour management with Little CMS adds yet another full-image
+  pass to a LibRaw pipeline (see [the stages](#libraw--little-cms-pipeline)).
+- **On one thread the decoders are much closer**, and RawSpeed is often as fast or faster,
+  especially on Apple Silicon; see [where FlashRaw is not the fastest](#where-flashraw-is-not-the-fastest).
+- Charts: [`charts/`](charts/) (generated by [`tools/bench/charts.py`](../tools/bench/charts.py),
+  numbers in [`charts/data.json`](charts/data.json)). Raw data and the full per-machine
+  reports: [`benches/results/`](../benches/results/).
 
 ## What is measured
 
-| Mode | FlashRaw | LibRaw | RawSpeed |
+| Library | Version, build | decode | RAW → RGB |
 |---|---|---|---|
-| **decode** | `open` + full sensor decode to 16-bit samples (`--output raw-u16`, CPU backend) | `open_buffer()` + `unpack()` | `RawParser::getDecoder()` + `checkSupport()` + `decodeRaw()` + `decodeMetaData()` |
-| **RAW → RGB** | decode + bilinear demosaic + as-shot white balance + colour matrix + 8-bit sRGB + orientation (`--output rgba8`) | `unpack()` + `dcraw_process()` with `user_qual=0` (bilinear), `use_camera_wb=1`, `output_bps=8`, sRGB output, + `dcraw_make_mem_image()` | no RGB pipeline |
-| **GPU** (macOS only) | `--backend gpu --output rgba8`: CPU decode (or GPU unpack for packed data), GPU develop, frame downloaded to host memory | – | – |
+| **FlashRaw** | this repository (commit `06b36cc`), `cargo build --release -p flashraw-cli --features jpegxl` (+ `gpu` on macOS) | `flashraw benchmark --output raw-u16 --backend simd`: open + full sensor decode to 16-bit samples, CPU | `--output rgba8 --backend simd`: decode + bilinear demosaic + as-shot WB + colour matrix + sRGB 8-bit RGBA + orientation, one fused pass |
+| **FlashRaw GPU** (macOS) | same, `--features gpu` | – | `--backend gpu --output rgba8`: CPU decode (or GPU unpack for packed data), Metal develop, image downloaded to host memory |
+| **LibRaw** | 0.22.0, its `Makefile.dist`, `-O3` (+ `-march=native` on x86-64), zlib; all cores = OpenMP build, 1 thread = default build | `open_buffer()` + `unpack()` | + `dcraw_process()` (`user_qual=0` bilinear, `use_camera_wb=1`, `output_bps=8`, sRGB) + `dcraw_make_mem_image()` |
+| **LibRaw + Little CMS** | LibRaw as above + Little CMS 2.19.1 (static, `-O3`) | – | LibRaw `unpack()` + `dcraw_process()` to **16-bit linear ProPhoto RGB** (bilinear, camera WB, `gamm = 1, 1`, `no_auto_bright`) + `dcraw_make_mem_image()`, then an lcms2 transform (linear ProPhoto → sRGB IEC 61966-2.1, perceptual, `TYPE_RGB_16` → `TYPE_RGBA_8`); profiles and transform created per image. All cores: the transform runs over 32-row blocks with OpenMP (a shared transform is reentrant); 1 thread: one `cmsDoTransform` call |
+| **RawSpeed** | develop `c835b05`, CMake Release, `WITH_OPENMP=ON`, `WITH_JPEG=OFF` (+ `-march=native` on x86-64) | `RawParser::getDecoder()` + `checkSupport()` + `decodeRaw()` + `decodeMetaData()` | no RGB pipeline |
+| **rawler** (dnglab) | 0.8.0 from crates.io, `cargo build --release`, rayon | `rawler::decode()` of an in-memory source: sensor data + metadata | + `RawDevelop::default().develop_intermediate()` (scaling, **PPG** demosaic, WB, camera matrix, crop, sRGB gamma, `f32`) + conversion to 8-bit RGB |
+| **rawpy** | 0.27.1 wheel from PyPI (bundles LibRaw 0.22.1), CPython 3.13 (Linux), 3.9 (macOS) | `rawpy.imread(BytesIO)` + `raw_image` (`unpack`) | + `postprocess(demosaic_algorithm=LINEAR, use_camera_wb=True, output_bps=8)` |
+| **dcraw** | 9.28, `cc -O3 -DNODEPS` (+ `-march=native` on x86-64), one thread (it has no threading) | `dcraw -c -D -4 FILE > /dev/null` (raw sensor values written as 16-bit PGM) | `dcraw -c -q 0 -w FILE > /dev/null` (bilinear, camera WB, 8-bit sRGB PPM) |
 
-- Input is read into memory before timing (RawSpeed gets a padded copy, as its own reader
-  provides). Each value is the **median of 7 timed runs after one warm-up**, in a **fresh
-  process per (file, library, mode, thread count)**, so peak RSS is per decode.
-- **All cores**: FlashRaw's default thread pool; RawSpeed with OpenMP; LibRaw built **with
-  OpenMP**, which parallelises its CR3, Fuji-compressed and Panasonic v8 decoders and parts of
-  `dcraw_process`. **One thread**: FlashRaw with `RAYON_NUM_THREADS=1`, RawSpeed with
-  `OMP_NUM_THREADS=1`, LibRaw's default (non-OpenMP) build. In every case the decode runs on
-  the calling thread.
-- The machines also run other jobs: each full run was done twice and, for every measurement,
-  the lower of the two medians is kept (both are in the `.jsonl` files as `ms_passes`).
-- Builds favour the other libraries where we could: `-O3`, `-march=native` on x86-64 (RawSpeed
-  sets it itself), OpenMP enabled. Versions and flags are in the headers of the result files.
+- Every value is the **median of 7 timed runs after one warm-up**, in a **fresh process per
+  (file, library, mode, thread count)**. The input file is read into memory before timing
+  (RawSpeed gets a padded copy, as its own reader provides) — except dcraw, a program rather
+  than a library: each of its runs is a whole process (start-up, reading the file from the page
+  cache, writing the image to `/dev/null`), so its times include a few ms the others do not pay.
+- **Memory** is the peak resident set size (`ru_maxrss`) of that process: the input file held
+  in memory, the library's working buffers and its output. The process decodes one file 8
+  times in a row, freeing everything between decodes, so the peak is that of one decode. rawpy
+  includes the Python interpreter and NumPy (about 27 MB before anything is decoded).
+- **All cores** = each library's default parallelism: FlashRaw's thread pool, OpenMP for
+  LibRaw, RawSpeed and the lcms2 transform, rayon for rawler; rawpy's wheels use OpenMP on
+  Linux but not on macOS. **One thread**: `RAYON_NUM_THREADS=1`, `OMP_NUM_THREADS=1`, LibRaw's
+  default build. dcraw runs on one thread in both columns.
+- Files a library does not decode (error, or unsupported format) are left out of its
+  comparisons. dcraw 9.28 "succeeds" on some files it cannot decode and writes an all-zero
+  image (Canon CR3, whose decoder is an empty stub, and the Fujifilm compressed RAFs of current
+  bodies): the script checks dcraw's output and counts those files as unsupported.
 
 ### What the outputs are
 
-The libraries do not produce byte-identical results, so the comparison is of equivalent
-work, not identical output:
+The libraries do not produce byte-identical results, so the comparison is of equivalent work,
+not identical output:
 
-- **decode**: all three decode the full sensor buffer. FlashRaw and LibRaw report it whole,
-  masked (optical black) borders included; RawSpeed reports a view cropped to the camera's
-  active area. All three also return black/white levels and white balance. FlashRaw applies
-  DNG opcode lists by default (bad pixels, gain maps, …); RawSpeed applies a subset of list 1,
-  LibRaw none (without the Adobe DNG SDK).
-- **RAW → RGB**: FlashRaw and LibRaw both demosaic bilinearly with the camera white balance and
-  convert to 8-bit sRGB. LibRaw additionally runs its automatic brightness histogram and
-  writes 3-channel RGB with a BT.709-style gamma; FlashRaw writes RGBA with the sRGB curve and
-  applies DNG opcode list 3. FlashRaw's demosaic is fused with colour conversion in a single
-  multithreaded pass.
+- **decode**: every library decodes the full sensor buffer. FlashRaw and LibRaw report it
+  whole, masked (optical black) borders included; RawSpeed reports a view cropped to the
+  camera's active area. All return black/white levels and white balance. FlashRaw applies DNG
+  opcode lists by default (bad pixels, gain maps, …); RawSpeed applies a subset of list 1, the
+  others none.
+- **RAW → sRGB**: FlashRaw, LibRaw, rawpy and dcraw demosaic bilinearly with the camera white
+  balance and convert to 8-bit sRGB; rawler uses its PPG demosaic (more work than bilinear)
+  in 32-bit floats. LibRaw, rawpy and dcraw also run an automatic-brightness histogram and
+  write 3-channel RGB with a BT.709-style gamma; FlashRaw writes RGBA with the sRGB curve,
+  applies DNG opcode list 3 and the orientation. The LibRaw + Little CMS pipeline skips the
+  auto-brightness (it develops linear data) and writes RGBA, like FlashRaw.
 
 ## Reproducing
 
@@ -79,13 +127,17 @@ cargo build --release -p flashraw-cli --features jpegxl     # add gpu for the GP
 python3 tools/bench/run.py benches/benchmark-set.tsv --iterations 5 \
     --out benches/results/<host>.jsonl --markdown benches/results/<host>.md
 
-# Against LibRaw and RawSpeed: see the header of tools/bench/compare.py for how to get and
+# Against the other libraries: see the header of tools/bench/compare.py for how to get and
 # build them (nothing is vendored); then
-tools/bench/compare.py build --libraw-src <LibRaw> --rawspeed-src <rawspeed> --rawspeed-build <build>
-tools/bench/compare.py run benches/popular-cameras.tsv benches/benchmark-set.tsv \
-    --out pass1.jsonl [--max-busy 0.15]              # --max-busy: wait for a quiet machine (Linux)
-tools/bench/compare.py report pass1.jsonl pass2.jsonl --popular benches/popular-cameras.tsv \
+tools/bench/compare.py build --libraw-src <LibRaw> --rawspeed-src <rawspeed> --rawspeed-build <build> \
+    --lcms-src <Little-CMS> --dcraw-src <dcraw.c> --rawler-version 0.8.0 --rawpy rawpy==0.27.1
+tools/bench/compare.py run benches/popular-cameras.tsv \
+    --libs flashraw libraw rawspeed rawler rawpy dcraw lcms --out pass1.jsonl [--max-busy 0.15]
+tools/bench/compare.py run benches/benchmark-set.tsv --libs flashraw libraw rawspeed --out set.jsonl
+tools/bench/compare.py merge pass1.jsonl pass2.jsonl set.jsonl --out benches/results/<host>-compare.jsonl
+tools/bench/compare.py report benches/results/<host>-compare.jsonl --popular benches/popular-cameras.tsv \
     --markdown benches/results/<host>-compare.md
+tools/bench/charts.py                                # docs/charts/*.svg + data.json
 
 cargo bench -p flashraw --bench kernels              # micro-benchmarks (criterion)
 cargo bench -p flashraw-gpu --bench gpu_pipeline     # GPU (needs an adapter)
@@ -99,266 +151,604 @@ cargo bench -p flashraw-gpu --bench gpu_pipeline     # GPU (needs an adapter)
 | Memory, OS | 64 GB DDR5, Linux 6.12 (Debian 13) | 64 GB, macOS 27.0 |
 | Compilers | rustc 1.99, GCC 14.2 | rustc 1.95, Apple clang 17.0 |
 | Threads (all cores) | 16 | 20 |
-| Conditions | shared with other jobs (builds, browser tests); before each measurement the script waited until other processes used < 15–30 % of the CPU (they used ≤ 15 % for 99.8 % of the kept values, median 0.9 %); three passes, the third at night; the two lowest passes agree within 1 % (median) / 8 % (90th percentile) | desktop session, otherwise idle (`top`: 90–92 % idle); the two passes agree within 1 % (median) / 5 % (90th percentile) |
+| Conditions | shared with other jobs (builds, browser tests; load average 2–15): before each measurement the script waited up to 20–60 s for other processes to use under 15 % of the CPU (they did for 97 % of the kept values, median 1.3 %); one full pass, a second pass over 37 of the 62 popular cameras, and every measurement taken while the machine was busier measured again; lowest median kept | desktop session with background services (a virtual machine, storage indexing) using about 10–20 % of the CPU (`top`: 77–92 % idle); two full passes of the popular cameras, one of the 159-file set, lowest median kept; the two passes agree within 0.8 % (median) / 3.2 % (90th percentile) |
 | Results | [`linux-x86_64-compare.md`](../benches/results/linux-x86_64-compare.md) | [`macos-arm64-compare.md`](../benches/results/macos-arm64-compare.md) |
-
-## Popular cameras (Linux x86-64)
-
-Times in ms, all cores, **bold** = fastest. Single-thread tables: [result file](../benches/results/linux-x86_64-compare.md).
-
-| Camera | Format · compression | MP | Decode: FlashRaw | LibRaw | RawSpeed | RAW→RGB: FlashRaw | LibRaw |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Canon EOS R5 (RAW) | CR3 · canon-crx | 46.7 | **56.6** | 58.2 | ❌ | **105.3** | 482.6 |
-| Canon EOS R5 (C-RAW) | CR3 · canon-crx | 46.7 | 71.1 | **68.6** | ❌ | **120.4** | 503.4 |
-| Canon EOS R5 Mark II (RAW) | CR3 · canon-crx | 47.9 | **57.3** | 59.0 | ❌ | **105.6** | 486.7 |
-| Canon EOS R6 Mark II (RAW) | CR3 · canon-crx | 25.5 | **32.7** | 32.8 | ❌ | **58.2** | 263.3 |
-| Canon EOS R6 Mark III (RAW) | CR3 · canon-crx | 34.0 | **41.9** | 42.5 | ❌ | **75.9** | 348.5 |
-| Canon EOS R7 (RAW) | CR3 · canon-crx | 33.7 | **41.1** | 42.4 | ❌ | **75.6** | 352.0 |
-| Canon EOS R8 (RAW) | CR3 · canon-crx | 25.5 | 33.1 | **32.9** | ❌ | **58.1** | 263.1 |
-| Canon EOS R50 (RAW) | CR3 · canon-crx | 25.1 | **30.7** | 31.8 | ❌ | **56.3** | 267.6 |
-| Canon EOS 90D (RAW) | CR3 · canon-crx | 33.7 | **34.2** | 42.0 | ❌ | **68.0** | 352.1 |
-| Canon EOS 5D Mark IV (RAW) | CR2 · lossless-jpeg | 31.3 | **23.9** | 347.2 | 69.0 | **57.4** | 632.6 |
-| Canon EOS 6D Mark II (RAW) | CR2 · lossless-jpeg | 27.0 | **19.9** | 264.8 | 82.2 | **49.1** | 519.2 |
-| Canon EOS Rebel T7 / 2000D (RAW) | CR2 · lossless-jpeg | 24.7 | **22.9** | 309.1 | 87.3 | **49.9** | 543.7 |
-| Nikon Z8 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **47.6** | 424.3 | 178.3 | **96.7** | 856.4 |
-| Nikon Z9 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **48.3** | 403.5 | 133.6 | **99.2** | 835.5 |
-| Nikon Z6III (lossless) | NEF · nikon-huffman | 24.5 | **27.5** | 228.5 | 85.3 | **53.8** | 460.7 |
-| Nikon Zf (lossless) | NEF · nikon-huffman | 24.5 | **26.5** | 217.7 | 68.3 | **57.3** | 451.4 |
-| Nikon Z7II (lossless) | NEF · nikon-huffman | 45.7 | **48.5** | 400.6 | 117.5 | **98.4** | 833.6 |
-| Nikon Z50 (lossless) | NEF · nikon-huffman | 20.9 | **23.6** | 200.7 | 72.8 | **46.5** | 407.9 |
-| Nikon D850 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **48.5** | 397.2 | 118.7 | **98.4** | 828.1 |
-| Nikon D750 (14-bit lossless) | NEF · nikon-huffman | 24.3 | **25.9** | 203.6 | 57.5 | **54.9** | 435.5 |
-| Sony A7 IV (lossless) | ARW · sony-lossless | 36.7 | **14.9** | 312.5 | 15.6 | **50.9** | 628.9 |
-| Sony A7 IV (compressed) | ARW · sony-arw2 | 33.0 | **8.15** | 80.1 | 10.9 | **43.9** | 394.8 |
-| Sony A7R V (lossless) | ARW · sony-lossless | 64.7 | **26.7** | 578.1 | 31.4 | **101.7** | 1176.1 |
-| Sony A1 (compressed) | ARW · sony-arw2 | 50.2 | **11.5** | 118.0 | 16.7 | **69.4** | 599.0 |
-| Sony A7 III (compressed) | ARW · sony-arw2 | 24.3 | **5.78** | 59.5 | 20.0 | **32.4** | 299.0 |
-| Sony A7C II (compressed) | ARW · sony-arw2 | 33.0 | **7.96** | 78.4 | 23.8 | **47.5** | 394.5 |
-| Sony A9 III (compressed) | ARW · sony-arw2 | 24.3 | **5.74** | 59.9 | 8.23 | **32.8** | 292.2 |
-| Sony A6700 (lossless) | ARW · sony-lossless | 30.7 | **14.1** | 276.8 | 15.5 | **42.4** | 522.5 |
-| Sony A6400 (compressed) | ARW · sony-arw2 | 24.3 | **5.32** | 52.6 | 7.67 | **32.2** | 284.1 |
-| Sony ZV-E10 (compressed) | ARW · sony-arw2 | 24.3 | **5.06** | 53.9 | 8.06 | **28.4** | 285.5 |
-| Fujifilm X-T5 (lossless compressed) | RAF · fuji-compressed | 40.9 | **53.3** | 155.8 | 114.6 | **108.7** | 539.8 |
-| Fujifilm X-H2 (compressed) | RAF · fuji-compressed | 40.9 | **69.3** | 174.8 | ❌ | **137.7** | 596.3 |
-| Fujifilm X-S20 (lossless compressed) | RAF · fuji-compressed | 26.5 | **38.0** | 122.7 | 86.1 | **78.4** | 377.1 |
-| Fujifilm X100VI (lossless compressed) | RAF · fuji-compressed | 40.9 | **54.4** | 164.2 | 119.0 | **127.9** | 577.8 |
-| Fujifilm X-T4 (uncompressed) | RAF · uncompressed | 26.7 | **3.69** | 16.3 | 4.33 | **42.1** | 267.9 |
-| Fujifilm GFX100 II (lossless compressed) | RAF · fuji-compressed | 103.4 | **114.4** | 258.7 | 225.6 | **216.7** | 1256.8 |
-| Panasonic Lumix S5II | RW2 · panasonic-v8 | 24.1 | **26.2** | 87.5 | 89.9 | **50.7** | 350.5 |
-| Panasonic Lumix GH6 | RW2 · panasonic-v8 | 25.2 | **28.2** | 91.4 | 94.6 | **55.9** | 366.1 |
-| Panasonic Lumix G9II | RW2 · panasonic-v8 | 25.1 | **26.3** | 95.8 | 95.7 | **56.0** | 369.1 |
-| Panasonic Lumix S5 | RW2 · panasonic-v7 | 24.3 | **4.62** | 9.87 | 7.80 | **32.7** | 271.5 |
-| Panasonic Lumix S1R | RW2 · panasonic-v6 | 47.6 | **13.1** | 85.6 | 24.2 | **67.2** | 598.4 |
-| Panasonic Lumix GH5 | RW2 · panasonic-v4 | 20.6 | **6.48** | 55.7 | 18.2 | **29.1** | 277.4 |
-| OM System OM-1 Mark II | ORF · olympus | 20.4 | **65.0** | 331.8 | 141.4 | **88.6** | 525.3 |
-| OM System OM-5 | ORF · olympus | 20.5 | **60.6** | 276.4 | 136.9 | **82.9** | 471.8 |
-| Olympus E-M1 Mark III | ORF · olympus | 20.5 | **57.5** | 251.1 | 133.8 | **80.9** | 452.3 |
-| Pentax K-3 Mark III | PEF · pentax-huffman | 26.6 | **34.0** | 222.1 | 56.0 | **64.2** | 468.8 |
-| Pentax K-1 Mark II | PEF · pentax-huffman | 36.6 | **44.3** | 318.2 | 90.9 | **85.8** | 655.8 |
-| Ricoh GR III | DNG · lossless-jpeg | 24.8 | **22.2** | 264.9 | 67.9 | **49.8** | 496.9 |
-| Leica Q2 | DNG · uncompressed | 47.4 | **8.41** | 192.3 | 32.4 | **58.9** | 636.8 |
-| Leica SL2 | DNG · uncompressed | 47.4 | **8.39** | 191.8 | 32.2 | **61.7** | 640.3 |
-| Leica M10-R | DNG · lossless-jpeg | 41.0 | **42.6** | 437.1 | 151.3 | **88.0** | 824.9 |
-| Hasselblad X2D 100C (compressed) | FFF · hasselblad | 105.3 | **96.1** | 852.5 | 489.9 | **213.0** | 1820.6 |
-| Phase One IQ4 150MP (IIQ L) | IIQ · phaseone | 154.0 | **56.8** | 653.4 | ❌ | **224.1** | 2461.7 |
-| Sigma fp L | DNG · lossless-jpeg | 60.5 | **18.4** | 622.2 | 35.2 | **133.4** | 1195.2 |
-| Apple iPhone 12 Pro (ProRAW) | DNG · lossless-jpeg | 12.2 | **20.3** | 318.9 | ❌ | **38.3** | 383.6 |
-| Google Pixel 8 Pro | DNG · lossless-jpeg | 50.1 | **14.6** | 526.7 | 30.9 | **119.5** | 1097.7 |
-| Google Pixel 6 Pro | DNG · lossless-jpeg | 12.5 | **3.37** | 131.9 | 12.0 | **28.8** | 254.3 |
-| Samsung Galaxy S23 Ultra | DNG · lossless-jpeg | 49.9 | **103.0** | 1271.2 | 379.2 | **258.7** | 1509.0 |
-| Samsung Galaxy S22 (JPEG XL) | DNG · jpeg-xl | 12.0 | **235.4** | ❌ | ❌ | **285.7** | ❌ |
-| DJI Phantom 4 Pro | DNG · uncompressed | 20.0 | **2.53** | 10.4 | 3.14 | **78.6** | 201.9 |
-| GoPro HERO11 Black (GPR) | DNG · gopro-vc5 | 27.1 | 45.9 | ❌ | **26.5** | **99.3** | ❌ |
-| GoPro HERO10 Black (GPR) | DNG · gopro-vc5 | 23.3 | 41.5 | ❌ | **23.2** | **85.4** | ❌ |
 
 ## Popular cameras (Apple M1 Ultra)
 
-Times in ms, all cores, **bold** = fastest. Single-thread tables: [result file](../benches/results/macos-arm64-compare.md).
+Times in ms, all cores, **bold** = fastest. ² dcraw has no threads (one-thread time).
+One-thread tables: [result file](../benches/results/macos-arm64-compare.md).
 
-| Camera | Format · compression | MP | Decode: FlashRaw | LibRaw | RawSpeed | RAW→RGB: FlashRaw | LibRaw | FlashRaw GPU |
+### Decode
+
+| Camera | Format · compression | MP | FlashRaw | LibRaw | RawSpeed | rawler | rawpy | dcraw ² |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| Canon EOS R5 (RAW) | CR3 · canon-crx | 46.7 | **80.4** | 136.6 | ❌ | **110.4** | 731.8 | 97.3 |
-| Canon EOS R5 (C-RAW) | CR3 · canon-crx | 46.7 | **100.4** | 139.9 | ❌ | **131.0** | 733.4 | 117.6 |
-| Canon EOS R5 Mark II (RAW) | CR3 · canon-crx | 47.9 | **82.9** | 140.3 | ❌ | **112.8** | 729.4 | 100.4 |
-| Canon EOS R6 Mark II (RAW) | CR3 · canon-crx | 25.5 | **45.5** | 76.4 | ❌ | **62.2** | 406.4 | 56.6 |
-| Canon EOS R6 Mark III (RAW) | CR3 · canon-crx | 34.0 | **59.4** | 100.3 | ❌ | **81.3** | 534.9 | 72.9 |
-| Canon EOS R7 (RAW) | CR3 · canon-crx | 33.7 | **59.5** | 99.7 | ❌ | **81.5** | 537.7 | 72.5 |
-| Canon EOS R8 (RAW) | CR3 · canon-crx | 25.5 | **45.2** | 75.7 | ❌ | **61.5** | 405.7 | 55.6 |
-| Canon EOS R50 (RAW) | CR3 · canon-crx | 25.1 | **44.6** | 74.9 | ❌ | **61.1** | 404.2 | 54.5 |
-| Canon EOS 90D (RAW) | CR3 · canon-crx | 33.7 | **31.3** | 99.6 | ❌ | **53.6** | 538.9 | 44.3 |
-| Canon EOS 5D Mark IV (RAW) | CR2 · lossless-jpeg | 31.3 | **19.3** | 423.6 | 107.1 | **39.4** | 834.0 | 30.2 |
-| Canon EOS 6D Mark II (RAW) | CR2 · lossless-jpeg | 27.0 | **17.1** | 380.1 | 117.1 | **34.8** | 745.0 | 28.2 |
-| Canon EOS Rebel T7 / 2000D (RAW) | CR2 · lossless-jpeg | 24.7 | **18.7** | 394.0 | 119.6 | **35.6** | 723.2 | 28.7 |
-| Nikon Z8 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **43.9** | 540.4 | 222.4 | **73.8** | 1145.2 | 62.6 |
-| Nikon Z9 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **44.1** | 500.0 | 181.8 | **75.0** | 1106.4 | 62.6 |
-| Nikon Z6III (lossless) | NEF · nikon-huffman | 24.5 | **24.9** | 279.4 | 108.2 | **41.6** | 622.0 | 36.6 |
-| Nikon Zf (lossless) | NEF · nikon-huffman | 24.5 | **24.6** | 267.8 | 97.9 | **41.0** | 601.4 | 35.3 |
-| Nikon Z7II (lossless) | NEF · nikon-huffman | 45.7 | **44.3** | 480.4 | 172.5 | **74.9** | 1093.5 | 64.1 |
-| Nikon Z50 (lossless) | NEF · nikon-huffman | 20.9 | **22.0** | 244.5 | 93.6 | **36.4** | 536.2 | 31.7 |
-| Nikon D850 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **45.0** | 484.7 | 170.2 | **75.8** | 1080.6 | 63.1 |
-| Nikon D750 (14-bit lossless) | NEF · nikon-huffman | 24.3 | **24.6** | 253.1 | 83.0 | **42.3** | 588.3 | 36.2 |
-| Sony A7 IV (lossless) | ARW · sony-lossless | 36.7 | 18.2 | 416.7 | **11.2** | **41.6** | 859.9 | 31.1 |
-| Sony A7 IV (compressed) | ARW · sony-arw2 | 33.0 | **5.81** | 84.5 | 8.23 | **28.3** | 533.0 | 16.6 |
-| Sony A7R V (lossless) | ARW · sony-lossless | 64.7 | 32.4 | 758.9 | **22.9** | **71.6** | 1559.1 | 53.8 |
-| Sony A1 (compressed) | ARW · sony-arw2 | 50.2 | **8.15** | 127.8 | 13.3 | **41.7** | 791.1 | 23.5 |
-| Sony A7 III (compressed) | ARW · sony-arw2 | 24.3 | **4.40** | 62.1 | 6.18 | **21.3** | 394.3 | 12.9 |
-| Sony A7C II (compressed) | ARW · sony-arw2 | 33.0 | **5.77** | 84.1 | 7.92 | **28.4** | 530.1 | 16.7 |
-| Sony A9 III (compressed) | ARW · sony-arw2 | 24.3 | **4.43** | 61.8 | 7.19 | **20.5** | 396.3 | 12.9 |
-| Sony A6700 (lossless) | ARW · sony-lossless | 30.7 | 16.9 | 365.1 | **11.5** | **34.5** | 721.7 | 27.1 |
-| Sony A6400 (compressed) | ARW · sony-arw2 | 24.3 | **4.34** | 63.4 | 5.74 | **21.0** | 397.1 | 13.4 |
-| Sony ZV-E10 (compressed) | ARW · sony-arw2 | 24.3 | **4.28** | 63.5 | 6.18 | **18.7** | 394.6 | 12.3 |
-| Fujifilm X-T5 (lossless compressed) | RAF · fuji-compressed | 40.9 | **35.3** | 150.2 | 44.2 | **74.7** | 687.6 | 51.8 |
-| Fujifilm X-H2 (compressed) | RAF · fuji-compressed | 40.9 | **46.3** | 175.0 | ❌ | **94.0** | 878.6 | 63.6 |
-| Fujifilm X-S20 (lossless compressed) | RAF · fuji-compressed | 26.5 | **28.5** | 127.6 | 36.2 | **55.0** | 483.0 | 40.1 |
-| Fujifilm X100VI (lossless compressed) | RAF · fuji-compressed | 40.9 | **34.9** | 153.5 | 44.3 | **83.0** | 897.3 | 54.4 |
-| Fujifilm X-T4 (uncompressed) | RAF · uncompressed | 26.7 | 1.58 | 16.5 | **1.36** | **27.9** | 376.0 | 9.06 |
-| Fujifilm GFX100 II (lossless compressed) | RAF · fuji-compressed | 103.4 | **58.7** | 263.7 | 71.3 | **124.1** | 1588.9 | 90.8 |
-| Panasonic Lumix S5II | RW2 · panasonic-v8 | 24.1 | **14.2** | 129.7 | 62.8 | **30.7** | 470.8 | 24.1 |
-| Panasonic Lumix GH6 | RW2 · panasonic-v8 | 25.2 | **14.9** | 130.9 | 63.7 | **32.5** | 491.4 | 25.6 |
-| Panasonic Lumix G9II | RW2 · panasonic-v8 | 25.1 | **14.3** | 137.5 | 57.0 | **31.5** | 496.1 | 23.9 |
-| Panasonic Lumix S5 | RW2 · panasonic-v7 | 24.3 | 2.46 | 8.21 | **0.61** | **18.9** | 352.0 | 11.0 |
-| Panasonic Lumix S1R | RW2 · panasonic-v6 | 47.6 | 8.52 | 119.6 | **7.62** | **39.7** | 797.5 | 23.4 |
-| Panasonic Lumix GH5 | RW2 · panasonic-v4 | 20.6 | **4.59** | 88.5 | 4.85 | **19.0** | 380.8 | 12.6 |
-| OM System OM-1 Mark II | ORF · olympus | 20.4 | **113.0** | 384.0 | 159.0 | **128.5** | 674.1 | 122.4 |
-| OM System OM-5 | ORF · olympus | 20.5 | **122.1** | 343.9 | 152.6 | **138.3** | 633.4 | 132.5 |
-| Olympus E-M1 Mark III | ORF · olympus | 20.5 | **121.7** | 337.9 | 146.5 | **137.6** | 624.4 | 132.3 |
-| Pentax K-3 Mark III | PEF · pentax-huffman | 26.6 | **29.4** | 195.4 | 83.3 | **47.1** | 557.3 | 40.6 |
-| Pentax K-1 Mark II | PEF · pentax-huffman | 36.6 | **37.4** | 276.9 | 128.0 | **61.6** | 776.9 | 53.7 |
-| Ricoh GR III | DNG · lossless-jpeg | 24.8 | **18.2** | 311.9 | 94.1 | **34.5** | 649.3 | 28.2 |
-| Leica Q2 | DNG · uncompressed | 47.4 | **4.22** | 286.5 | 48.9 | **35.5** | 910.0 | CPU¹ |
-| Leica SL2 | DNG · uncompressed | 47.4 | **4.23** | 287.9 | 47.6 | **35.3** | 915.0 | CPU¹ |
-| Leica M10-R | DNG · lossless-jpeg | 41.0 | **28.5** | 543.3 | 194.9 | **55.8** | 1092.4 | 43.8 |
-| Hasselblad X2D 100C (compressed) | FFF · hasselblad | 105.3 | **75.5** | 991.4 | 442.3 | **146.6** | 2315.7 | 118.8 |
-| Phase One IQ4 150MP (IIQ L) | IIQ · phaseone | 154.0 | **40.4** | 1010.5 | ❌ | **139.2** | 4360.4 | 85.2 |
-| Sigma fp L | DNG · lossless-jpeg | 60.5 | 27.6 | 751.8 | **21.1** | **85.1** | 1544.0 | CPU¹ |
-| Apple iPhone 12 Pro (ProRAW) | DNG · lossless-jpeg | 12.2 | **15.2** | 460.9 | ❌ | **23.8** | 586.7 | 20.8 |
-| Google Pixel 8 Pro | DNG · lossless-jpeg | 50.1 | 21.8 | 636.1 | **16.2** | **71.3** | 1422.0 | CPU¹ |
-| Google Pixel 6 Pro | DNG · lossless-jpeg | 12.5 | 6.17 | 158.2 | **4.66** | **21.3** | 344.0 | CPU¹ |
-| Samsung Galaxy S23 Ultra | DNG · lossless-jpeg | 49.9 | **127.7** | 1864.1 | 534.9 | **196.1** | 2150.5 | CPU¹ |
-| Samsung Galaxy S22 (JPEG XL) | DNG · jpeg-xl | 12.0 | **271.1** | ❌ | ❌ | **292.8** | ❌ | CPU¹ |
-| DJI Phantom 4 Pro | DNG · uncompressed | 20.0 | 1.21 | 16.6 | **1.15** | **31.9** | 294.4 | CPU¹ |
-| GoPro HERO11 Black (GPR) | DNG · gopro-vc5 | 27.1 | 38.5 | ❌ | **18.2** | **66.3** | ❌ | CPU¹ |
-| GoPro HERO10 Black (GPR) | DNG · gopro-vc5 | 23.3 | 34.8 | ❌ | **17.4** | **59.6** | ❌ | CPU¹ |
+| Canon EOS R5 (RAW) | CR3 · canon-crx | 46.7 | **80.9** | 138.0 | ❌ | 237.3 | 444.4 | ❌ |
+| Canon EOS R5 (C-RAW) | CR3 · canon-crx | 46.7 | **100.7** | 141.0 | ❌ | 196.5 | 368.0 | ❌ |
+| Canon EOS R5 Mark II (RAW) | CR3 · canon-crx | 47.9 | **83.2** | 141.4 | ❌ | 234.0 | 451.7 | ❌ |
+| Canon EOS R6 Mark II (RAW) | CR3 · canon-crx | 25.5 | **45.7** | 76.9 | ❌ | 136.2 | 235.8 | ❌ |
+| Canon EOS R6 Mark III (RAW) | CR3 · canon-crx | 34.0 | **59.6** | 100.4 | ❌ | 144.6 | 321.8 | ❌ |
+| Canon EOS R7 (RAW) | CR3 · canon-crx | 33.7 | **60.0** | 100.6 | ❌ | 170.9 | 317.6 | ❌ |
+| Canon EOS R8 (RAW) | CR3 · canon-crx | 25.5 | **45.4** | 75.3 | ❌ | 130.7 | 240.1 | ❌ |
+| Canon EOS R50 (RAW) | CR3 · canon-crx | 25.1 | **44.8** | 75.3 | ❌ | 123.2 | 230.8 | ❌ |
+| Canon EOS 90D (RAW) | CR3 · canon-crx | 33.7 | **31.2** | 99.7 | ❌ | 111.6 | 315.7 | ❌ |
+| Canon EOS 5D Mark IV (RAW) | CR2 · lossless-jpeg | 31.3 | **20.5** | 431.4 | 110.2 | 251.5 | 428.3 | 587.6 |
+| Canon EOS 6D Mark II (RAW) | CR2 · lossless-jpeg | 27.0 | **17.6** | 389.7 | 121.2 | 238.2 | 379.3 | 541.9 |
+| Canon EOS Rebel T7 / 2000D (RAW) | CR2 · lossless-jpeg | 24.7 | **19.0** | 397.3 | 121.8 | 230.1 | 383.9 | 527.9 |
+| Nikon Z8 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **44.0** | 544.4 | 218.3 | 356.5 | 570.7 | 857.1 |
+| Nikon Z9 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **48.2** | 499.0 | 186.5 | 332.7 | 515.6 | 792.7 |
+| Nikon Z6III (lossless) | NEF · nikon-huffman | 24.5 | **25.0** | 284.6 | 110.5 | 186.2 | 297.6 | 452.9 |
+| Nikon Zf (lossless) | NEF · nikon-huffman | 24.5 | **24.9** | 267.5 | 95.9 | 174.1 | 279.5 | 426.7 |
+| Nikon Z7II (lossless) | NEF · nikon-huffman | 45.7 | **45.4** | 488.2 | 168.9 | 320.4 | 499.5 | 775.7 |
+| Nikon Z50 (lossless) | NEF · nikon-huffman | 20.9 | **22.0** | 246.9 | 96.3 | 157.7 | 261.8 | 389.9 |
+| Nikon D850 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **45.1** | 487.7 | 170.4 | 324.9 | 504.4 | 769.8 |
+| Nikon D750 (14-bit lossless) | NEF · nikon-huffman | 24.3 | **24.8** | 255.8 | 84.8 | 166.3 | 263.2 | 413.2 |
+| Sony A7 IV (lossless) | ARW · sony-lossless | 36.7 | 19.2 | 413.6 | **11.7** | 38.7 | 427.2 | ❌ |
+| Sony A7 IV (compressed) | ARW · sony-arw2 | 33.0 | **5.86** | 87.4 | 8.77 | 8.38 | 85.0 | 260.1 |
+| Sony A7R V (lossless) | ARW · sony-lossless | 64.7 | 33.2 | 760.9 | **24.2** | 61.3 | 765.4 | ❌ |
+| Sony A1 (compressed) | ARW · sony-arw2 | 50.2 | **8.14** | 132.0 | 13.4 | 11.8 | 127.5 | 401.3 |
+| Sony A7 III (compressed) | ARW · sony-arw2 | 24.3 | **4.49** | 64.7 | 7.20 | 6.43 | 62.5 | 198.7 |
+| Sony A7C II (compressed) | ARW · sony-arw2 | 33.0 | **5.83** | 87.1 | 8.55 | 8.28 | 85.9 | 267.8 |
+| Sony A9 III (compressed) | ARW · sony-arw2 | 24.3 | **4.65** | 63.6 | 6.83 | 6.82 | 62.9 | 197.3 |
+| Sony A6700 (lossless) | ARW · sony-lossless | 30.7 | 16.9 | 373.3 | **13.0** | 42.2 | 374.6 | ❌ |
+| Sony A6400 (compressed) | ARW · sony-arw2 | 24.3 | **4.47** | 63.0 | 6.54 | 6.41 | 62.2 | 202.5 |
+| Sony ZV-E10 (compressed) | ARW · sony-arw2 | 24.3 | **4.47** | 64.7 | 6.60 | 6.40 | 64.0 | 203.0 |
+| Fujifilm X-T5 (lossless compressed) | RAF · fuji-compressed | 40.9 | **35.5** | 150.6 | 44.4 | 93.9 | 1167.2 | ❌ |
+| Fujifilm X-H2 (compressed) | RAF · fuji-compressed | 40.9 | **46.5** | 172.8 | ❌ | 127.0 | 1477.7 | ❌ |
+| Fujifilm X-S20 (lossless compressed) | RAF · fuji-compressed | 26.5 | **28.3** | 127.0 | 36.3 | 81.0 | 816.4 | ❌ |
+| Fujifilm X100VI (lossless compressed) | RAF · fuji-compressed | 40.9 | **35.6** | 154.5 | 44.5 | 94.7 | 1178.0 | ❌ |
+| Fujifilm X-T4 (uncompressed) | RAF · uncompressed | 26.7 | 1.60 | 18.8 | **1.18** | 3.26 | 16.7 | 160.5 |
+| Fujifilm GFX100 II (lossless compressed) | RAF · fuji-compressed | 103.4 | **67.3** | 267.2 | 76.6 | 143.1 | 2614.4 | ❌ |
+| Panasonic Lumix S5II | RW2 · panasonic-v8 | 24.1 | **15.1** | 131.1 | 62.4 | 119.1 | 238.6 | 234.5 |
+| Panasonic Lumix GH6 | RW2 · panasonic-v8 | 25.2 | **17.0** | 133.2 | 63.5 | 117.0 | 251.2 | 253.0 |
+| Panasonic Lumix G9II | RW2 · panasonic-v8 | 25.1 | **15.3** | 137.9 | 58.7 | 122.9 | 273.5 | 249.7 |
+| Panasonic Lumix S5 | RW2 · panasonic-v7 | 24.3 | 2.61 | 8.48 | **0.60** | 3.79 | 8.58 | 241.4 |
+| Panasonic Lumix S1R | RW2 · panasonic-v6 | 47.6 | **8.46** | 122.8 | 8.63 | 10.7 | 120.6 | 464.6 |
+| Panasonic Lumix GH5 | RW2 · panasonic-v4 | 20.6 | **4.68** | 91.0 | 4.77 | 7.02 | 91.2 | 204.0 |
+| OM System OM-1 Mark II | ORF · olympus | 20.4 | **115.8** | 381.5 | 162.2 | 225.0 | 385.4 | 149.0 |
+| OM System OM-5 | ORF · olympus | 20.5 | **126.0** | 350.9 | 152.2 | 220.9 | 351.0 | 147.2 |
+| Olympus E-M1 Mark III | ORF · olympus | 20.5 | **122.2** | 339.7 | 147.6 | 197.9 | 339.1 | 443.1 |
+| Pentax K-3 Mark III | PEF · pentax-huffman | 26.6 | **29.8** | 204.3 | 83.6 | 173.5 | 292.7 | 448.3 |
+| Pentax K-1 Mark II | PEF · pentax-huffman | 36.6 | **38.0** | 293.4 | 131.2 | 257.3 | 406.4 | 639.9 |
+| Ricoh GR III | DNG · lossless-jpeg | 24.8 | **18.1** | 316.2 | 96.2 | 214.5 | 331.7 | 477.1 |
+| Leica Q2 | DNG · uncompressed | 47.4 | **4.04** | 292.9 | 49.2 | 4.54 | 366.0 | 674.9 |
+| Leica SL2 | DNG · uncompressed | 47.4 | **4.09** | 289.9 | 48.6 | 4.70 | 371.6 | 681.0 |
+| Leica M10-R | DNG · lossless-jpeg | 41.0 | **28.9** | 559.0 | 197.3 | 380.5 | 553.8 | 845.6 |
+| Hasselblad X2D 100C (compressed) | FFF · hasselblad | 105.3 | **76.6** | 1012.8 | 451.1 | ❌ | 1108.5 | 2216.0 |
+| Phase One IQ4 150MP (IIQ L) | IIQ · phaseone | 154.0 | **42.1** | 1006.4 | ❌ | 341.0 | 1058.7 | 4147.3 |
+| Sigma fp L | DNG · lossless-jpeg | 60.5 | 28.0 | 761.2 | **22.4** | 40.9 | 763.0 | 1183.4 |
+| Apple iPhone 12 Pro (ProRAW) | DNG · lossless-jpeg | 12.2 | **15.4** | 469.0 | ❌ | 27.8 | 465.2 | 577.1 |
+| Google Pixel 8 Pro | DNG · lossless-jpeg | 50.1 | 23.1 | 655.7 | **18.9** | 34.2 | 645.2 | 996.0 |
+| Google Pixel 6 Pro | DNG · lossless-jpeg | 12.5 | 6.45 | 163.5 | **4.92** | 10.6 | 163.3 | 254.0 |
+| Samsung Galaxy S23 Ultra | DNG · lossless-jpeg | 49.9 | **128.7** | 1916.4 | 549.6 | 1134.9 | 1803.2 | 2277.8 |
+| Samsung Galaxy S22 (JPEG XL) | DNG · jpeg-xl | 12.0 | 272.5 | ❌ | ❌ | **172.6** | ❌ | ❌ |
+| DJI Phantom 4 Pro | DNG · uncompressed | 20.0 | 1.22 | 17.0 | **0.99** | 1.36 | 17.0 | 142.4 |
+| GoPro HERO11 Black (GPR) | DNG · gopro-vc5 | 27.1 | 39.8 | ❌ | **18.5** | ❌ | ❌ | ❌ |
+| GoPro HERO10 Black (GPR) | DNG · gopro-vc5 | 23.3 | 35.9 | ❌ | **18.0** | ❌ | ❌ | ❌ |
 
-FlashRaw GPU = `--backend gpu --output rgba8`: CPU decode or GPU unpack, GPU develop, frame downloaded to host memory. ¹ FlashRaw's GPU pipeline does not handle this file's processing yet and ran it on the CPU (same result, CPU time).
+### RAW → sRGB
 
-## Per format
+| Camera | FlashRaw | LibRaw | LibRaw + Little CMS | rawler | rawpy | dcraw ² | FlashRaw GPU |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Canon EOS R5 (RAW) | **109.3** | 736.8 | 1104.5 | 491.8 | 1112.9 | ❌ | 99.1 |
+| Canon EOS R5 (C-RAW) | **129.4** | 738.9 | 1116.2 | 438.1 | 1028.6 | ❌ | 119.7 |
+| Canon EOS R5 Mark II (RAW) | **111.7** | 740.0 | 1122.9 | 510.2 | 1135.1 | ❌ | 103.0 |
+| Canon EOS R6 Mark II (RAW) | **61.0** | 406.5 | 617.0 | 265.1 | 596.6 | ❌ | 56.8 |
+| Canon EOS R6 Mark III (RAW) | **80.4** | 538.4 | 815.7 | 349.9 | 804.0 | ❌ | 73.9 |
+| Canon EOS R7 (RAW) | **80.3** | 538.8 | 818.9 | 363.0 | 803.4 | ❌ | 74.2 |
+| Canon EOS R8 (RAW) | **60.8** | 414.6 | 612.5 | 251.9 | 606.1 | ❌ | 55.8 |
+| Canon EOS R50 (RAW) | **60.3** | 405.2 | 610.7 | 266.1 | 588.5 | ❌ | 56.3 |
+| Canon EOS 90D (RAW) | **52.7** | 543.5 | 822.0 | 294.4 | 810.2 | ❌ | 45.5 |
+| Canon EOS 5D Mark IV (RAW) | **39.8** | 837.5 | 1100.4 | 414.8 | 881.3 | 965.0 | 31.2 |
+| Canon EOS 6D Mark II (RAW) | **33.7** | 744.3 | 968.6 | 384.6 | 764.2 | 857.4 | 28.4 |
+| Canon EOS Rebel T7 / 2000D (RAW) | **34.3** | 719.3 | 931.9 | 369.3 | 750.9 | 824.5 | 28.3 |
+| Nikon Z8 (14-bit lossless) | **72.4** | 1155.6 | 1541.7 | 601.2 | 1262.6 | 1296.1 | 63.7 |
+| Nikon Z9 (14-bit lossless) | **72.4** | 1118.3 | 1484.4 | 581.4 | 1206.7 | 1251.3 | 63.0 |
+| Nikon Z6III (lossless) | **41.5** | 628.9 | 824.4 | 320.0 | 668.4 | 681.6 | 36.5 |
+| Nikon Zf (lossless) | **41.9** | 609.3 | 819.7 | 314.4 | 642.9 | 668.4 | 35.8 |
+| Nikon Z7II (lossless) | **73.6** | 1096.1 | 1491.2 | 576.3 | 1191.8 | 1212.5 | 65.3 |
+| Nikon Z50 (lossless) | **36.3** | 541.1 | 716.7 | 274.9 | 573.6 | 591.2 | 31.5 |
+| Nikon D850 (14-bit lossless) | **72.7** | 1102.0 | 1495.6 | 574.7 | 1190.5 | 1317.3 | 63.4 |
+| Nikon D750 (14-bit lossless) | **40.3** | 597.7 | 800.2 | 295.0 | 620.6 | 677.3 | 36.8 |
+| Sony A7 IV (lossless) | **40.8** | 869.8 | 1158.2 | 220.2 | 922.5 | ❌ | 31.9 |
+| Sony A7 IV (compressed) | **26.3** | 535.9 | 814.1 | 192.5 | 574.2 | 662.9 | 16.8 |
+| Sony A7R V (lossless) | **70.5** | 1537.6 | 2097.5 | 395.2 | 1678.6 | ❌ | 54.4 |
+| Sony A1 (compressed) | **39.3** | 797.4 | 1220.4 | 283.0 | 855.0 | 998.0 | 23.9 |
+| Sony A7 III (compressed) | **21.2** | 393.1 | 604.4 | 144.2 | 410.2 | 491.4 | 13.0 |
+| Sony A7C II (compressed) | **27.5** | 527.0 | 817.9 | 190.4 | 574.2 | 662.9 | 16.9 |
+| Sony A9 III (compressed) | **20.1** | 389.4 | 604.3 | 140.9 | 419.1 | 489.3 | 13.5 |
+| Sony A6700 (lossless) | **34.2** | 735.7 | 952.2 | 187.1 | 766.1 | ❌ | 27.1 |
+| Sony A6400 (compressed) | **19.9** | 396.9 | 605.1 | 143.7 | 422.3 | 487.9 | 13.3 |
+| Sony ZV-E10 (compressed) | **17.7** | 397.5 | 604.1 | 145.1 | 426.6 | 430.1 | 12.6 |
+| Fujifilm X-T5 (lossless compressed) | **74.4** | 696.6 | 1031.5 | 387.9 | 1808.9 | ❌ | 55.1 |
+| Fujifilm X-H2 (compressed) | **94.8** | 878.0 | 1203.3 | 420.2 | 2268.9 | ❌ | 65.1 |
+| Fujifilm X-S20 (lossless compressed) | **54.0** | 488.6 | 711.3 | 273.1 | 1217.9 | ❌ | 41.1 |
+| Fujifilm X100VI (lossless compressed) | **83.6** | 904.0 | 1212.0 | 385.5 | 2015.8 | ❌ | 54.4 |
+| Fujifilm X-T4 (uncompressed) | **28.3** | 380.5 | 603.4 | 195.8 | 419.3 | 434.4 | 9.09 |
+| Fujifilm GFX100 II (lossless compressed) | **125.4** | 1568.7 | 2451.3 | 688.2 | 4106.0 | ❌ | 99.8 |
+| Panasonic Lumix S5II | **30.4** | 476.9 | 686.2 | 225.8 | 622.1 | 471.1 | 26.5 |
+| Panasonic Lumix GH6 | **32.9** | 498.3 | 717.5 | 231.5 | 674.3 | 508.6 | 27.4 |
+| Panasonic Lumix G9II | **32.1** | 494.5 | 719.4 | 229.7 | 684.6 | 552.6 | 25.0 |
+| Panasonic Lumix S5 | **18.2** | 361.6 | 569.6 | 113.0 | 405.3 | 482.1 | 10.8 |
+| Panasonic Lumix S1R | **38.0** | 798.7 | 1205.6 | 214.5 | 894.5 | 896.3 | 22.9 |
+| Panasonic Lumix GH5 | **17.7** | 391.0 | 567.6 | 97.8 | 427.4 | 443.1 | 12.0 |
+| OM System OM-1 Mark II | **126.4** | 677.6 | 845.5 | 341.3 | 694.8 | 338.4 | 124.5 |
+| OM System OM-5 | **138.8** | 639.5 | 821.2 | 336.7 | 654.6 | 348.1 | 132.5 |
+| Olympus E-M1 Mark III | **137.9** | 628.6 | 809.8 | 314.0 | 634.8 | 690.3 | 131.6 |
+| Pentax K-3 Mark III | **48.2** | 562.4 | 772.3 | 321.4 | 671.4 | 764.4 | 41.3 |
+| Pentax K-1 Mark II | **60.9** | 777.3 | 1094.8 | 457.9 | 934.7 | 1073.3 | 54.1 |
+| Ricoh GR III | **34.1** | 658.9 | 863.8 | 343.4 | 695.1 | 779.0 | 28.5 |
+| Leica Q2 | **33.1** | 926.5 | 1323.7 | 259.4 | 1079.4 | 1233.0 | CPU¹ |
+| Leica SL2 | **33.8** | 920.6 | 1301.5 | 257.6 | 1072.0 | 1229.3 | CPU¹ |
+| Leica M10-R | **54.9** | 1085.2 | 1456.2 | 605.4 | 1162.4 | 1320.6 | 45.5 |
+| Hasselblad X2D 100C (compressed) | **144.2** | 2315.9 | 3203.9 | ❌ | 2614.4 | 3216.0 | 118.9 |
+| Phase One IQ4 150MP (IIQ L) | **133.0** | 4304.9 | 5691.9 | 952.2 | 4751.1 | 5987.5 | 92.5 |
+| Sigma fp L | **72.1** | 1565.7 | 2081.1 | 364.3 | 1666.2 | 1898.8 | CPU¹ |
+| Apple iPhone 12 Pro (ProRAW) | **24.3** | 591.8 | 687.6 | 74.4 | 594.3 | 679.3 | 21.0 |
+| Google Pixel 8 Pro | **59.1** | 1445.9 | 1891.3 | 303.5 | 1530.9 | 1566.9 | CPU¹ |
+| Google Pixel 6 Pro | **16.7** | 350.0 | 453.8 | 85.5 | 348.8 | 401.4 | CPU¹ |
+| Samsung Galaxy S23 Ultra | **177.7** | 2194.2 | 2507.1 | 1292.4 | 2114.0 | 2609.3 | CPU¹ |
+| Samsung Galaxy S22 (JPEG XL) | 289.3 | ❌ | ❌ | **212.3** | ❌ | ❌ | CPU¹ |
+| DJI Phantom 4 Pro | **18.9** | 291.5 | 474.1 | 116.9 | 315.3 | 394.8 | CPU¹ |
+| GoPro HERO11 Black (GPR) | **60.2** | ❌ | ❌ | ❌ | ❌ | ❌ | CPU¹ |
+| GoPro HERO10 Black (GPR) | **53.9** | ❌ | ❌ | ❌ | ❌ | ❌ | CPU¹ |
 
-Geometric mean speedup of FlashRaw per (format, codec) over the files of both lists, all
-cores. ❌ = the other library decoded none of these files (LibRaw and RawSpeed were built
-without the optional libjpeg, Adobe DNG SDK and GoPro SDK).
+FlashRaw GPU = `--backend gpu --output rgba8`: CPU decode or GPU unpack, GPU develop, frame downloaded to host memory. ¹ FlashRaw's GPU pipeline does not handle this file's processing yet and ran it on the CPU.
 
-| Format | Codec | files | 🐧 decode vs LibRaw | 🐧 decode vs RawSpeed | 🐧 RGB vs LibRaw | 🍎 decode vs LibRaw | 🍎 decode vs RawSpeed | 🍎 RGB vs LibRaw |
+## Popular cameras (Linux x86-64)
+
+Times in ms, all cores, **bold** = fastest. One-thread tables:
+[result file](../benches/results/linux-x86_64-compare.md).
+
+### Decode
+
+| Camera | Format · compression | MP | FlashRaw | LibRaw | RawSpeed | rawler | rawpy | dcraw ² |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| 3FR | hasselblad | 2 | **8.15×** | **4.86×** | **8.56×** | **12.6×** | **5.85×** | **15.8×** |
-| 3FR | uncompressed | 2 | **1.42×** | **1.23×** | **7.99×** | 0.79× | 0.52× | **17.5×** |
-| ARW | other | 2 | **3.73×** | ❌ | **5.16×** | **12.5×** | ❌ | **15.0×** |
-| ARW | sony-arw1 | 2 | **14.9×** | **13.3×** | **10.3×** | **18.0×** | **9.75×** | **19.0×** |
-| ARW | sony-arw2 | 9 | **10.2×** | **1.76×** | **8.98×** | **14.8×** | **1.47×** | **19.2×** |
-| ARW | sony-lossless | 4 | **13.8×** | **1.11×** | **9.30×** | **18.6×** | 0.67× | **17.5×** |
-| ARW | uncompressed | 2 | **3.61×** | 0.63× | **5.64×** | **8.23×** | 0.36× | **12.8×** |
-| CR2 | canon-sraw | 2 | **8.38×** | **2.08×** | **7.00×** | **17.9×** | **4.40×** | **14.8×** |
-| CR2 | lossless-jpeg | 5 | **13.8×** | **3.41×** | **10.8×** | **21.2×** | **6.00×** | **20.7×** |
-| CR3 | canon-crx | 11 | **1.03×** | ❌ | **4.57×** | **1.74×** | ❌ | **6.66×** |
-| CRW | canon-crw | 2 | **3.31×** | **2.22×** | **4.72×** | **2.74×** | **1.97×** | **5.17×** |
-| CRW | uncompressed | 1 | **7.19×** | ❌ | **10.4×** | **7.16×** | ❌ | **17.3×** |
-| DCR | kodak-65000 | 2 | **4.86×** | **4.63×** | **6.47×** | **2.64×** | **3.52×** | **7.78×** |
-| DCS | lossless-jpeg | 1 | **8.52×** | **1.95×** | **10.4×** | **12.0×** | **3.16×** | **15.5×** |
-| DCS | uncompressed | 2 | **5.30×** | **21.6×** | **9.67×** | **4.35×** | **35.1×** | **21.1×** |
-| DNG | deflate | 2 | **10.1×** | **1.16×** | **10.3×** | **14.0×** | 0.98× | **17.0×** |
-| DNG | gopro-vc5 | 2 | ❌ | 0.57× | ❌ | ❌ | 0.49× | ❌ |
-| DNG | jpeg-xl | 1 | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| DNG | lossless-jpeg | 9 | **17.6×** | **2.90×** | **8.81×** | **21.4×** | **2.56×** | **17.4×** |
-| DNG | uncompressed | 5 | **8.39×** | **3.33×** | **5.50×** | **27.8×** | **4.50×** | **16.3×** |
-| ERF | uncompressed | 2 | **3.98×** | 0.84× | **6.66×** | **8.77×** | **1.43×** | **16.1×** |
-| FFF | hasselblad | 2 | **8.78×** | **5.13×** | **8.65×** | **12.9×** | **5.80×** | **15.7×** |
-| IIQ | phaseone | 3 | **11.1×** | **19.8×** | **10.5×** | **23.2×** | **28.5×** | **30.6×** |
-| IIQ | phaseone-s | 2 | **6.31×** | ❌ | **8.24×** | **14.0×** | ❌ | **28.2×** |
-| IIQ | uncompressed | 1 | **1.28×** | ❌ | **9.89×** | 0.88× | ❌ | **36.3×** |
-| KDC | kodak-dc120 | 1 | **1.75×** | ❌ | **13.4×** | **1.98×** | ❌ | **13.6×** |
-| KDC | other | 1 | **1.19×** | ❌ | **3.95×** | **1.47×** | ❌ | **2.87×** |
-| KDC | uncompressed | 2 | **46.5×** | **8.02×** | **8.98×** | **51.9×** | **10.4×** | **22.5×** |
-| MEF | uncompressed | 1 | **19.6×** | **3.92×** | **9.28×** | **56.4×** | **11.6×** | **26.4×** |
-| MOS | leaf | 2 | **12.1×** | ❌ | **9.24×** | **12.2×** | ❌ | **15.5×** |
-| MOS | uncompressed | 1 | **5.36×** | **4.18×** | **7.02×** | **11.9×** | **11.0×** | **20.9×** |
-| MRW | minolta-packed | 2 | **79.6×** | **13.7×** | **9.72×** | **50.2×** | **10.2×** | **21.9×** |
-| MRW | uncompressed | 2 | **18.2×** | **17.0×** | **8.56×** | **9.56×** | **9.12×** | **18.4×** |
-| NEF | nikon-huffman | 9 | **8.37×** | **2.80×** | **8.47×** | **11.1×** | **4.09×** | **14.7×** |
-| NEF | uncompressed | 2 | **6.13×** | **2.51×** | **8.54×** | **6.37×** | **2.79×** | **19.8×** |
-| NRW | uncompressed | 2 | **2.49×** | 0.96× | **7.92×** | **3.27×** | **1.40×** | **17.8×** |
-| ORF | olympus | 5 | **4.62×** | **2.21×** | **5.75×** | **2.97×** | **1.27×** | **4.75×** |
-| ORF | uncompressed | 2 | **11.3×** | **2.52×** | **8.92×** | **15.9×** | **2.61×** | **19.1×** |
-| PEF | pentax-huffman | 4 | **7.00×** | **1.93×** | **7.57×** | **7.17×** | **3.16×** | **12.2×** |
-| PEF | uncompressed | 2 | **32.3×** | **12.8×** | **8.75×** | **19.2×** | **8.18×** | **19.1×** |
-| RAF | fuji-compressed | 7 | **2.77×** | **2.11×** | **4.93×** | **4.34×** | **1.24×** | **10.3×** |
-| RAF | uncompressed | 3 | **3.03×** | **1.02×** | **6.93×** | **4.34×** | 0.82× | **15.1×** |
-| RAW | uncompressed | 2 | **3.05×** | **5.14×** | **10.0×** | **3.83×** | **11.8×** | **21.4×** |
-| RW2 | panasonic-v4 | 3 | **8.77×** | **1.41×** | **9.45×** | **19.4×** | **1.06×** | **20.2×** |
-| RW2 | panasonic-v5 | 2 | **7.80×** | 0.69× | **8.40×** | **6.42×** | 0.62× | **17.5×** |
-| RW2 | panasonic-v6 | 2 | **6.49×** | **1.49×** | **9.02×** | **13.6×** | 0.93× | **19.6×** |
-| RW2 | panasonic-v7 | 3 | **2.21×** | **1.12×** | **8.64×** | **3.61×** | 0.25× | **19.1×** |
-| RW2 | panasonic-v8 | 5 | **3.20×** | **3.31×** | **6.68×** | **8.60×** | **3.93×** | **15.3×** |
-| RW2 | uncompressed | 2 | **8.83×** | **5.28×** | **8.52×** | **7.74×** | 0.75× | **20.9×** |
-| SRW | samsung-v0 | 2 | **10.8×** | **5.10×** | **9.17×** | **15.5×** | **5.06×** | **18.1×** |
-| SRW | samsung-v1 | 2 | **4.26×** | **2.00×** | **5.70×** | **2.69×** | **1.07×** | **5.26×** |
-| SRW | samsung-v2 | 2 | **1.43×** | **1.05×** | **2.78×** | **1.76×** | 0.91× | **3.86×** |
-| SRW | uncompressed | 2 | **20.9×** | **4.38×** | **9.71×** | **48.5×** | **9.81×** | **21.8×** |
-| X3F | sigma-x3f | 2 | **10.7×** | ❌ | **10.3×** | **6.29×** | ❌ | **7.06×** |
-| other | kodak-ycbcr | 2 | **4.89×** | ❌ | **4.74×** | **8.76×** | ❌ | **8.38×** |
-| other | uncompressed | 2 | **6.64×** | **4.44×** | **8.38×** | **8.40×** | **11.8×** | **18.0×** |
+| Canon EOS R5 (RAW) | CR3 · canon-crx | 46.7 | **57.2** | 57.9 | ❌ | 181.1 | 59.8 | ❌ |
+| Canon EOS R5 (C-RAW) | CR3 · canon-crx | 46.7 | 71.9 | 68.5 | ❌ | 150.7 | **67.4** | ❌ |
+| Canon EOS R5 Mark II (RAW) | CR3 · canon-crx | 47.9 | **57.0** | 59.0 | ❌ | 180.9 | 60.9 | ❌ |
+| Canon EOS R6 Mark II (RAW) | CR3 · canon-crx | 25.5 | 33.1 | **32.8** | ❌ | 97.6 | 33.8 | ❌ |
+| Canon EOS R6 Mark III (RAW) | CR3 · canon-crx | 34.0 | **41.6** | 42.6 | ❌ | 126.7 | 43.8 | ❌ |
+| Canon EOS R7 (RAW) | CR3 · canon-crx | 33.7 | **42.5** | 45.6 | ❌ | 127.1 | 43.7 | ❌ |
+| Canon EOS R8 (RAW) | CR3 · canon-crx | 25.5 | **32.1** | 33.0 | ❌ | 101.3 | 33.8 | ❌ |
+| Canon EOS R50 (RAW) | CR3 · canon-crx | 25.1 | **30.9** | 31.6 | ❌ | 94.6 | 32.8 | ❌ |
+| Canon EOS 90D (RAW) | CR3 · canon-crx | 33.7 | **33.8** | 41.9 | ❌ | 98.6 | 46.2 | ❌ |
+| Canon EOS 5D Mark IV (RAW) | CR2 · lossless-jpeg | 31.3 | **23.9** | 346.8 | 68.9 | 129.8 | 363.6 | 403.2 |
+| Canon EOS 6D Mark II (RAW) | CR2 · lossless-jpeg | 27.0 | **20.5** | 262.3 | 82.5 | 126.7 | 274.2 | 305.8 |
+| Canon EOS Rebel T7 / 2000D (RAW) | CR2 · lossless-jpeg | 24.7 | **24.5** | 308.9 | 88.0 | 131.4 | 324.8 | 344.6 |
+| Nikon Z8 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **46.5** | 421.0 | 178.0 | 203.3 | 450.6 | 498.7 |
+| Nikon Z9 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **51.8** | 407.3 | 133.7 | 172.6 | 423.4 | 484.8 |
+| Nikon Z6III (lossless) | NEF · nikon-huffman | 24.5 | **28.3** | 228.7 | 85.4 | 104.4 | 243.0 | 269.9 |
+| Nikon Zf (lossless) | NEF · nikon-huffman | 24.5 | **27.8** | 216.9 | 68.6 | 90.5 | 231.2 | 263.2 |
+| Nikon Z7II (lossless) | NEF · nikon-huffman | 45.7 | **51.2** | 403.1 | 117.1 | 159.8 | 422.8 | 481.2 |
+| Nikon Z50 (lossless) | NEF · nikon-huffman | 20.9 | **24.3** | 201.4 | 72.8 | 86.9 | 213.7 | 237.1 |
+| Nikon D850 (14-bit lossless) | NEF · nikon-huffman | 45.7 | **51.5** | 414.7 | 118.6 | 159.7 | 422.3 | 480.0 |
+| Nikon D750 (14-bit lossless) | NEF · nikon-huffman | 24.3 | **28.6** | 204.0 | 57.6 | 78.8 | 218.9 | 252.8 |
+| Sony A7 IV (lossless) | ARW · sony-lossless | 36.7 | **14.9** | 314.2 | 15.9 | 36.9 | 339.5 | ❌ |
+| Sony A7 IV (compressed) | ARW · sony-arw2 | 33.0 | **8.02** | 80.2 | 10.9 | 11.9 | 96.6 | 172.5 |
+| Sony A7R V (lossless) | ARW · sony-lossless | 64.7 | **25.6** | 576.4 | 31.3 | 60.8 | 611.9 | ❌ |
+| Sony A1 (compressed) | ARW · sony-arw2 | 50.2 | **10.8** | 117.8 | 17.3 | 18.5 | 142.2 | 257.8 |
+| Sony A7 III (compressed) | ARW · sony-arw2 | 24.3 | **5.45** | 59.1 | 8.18 | 8.09 | 71.4 | 128.4 |
+| Sony A7C II (compressed) | ARW · sony-arw2 | 33.0 | **7.47** | 79.3 | 10.5 | 11.9 | 95.4 | 173.1 |
+| Sony A9 III (compressed) | ARW · sony-arw2 | 24.3 | **5.69** | 59.7 | 8.41 | 8.47 | 71.7 | 130.1 |
+| Sony A6700 (lossless) | ARW · sony-lossless | 30.7 | **13.7** | 275.5 | 15.0 | 34.8 | 294.2 | ❌ |
+| Sony A6400 (compressed) | ARW · sony-arw2 | 24.3 | **5.25** | 52.7 | 8.22 | 8.23 | 65.7 | 124.0 |
+| Sony ZV-E10 (compressed) | ARW · sony-arw2 | 24.3 | **5.62** | 54.0 | 7.78 | 8.23 | 66.5 | 125.5 |
+| Fujifilm X-T5 (lossless compressed) | RAF · fuji-compressed | 40.9 | **53.1** | 155.4 | 112.1 | 132.1 | 153.5 | ❌ |
+| Fujifilm X-H2 (compressed) | RAF · fuji-compressed | 40.9 | **67.0** | 168.3 | ❌ | 147.6 | 183.9 | ❌ |
+| Fujifilm X-S20 (lossless compressed) | RAF · fuji-compressed | 26.5 | **39.4** | 115.0 | 83.5 | 101.1 | 120.9 | ❌ |
+| Fujifilm X100VI (lossless compressed) | RAF · fuji-compressed | 40.9 | **53.1** | 156.1 | 121.5 | 133.2 | 157.7 | ❌ |
+| Fujifilm X-T4 (uncompressed) | RAF · uncompressed | 26.7 | **3.35** | 16.1 | 4.24 | 11.8 | 16.7 | 114.6 |
+| Fujifilm GFX100 II (lossless compressed) | RAF · fuji-compressed | 103.4 | **101.6** | 252.4 | 202.5 | 227.5 | 251.9 | ❌ |
+| Panasonic Lumix S5II | RW2 · panasonic-v8 | 24.1 | **24.8** | 87.5 | 89.0 | 81.7 | 84.7 | 174.1 |
+| Panasonic Lumix GH6 | RW2 · panasonic-v8 | 25.2 | **28.8** | 90.9 | 95.1 | 85.5 | 103.1 | 188.0 |
+| Panasonic Lumix G9II | RW2 · panasonic-v8 | 25.1 | **28.1** | 92.3 | 95.5 | 86.9 | 89.1 | 182.0 |
+| Panasonic Lumix S5 | RW2 · panasonic-v7 | 24.3 | 4.80 | 10.5 | **4.58** | 9.47 | 9.67 | 171.8 |
+| Panasonic Lumix S1R | RW2 · panasonic-v6 | 47.6 | **12.4** | 85.7 | 15.3 | 17.9 | 92.9 | 344.6 |
+| Panasonic Lumix GH5 | RW2 · panasonic-v4 | 20.6 | **6.75** | 60.5 | 17.0 | 9.83 | 59.9 | 130.4 |
+| OM System OM-1 Mark II | ORF · olympus | 20.4 | **64.0** | 331.8 | 142.2 | 187.5 | 323.8 | 80.5 |
+| OM System OM-5 | ORF · olympus | 20.5 | **60.3** | 275.8 | 143.7 | 198.4 | 266.7 | 81.0 |
+| Olympus E-M1 Mark III | ORF · olympus | 20.5 | **57.1** | 250.7 | 132.0 | 166.2 | 247.5 | 334.1 |
+| Pentax K-3 Mark III | PEF · pentax-huffman | 26.6 | **40.2** | 273.4 | 57.2 | 86.6 | 250.6 | 269.0 |
+| Pentax K-1 Mark II | PEF · pentax-huffman | 36.6 | **42.6** | 316.9 | 91.6 | 134.9 | 356.6 | 376.8 |
+| Ricoh GR III | DNG · lossless-jpeg | 24.8 | **25.7** | 372.0 | 68.5 | 104.5 | 363.5 | 309.3 |
+| Leica Q2 | DNG · uncompressed | 47.4 | **8.37** | 191.7 | 33.2 | 9.21 | 237.0 | 270.4 |
+| Leica SL2 | DNG · uncompressed | 47.4 | **8.47** | 191.0 | 32.5 | 9.31 | 236.8 | 271.8 |
+| Leica M10-R | DNG · lossless-jpeg | 41.0 | **43.3** | 471.7 | 150.6 | 192.3 | 553.3 | 505.3 |
+| Hasselblad X2D 100C (compressed) | FFF · hasselblad | 105.3 | **91.7** | 849.8 | 490.0 | ❌ | 1043.7 | 1203.7 |
+| Phase One IQ4 150MP (IIQ L) | IIQ · phaseone | 154.0 | **55.7** | 666.5 | ❌ | 356.8 | 960.3 | 1701.1 |
+| Sigma fp L | DNG · lossless-jpeg | 60.5 | **17.7** | 653.5 | 23.7 | 53.6 | 714.9 | 747.3 |
+| Apple iPhone 12 Pro (ProRAW) | DNG · lossless-jpeg | 12.2 | **19.6** | 316.5 | ❌ | 25.5 | 350.4 | 325.5 |
+| Google Pixel 8 Pro | DNG · lossless-jpeg | 50.1 | **13.8** | 520.7 | 18.8 | 42.5 | 556.8 | 645.2 |
+| Google Pixel 6 Pro | DNG · lossless-jpeg | 12.5 | **3.32** | 130.2 | 4.09 | 12.3 | 142.8 | 160.7 |
+| Samsung Galaxy S23 Ultra | DNG · lossless-jpeg | 49.9 | **102.5** | 1274.9 | 380.9 | 485.1 | 1408.4 | 1293.7 |
+| Samsung Galaxy S22 (JPEG XL) | DNG · jpeg-xl | 12.0 | 236.6 | ❌ | ❌ | **156.4** | ❌ | ❌ |
+| DJI Phantom 4 Pro | DNG · uncompressed | 20.0 | **2.63** | 10.7 | 3.30 | 4.85 | 25.6 | 79.2 |
+| GoPro HERO11 Black (GPR) | DNG · gopro-vc5 | 27.1 | 48.3 | ❌ | **27.9** | ❌ | ❌ | ❌ |
+| GoPro HERO10 Black (GPR) | DNG · gopro-vc5 | 23.3 | 48.4 | ❌ | **23.4** | ❌ | ❌ | ❌ |
 
-## Where FlashRaw is not the fastest
+### RAW → sRGB
 
-Honest list, from the tables above:
-
-- **RAW → RGB with all cores: never.** FlashRaw is faster than LibRaw on all 156 files both
-  can decode, on both machines. On one thread LibRaw is faster on a few files (5 on Linux, 4 on
-  macOS), mostly large uncompressed DNG/ARW (DJI Phantom 4 Pro, Sony pixel-shift ARQ) and
-  Kodak YCbCr files: up to 1.6×.
-- **Decode with all cores, Linux: 16 of 159 files.**
-  - Canon CR3: close to LibRaw's OpenMP build, which also decodes CR3 in parallel. FlashRaw is
-    1–4 % slower on 4 of the 13 CR3 files and up to 1.2× faster on the others (on the M1
-    Ultra it is 1.7× faster on all of them).
-  - GoPro GPR (VC-5): RawSpeed 1.7–1.8× faster.
-  - Sony pixel-shift ARQ (4 × 42 MP uncompressed): RawSpeed 3.1× faster.
-  - Small uncompressed files that take 1–4 ms (Epson R-D1, Nikon Coolpix A1000, Fujifilm
-    X-E2, GITUP), and Panasonic v5/v7 (GH5S, G9 high-res, S5): RawSpeed or LibRaw up to 2× faster.
-- **Decode with all cores, Apple M1 Ultra: 34 of 159 files**, all against RawSpeed (LibRaw
-  also on 7 uncompressed files):
-  - Memory-bound uncompressed and packed data (3FR, RAF, NEF, NRW, ARW, RW2 uncompressed,
-    Panasonic v5–v7): RawSpeed 1.1–2× faster, and **4× on Panasonic v7** (Lumix S5). These take
-    1–10 ms in every library; FlashRaw caps such copy kernels at a few threads, which is right on
-    the Ryzen but leaves bandwidth unused on the M1 Ultra.
-  - Sony lossless ARW: RawSpeed 1.4–1.6× faster. Tiled lossless-JPEG DNG from phones and the
-    Sigma fp L: RawSpeed 1.3× faster. GoPro GPR: RawSpeed 2× faster. Samsung NX1/NX500 (V2):
-    RawSpeed 1.1× faster (a strictly sequential codec). Deflate DNG: a tie.
-- **One thread**: FlashRaw beats LibRaw on 143 (Linux) and 139 (macOS) of 156 files. Against
-  RawSpeed it is faster on 95 of 126 files on Linux, but **only 42 of 126 on the M1 Ultra**,
-  where RawSpeed's single-threaded decoders are 1.2× faster on the popular cameras (geometric
-  mean). FlashRaw's lead with all cores comes from parallelising codecs that RawSpeed runs on
-  one thread (lossless JPEG, Nikon, Pentax, Hasselblad, Olympus, Panasonic v8, …).
-- **Formats the others do not decode at all** are not in these counts: Canon CR3, Phase One
-  IIQ S and 150 MP, Sigma X3F, Sony ARW lossy "other" (RawSpeed); GoPro GPR and JPEG XL DNG
-  (LibRaw, without optional SDKs); JPEG XL DNG, iPhone ProRAW (RawSpeed).
+| Camera | FlashRaw | LibRaw | LibRaw + Little CMS | rawler | rawpy | dcraw ² |
+|---|---:|---:|---:|---:|---:|---:|
+| Canon EOS R5 (RAW) | **101.2** | 481.1 | 1080.1 | 640.5 | 529.9 | ❌ |
+| Canon EOS R5 (C-RAW) | **115.0** | 492.0 | 1087.4 | 611.6 | 539.3 | ❌ |
+| Canon EOS R5 Mark II (RAW) | **99.9** | 484.3 | 1081.5 | 646.8 | 531.6 | ❌ |
+| Canon EOS R6 Mark II (RAW) | **55.6** | 264.0 | 579.4 | 346.3 | 289.4 | ❌ |
+| Canon EOS R6 Mark III (RAW) | **72.8** | 349.8 | 788.4 | 462.2 | 382.6 | ❌ |
+| Canon EOS R7 (RAW) | **72.7** | 351.1 | 790.5 | 463.7 | 386.3 | ❌ |
+| Canon EOS R8 (RAW) | **55.8** | 262.2 | 580.4 | 344.7 | 288.8 | ❌ |
+| Canon EOS R50 (RAW) | **54.7** | 260.0 | 585.2 | 342.7 | 287.2 | ❌ |
+| Canon EOS 90D (RAW) | **69.9** | 353.4 | 790.8 | 433.1 | 385.8 | ❌ |
+| Canon EOS 5D Mark IV (RAW) | **55.0** | 633.7 | 1072.1 | 446.6 | 688.4 | 663.9 |
+| Canon EOS 6D Mark II (RAW) | **45.5** | 514.9 | 869.8 | 395.8 | 552.8 | 530.1 |
+| Canon EOS Rebel T7 / 2000D (RAW) | **47.6** | 537.0 | 856.0 | 379.8 | 585.8 | 553.2 |
+| Nikon Z8 (14-bit lossless) | **91.0** | 856.4 | 1457.4 | 662.7 | 922.8 | 806.9 |
+| Nikon Z9 (14-bit lossless) | **95.2** | 838.5 | 1438.0 | 631.9 | 904.3 | 791.8 |
+| Nikon Z6III (lossless) | **52.3** | 464.5 | 785.8 | 356.7 | 502.7 | 435.4 |
+| Nikon Zf (lossless) | **53.0** | 450.1 | 772.5 | 343.2 | 488.6 | 428.8 |
+| Nikon Z7II (lossless) | **95.0** | 835.5 | 1431.8 | 627.7 | 902.9 | 792.1 |
+| Nikon Z50 (lossless) | **44.3** | 402.1 | 696.6 | 302.6 | 434.0 | 378.8 |
+| Nikon D850 (14-bit lossless) | **94.5** | 835.0 | 1445.6 | 619.9 | 896.5 | 870.5 |
+| Nikon D750 (14-bit lossless) | **53.2** | 434.5 | 748.2 | 325.4 | 473.4 | 460.9 |
+| Sony A7 IV (lossless) | **47.3** | 628.4 | 1073.4 | 372.3 | 692.5 | ❌ |
+| Sony A7 IV (compressed) | **40.8** | 393.7 | 834.7 | 344.8 | 443.0 | 457.4 |
+| Sony A7R V (lossless) | **84.7** | 1151.4 | 1958.7 | 671.3 | 1261.4 | ❌ |
+| Sony A1 (compressed) | **60.6** | 592.8 | 1267.4 | 519.3 | 667.6 | 689.7 |
+| Sony A7 III (compressed) | **31.2** | 291.1 | 609.7 | 258.0 | 330.7 | 338.1 |
+| Sony A7C II (compressed) | **40.8** | 391.0 | 834.0 | 350.3 | 442.3 | 455.0 |
+| Sony A9 III (compressed) | **30.1** | 289.9 | 613.1 | 257.1 | 330.4 | 337.2 |
+| Sony A6700 (lossless) | **39.4** | 525.2 | 880.9 | 301.1 | 573.6 | ❌ |
+| Sony A6400 (compressed) | **29.7** | 284.1 | 601.4 | 258.0 | 320.6 | 332.4 |
+| Sony ZV-E10 (compressed) | **26.4** | 285.1 | 602.4 | 257.5 | 323.4 | 289.3 |
+| Fujifilm X-T5 (lossless compressed) | **115.6** | 539.0 | 1089.3 | 610.4 | 573.2 | ❌ |
+| Fujifilm X-H2 (compressed) | **144.6** | 581.7 | 1112.9 | 623.9 | 636.9 | ❌ |
+| Fujifilm X-S20 (lossless compressed) | **78.9** | 370.9 | 723.9 | 413.6 | 398.7 | ❌ |
+| Fujifilm X100VI (lossless compressed) | **130.8** | 567.2 | 1098.7 | 613.4 | 607.8 | ❌ |
+| Fujifilm X-T4 (uncompressed) | **43.6** | 266.9 | 618.7 | 323.6 | 293.1 | 312.3 |
+| Fujifilm GFX100 II (lossless compressed) | **199.5** | 1208.7 | 2583.7 | 1241.5 | 1305.5 | ❌ |
+| Panasonic Lumix S5II | **52.2** | 352.0 | 664.1 | 299.3 | 388.9 | 342.4 |
+| Panasonic Lumix GH6 | **56.2** | 366.9 | 728.8 | 312.1 | 404.8 | 360.4 |
+| Panasonic Lumix G9II | **51.1** | 364.3 | 700.8 | 312.6 | 401.9 | 401.2 |
+| Panasonic Lumix S5 | **29.3** | 273.5 | 589.0 | 225.2 | 312.1 | 339.4 |
+| Panasonic Lumix S1R | **59.2** | 595.0 | 1210.6 | 430.9 | 672.6 | 671.3 |
+| Panasonic Lumix GH5 | **26.6** | 280.0 | 638.6 | 193.0 | 317.9 | 305.7 |
+| OM System OM-1 Mark II | **86.2** | 527.6 | 801.4 | 396.1 | 539.2 | 213.7 |
+| OM System OM-5 | **89.5** | 470.5 | 769.1 | 398.8 | 489.6 | 212.6 |
+| Olympus E-M1 Mark III | **78.1** | 461.6 | 775.8 | 418.6 | 485.0 | 507.5 |
+| Pentax K-3 Mark III | **64.1** | 475.4 | 879.8 | 370.1 | 663.0 | 498.3 |
+| Pentax K-1 Mark II | **88.5** | 659.5 | 1194.2 | 514.8 | 738.9 | 691.4 |
+| Ricoh GR III | **86.6** | 730.6 | 1235.3 | 376.4 | 584.3 | 517.1 |
+| Leica Q2 | **53.9** | 640.7 | 1268.2 | 490.5 | 735.2 | 677.3 |
+| Leica SL2 | **54.3** | 639.4 | 1245.3 | 481.8 | 733.1 | 679.1 |
+| Leica M10-R | **85.1** | 950.1 | 1377.6 | 605.2 | 902.7 | 857.2 |
+| Hasselblad X2D 100C (compressed) | **193.6** | 1821.3 | 4040.5 | ❌ | 2097.8 | 1916.8 |
+| Phase One IQ4 150MP (IIQ L) | **227.2** | 2442.2 | 4703.7 | 1670.4 | 3177.4 | 3009.8 |
+| Sigma fp L | **96.4** | 1192.7 | 2083.7 | 823.5 | 1323.3 | 1270.6 |
+| Apple iPhone 12 Pro (ProRAW) | **35.7** | 382.5 | 535.8 | 121.9 | 427.8 | 458.4 |
+| Google Pixel 8 Pro | **69.6** | 1088.7 | 1766.2 | 805.6 | 1217.3 | 1065.2 |
+| Google Pixel 6 Pro | **18.2** | 250.8 | 419.4 | 143.1 | 283.3 | 267.7 |
+| Samsung Galaxy S23 Ultra | **202.4** | 1490.4 | 2079.0 | 850.6 | 1709.5 | 1836.7 |
+| Samsung Galaxy S22 (JPEG XL) | 293.2 | ❌ | ❌ | **251.4** | ❌ | ❌ |
+| DJI Phantom 4 Pro | **33.8** | 201.8 | 473.8 | 214.2 | 237.2 | 250.9 |
+| GoPro HERO11 Black (GPR) | **77.2** | ❌ | ❌ | ❌ | ❌ | ❌ |
+| GoPro HERO10 Black (GPR) | **67.2** | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ## Memory
 
-Peak RSS of the whole process (input file held in memory included) is in the "All files"
-tables of the result files. Ratio FlashRaw ÷ other library, all cores:
+<p align="center"><img src="charts/memory.svg" alt="Bar chart: peak memory relative to FlashRaw" width="100%"></p>
 
-| | decode vs LibRaw | decode vs RawSpeed | RAW → RGB vs LibRaw |
-|---|---:|---:|---:|
-| Linux: median (90th percentile) | 1.04 (2.31) | 0.99 (2.20) | **0.55** (0.82) |
-| macOS: median (90th percentile) | 1.14 (2.94) | 1.05 (2.86) | **0.62** (1.04) |
+Peak resident memory of the benchmark process (input file included), as a ratio to FlashRaw's
+on the same file (> 1 = FlashRaw needs less), median over the popular cameras, and the number
+of files where FlashRaw needs less:
 
-A decode needs about the same memory everywhere (input + 16-bit output). FlashRaw's
-speculative parallel decoders hold extra per-thread buffers, which is what the 90th
-percentile shows: e.g. Canon CR3 (EOS R5: 278 MB vs 122 MB for LibRaw on Linux) and the Sony
-pixel-shift ARQ (657 MB vs 415 MB for RawSpeed). For RAW → RGB FlashRaw typically needs half
-of LibRaw's memory, which keeps a 4-channel 16-bit working image. The exception are DNGs with
-an opcode list 3, which FlashRaw applies to the demosaiced image in floating point and LibRaw
-skips: the DJI Phantom 4 Pro file (`FixVignetteRadial`) needs 692 MB vs 291 MB, and 73 ms of
-post-processing instead of ~30 ms (`--no-opcodes`: 166 MB).
+| Comparison | threads | 🐧 ratio | 🐧 less | 🍎 ratio | 🍎 less |
+|---|---|---:|---:|---:|---:|
+| decode vs LibRaw | all | 0.91× | 1/59 | 0.81× | 1/59 |
+| decode vs LibRaw | 1 | 0.98× | 2/59 | 0.94× | 2/59 |
+| decode vs RawSpeed | all | 0.98× | 21/49 | 0.90× | 0/49 |
+| decode vs RawSpeed | 1 | 1.01× | 42/49 | 0.99× | 0/49 |
+| decode vs rawler | all | 1.14× | 40/59 | 1.54× | 39/59 |
+| decode vs rawler | 1 | 1.49× | 57/59 | 1.61× | 57/59 |
+| decode vs rawpy | all | 1.05× | 30/59 | 0.98× | 28/59 |
+| decode vs rawpy | 1 | 1.17× | 45/59 | 1.11× | 45/59 |
+| decode vs dcraw | all | 2.02× | 38/42 | 1.94× | 33/42 |
+| decode vs dcraw | 1 | 2.86× | 40/42 | 2.75× | 40/42 |
+| RAW→RGB vs LibRaw | all | 1.88× | 59/59 | 1.48× | 54/59 |
+| RAW→RGB vs LibRaw | 1 | 1.92× | 59/59 | 1.88× | 59/59 |
+| RAW→sRGB vs LibRaw + Little CMS | all | 2.78× | 59/59 | 2.21× | 59/59 |
+| RAW→sRGB vs LibRaw + Little CMS | 1 | 2.86× | 59/59 | 2.79× | 59/59 |
+| RAW→RGB vs rawler | all | 4.14× | 59/59 | 4.55× | 59/59 |
+| RAW→RGB vs rawler | 1 | 4.32× | 59/59 | 5.14× | 59/59 |
+| RAW→RGB vs rawpy | all | 1.97× | 59/59 | 1.55× | 56/59 |
+| RAW→RGB vs rawpy | 1 | 2.03× | 59/59 | 1.97× | 59/59 |
+| RAW→RGB vs dcraw | all | 1.31× | 36/42 | 0.94× | 20/42 |
+| RAW→RGB vs dcraw | 1 | 1.34× | 40/42 | 1.32× | 40/42 |
+
+Median peaks in MB:
+
+| Median peak RSS (MB), all cores | FlashRaw | LibRaw | RawSpeed | rawler | rawpy | dcraw | LibRaw + Little CMS |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 🐧 decode | 183 | 104 | 109 | 178 | 129 | 247 | – |
+| 🐧 RAW → sRGB | **274** | 415 | – | 848 | 440 | 247 | 619 |
+| 🍎 decode | 174 | 104 | 109 | 196 | 122 | 247 | – |
+| 🍎 RAW → sRGB | **303** | 416 | – | 1083 | 435 | 247 | 620 |
+
+Each median is over the files that library decodes, so the columns are not over identical
+sets; the ratios above are per file.
+
+- **RAW → sRGB: FlashRaw needs less memory than every library pipeline**, typically half to
+  two thirds of LibRaw's (and rawpy's) and less than half of the LibRaw + Little CMS
+  pipeline's. It develops in one fused pass straight into the output image, so it never holds
+  full-size intermediates: LibRaw keeps a 4-channel 16-bit working image plus its output, the
+  Little CMS pipeline adds a 16-bit RGB copy and the 8-bit result, and rawler develops in
+  32-bit floats (4–5× FlashRaw's peak). Only dcraw, a single program with one 4 × 16-bit image
+  buffer and no threads, needs about as little: its peak is a median 1.3× FlashRaw's on Linux
+  and 0.94× on the M1 Ultra (all cores).
+- **Decode only: about the same on one thread, more for FlashRaw on all cores.** Every decoder
+  holds the file and a 16-bit image. On one thread FlashRaw's peak is within a few percent of
+  LibRaw's and RawSpeed's. With all cores, FlashRaw's parallel decoders of single
+  entropy-coded streams and tiled codecs add per-thread working buffers (for example, each
+  thread decodes its chunk of the stream into its own buffer of differences before the rows
+  are rebuilt; see [architecture](architecture.md)): LibRaw's peak is a median
+  0.9× of FlashRaw's on Linux and 0.8× on
+  the M1 Ultra. That is the price of decoding Nikon, lossless-JPEG or Pentax streams 5–10×
+  faster.
+
+Per camera (Apple M1 Ultra, all cores, MB):
+
+| Camera | MP | decode: FlashRaw | LibRaw | RawSpeed | rawler | rawpy | dcraw ² | RGB: FlashRaw | LibRaw | LibRaw + Little CMS | rawler | rawpy | dcraw ² |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Canon EOS R5 (RAW) | 46.7 | 227 | 134 | ❌ | 409 | 152 | ❌ | 409 | 604 | 904 | 1886 | 621 | ❌ |
+| Canon EOS R5 (C-RAW) | 46.7 | 216 | 127 | ❌ | 397 | 141 | ❌ | 394 | 596 | 896 | 1875 | 611 | ❌ |
+| Canon EOS R5 Mark II (RAW) | 47.9 | 247 | 149 | ❌ | 427 | 168 | ❌ | 427 | 622 | 926 | 1916 | 642 | ❌ |
+| Canon EOS R6 Mark II (RAW) | 25.5 | 137 | 83 | ❌ | 239 | 101 | ❌ | 233 | 337 | 499 | 1039 | 356 | ❌ |
+| Canon EOS R6 Mark III (RAW) | 34.0 | 173 | 104 | ❌ | 278 | 122 | ❌ | 303 | 442 | 659 | 1347 | 460 | ❌ |
+| Canon EOS R7 (RAW) | 33.7 | 172 | 102 | ❌ | 275 | 119 | ❌ | 300 | 444 | 661 | 1342 | 461 | ❌ |
+| Canon EOS R8 (RAW) | 25.5 | 136 | 81 | ❌ | 239 | 99 | ❌ | 233 | 337 | 500 | 1038 | 354 | ❌ |
+| Canon EOS R50 (RAW) | 25.1 | 138 | 85 | ❌ | 239 | 103 | ❌ | 234 | 337 | 497 | 1034 | 354 | ❌ |
+| Canon EOS 90D (RAW) | 33.7 | 174 | 104 | ❌ | 278 | 122 | ❌ | 303 | 445 | 664 | 1347 | 463 | ❌ |
+| Canon EOS 5D Mark IV (RAW) | 31.3 | 294 | 97 | 100 | 190 | 115 | 294 | 414 | 416 | 620 | 1126 | 435 | 294 |
+| Canon EOS 6D Mark II (RAW) | 27.0 | 237 | 91 | 95 | 126 | 110 | 254 | 333 | 368 | 544 | 984 | 387 | 254 |
+| Canon EOS Rebel T7 / 2000D (RAW) | 24.7 | 266 | 89 | 92 | 170 | 107 | 234 | 363 | 344 | 506 | 911 | 362 | 234 |
+| Nikon Z8 (14-bit lossless) | 45.7 | 294 | 149 | 153 | 235 | 169 | 439 | 477 | 630 | 936 | 1719 | 648 | 439 |
+| Nikon Z9 (14-bit lossless) | 45.7 | 304 | 147 | 150 | 228 | 165 | 439 | 476 | 627 | 934 | 1712 | 646 | 439 |
+| Nikon Z6III (lossless) | 24.5 | 184 | 83 | 86 | 144 | 102 | 236 | 276 | 340 | 505 | 940 | 358 | 236 |
+| Nikon Zf (lossless) | 24.5 | 176 | 81 | 84 | 141 | 99 | 236 | 258 | 339 | 503 | 937 | 358 | 236 |
+| Nikon Z7II (lossless) | 45.7 | 293 | 144 | 147 | 224 | 162 | 439 | 478 | 626 | 931 | 1709 | 643 | 439 |
+| Nikon Z50 (lossless) | 20.9 | 165 | 74 | 78 | 133 | 93 | 202 | 250 | 294 | 434 | 810 | 312 | 202 |
+| Nikon D850 (14-bit lossless) | 45.7 | 294 | 144 | 148 | 224 | 164 | 439 | 474 | 626 | 932 | 1710 | 643 | 439 |
+| Nikon D750 (14-bit lossless) | 24.3 | 166 | 76 | 79 | 133 | 95 | 235 | 257 | 332 | 495 | 925 | 351 | 235 |
+| Sony A7 IV (lossless) | 36.7 | 140 | 122 | 126 | 216 | 141 | ❌ | 267 | 468 | 688 | 1323 | 487 | ❌ |
+| Sony A7 IV (compressed) | 33.0 | 112 | 106 | 111 | 180 | 125 | 318 | 242 | 452 | 674 | 1251 | 471 | 317 |
+| Sony A7R V (lossless) | 64.7 | 230 | 211 | 215 | 343 | 229 | ❌ | 460 | 852 | 1259 | 2359 | 869 | ❌ |
+| Sony A1 (compressed) | 50.2 | 166 | 160 | 165 | 257 | 180 | 481 | 367 | 687 | 1022 | 1883 | 705 | 481 |
+| Sony A7 III (compressed) | 24.3 | 81 | 76 | 80 | 134 | 95 | 234 | 177 | 330 | 493 | 924 | 348 | 234 |
+| Sony A7C II (compressed) | 33.0 | 111 | 105 | 110 | 179 | 124 | 318 | 242 | 453 | 673 | 1250 | 472 | 318 |
+| Sony A9 III (compressed) | 24.3 | 84 | 79 | 83 | 141 | 97 | 234 | 181 | 333 | 496 | 930 | 352 | 234 |
+| Sony A6700 (lossless) | 30.7 | 127 | 105 | 109 | 196 | 124 | ❌ | 224 | 378 | 553 | 1083 | 397 | ❌ |
+| Sony A6400 (compressed) | 24.3 | 80 | 74 | 79 | 135 | 94 | 234 | 177 | 330 | 493 | 922 | 348 | 234 |
+| Sony ZV-E10 (compressed) | 24.3 | 80 | 74 | 79 | 135 | 94 | 234 | 162 | 330 | 494 | 923 | 349 | 234 |
+| Fujifilm X-T5 (lossless compressed) | 40.9 | 130 | 126 | 128 | 197 | 143 | ❌ | 287 | 547 | 816 | 1508 | 565 | ❌ |
+| Fujifilm X-H2 (compressed) | 40.9 | 117 | 113 | ❌ | 175 | 130 | ❌ | 275 | 534 | 803 | 1487 | 551 | ❌ |
+| Fujifilm X-S20 (lossless compressed) | 26.5 | 93 | 89 | 91 | 150 | 107 | ❌ | 197 | 363 | 539 | 1000 | 381 | ❌ |
+| Fujifilm X100VI (lossless compressed) | 40.9 | 135 | 132 | 134 | 208 | 149 | ❌ | 293 | 554 | 822 | 1517 | 570 | ❌ |
+| Fujifilm X-T4 (uncompressed) | 26.7 | 115 | 110 | 113 | 197 | 129 | 252 | 220 | 384 | 560 | 998 | 403 | 252 |
+| Fujifilm GFX100 II (lossless compressed) | 103.4 | 314 | 311 | 312 | 455 | 327 | ❌ | 713 | 1382 | 2062 | 3779 | 1398 | ❌ |
+| Panasonic Lumix S5II | 24.1 | 271 | 89 | 89 | 151 | 107 | 232 | 370 | 343 | 505 | 931 | 359 | 232 |
+| Panasonic Lumix GH6 | 25.2 | 290 | 100 | 98 | 169 | 115 | 243 | 386 | 364 | 532 | 982 | 380 | 243 |
+| Panasonic Lumix G9II | 25.1 | 262 | 96 | 95 | 162 | 113 | 242 | 360 | 359 | 528 | 977 | 377 | 242 |
+| Panasonic Lumix S5 | 24.3 | 97 | 92 | 96 | 169 | 111 | 234 | 195 | 347 | 509 | 951 | 367 | 234 |
+| Panasonic Lumix S1R | 47.6 | 167 | 161 | 166 | 264 | 181 | 453 | 355 | 658 | 973 | 1787 | 677 | 453 |
+| Panasonic Lumix GH5 | 20.6 | 72 | 66 | 71 | 125 | 86 | 197 | 153 | 281 | 418 | 783 | 299 | 197 |
+| OM System OM-1 Mark II | 20.4 | 71 | 65 | 68 | 120 | 84 | 197 | 154 | 281 | 418 | 782 | 298 | 197 |
+| OM System OM-5 | 20.5 | 70 | 63 | 65 | 114 | 82 | 198 | 150 | 278 | 416 | 781 | 297 | 198 |
+| Olympus E-M1 Mark III | 20.5 | 67 | 60 | 64 | 112 | 80 | 198 | 149 | 277 | 415 | 777 | 295 | 198 |
+| Pentax K-3 Mark III | 26.6 | 182 | 85 | 89 | 121 | 105 | 257 | 285 | 359 | 532 | 968 | 376 | 257 |
+| Pentax K-1 Mark II | 36.6 | 260 | 120 | 123 | 153 | 138 | 352 | 405 | 502 | 746 | 1337 | 521 | 352 |
+| Ricoh GR III | 24.8 | 257 | 84 | 87 | 166 | 102 | 235 | 352 | 338 | 501 | 911 | 357 | 235 |
+| Leica Q2 | 47.4 | 184 | 177 | 181 | 213 | 197 | 454 | 374 | 675 | 992 | 1748 | 693 | 454 |
+| Leica SL2 | 47.4 | 186 | 180 | 183 | 216 | 199 | 454 | 375 | 675 | 991 | 1749 | 693 | 454 |
+| Leica M10-R | 41.0 | 407 | 134 | 138 | 248 | 153 | 394 | 564 | 567 | 841 | 1500 | 585 | 394 |
+| Hasselblad X2D 100C (compressed) | 105.3 | 596 | 359 | 362 | ❌ | 377 | 1007 | 1066 | 1431 | 2113 | ❌ | 1448 | 1007 |
+| Phase One IQ4 150MP (IIQ L) | 154.0 | 466 | 458 | ❌ | 655 | 477 | 1451 | 1059 | 2342 | 3352 | 5586 | 2360 | 1451 |
+| Sigma fp L | 60.5 | 218 | 208 | 213 | 375 | 227 | 580 | 457 | 844 | 1249 | 2224 | 862 | 580 |
+| Apple iPhone 12 Pro (ProRAW) | 12.2 | 124 | 126 | ❌ | 191 | 144 | 96 | 173 | 254 | 337 | 716 | 272 | 96 |
+| Google Pixel 8 Pro | 50.1 | 153 | 144 | 148 | 291 | 163 | 481 | 348 | 671 | 1007 | 1822 | 689 | 481 |
+| Google Pixel 6 Pro | 12.5 | 49 | 40 | 44 | 111 | 59 | 122 | 98 | 174 | 257 | 494 | 190 | 122 |
+| Samsung Galaxy S23 Ultra | 49.9 | 728 | 463 | 371 | 687 | 481 | 384 | 744 | 986 | 1320 | 2402 | 1006 | 384 |
+| Samsung Galaxy S22 (JPEG XL) | 12.0 | 655 | ❌ | ❌ | 506 | ❌ | ❌ | 695 | ❌ | ❌ | 991 | ❌ | ❌ |
+| DJI Phantom 4 Pro | 20.0 | 86 | 80 | 84 | 115 | 99 | 193 | 210 | 292 | 425 | 763 | 310 | 193 |
+| GoPro HERO11 Black (GPR) | 27.1 | 340 | ❌ | 287 | ❌ | ❌ | ❌ | 440 | ❌ | ❌ | ❌ | ❌ | ❌ |
+| GoPro HERO10 Black (GPR) | 23.3 | 290 | ❌ | 247 | ❌ | ❌ | ❌ | 375 | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+## LibRaw + Little CMS pipeline
+
+The colour-managed pipeline split into its stages, all cores. Medians over the popular
+cameras: on the M1 Ultra the pipeline takes a median 846 ms (LibRaw decode 194, develop 348, Little CMS 282); on the Ryzen 856 ms (194, 280 and 430).
+On one thread the Little CMS stage dominates (84–85 % of the pipeline): a 16-bit →
+8-bit matrix-shaper transform through Little CMS's generic optimised pipeline costs 90–130 ns
+per pixel, which is why it was run over row blocks on all cores here (Little CMS's own
+multithreading and SIMD plugins are GPL-3 or commercial, and were not used). FlashRaw needs no
+separate colour stage: its single pass applies the white balance, the camera-to-sRGB matrix
+and the sRGB curve per pixel while demosaicing.
+
+Per camera (Apple M1 Ultra, ms):
+
+decode = LibRaw `open_buffer` + `unpack`; develop = `dcraw_process` to 16-bit linear ProPhoto + `dcraw_make_mem_image`; Little CMS = profiles, transform and conversion to 8-bit sRGB RGBA; FlashRaw = RAW → RGBA8 in one pass.
+
+| Camera | LibRaw decode | LibRaw develop | Little CMS | total | FlashRaw | speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| Canon EOS R5 (RAW) | 136.6 | 561.0 | 406.6 | 1104.5 | **109.3** | 10.1× |
+| Canon EOS R5 (C-RAW) | 140.9 | 566.0 | 409.2 | 1116.2 | **129.4** | 8.63× |
+| Canon EOS R5 Mark II (RAW) | 142.4 | 566.8 | 413.0 | 1122.9 | **111.7** | 10.0× |
+| Canon EOS R6 Mark II (RAW) | 78.3 | 318.3 | 222.7 | 617.0 | **61.0** | 10.1× |
+| Canon EOS R6 Mark III (RAW) | 100.6 | 416.8 | 297.2 | 815.7 | **80.4** | 10.2× |
+| Canon EOS R7 (RAW) | 101.2 | 417.9 | 298.6 | 818.9 | **80.3** | 10.2× |
+| Canon EOS R8 (RAW) | 76.6 | 316.2 | 224.5 | 612.5 | **60.8** | 10.1× |
+| Canon EOS R50 (RAW) | 75.8 | 313.1 | 224.7 | 610.7 | **60.3** | 10.1× |
+| Canon EOS 90D (RAW) | 101.7 | 418.9 | 301.8 | 822.0 | **52.7** | 15.6× |
+| Canon EOS 5D Mark IV (RAW) | 430.2 | 387.7 | 282.5 | 1100.4 | **39.8** | 27.7× |
+| Canon EOS 6D Mark II (RAW) | 388.7 | 341.4 | 242.3 | 968.6 | **33.7** | 28.7× |
+| Canon EOS Rebel T7 / 2000D (RAW) | 394.9 | 316.0 | 216.4 | 931.9 | **34.3** | 27.2× |
+| Nikon Z8 (14-bit lossless) | 545.7 | 583.8 | 411.3 | 1541.7 | **72.4** | 21.3× |
+| Nikon Z9 (14-bit lossless) | 495.2 | 571.7 | 414.1 | 1484.4 | **72.4** | 20.5× |
+| Nikon Z6III (lossless) | 282.0 | 312.2 | 227.0 | 824.4 | **41.5** | 19.9× |
+| Nikon Zf (lossless) | 269.2 | 322.3 | 230.1 | 819.7 | **41.9** | 19.5× |
+| Nikon Z7II (lossless) | 493.9 | 579.2 | 417.9 | 1491.2 | **73.6** | 20.3× |
+| Nikon Z50 (lossless) | 248.4 | 276.5 | 193.1 | 716.7 | **36.3** | 19.7× |
+| Nikon D850 (14-bit lossless) | 488.1 | 586.7 | 423.9 | 1495.6 | **72.7** | 20.6× |
+| Nikon D750 (14-bit lossless) | 259.5 | 322.2 | 218.9 | 800.2 | **40.3** | 19.9× |
+| Sony A7 IV (lossless) | 425.3 | 423.4 | 305.7 | 1158.2 | **40.8** | 28.4× |
+| Sony A7 IV (compressed) | 86.8 | 424.7 | 299.6 | 814.1 | **26.3** | 30.9× |
+| Sony A7R V (lossless) | 773.3 | 764.8 | 558.6 | 2097.5 | **70.5** | 29.7× |
+| Sony A1 (compressed) | 130.7 | 633.2 | 457.9 | 1220.4 | **39.3** | 31.1× |
+| Sony A7 III (compressed) | 63.7 | 319.4 | 223.3 | 604.4 | **21.2** | 28.6× |
+| Sony A7C II (compressed) | 88.9 | 418.4 | 307.7 | 817.9 | **27.5** | 29.7× |
+| Sony A9 III (compressed) | 63.4 | 318.9 | 222.7 | 604.3 | **20.1** | 30.0× |
+| Sony A6700 (lossless) | 375.4 | 334.6 | 244.3 | 952.2 | **34.2** | 27.9× |
+| Sony A6400 (compressed) | 64.2 | 314.3 | 224.8 | 605.1 | **19.9** | 30.5× |
+| Sony ZV-E10 (compressed) | 64.2 | 319.0 | 222.6 | 604.1 | **17.7** | 34.1× |
+| Fujifilm X-T5 (lossless compressed) | 151.5 | 507.7 | 368.7 | 1031.5 | **74.4** | 13.9× |
+| Fujifilm X-H2 (compressed) | 176.5 | 667.5 | 361.1 | 1203.3 | **94.8** | 12.7× |
+| Fujifilm X-S20 (lossless compressed) | 128.1 | 341.2 | 245.8 | 711.3 | **54.0** | 13.2× |
+| Fujifilm X100VI (lossless compressed) | 154.5 | 695.9 | 363.8 | 1212.0 | **83.6** | 14.5× |
+| Fujifilm X-T4 (uncompressed) | 19.9 | 341.5 | 243.0 | 603.4 | **28.3** | 21.3× |
+| Fujifilm GFX100 II (lossless compressed) | 277.1 | 1258.5 | 919.7 | 2451.3 | **125.4** | 19.5× |
+| Panasonic Lumix S5II | 130.4 | 335.4 | 220.6 | 686.2 | **30.4** | 22.6× |
+| Panasonic Lumix GH6 | 133.7 | 348.0 | 232.7 | 717.5 | **32.9** | 21.8× |
+| Panasonic Lumix G9II | 138.3 | 348.0 | 235.7 | 719.4 | **32.1** | 22.4× |
+| Panasonic Lumix S5 | 9.57 | 335.6 | 224.7 | 569.6 | **18.2** | 31.3× |
+| Panasonic Lumix S1R | 124.2 | 652.0 | 429.2 | 1205.6 | **38.0** | 31.7× |
+| Panasonic Lumix GH5 | 91.5 | 282.4 | 194.4 | 567.6 | **17.7** | 32.1× |
+| OM System OM-1 Mark II | 389.5 | 273.8 | 187.8 | 845.5 | **126.4** | 6.69× |
+| OM System OM-5 | 355.0 | 267.0 | 193.6 | 821.2 | **138.8** | 5.92× |
+| Olympus E-M1 Mark III | 344.9 | 271.2 | 192.2 | 809.8 | **137.9** | 5.87× |
+| Pentax K-3 Mark III | 193.5 | 336.4 | 241.0 | 772.3 | **48.2** | 16.0× |
+| Pentax K-1 Mark II | 291.0 | 464.9 | 336.9 | 1094.8 | **60.9** | 18.0× |
+| Ricoh GR III | 322.1 | 314.6 | 225.5 | 863.8 | **34.1** | 25.3× |
+| Leica Q2 | 285.9 | 594.7 | 435.7 | 1323.7 | **33.1** | 40.0× |
+| Leica SL2 | 288.0 | 593.7 | 417.4 | 1301.5 | **33.8** | 38.5× |
+| Leica M10-R | 556.7 | 524.1 | 375.6 | 1456.2 | **54.9** | 26.5× |
+| Hasselblad X2D 100C (compressed) | 1001.1 | 1264.5 | 930.3 | 3203.9 | **144.2** | 22.2× |
+| Phase One IQ4 150MP (IIQ L) | 1036.0 | 3305.0 | 1347.6 | 5691.9 | **133.0** | 42.8× |
+| Sigma fp L | 765.9 | 761.8 | 554.5 | 2081.1 | **72.1** | 28.9× |
+| Apple iPhone 12 Pro (ProRAW) | 466.7 | 110.8 | 110.2 | 687.6 | **24.3** | 28.3× |
+| Google Pixel 8 Pro | 652.0 | 783.8 | 457.3 | 1891.3 | **59.1** | 32.0× |
+| Google Pixel 6 Pro | 163.9 | 172.4 | 117.5 | 453.8 | **16.7** | 27.2× |
+| Samsung Galaxy S23 Ultra | 1899.3 | 252.7 | 353.6 | 2507.1 | **177.7** | 14.1× |
+| DJI Phantom 4 Pro | 19.3 | 271.0 | 185.1 | 474.1 | **18.9** | 25.0× |
+
+## Per format
+
+Geometric mean speedup of FlashRaw per (format, codec), all cores, Apple M1 Ultra: LibRaw and
+RawSpeed over the 159 files of both lists, the other libraries over the popular cameras. ❌ =
+the other library decoded none of these files; – = not measured. Linux:
+[result file](../benches/results/linux-x86_64-compare.md#per-format-geometric-mean-speedup-of-flashraw-all-cores).
+
+| Format | Compression | files | decode vs LibRaw | decode vs RawSpeed | decode vs rawler | decode vs rawpy | decode vs dcraw | RGB vs LibRaw | RGB vs LibRaw + LCMS | RGB vs rawler | RGB vs rawpy | RGB vs dcraw |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 3FR | hasselblad | 2 | 12.2× | 5.62× | – | – | – | 16.1× | – | – | – | – |
+| 3FR | uncompressed | 2 | 0.81× | 0.52× | – | – | – | 18.7× | – | – | – | – |
+| ARW | other | 2 | 11.2× | ❌ | – | – | – | 10.2× | – | – | – | – |
+| ARW | sony-arw1 | 2 | 6.21× | 3.41× | – | – | – | 11.8× | – | – | – | – |
+| ARW | sony-arw2 | 9 | 12.7× | 1.40× | 1.44× | 14.4× | 45.3× | 18.3× | 30.7× | 7.23× | 21.4× | 24.4× |
+| ARW | sony-lossless | 4 | 17.2× | 0.70× | 2.10× | 22.5× | ❌ | 16.1× | 28.7× | 5.49× | 22.9× | ❌ |
+| ARW | uncompressed | 2 | 8.59× | 0.43× | – | – | – | 12.9× | – | – | – | – |
+| CR2 | canon-sraw | 2 | 16.1× | 3.94× | – | – | – | 14.5× | – | – | – | – |
+| CR2 | lossless-jpeg | 5 | 20.6× | 5.88× | 12.6× | 20.9× | 29.1× | 20.7× | 27.9× | 10.9× | 22.2× | 24.6× |
+| CR3 | canon-crx | 11 | 1.74× | ❌ | 2.76× | 5.48× | ❌ | 6.81× | 10.4× | 4.39× | 10.2× | ❌ |
+| CRW | canon-crw | 2 | 2.71× | 2.00× | – | – | – | 5.17× | – | – | – | – |
+| CRW | uncompressed | 1 | 7.72× | ❌ | – | – | – | 12.7× | – | – | – | – |
+| DCR | kodak-65000 | 2 | 2.65× | 3.54× | – | – | – | 7.81× | – | – | – | – |
+| DCS | lossless-jpeg | 1 | 11.2× | 2.95× | – | – | – | 15.5× | – | – | – | – |
+| DCS | uncompressed | 2 | 4.66× | 34.9× | – | – | – | 20.8× | – | – | – | – |
+| DNG | deflate | 2 | 13.7× | 1.03× | – | – | – | 17.7× | – | – | – | – |
+| DNG | gopro-vc5 | 2 | ❌ | 0.48× | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| DNG | jpeg-xl | 1 | ❌ | ❌ | 0.63× | ❌ | ❌ | ❌ | ❌ | 0.73× | ❌ | ❌ |
+| DNG | lossless-jpeg | 9 | 21.5× | 2.63× | 3.67× | 22.5× | 32.3× | 19.4× | 25.4× | 6.14× | 20.6× | 23.4× |
+| DNG | uncompressed | 5 | 28.5× | 4.45× | 1.13× | 48.6× | 148.2× | 20.3× | 33.8× | 7.17× | 25.8× | 30.5× |
+| ERF | uncompressed | 2 | 8.74× | 1.44× | – | – | – | 15.4× | – | – | – | – |
+| FFF | hasselblad | 2 | 12.8× | 5.87× | ❌ | 14.5× | 28.9× | 16.0× | 22.2× | ❌ | 18.1× | 22.3× |
+| IIQ | phaseone | 3 | 22.5× | 28.4× | 8.10× | 25.2× | 98.6× | 31.3× | 42.8× | 7.16× | 35.7× | 45.0× |
+| IIQ | phaseone-s | 2 | 14.2× | ❌ | – | – | – | 28.0× | – | – | – | – |
+| IIQ | uncompressed | 1 | 0.77× | ❌ | – | – | – | 37.2× | – | – | – | – |
+| KDC | kodak-dc120 | 1 | 1.97× | ❌ | – | – | – | 4.49× | – | – | – | – |
+| KDC | other | 1 | 1.48× | ❌ | – | – | – | 2.89× | – | – | – | – |
+| KDC | uncompressed | 2 | 52.7× | 10.8× | – | – | – | 22.4× | – | – | – | – |
+| MEF | uncompressed | 1 | 55.5× | 11.1× | – | – | – | 26.8× | – | – | – | – |
+| MOS | leaf | 2 | 12.6× | ❌ | – | – | – | 15.9× | – | – | – | – |
+| MOS | uncompressed | 1 | 11.9× | 11.3× | – | – | – | 21.9× | – | – | – | – |
+| MRW | minolta-packed | 2 | 56.0× | 11.6× | – | – | – | 22.4× | – | – | – | – |
+| MRW | uncompressed | 2 | 9.00× | 8.29× | – | – | – | 19.5× | – | – | – | – |
+| NEF | nikon-huffman | 9 | 10.8× | 3.99× | 7.19× | 11.4× | 17.4× | 15.0× | 20.2× | 7.77× | 16.2× | 16.9× |
+| NEF | uncompressed | 2 | 6.19× | 2.75× | – | – | – | 20.8× | – | – | – | – |
+| NRW | uncompressed | 2 | 2.99× | 1.34× | – | – | – | 18.4× | – | – | – | – |
+| ORF | olympus | 5 | 2.93× | 1.26× | 1.77× | 2.95× | 1.76× | 4.79× | 6.15× | 2.46× | 4.92× | 3.23× |
+| ORF | uncompressed | 2 | 16.3× | 2.69× | – | – | – | 20.2× | – | – | – | – |
+| PEF | pentax-huffman | 4 | 7.36× | 3.16× | 6.28× | 10.2× | 15.9× | 12.4× | 17.0× | 7.08× | 14.6× | 16.7× |
+| PEF | uncompressed | 2 | 18.6× | 8.09× | – | – | – | 21.4× | – | – | – | – |
+| RAF | fuji-compressed | 7 | 4.26× | 1.22× | 2.59× | 32.9× | ❌ | 10.2× | 14.6× | 4.95× | 25.3× | ❌ |
+| RAF | uncompressed | 3 | 4.48× | 0.78× | 2.03× | 10.4× | 100.0× | 15.2× | 21.3× | 6.91× | 14.8× | 15.3× |
+| RAW | uncompressed | 3 | 7.81× | 12.5× | – | – | – | 16.0× | – | – | – | – |
+| RW2 | panasonic-v4 | 3 | 18.7× | 1.02× | 1.50× | 19.5× | 43.6× | 21.6× | 32.1× | 5.53× | 24.2× | 25.0× |
+| RW2 | panasonic-v5 | 2 | 6.23× | 0.63× | – | – | – | 18.8× | – | – | – | – |
+| RW2 | panasonic-v6 | 2 | 13.0× | 0.94× | 1.27× | 14.3× | 54.9× | 20.6× | 31.7× | 5.64× | 23.5× | 23.6× |
+| RW2 | panasonic-v7 | 3 | 3.62× | 0.25× | 1.45× | 3.28× | 92.3× | 20.3× | 31.3× | 6.21× | 22.3× | 26.5× |
+| RW2 | panasonic-v8 | 5 | 8.09× | 3.70× | 7.58× | 16.1× | 15.6× | 15.3× | 22.3× | 7.20× | 20.7× | 16.0× |
+| RW2 | uncompressed | 2 | 8.52× | 0.73× | – | – | – | 19.2× | – | – | – | – |
+| SRW | samsung-v0 | 2 | 10.5× | 3.47× | – | – | – | 15.8× | – | – | – | – |
+| SRW | samsung-v1 | 2 | 2.67× | 1.10× | – | – | – | 5.12× | – | – | – | – |
+| SRW | samsung-v2 | 2 | 1.75× | 0.92× | – | – | – | 3.82× | – | – | – | – |
+| SRW | uncompressed | 2 | 49.1× | 9.60× | – | – | – | 23.6× | – | – | – | – |
+| X3F | sigma-x3f | 2 | 6.27× | ❌ | – | – | – | 7.07× | – | – | – | – |
+| other | kodak-ycbcr | 1 | 8.75× | ❌ | – | – | – | 9.59× | – | – | – | – |
+| other | uncompressed | 2 | 8.54× | 11.4× | – | – | – | 19.6× | – | – | – | – |
+
+## Where FlashRaw is not the fastest
+
+Honest list, from the result files (popular cameras and the 159-file set):
+
+- **RAW → sRGB with all cores: never**, against any library, on either machine, except the
+  one JPEG XL DNG (Samsung Galaxy S22), where rawler, whose JPEG XL decoder is faster, wins
+  by 1.2× (Linux) and 1.4× (macOS). On one thread LibRaw is faster on 5 (Linux) and 4 (macOS)
+  of 156 files, mostly large uncompressed files and old Kodak formats (up to 2.8× on a Kodak
+  DC120), and dcraw on the two OM System ORFs (1.04–1.14×).
+- **Decode with all cores, Linux: 16 losses in 442 comparisons** (file × other library).
+  - Canon CR3: close to LibRaw's OpenMP build, which also decodes CR3 in parallel; LibRaw is
+    1–6 % faster on three CR3 files (rawpy, which is LibRaw, is 7 % faster on one) and slower on the others
+    (on the M1 Ultra FlashRaw is 1.7× faster on all of them). LibRaw is also faster on two
+    small uncompressed files (Nikon Coolpix A1000, GITUP: 1.3×).
+  - RawSpeed, 9 of 126 files: GoPro GPR (1.7–2.1×), the Sony pixel-shift ARQ (3.1×),
+    small uncompressed files that take 1–4 ms (Nikon Coolpix A1000, GITUP, Epson R-D1,
+    Fujifilm X-E2: up to 1.5×), a Canon EOS 500D CR2 and the Panasonic Lumix S5 (v7).
+  - rawler: the JPEG XL DNG (1.5×).
+- **Decode with all cores, Apple M1 Ultra: 38 losses in 442 comparisons**, mostly against
+  RawSpeed (30 of 126 files):
+  - Memory-bound uncompressed and packed data (3FR, RAF, NEF, NRW, ARW, RW2, Panasonic
+    v5–v7): RawSpeed 1.1–2× faster, and **4× on Panasonic v7** (Lumix S5) and the Sony
+    pixel-shift ARQ. These take 1–10 ms
+    in every library; FlashRaw caps such copy kernels at a few threads, which is right on the
+    Ryzen but leaves bandwidth unused on the M1 Ultra. LibRaw is also faster on 7 of these
+    files (1.1–1.4×).
+  - Sony lossless ARW: RawSpeed 1.3–1.6× faster. Tiled lossless-JPEG DNG from phones and the
+    Sigma fp L: RawSpeed 1.2–1.3× faster. GoPro GPR: RawSpeed 2× faster. Samsung NX1/NX500
+    (V2): RawSpeed 1.1× faster (a strictly sequential codec).
+  - rawler: the JPEG XL DNG (1.6×).
+- **One thread** (decode): FlashRaw beats LibRaw on 143 (Linux) and 139 (macOS) of 156 files,
+  rawler on 57 and 56 of 59, rawpy on 58 and 57 of 59, dcraw on 40 of 42 (both machines; the
+  exceptions are the two OM System ORFs). Against RawSpeed it is faster on 96 of 126 files on
+  Linux, but **only 40 of 126 on the M1 Ultra** (13 of the 49 popular cameras), where
+  RawSpeed's single-threaded decoders are 1.2× faster on the popular cameras (geometric mean).
+  FlashRaw's lead with all cores comes from parallelising the codecs the others run on one
+  thread.
+- **Memory**: a plain decode on all cores needs more memory with FlashRaw than with LibRaw or
+  RawSpeed (see [Memory](#memory)); for RAW → sRGB on all cores dcraw's peak is about the
+  same as FlashRaw's (lower on 22 of 42 files on the M1 Ultra).
+- **Formats the others do not decode at all** are not in these counts: Canon CR3 (RawSpeed,
+  dcraw), Phase One IIQ S and 150 MP, Sigma X3F (RawSpeed), GoPro GPR (LibRaw, rawpy, rawler,
+  dcraw), JPEG XL DNG (LibRaw, rawpy, RawSpeed, dcraw), iPhone ProRAW (RawSpeed), current
+  Fujifilm compressed RAF (dcraw), Hasselblad X2D compressed FFF (rawler).
 
 ## FlashRaw alone
 
@@ -407,10 +797,10 @@ Apple platforms.
 
 The "FlashRaw GPU" column of the macOS tables is end to end through the CLI (per-process
 timing, frame downloaded to host memory). The GPU develop pass replaces the CPU one, so it
-helps most where development dominates: on the popular cameras RAW → RGB is 1.31× faster with
-the GPU than with 20 CPU threads (geometric mean over the 52 files where it ran; up to 3.08×
-for packed and uncompressed data) and 17.3× faster than LibRaw. Some files fall back to the CPU
-(marked CPU¹). Resident output (no download) and per-kernel timings are in
+helps most where development dominates: on the popular cameras RAW → RGB is 1.3× faster with
+the GPU than with 20 CPU threads (geometric mean over the 52 files where it ran; up to 3.1×
+for packed and uncompressed data) and 17.1× faster than LibRaw. Some files fall back to the CPU
+(marked CPU¹ in the [result file](../benches/results/macos-arm64-compare.md)). Resident output (no download) and per-kernel timings are in
 [gpu.md](gpu.md) (`cargo bench -p flashraw-gpu --bench gpu_pipeline`, median of 7):
 
 | File | Case | CPU | GPU (download) | GPU (resident) |

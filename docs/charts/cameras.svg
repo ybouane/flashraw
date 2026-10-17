@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="960" height="580" role="img" aria-labelledby="t d">
+<title id="t">Per-camera decode and RAW to RGB times</title>
+<desc id="d">Canon EOS R5 (RAW): decode FlashRaw 80.9 ms, LibRaw 138 ms, rawler 237 ms; Canon EOS 5D Mark IV (RAW): decode FlashRaw 20.5 ms, LibRaw 431 ms, RawSpeed 110 ms, rawler 251 ms; Nikon Z8 (14-bit lossless): decode FlashRaw 44.0 ms, LibRaw 544 ms, RawSpeed 218 ms, rawler 356 ms; Nikon Z6III (lossless): decode FlashRaw 25.0 ms, LibRaw 285 ms, RawSpeed 110 ms, rawler 186 ms; Sony A7 IV (compressed): decode FlashRaw 5.86 ms, LibRaw 87.4 ms, RawSpeed 8.77 ms, rawler 8.38 ms; Sony A7R V (lossless): decode FlashRaw 33.2 ms, LibRaw 761 ms, RawSpeed 24.2 ms, rawler 61.3 ms; Fujifilm X-T5 (lossless compressed): decode FlashRaw 35.5 ms, LibRaw 151 ms, RawSpeed 44.4 ms, rawler 93.9 ms; Panasonic Lumix S5II: decode FlashRaw 15.1 ms, LibRaw 131 ms, RawSpeed 62.4 ms, rawler 119 ms; OM System OM-1 Mark II: decode FlashRaw 116 ms, LibRaw 381 ms, RawSpeed 162 ms, rawler 225 ms; Leica M10-R: decode FlashRaw 28.9 ms, LibRaw 559 ms, RawSpeed 197 ms, rawler 381 ms; Hasselblad X2D 100C (compressed): decode FlashRaw 76.6 ms, LibRaw 1013 ms, RawSpeed 451 ms; Google Pixel 8 Pro: decode FlashRaw 23.1 ms, LibRaw 656 ms, RawSpeed 18.9 ms, rawler 34.2 ms</desc>
+<rect x="0.5" y="0.5" width="959" height="579" rx="0" fill="#FFFFFF" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="32.0" y="54.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="27" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#0E0E0E">Per camera: milliseconds per photo</text>
+<text x="32.0" y="80.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="15.5" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#4A4A4A">Apple M1 Ultra, all cores, median of 7 runs · log scale, left is faster</text>
+<circle cx="38.0" cy="101.0" r="6" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="50.0" y="106.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#4A4A4A">FlashRaw</text>
+<rect x="139.1" y="95.6" width="10.8" height="10.8" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<text x="156.5" y="106.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#4A4A4A">LibRaw</text>
+<path d="M237.4,93.5 L244.9,101.0 L237.4,108.5 L229.9,101.0 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<text x="249.4" y="106.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#4A4A4A">RawSpeed (no RGB pipeline)</text>
+<path d="M466.6,93.8 L473.4,106.0 L459.8,106.0 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<text x="478.6" y="106.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#4A4A4A">rawler</text>
+<rect x="20" y="150" width="920" height="30" rx="0" fill="#F6F6F6" opacity="0.6"/>
+<text x="278.0" y="170.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Canon EOS R5 (RAW)</text>
+<text x="278.0" y="200.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Canon EOS 5D Mark IV (RAW)</text>
+<rect x="20" y="210" width="920" height="30" rx="0" fill="#F6F6F6" opacity="0.6"/>
+<text x="278.0" y="230.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Nikon Z8 (14-bit lossless)</text>
+<text x="278.0" y="260.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Nikon Z6III (lossless)</text>
+<rect x="20" y="270" width="920" height="30" rx="0" fill="#F6F6F6" opacity="0.6"/>
+<text x="278.0" y="290.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Sony A7 IV (compressed)</text>
+<text x="278.0" y="320.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Sony A7R V (lossless)</text>
+<rect x="20" y="330" width="920" height="30" rx="0" fill="#F6F6F6" opacity="0.6"/>
+<text x="278.0" y="350.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Fujifilm X-T5 (lossless compressed)</text>
+<text x="278.0" y="380.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Panasonic Lumix S5II</text>
+<rect x="20" y="390" width="920" height="30" rx="0" fill="#F6F6F6" opacity="0.6"/>
+<text x="278.0" y="410.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">OM System OM-1 Mark II</text>
+<text x="278.0" y="440.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Leica M10-R</text>
+<rect x="20" y="450" width="920" height="30" rx="0" fill="#F6F6F6" opacity="0.6"/>
+<text x="278.0" y="470.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Hasselblad X2D 100C (compressed)</text>
+<text x="278.0" y="500.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="14.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">Google Pixel 8 Pro</text>
+<text x="292.0" y="136.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="15.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#0E0E0E">Decode (ms)</text>
+<line x1="292.0" y1="150" x2="292.0" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="292.0" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">1</text>
+<line x1="343.2" y1="150" x2="343.2" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="343.2" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">3</text>
+<line x1="399.3" y1="150" x2="399.3" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="399.3" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">10</text>
+<line x1="450.5" y1="150" x2="450.5" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="450.5" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">30</text>
+<line x1="506.7" y1="150" x2="506.7" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="506.7" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">100</text>
+<line x1="557.9" y1="150" x2="557.9" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="557.9" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">300</text>
+<line x1="614.0" y1="150" x2="614.0" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="614.0" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">1000</text>
+<line x1="496.8" y1="165.0" x2="547.0" y2="165.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="516.7" y="164.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M547.0,158.4 L553.2,169.6 L540.7,169.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="496.8" cy="165.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="485.8" y="169.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">80.9</text><text x="485.8" y="169.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">80.9</text>
+<line x1="432.9" y1="195.0" x2="574.8" y2="195.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="569.9" y="194.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M511.2,183.6 L518.1,190.5 L511.2,197.4 L504.3,190.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M549.7,188.4 L555.9,199.6 L543.4,199.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="432.9" cy="195.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="421.9" y="199.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">20.5</text><text x="421.9" y="199.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">20.5</text>
+<line x1="468.4" y1="225.0" x2="585.7" y2="225.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="580.7" y="224.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M543.1,213.6 L549.9,220.5 L543.1,227.4 L536.2,220.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M565.9,218.4 L572.2,229.6 L559.6,229.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="468.4" cy="225.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="457.4" y="229.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">44.0</text><text x="457.4" y="229.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">44.0</text>
+<line x1="442.0" y1="255.0" x2="555.4" y2="255.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="550.5" y="254.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M511.3,243.6 L518.2,250.5 L511.3,257.4 L504.4,250.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M535.6,248.4 L541.9,259.6 L529.4,259.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="442.0" cy="255.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="431.0" y="259.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">25.0</text><text x="431.0" y="259.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">25.0</text>
+<line x1="374.4" y1="285.0" x2="500.4" y2="285.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="495.5" y="284.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M393.2,273.6 L400.1,280.5 L393.2,287.4 L386.4,280.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M391.1,278.4 L397.4,289.6 L384.8,289.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="374.4" cy="285.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="363.4" y="289.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">5.86</text><text x="363.4" y="289.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">5.86</text>
+<line x1="440.5" y1="315.0" x2="601.3" y2="315.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="596.3" y="314.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M440.5,303.6 L447.4,310.5 L440.5,317.4 L433.6,310.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M483.9,308.4 L490.1,319.6 L477.6,319.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="455.3" cy="315.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="429.5" y="319.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">33.2</text><text x="429.5" y="319.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">33.2</text>
+<line x1="458.4" y1="345.0" x2="525.8" y2="345.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="520.8" y="344.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M468.8,333.6 L475.6,340.5 L468.8,347.4 L461.9,340.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M503.7,338.4 L510.0,349.6 L497.4,349.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="458.4" cy="345.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="447.4" y="349.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">35.5</text><text x="447.4" y="349.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">35.5</text>
+<line x1="418.5" y1="375.0" x2="519.3" y2="375.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="514.3" y="374.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M484.7,363.6 L491.5,370.5 L484.7,377.4 L477.8,370.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M514.8,368.4 L521.1,379.6 L508.5,379.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="418.5" cy="375.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="407.5" y="379.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">15.1</text><text x="407.5" y="379.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">15.1</text>
+<line x1="513.5" y1="405.0" x2="569.1" y2="405.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="564.1" y="404.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M529.2,393.6 L536.1,400.5 L529.2,407.4 L522.3,400.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M544.5,398.4 L550.7,409.6 L538.2,409.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="513.5" cy="405.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="502.5" y="409.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">116</text><text x="502.5" y="409.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">116</text>
+<line x1="448.7" y1="435.0" x2="586.9" y2="435.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="581.9" y="434.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M538.3,423.6 L545.2,430.5 L538.3,437.4 L531.5,430.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M569.0,428.4 L575.2,439.6 L562.7,439.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="448.7" cy="435.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="437.7" y="439.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">28.9</text><text x="437.7" y="439.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">28.9</text>
+<line x1="494.2" y1="465.0" x2="614.6" y2="465.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="609.6" y="464.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M576.9,453.6 L583.8,460.5 L576.9,467.4 L570.0,460.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="494.2" cy="465.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="483.2" y="469.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">76.6</text><text x="483.2" y="469.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">76.6</text>
+<line x1="429.1" y1="495.0" x2="594.3" y2="495.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="589.4" y="494.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M429.1,483.6 L435.9,490.5 L429.1,497.4 L422.2,490.5 Z" fill="#B5B5B5" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M456.6,488.4 L462.9,499.6 L450.4,499.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="438.4" cy="495.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="418.1" y="499.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">23.1</text><text x="418.1" y="499.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">23.1</text>
+<text x="674.0" y="136.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="15.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#0E0E0E">RAW → RGB (ms)</text>
+<line x1="674.0" y1="150" x2="674.0" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="674.0" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">10</text>
+<line x1="721.4" y1="150" x2="721.4" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="721.4" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">30</text>
+<line x1="773.3" y1="150" x2="773.3" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="773.3" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">100</text>
+<line x1="820.7" y1="150" x2="820.7" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="820.7" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">300</text>
+<line x1="872.6" y1="150" x2="872.6" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="872.6" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">1000</text>
+<line x1="920.0" y1="150" x2="920.0" y2="510" stroke="#E2E2E2" stroke-width="0.75"/>
+<text x="920.0" y="528.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="middle" fill="#7A7A7A">3000</text>
+<line x1="777.1" y1="165.0" x2="859.4" y2="165.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="854.5" y="164.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M842.0,158.4 L848.3,169.6 L835.7,169.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="777.1" cy="165.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="766.1" y="169.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">109</text><text x="766.1" y="169.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">109</text>
+<line x1="733.5" y1="195.0" x2="865.0" y2="195.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="860.0" y="194.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M834.7,188.4 L840.9,199.6 L828.4,199.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="733.5" cy="195.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="722.5" y="199.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">39.8</text><text x="722.5" y="199.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">39.8</text>
+<line x1="759.4" y1="225.0" x2="878.9" y2="225.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="873.9" y="224.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M850.7,218.4 L856.9,229.6 L844.4,229.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="759.4" cy="225.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="748.4" y="229.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">72.4</text><text x="748.4" y="229.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">72.4</text>
+<line x1="735.4" y1="255.0" x2="852.6" y2="255.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="847.7" y="254.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M823.5,248.4 L829.7,259.6 L817.2,259.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="735.4" cy="255.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="724.4" y="259.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">41.5</text><text x="724.4" y="259.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">41.5</text>
+<line x1="715.7" y1="285.0" x2="845.7" y2="285.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="840.8" y="284.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M801.6,278.4 L807.8,289.6 L795.3,289.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="715.7" cy="285.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="704.7" y="289.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">26.3</text><text x="704.7" y="289.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">26.3</text>
+<line x1="758.3" y1="315.0" x2="891.2" y2="315.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="886.2" y="314.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M832.6,308.4 L838.8,319.6 L826.3,319.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="758.3" cy="315.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="747.3" y="319.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">70.5</text><text x="747.3" y="319.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">70.5</text>
+<line x1="760.6" y1="345.0" x2="857.0" y2="345.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="852.1" y="344.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M831.8,338.4 L838.0,349.6 L825.5,349.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="760.6" cy="345.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="749.6" y="349.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">74.4</text><text x="749.6" y="349.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">74.4</text>
+<line x1="722.0" y1="375.0" x2="840.7" y2="375.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="835.7" y="374.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M808.4,368.4 L814.7,379.6 L802.2,379.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="722.0" cy="375.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="711.0" y="379.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">30.4</text><text x="711.0" y="379.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">30.4</text>
+<line x1="783.4" y1="405.0" x2="855.8" y2="405.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="850.9" y="404.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M826.3,398.4 L832.5,409.6 L820.0,409.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="783.4" cy="405.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="772.4" y="409.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">126</text><text x="772.4" y="409.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">126</text>
+<line x1="747.5" y1="435.0" x2="876.1" y2="435.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="871.2" y="434.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M851.0,428.4 L857.2,439.6 L844.7,439.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="747.5" cy="435.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="736.5" y="439.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">54.9</text><text x="736.5" y="439.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">54.9</text>
+<line x1="789.1" y1="465.0" x2="908.8" y2="465.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="903.9" y="464.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="789.1" cy="465.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="778.1" y="469.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">144</text><text x="778.1" y="469.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">144</text>
+<line x1="750.6" y1="495.0" x2="888.5" y2="495.0" stroke="#E2E2E2" stroke-width="3" stroke-linecap="round"/>
+<rect x="883.6" y="494.6" width="9.9" height="9.9" rx="0" fill="#8C8C8C" stroke="#FFFFFF" stroke-width="2"/>
+<path d="M821.2,488.4 L827.5,499.6 L814.9,499.6 Z" fill="#5C5C5C" stroke="#FFFFFF" stroke-width="2"/>
+<circle cx="750.6" cy="495.0" r="6.5" fill="#0E0E0E" stroke="#FFFFFF" stroke-width="2"/>
+<text x="739.6" y="499.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round">59.1</text><text x="739.6" y="499.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="12.5" font-weight="600" font-variant-numeric="tabular-nums lining-nums" text-anchor="end" fill="#0E0E0E">59.1</text>
+<text x="32.0" y="556.0" font-family="Newsreader, Georgia, 'Times New Roman', serif" font-size="13" font-weight="400" font-variant-numeric="tabular-nums lining-nums" text-anchor="start" fill="#7A7A7A">Missing marker: that library does not decode the file (RawSpeed: Canon CR3; rawler: Hasselblad X2D). Full tables: docs/benchmarks.md.</text>
+</svg>
