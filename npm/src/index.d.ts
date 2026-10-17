@@ -852,6 +852,16 @@ export declare class FlashRaw {
 // ------------------------------------------------------------------------------- functions
 
 export function init(options?: InitOptions): Promise<BuildInfo>;
+/**
+ * Select another build at run time (e.g. `{ gpu: true }` after the default threaded one), unlike
+ * `init()`, which honours only its first options. Open handles keep the build they were opened
+ * in; new handles use the new one. Every binary instantiated stays in memory for the life of the
+ * page (wasm-bindgen glue holds its instance in module state; WebAssembly memory never shrinks)
+ * and is reused when selected again. Rejects with `NotAvailableError` when asked for the SIMD
+ * build after the scalar one or vice versa (they share one glue module); the previous selection
+ * then stays in place.
+ */
+export function reinit(options?: InitOptions): Promise<BuildInfo>;
 export function decodeRaw<O extends OutputFormat = 'raw-u16', S extends SampleType = 'f32'>(
   input: RawInput,
   options?: OpenOptions & Omit<DecodeOptions, 'zeroCopy'> & { output?: O; sampleType?: S },
