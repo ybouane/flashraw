@@ -7,12 +7,12 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const repo = join(here, '..');
 
 /**
- * Cross-origin isolation (needed for the multithreaded WASM build). `credentialless`, as in
- * production: the peeking widget's analytics beacon has no CORP header, which `require-corp`
- * blocks (see README.md, "Hosting headers"). `DEMO_COEP=off` serves the page without isolation
- * (single-threaded path), `DEMO_COEP=require-corp` the stricter policy.
+ * Cross-origin isolation (needed for the multithreaded WASM build). `require-corp`, as in
+ * production: every cross-origin resource (only the peeking widget) sends CORP or CORS headers,
+ * and Safari supports it (see README.md, "Hosting headers"). `DEMO_COEP=off` serves the page
+ * without isolation (single-threaded path), `DEMO_COEP=credentialless` the lighter policy.
  */
-const coep = process.env.DEMO_COEP ?? 'credentialless';
+const coep = process.env.DEMO_COEP ?? 'require-corp';
 const isolationHeaders: Record<string, string> =
   coep === 'off'
     ? {}
@@ -33,6 +33,25 @@ const BRAND_FILES = [
   'og-banner.png',
 ];
 const MIME: Record<string, string> = { svg: 'image/svg+xml', png: 'image/png', ico: 'image/x-icon' };
+
+/**
+ * Leaves the package's WebGPU WASM build out of the site: the demo never selects it (see
+ * src/app.ts, "engine"), but the package references every build with literal URLs, so bundlers
+ * emit them all. Its glue module becomes a stub that throws, and its .wasm is not emitted.
+ */
+function dropWebGpuBuild(): Plugin {
+  const stub = '\0flashraw-no-webgpu-build';
+  return {
+    name: 'flashraw-drop-webgpu-build',
+    apply: 'build',
+    enforce: 'pre',
+    resolveId: (id) => (/(^|\/)flashraw_bindgen_gpu\.js$/.test(id) ? stub : null),
+    load: (id) => (id === stub ? "throw new Error('the WebGPU build is not part of this site');" : null),
+    generateBundle(_, bundle) {
+      for (const name of Object.keys(bundle)) if (/(^|\/)flashraw_simd_gpu-[^/]*\.wasm$/.test(name)) delete bundle[name];
+    },
+  };
+}
 
 const brandPath = (name: string) => join(repo, 'branding', name);
 
@@ -152,7 +171,7 @@ function preloadFont(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [brandAssets(), chartsData(), preloadFont()],
+  plugins: [brandAssets(), dropWebGpuBuild(), chartsData(), preloadFont()],
   optimizeDeps: { exclude: ['flashraw'] },
   worker: { format: 'es' },
   server: { headers: isolationHeaders, fs: { allow: [repo] } },

@@ -24,19 +24,15 @@ sample". What the demo does with a file (nothing is uploaded):
 5. Downloads: the adjusted image at full resolution as PNG or JPEG (rendered in 2048 px tiles),
    and every embedded preview as stored.
 6. Timings: metadata parse, preview extraction and browser decode, the decode with FlashRaw's
-   per-stage times (entropy decode, unpack, develop, GPU stages), the copy and texture upload,
-   MP/s, and which WASM binary, SIMD level, thread count and backend ran ("Ran on").
+   per-stage times (entropy decode, unpack, develop), the copy and texture upload, MP/s, and
+   which WASM binary, SIMD level and thread count ran ("Ran on").
 
-Engine: by default ("Auto") the fastest CPU build: threaded on cross-origin isolated pages,
-otherwise single-threaded SIMD; the reason is shown in the performance panel. The WebGPU build is
-an explicit choice: in the browser it cannot also use threads, so its entropy decoding runs on one
-core and full decodes measured 2-11x slower than the threaded build on an Apple M1 Ultra (the GPU
-kernels themselves take 4-25 ms). Adjustments render on the GPU (WebGL2) with every build. A GPU
-decode that cannot run
-falls back to the CPU with its reason. "Decoder options" switches the build without a reload
-(`reinit()` of the npm package): the open file is re-opened with the new one, and a build used
-before is reused. Only swapping single-threaded SIMD and the scalar build reloads the page (they
-share one wasm-bindgen glue module, which holds one instance per page).
+Engine: the npm package's default selection: the threaded build on cross-origin isolated pages,
+otherwise single-threaded SIMD (then the scalar fallback); the reason is shown in the performance
+panel. The WebGPU build is left out of the site (`dropWebGpuBuild` in `vite.config.ts`): in the
+browser it cannot also use threads, so its entropy decoding runs on one core and full decodes
+measured 2-11x slower than the threaded build on an Apple M1 Ultra. Adjustments render on the GPU
+(WebGL2) with every build.
 
 Loading: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three font files, logo)
 before the `load` event. Then, when the main thread is idle (`requestIdleCallback`), the decoder
@@ -101,10 +97,8 @@ npm run serve                        # serve dist/ with the production headers o
 ```
 
 `DEMO_COEP=off npm run dev` serves the page without cross-origin isolation (single-threaded
-path); `DEMO_COEP=require-corp` uses the stricter policy. URL parameters for testing:
-`?engine=gpu` (WebGPU build), `?engine=threads`, `?engine=single` (single-threaded SIMD),
-`?engine=scalar`, `?renderer=cpu`. The engine can also be switched in the demo's "Decoder
-options" (the URL follows).
+path); `DEMO_COEP=credentialless` uses the lighter policy. `?renderer=cpu` forces the CPU
+display renderer.
 
 ## Deploy
 
@@ -124,23 +118,21 @@ page:
 
 ```
 Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: credentialless
+Cross-Origin-Embedder-Policy: require-corp
 ```
 
 Without them the page still works: FlashRaw falls back to the single-threaded SIMD build (the
 "Performance" panel says why), decodes are slower and run on the main thread.
 
-**Why `credentialless` and not `require-corp`.** With `require-corp`, every cross-origin
-response must carry CORS or `Cross-Origin-Resource-Policy`. The page's only cross-origin
-content is the peeking widget (`https://peeking.ybouane.com`). Its script (loaded with
-`crossorigin="anonymous"`), video and avatar are served with `Access-Control-Allow-Origin: *`
-and load fine under both policies, but its analytics beacon (`/t`) has no CORP header, so
-`require-corp` blocks it and logs a console error in Chromium and Firefox (tested with
-`tests/modes.mjs`). `credentialless` loads it (no-cors requests are sent without cookies) and
-isolates the page in Chromium and Firefox. Safari does not support `credentialless`: there the
-page is not isolated and uses the single-threaded build, which is the documented fallback. If
-the widget host adds `Cross-Origin-Resource-Policy: cross-origin` to `/t`, `require-corp` would
-work everywhere (including Safari threads).
+**Why `require-corp`.** It is the policy every current browser supports, Safari included (since
+15.2), so the threaded build runs everywhere; `credentialless` isolates the page in Chromium and
+Firefox only. In exchange every cross-origin response must carry CORS or
+`Cross-Origin-Resource-Policy`. The page's only cross-origin content is the peeking widget
+(`https://peeking.ybouane.com`): its script is loaded with `crossorigin="anonymous"` and served
+with `Access-Control-Allow-Origin: *`, and its video, images and analytics beacon (`/t`) send
+`Cross-Origin-Resource-Policy: cross-origin` (tested with `tests/modes.mjs --widget`). Anything
+cross-origin added later (embeds, analytics, hosted fonts) needs the same, or the browser blocks
+it.
 
 Ready-made configs:
 
@@ -161,13 +153,13 @@ Ready-made configs:
     # brotli on; brotli_types ... (with ngx_brotli)
 
     add_header Cross-Origin-Opener-Policy "same-origin" always;
-    add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    add_header Cross-Origin-Embedder-Policy "require-corp" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location /assets/ {
       add_header Cross-Origin-Opener-Policy "same-origin" always;
-      add_header Cross-Origin-Embedder-Policy "credentialless" always;
+      add_header Cross-Origin-Embedder-Policy "require-corp" always;
       add_header X-Content-Type-Options "nosniff" always;
       add_header Cache-Control "public, max-age=31536000, immutable";
     }
@@ -177,7 +169,7 @@ Ready-made configs:
   (nginx drops inherited `add_header`s inside a `location` that has its own, hence the
   repetition.)
 - **Apache**: `Header always set Cross-Origin-Opener-Policy "same-origin"` and
-  `Header always set Cross-Origin-Embedder-Policy "credentialless"` (mod_headers);
+  `Header always set Cross-Origin-Embedder-Policy "require-corp"` (mod_headers);
   `AddType application/wasm .wasm`.
 - **GitHub Pages** cannot set headers: the site works there single-threaded.
 
@@ -220,9 +212,8 @@ CORPUS=/path/to/corpus npm test                  # Chromium: the sample, 11 file
                                                  # zoom, preview, downloads, keyboard, mobile viewport
 node tests/e2e.mjs --browsers firefox,webkit     # smaller set per engine
 node scripts/serve.mjs --port 4174 --coep off &
-node scripts/serve.mjs --port 4175 --coep require-corp &
-node tests/modes.mjs --browsers chromium,firefox --widget   # headers, engines, CPU renderer, widget,
-                                                 # WebGPU default + switching builds without reload
+node scripts/serve.mjs --port 4175 --coep credentialless &
+node tests/modes.mjs --browsers chromium,firefox --widget   # headers, CPU renderer, widget
 node tests/responsive.mjs --browsers chromium,firefox,webkit  # no horizontal overflow at 320-768 px
 node tests/look.mjs                              # default look vs embedded previews (+ screenshots)
 ```
@@ -234,4 +225,4 @@ Screenshots go to `test-results/` (`OUT=<dir>` to change). `DEMO_WEBKIT=<path>` 
 
 Added before `</body>` as its guide (<https://peeking.ybouane.com/readme.md>) describes, with
 `introDelayMs: 15000` (first peek after 15 s) and `crossorigin="anonymous"` on the script so it
-also loads under `require-corp`. It is a page-level singleton; nothing else to configure.
+loads under `require-corp`. It is a page-level singleton; nothing else to configure.

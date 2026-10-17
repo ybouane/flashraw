@@ -4,14 +4,11 @@
 import {
   FlashRaw,
   FlashRawError,
-  NotAvailableError,
   getCapabilities,
   init,
-  reinit,
   type BuildInfo,
   type Capabilities,
   type DecodedFrame,
-  type InitOptions,
   type PreviewDescriptor,
   type RawMetadata,
 } from 'flashraw';
@@ -29,63 +26,19 @@ const ms = (v: number | null | undefined) => (v == null ? '–' : v < 10 ? v.toF
 
 // ------------------------------------------------------------------- engine (lazy)
 //
-// 'auto': the fastest CPU build: threaded on cross-origin isolated pages, otherwise SIMD (the
-// WebGPU build is a choice in Decoder options; see resolveEngine). The build
-// can be switched at any time (`reinit`): the open file is re-opened with the new one.
-
-type Engine = 'auto' | 'gpu' | 'threads' | 'single' | 'scalar';
-const ENGINES: Engine[] = ['auto', 'gpu', 'threads', 'single', 'scalar'];
-const asEngine = (v: string | null): Engine => (ENGINES.includes(v as Engine) ? (v as Engine) : 'auto');
-let engine: Engine = asEngine(params.get('engine'));
-/** Why 'auto' chose the build it did (shown in the performance panel). */
-let engineNote = '';
-
-function optionsFor(e: Exclude<Engine, 'auto'>): InitOptions {
-  switch (e) {
-    case 'gpu':
-      return { gpu: true };
-    case 'single':
-      return { threads: false };
-    case 'scalar':
-      return { simd: false, threads: false };
-    default:
-      return {};
-  }
-}
-
-let selected = false;
-/** The first selection is `init()`, later ones `reinit()` (engines are reused, never reloaded). */
-function select(o: InitOptions) {
-  const first = !selected;
-  selected = true;
-  return first ? init(o) : reinit(o);
-}
-
-async function resolveEngine(e: Engine): Promise<BuildInfo> {
-  engineNote = '';
-  if (e !== 'auto') {
-    const b = await select(optionsFor(e));
-    caps = await getCapabilities();
-    return b;
-  }
-  // The browser's WebGPU build cannot also use threads, so its entropy decoding runs on one
-  // core: measured 2-11x slower than the threaded CPU build on real GPUs. Auto therefore picks
-  // the fastest CPU build (threaded when cross-origin isolated); the WebGPU build stays one
-  // choice away in Decoder options. Adjustments render on the GPU (WebGL2) either way.
-  const b = await select({});
-  caps = await getCapabilities();
-  engineNote = b.threads
-    ? 'Auto: the threaded CPU build (fastest decode here; the WebGPU build decodes on one core)'
-    : 'Auto: the SIMD CPU build (this page is not cross-origin isolated, so no threads)';
-  return b;
-}
+// The package's default selection: the threaded build on cross-origin isolated pages (this site
+// sends COOP + COEP), otherwise the single-threaded SIMD build, otherwise the scalar fallback.
+// The WebGPU build is left out: in the browser it cannot also use threads, so its entropy
+// decoding runs on one core and measured 2-11x slower than the threaded build. Adjustments
+// render on the GPU (WebGL2) with every build.
 
 let initPromise: Promise<BuildInfo> | null = null;
 let initWall = 0;
-function startEngine(e: Engine) {
+export function warmUp() {
+  if (initPromise) return initPromise;
   const t = now();
-  const prev = initPromise;
-  const p = (prev ? prev.catch(() => null) : Promise.resolve(null)).then(() => resolveEngine(e)).then((b) => {
+  const p = init().then(async (b) => {
+    caps = await getCapabilities();
     initWall = now() - t;
     return b;
   });
@@ -94,9 +47,6 @@ function startEngine(e: Engine) {
     if (initPromise === p) initPromise = null;
   });
   return p;
-}
-export function warmUp() {
-  return initPromise ?? startEngine(engine);
 }
 
 // ------------------------------------------------------------------- state
@@ -149,7 +99,6 @@ const ui = {
   dlInfo: $('dl-info'),
   demosaic: $<HTMLSelectElement>('opt-demosaic'),
   backend: $<HTMLSelectElement>('opt-backend'),
-  engine: $<HTMLSelectElement>('opt-engine'),
   redecode: $<HTMLButtonElement>('redecode'),
   compare: $<HTMLButtonElement>('compare'),
   perfTiles: $('perf-tiles'),
@@ -242,9 +191,6 @@ function setupViewer() {
   ui.redecode.addEventListener('click', () => {
     if (raw && currentFile) void decodeAndShow(token);
   });
-  ui.engine.value = engine;
-  ui.engine.addEventListener('change', () => void switchEngine(asEngine(ui.engine.value)));
-  ui.backend.addEventListener('change', () => (ui.backend.dataset.touched = '1'));
   ui.copyJson.addEventListener('click', async () => {
     if (!meta) return;
     try {
@@ -255,46 +201,6 @@ function setupViewer() {
       /* ignore */
     }
   });
-}
-
-/** The GPU backend is offered with the WebGPU build only, and is its default. */
-function syncBackend(build: BuildInfo) {
-  const gpuOpt = ui.backend.querySelector<HTMLOptionElement>('option[value="gpu"]')!;
-  const gpu = build.binary === 'gpu';
-  gpuOpt.disabled = !gpu;
-  gpuOpt.textContent = gpu ? 'GPU (WebGPU)' : 'GPU (WebGPU build only)';
-  if (gpu && ui.backend.dataset.touched !== '1') ui.backend.value = 'gpu';
-  if (!gpu && ui.backend.value === 'gpu') ui.backend.value = 'auto';
-}
-
-async function switchEngine(next: Engine) {
-  engine = next;
-  const p = new URLSearchParams(location.search);
-  if (next === 'auto') p.delete('engine');
-  else p.set('engine', next);
-  const url = `${location.pathname}${p.size ? `?${p}` : ''}${location.hash}`;
-  history.replaceState(null, '', url);
-  ui.engine.disabled = true;
-  delete ui.backend.dataset.touched;
-  setStatus('Switching the WASM build…');
-  let build: BuildInfo;
-  try {
-    build = await startEngine(next);
-  } catch (e) {
-    ui.engine.disabled = false;
-    if (e instanceof NotAvailableError) {
-      // the SIMD and scalar builds share one glue module: only a reload can swap them
-      setStatus(`${e.message}. Reloading…`);
-      location.reload();
-      return;
-    }
-    setStatus(`Could not switch the WASM build: ${friendly(e)}`, true);
-    return;
-  }
-  ui.engine.disabled = false;
-  syncBackend(build);
-  if (currentFile) await openFile(currentFile);
-  else setStatus(`Using the ${build.binary} build. Open a file to decode it.`);
 }
 
 function setCompare(on: boolean) {
@@ -579,7 +485,6 @@ export async function openFile(file: File) {
   try {
     build = await warmUp();
     caps ??= await getCapabilities();
-    syncBackend(build);
   } catch (e) {
     overlay(null);
     setStatus(`Could not load the decoder: ${friendly(e)}`, true);
@@ -710,7 +615,7 @@ async function decodeAndShow(my: number, t0 = now()) {
       demosaic = 'half-size';
       note = ` (half-size: ${meta.width} × ${meta.height} exceeds this GPU's ${renderer.maxSize} px texture limit)`;
     }
-    const backend = ui.backend.value as 'auto' | 'cpu' | 'cpu-simd' | 'gpu';
+    const backend = ui.backend.value as 'auto' | 'cpu' | 'cpu-simd';
     overlay(`Decoding ${((meta.width * meta.height) / 1e6).toFixed(1)} MP…`);
     setStatus(`Decoding ${meta.camera.name} with FlashRaw…`);
     // let the overlay paint before a (possibly main-thread) decode
@@ -767,7 +672,7 @@ async function decodeAndShow(my: number, t0 = now()) {
     ui.compare.disabled = isDefault(adjust);
     const mp = (fi.width * fi.height) / 1e6;
     setStatus(
-      `${meta.camera.name} · decoded ${mp.toFixed(1)} MP in ${ms(ft.totalMs)} ms on the ${fi.backend.kind === 'gpu' ? 'GPU' : 'CPU'} (${BINARY_NAMES[fi.backend.binary] ?? fi.backend.binary})${note}` +
+      `${meta.camera.name} · decoded ${mp.toFixed(1)} MP in ${ms(ft.totalMs)} ms on the CPU (${BINARY_NAMES[fi.backend.binary] ?? fi.backend.binary})${note}` +
         (fi.incomplete ? ` · ${fi.warnings} warning(s): the file is truncated, missing samples are black` : ''),
     );
     renderPerf(build);
@@ -827,9 +732,6 @@ const STAGES: [string, string, string][] = [
   ['predictor', 'Predictor', '#5c5c5c'],
   ['calibration', 'Calibration', '#7a7a7a'],
   ['postprocess', 'Develop (demosaic, WB, colour)', '#262626'],
-  ['gpuUpload', 'GPU upload', '#4a4a4a'],
-  ['gpuCompute', 'GPU compute', '#1a1a1a'],
-  ['gpuDownload', 'GPU download', '#6b6b6b'],
   ['copy', 'Copy out of WASM', '#dcd9d2'],
   ['texture', 'Texture upload (WebGL)', '#b5b2aa'],
 ];
@@ -843,7 +745,6 @@ function tile(label: string, value: string, unit: string, sub: string, hero = fa
 }
 
 const BINARY_NAMES: Record<string, string> = {
-  gpu: 'WebGPU build',
   threads: 'Threaded build',
   simd: 'Single-threaded SIMD build',
   fallback: 'Scalar build',
@@ -851,24 +752,18 @@ const BINARY_NAMES: Record<string, string> = {
   'threads-jxl': 'Threaded build with JPEG XL',
 };
 
-/** "WebGPU build · GPU backend (adapter)" or "Threaded build · CPU, 16 threads". */
+/** "Threaded build · 16 threads". */
 function ranOn(build: BuildInfo, be: DecodedFrame['backend'] | undefined) {
   const bin = BINARY_NAMES[be?.binary ?? build.binary] ?? build.binary;
   if (!be) return `${bin} · not decoded yet`;
-  return be.kind === 'gpu'
-    ? `${bin} · GPU backend${be.gpuAdapter ? ` (${be.gpuAdapter})` : ''}`
-    : `${bin} · CPU backend, ${be.threads} thread${be.threads === 1 ? '' : 's'}`;
+  return `${bin} · ${be.threads} thread${be.threads === 1 ? '' : 's'}`;
 }
 
 function renderEngine(build: BuildInfo) {
   const be = lastFrameInfo?.backend;
-  const why = be?.fallbackReason
-    ? `GPU requested, ran on the CPU: ${be.fallbackReason}`
-    : be && be.kind === 'cpu' && /gpu/i.test(be.requested)
-      ? `GPU requested; FlashRaw developed this file on the CPU${meta?.format === 'DNG' ? ' (its DNG opcode lists are applied by the CPU pipeline)' : ''}`
-      : engine === 'auto'
-        ? engineNote
-        : 'selected in Decoder options';
+  const why = build.threads
+    ? 'the fastest build for this browser'
+    : `no threads: ${build.threadsReason ?? caps?.threads?.reason ?? 'this page is not cross-origin isolated'}`;
   ui.perfEngine.replaceChildren(h('span', { class: 'engine-label', text: 'Ran on' }), h('b', { text: ranOn(build, be) }), ...(why ? [h('span', { class: 'engine-why', text: why })] : []));
   ui.perfEngine.dataset.kind = be?.kind ?? '';
   ui.perfEngine.dataset.binary = be?.binary ?? build.binary;
@@ -915,7 +810,6 @@ function renderPerf(build: BuildInfo) {
     ['WASM binary', `${be?.binary ?? build.binary}${(be?.jpegxl ?? false) ? ' (JPEG XL variant)' : ''} · ${build.simd ? build.simdLevel || 'SIMD128' : 'scalar'}`],
     ['Threads', build.threads ? `${build.threadCount} (shared-memory WASM threads)` : `1 · ${build.threadsReason ?? threads?.reason ?? 'single-threaded build'}`],
     ['Cross-origin isolated', threads?.crossOriginIsolated ? 'yes' : 'no'],
-    ['GPU (WebGPU)', build.gpu ? (be?.gpuAdapter ?? (caps?.gpu.available ? 'available' : caps?.gpu.reason ?? 'unavailable')) : 'not in this build'],
     ['Requested backend', be ? `${be.requested} → ${be.kind}${be.fallbackReason ? ` (fallback: ${be.fallbackReason})` : ''}` : '–'],
     ['WASM init', `${ms(build.initMs)} ms (download + compile ${ms(initWall)} ms)`],
     ['Output', lastFrameInfo ? `linear-rgb-f16 ${lastFrameInfo.width} × ${lastFrameInfo.height}, ${lastFrameInfo.demosaic}` : '–'],
