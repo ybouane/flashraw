@@ -79,6 +79,7 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -729,12 +730,24 @@ def run_dcraw(exe, mode, path, iters):
     times, rss, err = [], 0, None
     # dcraw "succeeds" on some files it cannot decode (e.g. Canon CR3, newer Fujifilm
     # compressed RAF), writing an all-zero image: check the warm-up run's output.
-    p = subprocess.run([exe] + args + [path], capture_output=True)
-    if p.returncode == 0:
-        data = p.stdout
-        body = data[data.index(b"\n", data.index(b"\n", data.index(b"\n") + 1) + 1) + 1:] if data.count(b"\n") >= 3 else b""
-        if not body.strip(b"\0"):
-            return {"ok": False, "error": "dcraw wrote an all-zero image (it cannot decode this compression)"}
+    # The image goes to a temporary file, read back in chunks: this process must stay small,
+    # since a child's ru_maxrss can include the parent's peak (Linux records the old address
+    # space's high-water mark at exec).
+    with tempfile.TemporaryFile(dir=os.path.dirname(os.path.abspath(exe))) as tf:
+        p = subprocess.run([exe] + args + [path], stdout=tf, stderr=subprocess.DEVNULL)
+        if p.returncode == 0:
+            tf.seek(0)
+            head = tf.read(64)
+            nonzero = False
+            if head.count(b"\n") >= 3:  # PGM/PPM: magic, size, maxval, then the samples
+                tf.seek(head.index(b"\n", head.index(b"\n", head.index(b"\n") + 1) + 1) + 1)
+                while not nonzero:
+                    chunk = tf.read(1 << 20)
+                    if not chunk:
+                        break
+                    nonzero = bool(chunk.strip(b"\0"))
+            if not nonzero:
+                return {"ok": False, "error": "dcraw wrote an all-zero image (it cannot decode this compression)"}
     for it in range(1, iters + 1):
         with open(os.devnull, "wb") as null:
             t0 = time.perf_counter()
