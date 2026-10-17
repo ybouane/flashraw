@@ -87,6 +87,14 @@ async function run(name, launcher) {
   await page.screenshot({ path: join(OUT, `${name}-landing.png`) });
   if (name === 'chromium') await page.screenshot({ path: join(OUT, `${name}-landing-full.png`), fullPage: true });
 
+  // "Try a sample": the shipped CC0 file (public/samples/)
+  await page.click('#sample-btn');
+  {
+    const r = await waitDecoded(page);
+    r.error || !/Canon EOS R5 Mark II/.test(r.status) ? fail(`sample: ${r.status}`) : ok(`sample: ${r.status}`);
+    await page.screenshot({ path: join(OUT, `${name}-sample.png`) });
+  }
+
   const files = quick ? FILES.slice(0, 2) : name === 'chromium' ? FILES : FILES.filter(([k]) => ['cr3', 'nef', 'dng-iphone-portrait'].includes(k));
   for (const [key, rel] of files) {
     const path = join(CORPUS, rel);

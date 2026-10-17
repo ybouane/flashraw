@@ -3,7 +3,8 @@
 The site at <https://flashraw.ybouane.com>: the project page plus a live demo that decodes a
 RAW file in the browser with the `flashraw` npm package (this repository's `npm/`).
 
-What the demo does with a file (nothing is uploaded):
+The page opens on the demo: a headline and a drop zone with "Choose a RAW file" and "Try a
+sample". What the demo does with a file (nothing is uploaded):
 
 1. `FlashRaw.open(file)`: metadata (camera, lens, exposure, size, CFA, levels, white
    balance, colour matrices, orientation, compression, DNG fields, previews, vendor extras).
@@ -26,8 +27,8 @@ What the demo does with a file (nothing is uploaded):
    per-stage times (entropy decode, unpack, develop, GPU stages), the copy and texture upload,
    MP/s, and which WASM binary, SIMD level, thread count and backend ran.
 
-The WASM is loaded lazily: the landing page downloads ~110 KiB (HTML, CSS, 2 KiB of JS, two
-fonts, logo); the decoder chunk and one `.wasm` binary are fetched when the visitor hovers or
+The WASM is loaded lazily: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three
+font files, logo); the decoder chunk and one `.wasm` binary are fetched when the visitor hovers or
 focuses the drop zone, drags a file over the page, or picks a file. The benchmark charts are
 a separate chunk loaded when their section scrolls near.
 
@@ -44,7 +45,10 @@ demo/
   src/viewport.ts         zoom / pan / pinch / keyboard
   src/charts.ts           benchmark charts (SVG)  src/charts-schema.ts  their data schema
   src/charts-data.sample.json   sample chart data (from docs/benchmarks.md)
+  src/fonts/              newsreader-core.woff2 (preloaded subset, scripts/subset-fonts.sh), OFL.txt
   public/                 robots.txt, sitemap.xml, site.webmanifest, _headers
+  public/showcase/        LightFlow and ImageFlow logos ("Used in production by")
+  public/samples/         the "Try a sample" file (see below)
   vercel.json             Vercel config (headers)
   scripts/serve.mjs       static server for dist/ with the production headers
   scripts/make-sample-chart-data.mjs   regenerates the sample chart data
@@ -55,8 +59,21 @@ Brand assets are not copied into this directory: the build reads them from `../b
 (`logo.svg`, `logo-dark.svg`, `logo-mark.svg`, `favicon.svg`, `favicon.ico`, `favicon-32.png`,
 `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`,
 `og-banner.png`) and emits them at the site root; the dev server serves them from there.
-Fonts (Plus Jakarta Sans, JetBrains Mono, SIL OFL) are self-hosted from `@fontsource-variable`
-packages, latin subset only.
+Fonts (Newsreader and Newsreader Italic for text, JetBrains Mono for labels, numbers and code;
+SIL OFL 1.1) are self-hosted from `@fontsource-variable` packages, latin subset only. The roman
+face is split in two: `src/fonts/newsreader-core.woff2`, the characters the page itself uses,
+is preloaded so the headline does not shift when the font arrives; the full latin file covers
+everything else (e.g. accented camera and lens names in the metadata). Regenerate the subset
+with `sh scripts/subset-fonts.sh` (needs `pip install fonttools brotli`) after a font update.
+The look follows `../branding/README.md`: ink on paper, greys and hairlines, square corners;
+red, green and blue appear only where they mean colour channels (histogram, CFA, white balance).
+
+## Sample file
+
+`public/samples/canon-eos-r5-mark-ii.cr3` (7.6 MB, Canon EOS R5 Mark II, APS-C crop, C-RAW) is
+`Canon/Canon EOS R5m2/APS-C_CRAW.CR3` from <https://raw.pixls.us> (CC0, public domain):
+<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is fetched only when
+the visitor clicks "Try a sample".
 
 ## Develop and build
 
@@ -182,7 +199,7 @@ tables in `docs/benchmarks.md` with `node scripts/make-sample-chart-data.mjs`.
 
 ```sh
 npm run build && npm run serve &                 # :4173, production headers
-CORPUS=/path/to/corpus npm test                  # Chromium: 11 files (CR3, NEF, ARW, RAF, DNG incl.
+CORPUS=/path/to/corpus npm test                  # Chromium: the sample, 11 files (CR3, NEF, ARW, RAF, DNG incl.
                                                  # JPEG XL and portrait, ORF, RW2, 100 MP RAF), sliders,
                                                  # zoom, preview, downloads, keyboard, mobile viewport
 node tests/e2e.mjs --browsers firefox,webkit     # smaller set per engine

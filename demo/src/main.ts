@@ -36,6 +36,28 @@ input.addEventListener('change', () => {
   input.value = '';
 });
 
+// "Try a sample": a small CC0 file from raw.pixls.us, fetched only on click.
+const sampleBtn = document.getElementById('sample-btn') as HTMLButtonElement | null;
+sampleBtn?.addEventListener('click', async () => {
+  const src = sampleBtn.dataset.src!;
+  const name = sampleBtn.dataset.name ?? src.split('/').pop()!;
+  sampleBtn.disabled = true;
+  statusEl.classList.remove('error');
+  statusEl.textContent = `Downloading the sample (${name})…`;
+  void loadApp();
+  try {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    await openFile(new File([blob], name, { type: 'application/octet-stream' }));
+  } catch (e) {
+    statusEl.classList.add('error');
+    statusEl.textContent = `Could not download the sample: ${(e as Error).message}`;
+  } finally {
+    sampleBtn.disabled = false;
+  }
+});
+
 // Prefetch on intent.
 for (const ev of ['pointerenter', 'focusin', 'touchstart'] as const) {
   dropzone.addEventListener(ev, () => void loadApp(), { once: true, passive: true });
@@ -77,11 +99,12 @@ async function copyText(text: string, el: HTMLElement) {
   try {
     await navigator.clipboard.writeText(text);
     el.classList.add('copied');
-    const label = el.classList.contains('copy-btn') ? el.textContent : null;
-    if (label) el.textContent = 'Copied';
+    const target = el.classList.contains('copy-btn') ? el : el.querySelector<HTMLElement>('.copy-label');
+    const label = target?.textContent ?? null;
+    if (target) target.textContent = 'Copied';
     setTimeout(() => {
       el.classList.remove('copied');
-      if (label) el.textContent = label;
+      if (target && label) target.textContent = label;
     }, 1400);
   } catch {
     /* clipboard unavailable: ignore */
