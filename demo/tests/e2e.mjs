@@ -1,7 +1,7 @@
 // End-to-end test of the built demo (dist/) with Playwright.
 //
 //   npm run build
-//   node scripts/serve.mjs --port 4173 &          # (also: --coep off, --coep credentialless)
+//   node scripts/serve.mjs --port 4173 &          # (production headers: COEP require-corp)
 //   DEMO_URL=http://localhost:4173/ CORPUS=/path/to/corpus node tests/e2e.mjs [--browsers chromium,firefox,webkit] [--quick]
 //
 // Screenshots go to $OUT (default: test-results/). Exits non-zero on any failure.

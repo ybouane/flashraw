@@ -230,20 +230,8 @@
                 <option value="auto">Auto</option>
                 <option value="cpu-simd">CPU SIMD</option>
                 <option value="cpu">CPU scalar reference</option>
-                <option value="gpu">GPU (WebGPU)</option>
               </select>
             </div>
-            <div class="field-row">
-              <label for="opt-engine">WASM build</label>
-              <select id="opt-engine">
-                <option value="auto">Auto (fastest CPU build)</option>
-                <option value="gpu">WebGPU build</option>
-                <option value="threads">Threaded (when isolated)</option>
-                <option value="single">Single-threaded SIMD</option>
-                <option value="scalar">Scalar fallback (may reload)</option>
-              </select>
-            </div>
-            <p class="muted small">Switching the WASM build re-opens the file with it, without a reload.</p>
             <button type="button" class="btn btn-outline" id="redecode" disabled>Decode again</button>
           </details>
         </aside>
