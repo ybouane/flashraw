@@ -290,7 +290,7 @@ function drawHistogram(hg: Histogram) {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, w, hh);
   // grid
-  ctx.strokeStyle = 'rgba(21, 20, 43, 0.07)';
+  ctx.strokeStyle = 'rgba(14, 14, 14, 0.08)';
   ctx.lineWidth = 1;
   for (let i = 1; i < 4; i++) {
     const x = Math.round((w * i) / 4) + 0.5;
@@ -316,9 +316,9 @@ function drawHistogram(hg: Histogram) {
   };
   ctx.globalCompositeOperation = 'multiply';
   const fills: [Uint32Array, string][] = [
-    [hg.r, 'rgba(240, 80, 90, 0.55)'],
-    [hg.g, 'rgba(29, 176, 122, 0.55)'],
-    [hg.b, 'rgba(47, 123, 242, 0.55)'],
+    [hg.r, 'rgba(217, 71, 59, 0.5)'],
+    [hg.g, 'rgba(46, 154, 92, 0.5)'],
+    [hg.b, 'rgba(47, 99, 214, 0.5)'],
   ];
   for (const [bins, color] of fills) {
     path(bins);
@@ -327,7 +327,7 @@ function drawHistogram(hg: Histogram) {
   }
   ctx.globalCompositeOperation = 'source-over';
   path(hg.l);
-  ctx.strokeStyle = 'rgba(61, 63, 92, 0.9)';
+  ctx.strokeStyle = 'rgba(14, 14, 14, 0.9)';
   ctx.lineWidth = 1.5 * dpr;
   ctx.stroke();
   const pct = (n: number) => (n / hg.total) * 100;
@@ -739,24 +739,24 @@ function renderPreviewsTable(previews: PreviewDescriptor[]) {
         h('th', { scope: 'col' }, h('span', { class: 'visually-hidden', text: 'Download' })))),
     tbody,
   );
-  ui.previewsCard.append(h('div', { class: 'card previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));
+  ui.previewsCard.append(h('div', { class: 'previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));
 }
 
 // ------------------------------------------------------------------- performance panel
 
 const STAGES: [string, string, string][] = [
-  ['containerParse', 'Container parse', '#9b9db5'],
-  ['metadata', 'Metadata', '#5a5d78'],
-  ['entropyDecode', 'Entropy decode', '#4733e6'],
-  ['unpack', 'Unpack', '#2f7bf2'],
-  ['predictor', 'Predictor', '#1baf7a'],
-  ['calibration', 'Calibration', '#e87ba4'],
-  ['postprocess', 'Develop (demosaic, WB, colour)', '#eb6834'],
-  ['gpuUpload', 'GPU upload', '#008300'],
-  ['gpuCompute', 'GPU compute', '#eda100'],
-  ['gpuDownload', 'GPU download', '#e34948'],
-  ['copy', 'Copy out of WASM', '#c9c6dd'],
-  ['texture', 'Texture upload (WebGL)', '#15142b'],
+  ['containerParse', 'Container parse', '#c9c6be'],
+  ['metadata', 'Metadata', '#a3a3a3'],
+  ['entropyDecode', 'Entropy decode', '#0e0e0e'],
+  ['unpack', 'Unpack', '#3a3a3a'],
+  ['predictor', 'Predictor', '#5c5c5c'],
+  ['calibration', 'Calibration', '#7a7a7a'],
+  ['postprocess', 'Develop (demosaic, WB, colour)', '#262626'],
+  ['gpuUpload', 'GPU upload', '#4a4a4a'],
+  ['gpuCompute', 'GPU compute', '#1a1a1a'],
+  ['gpuDownload', 'GPU download', '#6b6b6b'],
+  ['copy', 'Copy out of WASM', '#dcd9d2'],
+  ['texture', 'Texture upload (WebGL)', '#b5b2aa'],
 ];
 
 function tile(label: string, value: string, unit: string, sub: string, hero = false) {

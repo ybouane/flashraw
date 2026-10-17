@@ -28,7 +28,7 @@ function kv(rows: Row[]): HTMLDListElement {
 function card(title: string, ...kids: (Node | null)[]): HTMLElement | null {
   const content = kids.filter((k): k is Node => !!k && !(k instanceof HTMLDListElement && !k.childElementCount));
   if (!content.length) return null;
-  return h('article', { class: 'card meta-card' }, h('h4', { text: title }), ...content);
+  return h('article', { class: 'meta-card' }, h('h4', { text: title }), ...content);
 }
 
 const fmt = (n: number | null | undefined, digits = 2) =>

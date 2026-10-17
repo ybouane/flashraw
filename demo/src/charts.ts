@@ -7,11 +7,14 @@ import { h } from './metadata';
 
 const D = data as ChartsData;
 const SVGNS = 'http://www.w3.org/2000/svg';
-const COLORS: Record<string, string> = { flashraw: 'var(--series-1)', libraw: 'var(--series-2)', rawspeed: 'var(--series-3)' };
+// Monochrome series: FlashRaw solid ink, LibRaw solid grey, RawSpeed hollow (shape tells them apart).
+const COLORS: Record<string, string> = { flashraw: '#0e0e0e', libraw: '#9a9a9a', rawspeed: '#5c5c5c' };
+const HOLLOW = new Set(['rawspeed']);
+const color = (l: string) => COLORS[l] ?? '#7a7a7a';
 const libName = (id: string) => D.libraries.find((l) => l.id === id)?.name ?? id;
 const machineName = (id: string) => {
   const m = D.machines.find((x) => x.id === id);
-  return m ? `${m.icon ? m.icon + ' ' : ''}${m.cpu ?? m.name}` : id;
+  return m ? (m.cpu ?? m.name) : id;
 };
 
 function s<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, text?: string) {
@@ -48,9 +51,9 @@ function tipRows(title: string, sub: string, rows: [string, string, string][]) {
   return h('div', {},
     h('b', { text: title }),
     h('div', { style: 'opacity:.75', text: sub }),
-    ...rows.map(([color, label, value]) => {
+    ...rows.map(([lib, label, value]) => {
       const key = h('span', { class: 'tt-key' });
-      key.style.background = color;
+      key.style.background = HOLLOW.has(lib) ? 'transparent' : lib === 'flashraw' ? '#fff' : color(lib);
       return h('div', { class: 'tt-row' }, key, `${label}: `, h('b', { text: value }));
     }),
   );
@@ -86,13 +89,29 @@ function segmented(label: string, options: [string, string][], value: string, on
   return group;
 }
 
+function keyStyle(el: HTMLElement, lib: string) {
+  el.style.borderRadius = '50%';
+  if (HOLLOW.has(lib)) {
+    el.style.background = '#fff';
+    el.style.boxShadow = `inset 0 0 0 1.5px ${color(lib)}`;
+  } else {
+    el.style.background = color(lib);
+  }
+}
+
 function legend(items: [string, string][]) {
-  return h('ul', { class: 'legend' }, ...items.map(([color, label]) => {
+  return h('ul', { class: 'legend' }, ...items.map(([lib, label]) => {
     const k = h('span', { class: 'key' });
-    k.style.background = color;
-    k.style.borderRadius = '50%';
+    keyStyle(k, lib);
     return h('li', {}, k, label);
   }));
+}
+
+function marker(lib: string, cx: number, cy: number, big = false) {
+  const r = big ? 5.5 : 4.5;
+  return HOLLOW.has(lib)
+    ? s('circle', { cx, cy, r, fill: '#fff', stroke: color(lib), 'stroke-width': 1.5 })
+    : s('circle', { cx, cy, r, fill: color(lib), stroke: '#fff', 'stroke-width': 1.5 });
 }
 
 // ----------------------------------------------------------------- log axis
@@ -120,18 +139,18 @@ function headlineTiles() {
   const pick = (metric: string, vs: string, machine: string) =>
     D.headline.find((x) => x.metric === metric && x.vs === vs && x.machine === machine && x.threads === 'all' && x.set === 'popular');
   const defs: [string, string, string][] = [
-    ['decode', 'libraw', `⚡ RAW decode vs ${libName('libraw')}`],
-    ['decode', 'rawspeed', `⚡ RAW decode vs ${libName('rawspeed')}`],
-    ['rgb', 'libraw', `🎨 RAW → display RGB vs ${libName('libraw')}`],
+    ['decode', 'libraw', `RAW decode vs ${libName('libraw')}`],
+    ['decode', 'rawspeed', `RAW decode vs ${libName('rawspeed')}`],
+    ['rgb', 'libraw', `RAW → display RGB vs ${libName('libraw')}`],
   ];
   return h('div', { class: 'headline-tiles' }, ...defs.map(([metric, vs, label]) =>
-    h('div', { class: 'card hl-tile' },
+    h('div', { class: 'hl-tile' },
       h('div', { class: 'hl-label', text: label }),
       h('div', { class: 'hl-values' }, ...D.machines.map((m) => {
         const v = pick(metric, vs, m.id);
         return h('div', { class: 'hl-value' },
           h('span', { class: 'hl-num', text: v ? fmtX(v.median) : '–' }),
-          h('span', { class: 'hl-machine', text: `${m.icon ?? ''} ${m.cpu ?? m.name}${v?.wins != null ? ` · faster on ${v.wins}/${v.files}` : ''}` }),
+          h('span', { class: 'hl-machine', text: `${m.cpu ?? m.name}${v?.wins != null ? ` · faster on ${v.wins} of ${v.files}` : ''}` }),
         );
       })),
     ),
@@ -177,7 +196,7 @@ function cameraChart(root: HTMLElement, st: CamState) {
     const lr = r[st.metric].libraw;
     const sp = fr && lr ? lr / fr : null;
     g.setAttribute('aria-label', `${r.camera}, ${r.format} ${r.codec}: ${vals.map(([l, v]) => `${libName(l)} ${v == null ? 'not supported' : `${fmtMs(v)} ms`}`).join(', ')}`);
-    g.append(s('rect', { class: 'row-hit', x: 0, y: y - (narrow ? 30 : rowH / 2), width, height: rowH, rx: 6 }));
+    g.append(s('rect', { class: 'row-hit', x: 0, y: y - (narrow ? 30 : rowH / 2), width, height: rowH, rx: 0 }));
     if (narrow) {
       g.append(s('text', { x: 0, y: y - 14, class: 't-strong' }, r.camera));
       g.append(s('text', { x: width - 4, y: y - 14, 'text-anchor': 'end', class: 't-muted' }, `${r.format} · ${r.mp ?? '?'} MP`));
@@ -187,19 +206,19 @@ function cameraChart(root: HTMLElement, st: CamState) {
     const present = vals.filter(([, v]) => v != null) as [string, number][];
     if (present.length > 1) {
       const xs = present.map(([, v]) => x(v));
-      g.append(s('line', { x1: Math.min(...xs), x2: Math.max(...xs), y1: y, y2: y, stroke: '#cbc8dd', 'stroke-width': 2, 'stroke-linecap': 'round' }));
+      g.append(s('line', { x1: Math.min(...xs), x2: Math.max(...xs), y1: y, y2: y, stroke: '#d6d3cc', 'stroke-width': 1.5 }));
     }
     // FlashRaw last, on top
     for (const [l, v] of [...present].sort((a) => (a[0] === 'flashraw' ? 1 : -1))) {
-      g.append(s('circle', { cx: x(v), cy: y, r: l === 'flashraw' ? 6 : 5, fill: COLORS[l] ?? '#888', stroke: '#fff', 'stroke-width': 2 }));
+      g.append(marker(l, x(v), y, l === 'flashraw'));
     }
     const missing = vals.filter(([, v]) => v == null).map(([l]) => libName(l));
     if (missing.length && !narrow) {
       g.append(s('text', { x: x1, y: y + 4, 'text-anchor': 'end', class: 't-muted' }, `${missing.join(', ')}: n/a`));
     }
-    g.append(s('text', { x: width - 4, y: y + 4, 'text-anchor': 'end', class: sp && sp >= 1 ? 't-strong' : 't-muted' }, sp ? fmtX(sp) : '–'));
+    g.append(s('text', { x: width - 4, y: y + 4, 'text-anchor': 'end', class: sp && sp >= 1 ? 't-num' : 't-muted' }, sp ? fmtX(sp) : '–'));
     const tipContent = () =>
-      tipRows(r.camera, `${r.format} · ${r.codec}${r.mp ? ` · ${r.mp} MP` : ''}`, vals.map(([l, v]) => [COLORS[l] ?? '#888', libName(l), v == null ? 'not supported' : `${fmtMs(v)} ms${l !== 'flashraw' && fr ? ` (${fmtX(v / fr)})` : ''}`]));
+      tipRows(r.camera, `${r.format} · ${r.codec}${r.mp ? ` · ${r.mp} MP` : ''}`, vals.map(([l, v]) => [l, libName(l), v == null ? 'not supported' : `${fmtMs(v)} ms${l !== 'flashraw' && fr ? ` (${fmtX(v / fr)})` : ''}`]));
     g.addEventListener('pointerenter', () => showTip(g, tipContent()));
     g.addEventListener('pointerleave', hideTip);
     g.addEventListener('focus', () => showTip(g, tipContent()));
@@ -246,7 +265,7 @@ function formatChart(root: HTMLElement, st: CamState) {
   const height = top + shown.length * rowH + 8;
   const svg = s('svg', { class: 'chart-svg', viewBox: `0 0 ${width} ${height}`, width, height, role: 'group', 'aria-label': `Geometric-mean speedup of FlashRaw per format and codec, log scale, ${machineName(st.machine)}` });
   // slower / faster shading
-  svg.append(s('rect', { x: x0, y: top - 6, width: x(1) - x0, height: height - top, fill: '#fbf3f3' }));
+  svg.append(s('rect', { x: x0, y: top - 6, width: x(1) - x0, height: height - top, fill: '#f6f4ef' }));
   for (const t of decades(min, max, true)) {
     svg.append(s('line', { class: 'grid', x1: x(t), x2: x(t), y1: top - 6, y2: height - 8 }));
     if (!narrow || [0.1, 1, 10, 100].some((m) => Math.abs(m - t) < 1e-9)) svg.append(s('text', { x: x(t), y: 12, 'text-anchor': 'middle', class: 't-muted' }, `${t}×`));
@@ -259,14 +278,14 @@ function formatChart(root: HTMLElement, st: CamState) {
     const g = s('g', { class: 'row', tabindex: 0, role: 'img' });
     const label = `${f.format} · ${f.codec}`;
     g.setAttribute('aria-label', `${label}: ${series.map(([k, l]) => `vs ${libName(l)} ${v[k] == null ? 'n/a' : fmtX(v[k]!)}`).join(', ')}`);
-    g.append(s('rect', { class: 'row-hit', x: 0, y: y - rowH / 2, width, height: rowH, rx: 6 }));
+    g.append(s('rect', { class: 'row-hit', x: 0, y: y - rowH / 2, width, height: rowH }));
     g.append(s('text', { x: 0, y: y + 4, class: 't-strong' }, narrow && label.length > 18 ? label.slice(0, 17) + '…' : label));
     for (const [k, l] of series) {
       const val = v[k];
       if (val == null) continue;
-      g.append(s('circle', { cx: x(val), cy: y, r: 5, fill: COLORS[l], stroke: '#fff', 'stroke-width': 2 }));
+      g.append(marker(l, x(val), y));
     }
-    const content = () => tipRows(label, `${f.files ?? '?'} file(s), geometric mean, ${machineName(st.machine)}`, series.map(([k, l]) => [COLORS[l], `vs ${libName(l)}`, v[k] == null ? 'not decoded by it' : fmtX(v[k]!)]));
+    const content = () => tipRows(label, `${f.files ?? '?'} file(s), geometric mean, ${machineName(st.machine)}`, series.map(([k, l]) => [l, `vs ${libName(l)}`, v[k] == null ? 'not decoded by it' : fmtX(v[k]!)]));
     g.addEventListener('pointerenter', () => showTip(g, content()));
     g.addEventListener('pointerleave', hideTip);
     g.addEventListener('focus', () => showTip(g, content()));
@@ -305,7 +324,7 @@ export function renderCharts(root: HTMLElement) {
   const drawCam = () => {
     const r = cameraChart(camBody, st);
     camBody.replaceChildren(r.svg);
-    camLegend.replaceChildren(legend(r.libs.map((l) => [COLORS[l], libName(l)])));
+    camLegend.replaceChildren(legend(r.libs.map((l) => [l, libName(l)])));
     camMore.textContent = st.all ? 'Show fewer cameras' : `Show all ${r.total} cameras`;
     camMore.hidden = r.total <= r.shown && !st.all;
     camSub.textContent = `${st.metric === 'decode' ? 'Open + full sensor decode to 16-bit samples' : 'Decode + demosaic + white balance + colour to 8-bit sRGB'} · ${machineName(st.machine)} · ms, log scale, lower is better · right column: speedup vs ${libName('libraw')}`;
@@ -315,9 +334,9 @@ export function renderCharts(root: HTMLElement) {
     st.all = !st.all;
     drawCam();
   });
-  const machineOpts = D.machines.map((m) => [m.id, `${m.icon ? m.icon + ' ' : ''}${m.name}`] as [string, string]);
+  const machineOpts = D.machines.map((m) => [m.id, m.name] as [string, string]);
   root.append(
-    h('div', { class: 'card chart-card' },
+    h('div', { class: 'chart-card' },
       h('div', { class: 'chart-head' },
         h('div', {}, h('h3', { text: 'Popular cameras: wall time per file' }), camSub),
         h('div', { class: 'chart-controls' },
@@ -327,7 +346,7 @@ export function renderCharts(root: HTMLElement) {
       ),
       camLegend,
       camBody,
-      h('div', { style: 'display:flex;justify-content:center;margin-top:10px' }, camMore),
+      h('div', { class: 'chart-more' }, camMore),
       camTable,
     ),
   );
@@ -341,7 +360,7 @@ export function renderCharts(root: HTMLElement) {
   const drawF = () => {
     const r = formatChart(fBody, fst);
     fBody.replaceChildren(r.svg);
-    fLegend.replaceChildren(legend(r.series.map(([, l]) => [COLORS[l], `vs ${libName(l)}`])));
+    fLegend.replaceChildren(legend(r.series.map(([, l]) => [l, `vs ${libName(l)}`])));
     fMore.textContent = fst.all ? 'Show fewer' : `Show all ${r.total} format/codec pairs`;
     fMore.hidden = r.total <= r.shown && !fst.all;
     fSub.textContent = `Geometric mean of (other library time ÷ FlashRaw time), all cores · ${machineName(fst.machine)} · right of the dashed line: FlashRaw faster`;
@@ -352,7 +371,7 @@ export function renderCharts(root: HTMLElement) {
     drawF();
   });
   root.append(
-    h('div', { class: 'card chart-card' },
+    h('div', { class: 'chart-card' },
       h('div', { class: 'chart-head' },
         h('div', {}, h('h3', { text: 'Speedup per format and codec' }), fSub),
         h('div', { class: 'chart-controls' },
@@ -362,7 +381,7 @@ export function renderCharts(root: HTMLElement) {
       ),
       fLegend,
       fBody,
-      h('div', { style: 'display:flex;justify-content:center;margin-top:10px' }, fMore),
+      h('div', { class: 'chart-more' }, fMore),
       fTable,
     ),
   );
