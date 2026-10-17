@@ -1,33 +1,93 @@
-<div align="center">
+Built by **[@ybouane](https://x.com/ybouane)** · see also [LightFlow](https://lightflow.dev) ·
+[ImageFlow](https://imageflow.dev)
 
-# ⚡ FlashRaw
+# FlashRaw
 
-**The fast, safe camera RAW decoder.**
+[![FlashRaw: the fast, safe camera RAW decoder](branding/readme-banner.png)](https://flashraw.ybouane.com)
+
+**The fast, safe camera RAW decoder.** **[▶ Live demo](https://flashraw.ybouane.com)**: open a
+RAW file right in your browser.
 
 Rust core · C, C++, Python and JavaScript bindings · SIMD, all cores and the GPU · runs in the browser
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#-license)
 [![MSRV 1.85](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](#api-stability)
 
-</div>
-
 FlashRaw opens a camera RAW file and gives you the sensor data plus everything needed to
 interpret it (CFA layout, black and white levels, white balance, colour matrices, crops,
-orientation), the embedded previews, or a display-ready RGBA image. It handles every make and
-model on raw.pixls.us, it is written in memory-safe Rust, and on the same machine it decodes
-**8–11× faster than LibRaw** and **1.4–2.3× faster than RawSpeed**, and develops to RGB
-**8–15× faster than LibRaw** (median over 62 popular cameras).
+orientation), the embedded previews, or a display-ready sRGB image. It handles every make and
+model on raw.pixls.us, it is written in memory-safe Rust, and on the same machine as the other
+open-source decoders it is **7.9×–11.4× faster than LibRaw** at decoding,
+**8.8×–15.4× faster** at producing an sRGB image, and needs
+**1.5×–1.9× less memory** for it (medians over 62 popular cameras).
 
-| Median speedup of FlashRaw, 62 popular cameras, all cores | 🐧 Linux · Ryzen 7 9700X | 🍎 macOS · Apple M1 Ultra |
+## ⚡ FlashRaw vs the others
+
+Median over the 62 bodies, phones and drones of
+[`benches/popular-cameras.tsv`](benches/popular-cameras.tsv), each library on the files it can
+decode, same files, same machine, all cores. **N× faster** = the other library's time ÷
+FlashRaw's; **N× less memory** = the other library's peak memory ÷ FlashRaw's.
+
+| FlashRaw compared with | 🐧 Linux · Ryzen 7 9700X | 🍎 macOS · Apple M1 Ultra |
 |---|---:|---:|
-| ⚡ RAW decode vs **LibRaw** | **8.26×** | **11.2×** |
-| ⚡ RAW decode vs **RawSpeed** | **2.26×** | **1.44×** |
-| 🎨 RAW → display RGB vs **LibRaw** | **8.42×** | **15.1×** |
+| **Decode** (RAW → 16-bit sensor data) | | |
+| vs LibRaw `unpack()` | **7.9× faster** | **11.4× faster** |
+| vs RawSpeed (darktable) | **2.1× faster** | **1.5× faster** |
+| vs rawler (dnglab, Rust) | **3.0× faster** | **2.7× faster** |
+| vs rawpy (Python) | **8.4× faster** | **14.3× faster** |
+| vs dcraw (single-threaded) | **14.5× faster** | **29.1× faster** |
+| **RAW → sRGB image** (demosaic, white balance, colour, 8-bit sRGB) | | |
+| vs LibRaw `dcraw_process()` | **8.8× faster** · 1.9× less memory | **15.4× faster** · 1.5× less memory |
+| vs LibRaw + Little CMS (linear ProPhoto → sRGB) | **15.0× faster** · 2.8× less memory | **21.8× faster** · 2.2× less memory |
+| vs rawler `RawDevelop` | **6.6× faster** · 4.1× less memory | **6.7× faster** · 4.5× less memory |
+| vs rawpy `postprocess()` | **9.5× faster** · 2.0× less memory | **20.5× faster** · 1.6× less memory |
+| vs dcraw (single-threaded) | **10.0× faster** · 1.3× less memory | **23.0× faster** · 1.1× more memory |
+| ⚡ FlashRaw **GPU** (Metal) vs LibRaw `dcraw_process()` | – | **17.9× faster** |
 
-<sub>Same files, same machine, each library built for speed (LibRaw with OpenMP, RawSpeed
-with OpenMP and `-march=native`); medians of per-file speedups. Full method, per-camera and
-per-format numbers, and the cases where FlashRaw is *not* the fastest:
-[docs/benchmarks.md](docs/benchmarks.md).</sub>
+<sub>Builds favour the others where possible (LibRaw and RawSpeed with OpenMP and `-O3`,
+`-march=native` on x86-64; the Little CMS transform on all cores; dcraw has no threads). Every
+number, the method, per-camera and per-format tables, one-thread results, and **the cases where
+FlashRaw is not the fastest** (RawSpeed on some uncompressed and Sony lossless files, GoPro GPR;
+LibRaw on some Canon CR3, rawler on the JPEG XL DNG) and **uses more memory** (a plain decode on all cores: FlashRaw's
+parallel decoders keep per-thread buffers) are in [docs/benchmarks.md](docs/benchmarks.md).
+Reproduce with [`tools/bench/compare.py`](tools/bench/compare.py).</sub>
+
+<p align="center">
+  <img src="docs/charts/decode-speed.svg" alt="Bar chart: RAW decode time of LibRaw, rawpy, dcraw, rawler and RawSpeed relative to FlashRaw, median over 62 popular cameras, on Linux and macOS" width="100%">
+</p>
+<p align="center">
+  <img src="docs/charts/rgb-speed.svg" alt="Bar chart: time from RAW file to an 8-bit sRGB image for LibRaw + Little CMS, LibRaw, rawpy, dcraw and rawler relative to FlashRaw (CPU and GPU), median over 62 popular cameras" width="100%">
+</p>
+
+### 🧠 Memory
+
+<p align="center">
+  <img src="docs/charts/memory.svg" alt="Bar chart: peak memory of each library relative to FlashRaw, for RAW to sRGB and for decoding only" width="100%">
+</p>
+
+To produce an sRGB image FlashRaw develops in one fused pass (demosaic, white balance, colour
+matrix and sRGB encoding per pixel, straight into the output), so it never holds the
+full-size intermediate images of a classic pipeline: LibRaw keeps a 4-channel 16-bit working
+image, the LibRaw + Little CMS pipeline adds a 16-bit RGB copy and the 8-bit output, rawler
+develops in 32-bit floats. Decoding alone needs about the same memory everywhere (the file plus
+a 16-bit image); with all cores FlashRaw's speculative parallel decoders add per-thread buffers,
+so a plain all-core decode can take more memory than LibRaw's (details in
+[docs/benchmarks.md](docs/benchmarks.md#memory)).
+
+### 📷 Per camera
+
+<p align="center">
+  <img src="docs/charts/cameras.svg" alt="Dot plot: decode and RAW to RGB time in milliseconds for 12 popular cameras, FlashRaw, LibRaw, RawSpeed and rawler, Apple M1 Ultra" width="100%">
+</p>
+
+## 🏭 Used in production
+
+| | |
+|---|---|
+| **[LightFlow](https://lightflow.dev)** | Professional photo correction and colour grading, running locally in your browser with WebGPU |
+| **[ImageFlow](https://imageflow.dev)** | A Photoshop-class image editor in your browser |
+
+Both open camera RAW files with FlashRaw's WebAssembly package, right in the browser.
 
 ## ✨ Why FlashRaw
 
@@ -75,84 +135,87 @@ per-format numbers, and the cases where FlashRaw is *not* the fastest:
 </tr>
 </table>
 
-## 🏁 Benchmarks: popular cameras
-
-Wall time in milliseconds on an Apple M1 Ultra (20 cores, macOS), median of 7 runs, lower is
-better, **bold** = fastest. *Decode* = open + full sensor decode to 16-bit samples. *RAW → RGB*
-= decode + demosaic + white balance + colour conversion to an 8-bit sRGB image (RawSpeed has no
-RGB pipeline). ❌ = not supported.
-
-| Camera | Format · codec | MP | Decode<br>⚡ FlashRaw | Decode<br>LibRaw | Decode<br>RawSpeed | RAW → RGB<br>⚡ FlashRaw | RAW → RGB<br>LibRaw |
-|---|---|---:|---:|---:|---:|---:|---:|
-| Canon EOS R5 (RAW) | CR3 · canon-crx | 47 | **80.4** | 137 | ❌ | **110** | 732 |
-| Canon EOS R6 Mark II (RAW) | CR3 · canon-crx | 25 | **45.5** | 76.4 | ❌ | **62.2** | 406 |
-| Canon EOS 5D Mark IV (RAW) | CR2 · lossless-jpeg | 31 | **19.3** | 424 | 107 | **39.4** | 834 |
-| Nikon Z8 (14-bit lossless) | NEF · nikon-huffman | 46 | **43.9** | 540 | 222 | **73.8** | 1145 |
-| Nikon Z6III (lossless) | NEF · nikon-huffman | 24 | **24.9** | 279 | 108 | **41.6** | 622 |
-| Nikon D850 (14-bit lossless) | NEF · nikon-huffman | 46 | **45.0** | 485 | 170 | **75.8** | 1081 |
-| Sony A7 IV (compressed) | ARW · sony-arw2 | 33 | **5.81** | 84.5 | 8.23 | **28.3** | 533 |
-| Sony A7 IV (lossless) | ARW · sony-lossless | 37 | 18.2 | 417 | **11.2** | **41.6** | 860 |
-| Sony A7R V (lossless) | ARW · sony-lossless | 65 | 32.4 | 759 | **22.9** | **71.6** | 1559 |
-| Sony A1 (compressed) | ARW · sony-arw2 | 50 | **8.15** | 128 | 13.3 | **41.7** | 791 |
-| Fujifilm X-T5 (lossless compressed) | RAF · fuji-compressed | 41 | **35.3** | 150 | 44.2 | **74.7** | 688 |
-| Fujifilm X-H2 (compressed) | RAF · fuji-compressed | 41 | **46.3** | 175 | ❌ | **94.0** | 879 |
-| Fujifilm GFX100 II (lossless compressed) | RAF · fuji-compressed | 103 | **58.7** | 264 | 71.3 | **124** | 1589 |
-| Panasonic Lumix S5II | RW2 · panasonic-v8 | 24 | **14.2** | 130 | 62.8 | **30.7** | 471 |
-| Panasonic Lumix GH6 | RW2 · panasonic-v8 | 25 | **14.9** | 131 | 63.7 | **32.5** | 491 |
-| OM System OM-1 Mark II | ORF · olympus | 20 | **113** | 384 | 159 | **129** | 674 |
-| Pentax K-3 Mark III | PEF · pentax-huffman | 27 | **29.4** | 195 | 83.3 | **47.1** | 557 |
-| Ricoh GR III | DNG · lossless-jpeg | 25 | **18.2** | 312 | 94.1 | **34.5** | 649 |
-| Leica Q2 | DNG · uncompressed | 47 | **4.22** | 287 | 48.9 | **35.5** | 910 |
-| Leica M10-R | DNG · lossless-jpeg | 41 | **28.5** | 543 | 195 | **55.8** | 1092 |
-| Hasselblad X2D 100C (compressed) | FFF · hasselblad | 105 | **75.5** | 991 | 442 | **147** | 2316 |
-| Phase One IQ4 150MP (IIQ L) | IIQ · phaseone | 154 | **40.4** | 1010 | ❌ | **139** | 4360 |
-| Sigma fp L | DNG · lossless-jpeg | 60 | 27.6 | 752 | **21.1** | **85.1** | 1544 |
-| Apple iPhone 12 Pro (ProRAW) | DNG · lossless-jpeg | 12 | **15.2** | 461 | ❌ | **23.8** | 587 |
-| Google Pixel 8 Pro | DNG · lossless-jpeg | 50 | 21.8 | 636 | **16.2** | **71.3** | 1422 |
-| Samsung Galaxy S23 Ultra | DNG · lossless-jpeg | 50 | **128** | 1864 | 535 | **196** | 2150 |
-| Samsung Galaxy S22 (JPEG XL) | DNG · jpeg-xl | 12 | **271** | ❌ | ❌ | **293** | ❌ |
-| DJI Phantom 4 Pro | DNG · uncompressed | 20 | 1.21 | 16.6 | **1.15** | **31.9** | 294 |
-| GoPro HERO11 Black | DNG · gopro-vc5 | 27 | 38.5 | ❌ | **18.2** | **66.3** | ❌ |
-
-The full list (62 bodies, phones, drones and action cameras), the same table on Linux x86-64,
-single-thread results, GPU timings and peak memory are in
-[docs/benchmarks.md](docs/benchmarks.md). Reproduce everything with
-[`tools/bench/compare.py`](tools/bench/compare.py).
-
 ## 🆚 Feature comparison
 
-| | ⚡ FlashRaw | LibRaw 0.22 | RawSpeed |
-|---|:---:|:---:|:---:|
-| Language | 🦀 Rust | C++ | C++ |
-| Memory-safe parsing of untrusted files | ✅ | ❌ | ❌ |
-| License | MIT / Apache-2.0 | LGPL-2.1 / CDDL-1.0 | LGPL-2.1 |
-| Benchmark set: 159 files covering every format and codec | ✅ 159 | ⚠️ 156 | ⚠️ 126 |
-| Canon CR3 (incl. C-RAW) | ✅ | ✅ | ❌ |
-| Fujifilm lossy compressed RAF | ✅ | ✅ | ❌ |
-| JPEG XL DNG (DNG 1.7, e.g. Samsung Galaxy) | ✅ | ⚠️ Adobe DNG SDK build only | ❌ |
-| Lossy (JPEG) DNG | ✅ built in | ⚠️ needs libjpeg | ⚠️ needs libjpeg |
-| GoPro GPR (VC-5) | ✅ | ⚠️ GPR SDK build only | ✅ |
-| Sigma X3F | ✅ | ✅ | ❌ |
-| Nikon High Efficiency (TicoRAW) | ❌ | ❌ | ❌ |
-| DNG opcode lists | ✅ all radiometric opcodes, per stage | ⚠️ Adobe DNG SDK build only | ⚠️ stage 1 subset |
-| RAW → RGB pipeline | ✅ bilinear, half-size (CPU or GPU) | ✅ many demosaics | ❌ raw data only |
-| Multithreaded decoding | ✅ every codec | ⚠️ 3 codecs (OpenMP build) | ⚠️ tiled/sliced codecs (OpenMP) |
-| Explicit SIMD kernels | ✅ SSE4.1/AVX2/AVX-512, NEON, WASM | ❌ | ⚠️ one SSE2 routine |
-| GPU acceleration | ✅ Metal, Vulkan, DX12, WebGPU | ❌ | ❌ |
-| Browser / WebAssembly package | ✅ official npm package | ⚠️ third-party ports | ❌ |
-| Region and tile decoding | ✅ | ❌ | ❌ |
-| Zero-copy embedded previews | ✅ | ⚠️ copied | ❌ no previews |
-| Continuous fuzzing | ✅ in-tree, every PR | ✅ OSS-Fuzz | ✅ in-tree |
-| C API | ✅ `flashraw.h` | ✅ | ❌ |
-| C++ API | ✅ `flashraw.hpp` | ✅ | ✅ |
-| Python | ✅ `pip install flashraw` (NumPy, zero-copy) | ⚠️ third-party (rawpy) | ❌ |
-| Rust | ✅ native | ⚠️ third-party bindings | ❌ |
-| LibRaw-compatible C API (recompile and relink) | ✅ subset | – | ❌ |
+| | ⚡ **FlashRaw** | LibRaw | RawSpeed | rawler / dnglab | dcraw | rawpy | Little CMS ¹ |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| What it is | RAW decoder + developer | RAW decoder + developer | RAW decoder (darktable) | RAW decoder + DNG converter | RAW converter program | Python binding of LibRaw | colour-management engine |
+| Written in | 🦀 Rust | C++ | C++ | 🦀 Rust | C | Python + C++ (LibRaw) | C |
+| Memory-safe | ✅ (a few audited `unsafe` blocks) | ❌ | ❌ | ⚠️ Rust, but it panics on bad input and advises against untrusted files | ❌ | ❌ | ❌ |
+| Uses the GPU | ✅ Metal, Vulkan, DX12, WebGPU | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Multithreading | ✅ every codec (speculative decoding of sequential streams) + develop | ⚠️ OpenMP builds: CR3, Fuji, Panasonic v8, some demosaics | ⚠️ OpenMP: tiled/sliced codecs | ✅ rayon: tiles, several codecs, develop | ❌ | ⚠️ as LibRaw; wheels: OpenMP on Linux/Windows, not macOS | ⚠️ one thread per transform (threaded plugin: GPL-3 or commercial) |
+| Explicit SIMD | ✅ SSE4.1, AVX2, AVX-512, NEON, WASM SIMD128 | ❌ | ⚠️ one SSE2 routine | ⚠️ compiler multiversioning, no intrinsics | ❌ | ❌ | ⚠️ SSE2 in the fast_float plugin (GPL-3 or commercial) |
+| Cameras | every make and model on raw.pixls.us (1,980 of 2,016 files), 1,000+ in its camera DB, any DNG | 1,284 (its own count) | ~920 make/model | ~850 make/model | ~570 colour profiles (last release 2018) | as LibRaw | – |
+| Canon CR3 (incl. C-RAW) | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | – |
+| JPEG XL DNG (DNG 1.7, e.g. Samsung Galaxy) | ✅ | ⚠️ Adobe DNG SDK builds only | ❌ | ✅ | ❌ | ❌ | – |
+| GoPro GPR (VC-5) | ✅ | ⚠️ GPR SDK builds only | ✅ | ❌ | ❌ | ❌ | – |
+| DNG opcode lists | ✅ all radiometric opcodes, per stage | ⚠️ Adobe DNG SDK builds only | ⚠️ stage-1 subset | ❌ | ⚠️ one opcode (lossy DNG) | ⚠️ as LibRaw | – |
+| RAW → sRGB image | ✅ one fused pass, CPU or GPU | ✅ `dcraw_process()`, many demosaics | ❌ raw data only | ✅ `RawDevelop` | ✅ | ✅ `postprocess()` | ⚠️ converts colours, does not decode RAW |
+| ICC colour management | ❌ sRGB / linear outputs | ⚠️ with Little CMS compiled in | ❌ | ❌ | ⚠️ with Little CMS | ⚠️ as LibRaw (Little CMS in the wheels) | ✅ ICC v2/v4 |
+| Embedded previews | ✅ zero-copy | ✅ copied | ❌ | ⚠️ some formats, decoded | ✅ `-e` | ✅ `extract_thumb()` | – |
+| Region / tile decode | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | – |
+| C / C++ API | ✅ `flashraw.h`, `flashraw.hpp` | ✅ | ⚠️ C++ only | ❌ Rust only | ❌ command line only | ❌ | ✅ C |
+| Python | ✅ official, NumPy zero-copy, releases the GIL | ⚠️ third-party (rawpy) | ❌ | ❌ | ❌ | ✅ | ⚠️ third-party |
+| JavaScript / WASM, runs in the browser | ✅ official npm package (WASM SIMD, threads, WebGPU) | ⚠️ third-party ports | ❌ | ❌ | ⚠️ third-party ports | ❌ | ⚠️ third-party ports |
+| Rust | ✅ native | ⚠️ third-party bindings | ❌ | ✅ native | ❌ | ❌ | ⚠️ third-party crate |
+| LibRaw-compatible C API | ✅ subset (recompile and relink) | – | ❌ | ❌ | ❌ | – | – |
+| Fuzzed | ✅ 10 in-tree targets, every PR + nightly | ✅ OSS-Fuzz | ✅ OSS-Fuzz + in-tree | ⚠️ 8 in-tree targets | ❌ | ⚠️ relies on LibRaw | ✅ OSS-Fuzz + in-tree |
+| License | MIT / Apache-2.0 | LGPL-2.1 / CDDL-1.0 | LGPL-2.1+ | LGPL-2.1 | own licence (Foveon code: GPL-2+) | MIT (bundles LibRaw) | MIT |
 
-<sub>Checked against LibRaw 0.22.0 and RawSpeed (develop, c835b05) sources and builds. "Benchmark
-set" counts files each library decoded in our runs, with LibRaw and RawSpeed built without
-optional SDKs (libjpeg, Adobe DNG SDK, GPR SDK). Nikon HE is a proprietary codec that no open
+<sub>¹ Little CMS is not a RAW decoder: it is compared as the colour-management stage of a
+typical LibRaw-based pipeline (see the benchmarks above). Checked against the sources and docs
+of LibRaw 0.22, RawSpeed (develop, c835b05), rawler 0.8.0, dcraw 9.28, rawpy 0.27.1 and Little
+CMS 2.19.1 (October 2026). Camera counts are not directly comparable: LibRaw counts its own
+way, the RawSpeed and rawler figures are unique make/model pairs in their camera lists, dcraw's
+is the size of its colour table. Nikon High Efficiency (TicoRAW) is a proprietary codec no open
 decoder supports.</sub>
+
+## 🏁 Benchmarks: popular cameras
+
+Milliseconds per file on an Apple M1 Ultra (20 cores, macOS), all cores, median of 7 runs,
+lower is better, **bold** = fastest. *Decode* = open + full sensor decode to 16-bit samples.
+*RAW → sRGB* = decode + demosaic + white balance + colour conversion to an 8-bit sRGB image
+(RawSpeed has no RGB pipeline; LibRaw + Little CMS develops to linear ProPhoto RGB and converts
+it with Little CMS). ❌ = not supported.
+
+| Camera | Format · codec | MP | Decode<br>FlashRaw | LibRaw | RawSpeed | rawler | RAW → sRGB<br>FlashRaw | LibRaw | LibRaw +<br>Little CMS | rawler |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Canon EOS R5 (RAW) | CR3 · canon-crx | 47 | **80.9** | 138 | ❌ | 237 | **109** | 737 | 1104 | 492 |
+| Canon EOS R6 Mark II (RAW) | CR3 · canon-crx | 25 | **45.7** | 76.9 | ❌ | 136 | **61.0** | 406 | 617 | 265 |
+| Canon EOS 5D Mark IV (RAW) | CR2 · lossless-jpeg | 31 | **20.5** | 431 | 110 | 251 | **39.8** | 837 | 1100 | 415 |
+| Nikon Z8 (14-bit lossless) | NEF · nikon-huffman | 46 | **44.0** | 544 | 218 | 356 | **72.4** | 1156 | 1542 | 601 |
+| Nikon Z6III (lossless) | NEF · nikon-huffman | 24 | **25.0** | 285 | 110 | 186 | **41.5** | 629 | 824 | 320 |
+| Nikon D850 (14-bit lossless) | NEF · nikon-huffman | 46 | **45.1** | 488 | 170 | 325 | **72.7** | 1102 | 1496 | 575 |
+| Sony A7 IV (lossless) | ARW · sony-lossless | 37 | 19.2 | 414 | **11.7** | 38.7 | **40.8** | 870 | 1158 | 220 |
+| Sony A7 IV (compressed) | ARW · sony-arw2 | 33 | **5.86** | 87.4 | 8.77 | 8.38 | **26.3** | 536 | 814 | 192 |
+| Sony A7R V (lossless) | ARW · sony-lossless | 65 | 33.2 | 761 | **24.2** | 61.3 | **70.5** | 1538 | 2097 | 395 |
+| Sony A1 (compressed) | ARW · sony-arw2 | 50 | **8.14** | 132 | 13.4 | 11.8 | **39.3** | 797 | 1220 | 283 |
+| Fujifilm X-T5 (lossless compressed) | RAF · fuji-compressed | 41 | **35.5** | 151 | 44.4 | 93.9 | **74.4** | 697 | 1032 | 388 |
+| Fujifilm X-H2 (compressed) | RAF · fuji-compressed | 41 | **46.5** | 173 | ❌ | 127 | **94.8** | 878 | 1203 | 420 |
+| Fujifilm GFX100 II (lossless compressed) | RAF · fuji-compressed | 103 | **67.3** | 267 | 76.6 | 143 | **125** | 1569 | 2451 | 688 |
+| Panasonic Lumix S5II | RW2 · panasonic-v8 | 24 | **15.1** | 131 | 62.4 | 119 | **30.4** | 477 | 686 | 226 |
+| Panasonic Lumix GH6 | RW2 · panasonic-v8 | 25 | **17.0** | 133 | 63.5 | 117 | **32.9** | 498 | 718 | 232 |
+| OM System OM-1 Mark II | ORF · olympus | 20 | **116** | 381 | 162 | 225 | **126** | 678 | 846 | 341 |
+| Pentax K-3 Mark III | PEF · pentax-huffman | 27 | **29.8** | 204 | 83.6 | 174 | **48.2** | 562 | 772 | 321 |
+| Ricoh GR III | DNG · lossless-jpeg | 25 | **18.1** | 316 | 96.2 | 214 | **34.1** | 659 | 864 | 343 |
+| Leica Q2 | DNG · uncompressed | 47 | **4.04** | 293 | 49.2 | 4.54 | **33.1** | 926 | 1324 | 259 |
+| Leica M10-R | DNG · lossless-jpeg | 41 | **28.9** | 559 | 197 | 381 | **54.9** | 1085 | 1456 | 605 |
+| Hasselblad X2D 100C (compressed) | FFF · hasselblad | 105 | **76.6** | 1013 | 451 | ❌ | **144** | 2316 | 3204 | ❌ |
+| Phase One IQ4 150MP (IIQ L) | IIQ · phaseone | 154 | **42.1** | 1006 | ❌ | 341 | **133** | 4305 | 5692 | 952 |
+| Sigma fp L | DNG · lossless-jpeg | 60 | 28.0 | 761 | **22.4** | 40.9 | **72.1** | 1566 | 2081 | 364 |
+| Apple iPhone 12 Pro (ProRAW) | DNG · lossless-jpeg | 12 | **15.4** | 469 | ❌ | 27.8 | **24.3** | 592 | 688 | 74.4 |
+| Google Pixel 8 Pro | DNG · lossless-jpeg | 50 | 23.1 | 656 | **18.9** | 34.2 | **59.1** | 1446 | 1891 | 303 |
+| Samsung Galaxy S23 Ultra | DNG · lossless-jpeg | 50 | **129** | 1916 | 550 | 1135 | **178** | 2194 | 2507 | 1292 |
+| Samsung Galaxy S22 (JPEG XL) | DNG · jpeg-xl | 12 | 272 | ❌ | ❌ | **173** | 289 | ❌ | ❌ | **212** |
+| DJI Phantom 4 Pro | DNG · uncompressed | 20 | 1.22 | 17.0 | **0.99** | 1.36 | **18.9** | 292 | 474 | 117 |
+| GoPro HERO11 Black (GPR) | DNG · gopro-vc5 | 27 | 39.8 | ❌ | **18.5** | ❌ | **60.2** | ❌ | ❌ | ❌ |
+
+The full list (62 bodies, phones, drones and action cameras), the same tables on Linux x86-64,
+rawpy and dcraw, single-thread results, GPU timings, peak memory per camera and per-format
+results are in [docs/benchmarks.md](docs/benchmarks.md). Reproduce everything with
+[`tools/bench/compare.py`](tools/bench/compare.py); the charts come from
+[`tools/bench/charts.py`](tools/bench/charts.py) and their numbers are in
+[`docs/charts/data.json`](docs/charts/data.json).
 
 ## 🛡️ Security
 
@@ -468,3 +531,11 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 
 Code and data (including `camera-db/`): MIT OR Apache-2.0, at your option. See
 [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
+
+---
+
+<p align="center">
+  <a href="https://flashraw.ybouane.com"><img src="branding/logo.svg" alt="FlashRaw" height="40"></a><br>
+  <sub>Built by <a href="https://x.com/ybouane"><b>@ybouane</b></a> · <a href="https://flashraw.ybouane.com">Live demo</a> ·
+  used in <a href="https://lightflow.dev">LightFlow</a> and <a href="https://imageflow.dev">ImageFlow</a></sub>
+</p>
