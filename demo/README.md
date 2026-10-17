@@ -57,15 +57,13 @@ demo/
   src/pipeline.ts         adjustment maths (GLSL + identical JS), orientation helpers
   src/renderer-gl.ts      WebGL2 renderer      src/renderer-cpu.ts   CPU fallback
   src/viewport.ts         zoom / pan / pinch / keyboard
-  src/charts.ts           benchmark charts (SVG, linear speedup bars)  src/charts-schema.ts  their schema
-  src/charts-data.sample.json   sample chart data (from docs/benchmarks.md)
+  src/charts.ts           benchmark charts (SVG, linear time bars)  src/charts-schema.ts  their schema
   src/fonts/              newsreader-core.woff2 (preloaded subset, scripts/subset-fonts.sh), OFL.txt
   public/                 robots.txt, sitemap.xml, site.webmanifest, _headers
   public/showcase/        LightFlow and ImageFlow logos ("Used in production by")
   public/samples/         the "Try a sample" file (see below)
   vercel.json             Vercel config (headers)
   scripts/serve.mjs       static server for dist/ with the production headers
-  scripts/make-sample-chart-data.mjs   regenerates the sample chart data
   tests/e2e.mjs           Playwright end-to-end test     tests/modes.mjs   hosting/engine modes
   tests/responsive.mjs    no horizontal overflow at phone/tablet widths, every state
 ```
@@ -183,33 +181,20 @@ Ready-made configs:
 
 ## Chart data
 
-The benchmark charts read `virtual:charts-data`, which resolves at build time to
-`../docs/charts/data.json` when that file exists and to `src/charts-data.sample.json`
-otherwise (with a build warning). Dropping the real file in place needs no code change; it must
-follow the schema in `src/charts-schema.ts`:
+The benchmark charts read `virtual:charts-data`, which `vite.config.ts` (`fromBenchData`)
+builds from `../docs/charts/data.json`, the file `tools/bench/charts.py` writes. It converts it
+to the schema in `src/charts-schema.ts`:
 
-```jsonc
-{
-  "version": 1,
-  "sample": false,                       // true only for the generated sample
-  "source": "docs/benchmarks.md",
-  "libraries": [{ "id": "flashraw", "name": "FlashRaw" }, { "id": "libraw", "name": "LibRaw" }, { "id": "rawspeed", "name": "RawSpeed" }],
-  "machines": [{ "id": "linux", "name": "Linux x86-64", "cpu": "AMD Ryzen 7 9700X, 16 threads", "icon": "🐧" }, ...],
-  "headline": [                          // speedups = other library time / FlashRaw time
-    { "metric": "decode" | "rgb", "vs": "libraw", "threads": "all" | "1", "set": "popular" | "all",
-      "machine": "linux", "geomean": 6.14, "median": 8.26, "wins": 57, "files": 59 }, ...],
-  "cameras": [                           // wall times in ms, null = cannot decode
-    { "machine": "linux", "camera": "Canon EOS R5 (RAW)", "format": "CR3", "codec": "canon-crx", "mp": 46.7,
-      "decode": { "flashraw": 56.6, "libraw": 58.2, "rawspeed": null },
-      "rgb": { "flashraw": 105.3, "libraw": 482.6 }, "gpu": 97.3 }, ...],
-  "formats": [                           // geometric-mean speedups per format/codec
-    { "format": "ARW", "codec": "sony-arw2", "files": 9,
-      "speedup": { "linux": { "decodeVsLibraw": 10.2, "decodeVsRawspeed": 1.76, "rgbVsLibraw": 8.98 }, "macos": { ... } } }, ...]
-}
-```
+- `headline`: median and geometric-mean speedups (other library time ÷ FlashRaw time) per
+  metric, library, machine and thread count, with how many files FlashRaw is faster on;
+- `cameras`: per-camera wall times in ms per library (`null` = cannot decode the file), and
+  FlashRaw's GPU time where measured;
+- `formats`: per format and codec, the geometric mean of the files' wall times in ms per library.
 
-The headline tiles use `threads: "all"`, `set: "popular"`. Regenerate the sample from the
-tables in `docs/benchmarks.md` with `node scripts/make-sample-chart-data.mjs`.
+Both bar charts plot wall times in ms on a linear axis from 0: a FlashRaw bar, one bar per other
+library labelled with its time and how many times FlashRaw's time it is, and a dashed line at
+FlashRaw's time. The headline tiles show the median speedups over the popular cameras, all cores.
+Re-running the benchmarks and rebuilding the demo updates every chart.
 
 ## Tests
 

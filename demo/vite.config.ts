@@ -57,24 +57,18 @@ function brandAssets(): Plugin {
   };
 }
 
-/**
- * `virtual:charts-data`: docs/charts/data.json when present (drop-in), else the documented
- * sample in src/charts-data.sample.json.
- */
+/** `virtual:charts-data`: docs/charts/data.json (from tools/bench/charts.py) in the ChartsData schema. */
 function chartsData(): Plugin {
-  const real = join(repo, 'docs', 'charts', 'data.json');
-  const sample = join(here, 'src', 'charts-data.sample.json');
+  const file = join(repo, 'docs', 'charts', 'data.json');
   const id = 'virtual:charts-data';
   return {
     name: 'flashraw-charts-data',
     resolveId: (s) => (s === id ? '\0' + id : null),
     load(s) {
       if (s !== '\0' + id) return null;
-      const file = existsSync(real) ? real : sample;
       this.addWatchFile(file);
-      if (file === sample) this.warn('docs/charts/data.json not found: charts use src/charts-data.sample.json');
       const raw = JSON.parse(readFileSync(file, 'utf8'));
-      return `export default ${JSON.stringify(file === sample ? raw : fromBenchData(raw))};`;
+      return `export default ${JSON.stringify(fromBenchData(raw))};`;
     },
   };
 }
@@ -106,24 +100,19 @@ function fromBenchData(d: any) {
     rgb: Object.fromEntries(libs.filter((l) => l !== 'rawspeed').map((l) => [l, ms(c[m].rgb, l)])),
     gpu: ms(c[m].rgb_gpu, 'flashraw'),
   })));
-  // Per format and codec: geometric mean of the per-file speedups.
+  // Per format and codec: geometric mean of the files' wall times.
   const geo = (xs: number[]) => (xs.length ? Math.round(Math.exp(xs.reduce((a, x) => a + Math.log(x), 0) / xs.length) * 100) / 100 : null);
   const groups = new Map<string, any[]>();
   for (const c of d.per_camera) {
     const k = `${c.format}\t${c.compression}`;
     groups.set(k, [...(groups.get(k) ?? []), c]);
   }
-  const ratio = (cs: any[], m: string, metric: string, lib: string) =>
-    geo(cs.map((c) => [ms(c[m]?.[metric], lib), ms(c[m]?.[metric], 'flashraw')]).filter(([o, f]) => o && f).map(([o, f]) => o! / f!));
   const formats = [...groups].map(([k, cs]) => {
     const [format, codec] = k.split('\t');
     return {
       format, codec, files: cs.length,
-      speedup: Object.fromEntries(machines.map((m) => [m, {
-        decodeVsLibraw: ratio(cs, m, 'decode', 'libraw'),
-        decodeVsRawspeed: ratio(cs, m, 'decode', 'rawspeed'),
-        rgbVsLibraw: ratio(cs, m, 'rgb', 'libraw'),
-      }])),
+      ms: Object.fromEntries(machines.map((m) => [m, Object.fromEntries((['decode', 'rgb'] as const).map((metric) => [metric,
+        Object.fromEntries(libs.map((l) => [l, geo(cs.map((c) => ms(c[m]?.[metric], l)).filter((v): v is number => v != null))]))]))])),
     };
   }).sort((a, b) => a.format.localeCompare(b.format) || a.codec.localeCompare(b.codec));
   return {

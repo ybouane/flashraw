@@ -1,14 +1,11 @@
-// Schema of the benchmark chart data: docs/charts/data.json (when present) or the sample in
-// src/charts-data.sample.json (generated from docs/benchmarks.md by
-// scripts/make-sample-chart-data.mjs). See README.md, "Chart data".
+// Schema of the benchmark chart data, converted at build time from docs/charts/data.json
+// (vite.config.ts, `fromBenchData`). See README.md, "Chart data".
 
 export type LibraryId = 'flashraw' | 'libraw' | 'rawspeed' | (string & {});
 export type MachineId = 'linux' | 'macos' | (string & {});
 
 export interface ChartsData {
   version: 1;
-  /** true for the generated sample */
-  sample?: boolean;
   source?: string;
   description?: string;
   libraries: { id: LibraryId; name: string }[];
@@ -39,11 +36,12 @@ export interface ChartsData {
     /** FlashRaw RAW → RGB on the GPU, ms (optional) */
     gpu?: number | null;
   }[];
-  /** Geometric-mean speedups per format/codec and machine. */
+  /** Per format/codec and machine. */
   formats: {
     format: string;
     codec: string;
     files: number | null;
-    speedup: Record<MachineId, { decodeVsLibraw: number | null; decodeVsRawspeed: number | null; rgbVsLibraw: number | null }>;
+    /** Geometric-mean wall time in ms per machine, metric and library (null = not decoded). */
+    ms: Record<MachineId, Record<'decode' | 'rgb', Record<LibraryId, number | null>>>;
   }[];
 }

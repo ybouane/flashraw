@@ -1,10 +1,11 @@
-// Benchmark charts (plain SVG): headline speedups, per-camera and per-format speedup bars.
-// Data: `virtual:charts-data` (docs/charts/data.json or the sample).
+// Benchmark charts (plain SVG): headline speedups, per-camera and per-format wall times.
+// Data: `virtual:charts-data` (docs/charts/data.json).
 //
-// Both bar charts use one linear axis from 0 with a dashed 1× line (same speed as FlashRaw):
-// a bar is (other library time ÷ FlashRaw time). The axis ends near the 90th percentile of the
-// values shown, so a few outliers do not flatten every other bar; longer bars are cut at the
-// axis end with a break mark and labelled with their value.
+// Both bar charts show wall times in ms on one linear axis from 0: a FlashRaw bar (ink) and one
+// bar per other library (greys), each labelled with its time and, for the others, how many times
+// FlashRaw's time it is. A dashed line marks FlashRaw's time across each row. The axis ends near
+// the 90th percentile of the values shown, so a few slow outliers do not flatten every other bar;
+// longer bars are cut at the axis end with a break mark and still labelled with their value.
 
 import data from 'virtual:charts-data';
 import type { ChartsData } from './charts-schema';
@@ -13,7 +14,7 @@ import { h } from './metadata';
 const D = data as ChartsData;
 const SVGNS = 'http://www.w3.org/2000/svg';
 // Monochrome series (the brand has no chart hues): dark and mid grey, both ≥ 3:1 on paper.
-const COLORS: Record<string, string> = { libraw: '#3a3a3a', rawspeed: '#8c8c8c' };
+const COLORS: Record<string, string> = { flashraw: '#0e0e0e', libraw: '#5c5c5c', rawspeed: '#9a9a9a' };
 const color = (l: string) => COLORS[l] ?? '#6b6b6b';
 const libName = (id: string) => D.libraries.find((l) => l.id === id)?.name ?? id;
 const machineName = (id: string) => {
@@ -60,6 +61,7 @@ function tipRows(title: string, sub: string, rows: [string, string, string][]) {
     ...rows.map(([lib, label, value]) => {
       const key = h('span', { class: 'tt-key' });
       key.style.background = lib === 'flashraw' ? '#fff' : color(lib);
+      key.style.borderColor = lib === 'flashraw' ? '#fff' : color(lib);
       return h('div', { class: 'tt-row' }, key, `${label}: `, h('b', { text: value }));
     }),
   );
@@ -95,24 +97,26 @@ function segmented(label: string, options: [string, string][], value: string, on
   return group;
 }
 
-function legend(items: [string, string][]) {
+function legend(libs: string[]) {
   return h('ul', { class: 'legend' },
-    ...items.map(([lib, label]) => {
+    ...libs.map((lib) => {
       const k = h('span', { class: 'key' });
       k.style.background = color(lib);
-      return h('li', {}, k, label);
+      return h('li', {}, k, libName(lib));
     }),
-    h('li', {}, h('span', { class: 'key key-ref' }), '1× = as fast as FlashRaw'),
+    h('li', {}, h('span', { class: 'key key-ref' }), "FlashRaw's time"),
+    h('li', { class: 'legend-note', text: '“182 ms · 3.2×” = 3.2 times FlashRaw’s time' }),
   );
 }
 
-// ----------------------------------------------------------------- linear speedup bars
+// ----------------------------------------------------------------- linear time bars
 
 interface BarRow {
   label: string;
   /** second line on narrow screens / right-aligned detail */
   detail: string;
-  values: [lib: string, value: number | null][];
+  /** wall times in ms, FlashRaw first */
+  values: [lib: string, ms: number | null][];
   aria: string;
   tip: () => Node;
 }
@@ -121,70 +125,73 @@ const quantile = (sorted: number[], q: number) => sorted[Math.min(sorted.length 
 
 /** A round step giving at most `maxTicks` intervals up to `max`. */
 function niceStep(max: number, maxTicks: number) {
-  for (const st of [0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100]) if (max / st <= maxTicks) return st;
-  return 200;
+  for (const m of [1, 10, 100, 1000, 10000]) for (const st of [1, 2, 2.5, 5]) if (max / (st * m) <= maxTicks) return st * m;
+  return 50000;
 }
 
 /** Axis end: the values' 90th percentile with headroom (or the max when that is close), rounded up. */
 function axisMax(values: number[], maxTicks: number) {
   const v = [...values].sort((a, b) => a - b);
-  if (!v.length) return 2;
+  if (!v.length) return 100;
   const top = v[v.length - 1];
   const p90 = quantile(v, 0.9);
-  const target = Math.max(2, top <= p90 * 1.35 ? top : p90 * 1.15);
+  const target = top <= p90 * 1.35 ? top : p90 * 1.15;
   const st = niceStep(target, maxTicks);
   return Math.ceil(target / st - 1e-9) * st;
 }
 
-function speedBars(root: HTMLElement, rows: BarRow[], ariaLabel: string) {
+/** Bar label: "57 ms" for FlashRaw, "182 ms · 3.2×" for the others. */
+const barLabel = (v: number, fr: number | null, isFr: boolean) => `${fmtMs(v)} ms${isFr || fr == null ? '' : ` · ${fmtBar(v / fr)}`}`;
+
+function timeBars(root: HTMLElement, rows: BarRow[], ariaLabel: string) {
   const width = Math.max(280, root.clientWidth || 900);
   const narrow = width < 640;
   const series = rows[0]?.values.length ?? 1;
-  const barH = series > 1 ? 9 : 12;
+  const barH = series > 2 ? 13 : 15;
   const gap = 3;
   const barsH = series * barH + (series - 1) * gap;
-  const labelW = narrow ? 0 : Math.min(260, Math.round(width * 0.3));
+  const labelW = narrow ? 0 : Math.min(250, Math.round(width * 0.27));
   const headH = 22;
   const rowPad = narrow ? 10 : 9;
   const labelLine = narrow ? 20 : 0;
   const rowH = labelLine + barsH + rowPad * 2;
   const x0 = labelW + (narrow ? 0 : 12);
-  const valueW = 46; // room for the value label past the axis end
+  const valueW = narrow ? 92 : 112; // room for the value label past the axis end
   const x1 = width - valueW;
   const all = rows.flatMap((r) => r.values.map(([, v]) => v).filter((v): v is number => v != null));
-  const ticksMax = narrow ? 4 : 8;
+  const ticksMax = narrow ? 3 : 7;
   const max = axisMax(all, ticksMax);
   const step = niceStep(max, ticksMax);
   const x = (v: number) => x0 + (Math.min(v, max) / max) * (x1 - x0);
   const height = headH + rows.length * rowH + 4;
   const svg = s('svg', { class: 'chart-svg', viewBox: `0 0 ${width} ${height}`, width, height, role: 'group', 'aria-label': ariaLabel });
 
-  // grid + tick labels (top); the 1× label wins over a tick label too close to it
-  const ref = x(1);
+  // grid + tick labels (top); the unit on the last tick
   for (let t = 0; t <= max + 1e-9; t += step) {
     const tx = x(t);
+    const last = t + step > max + 1e-9;
     svg.append(s('line', { class: 'grid', x1: tx, x2: tx, y1: headH - 4, y2: height - 4 }));
-    if (Math.abs(tx - ref) >= 26) svg.append(s('text', { x: tx, y: 12, 'text-anchor': t === 0 ? 'start' : 'middle', class: 't-muted' }, `${+t.toFixed(1)}×`));
+    svg.append(s('text', { x: tx, y: 12, 'text-anchor': t === 0 ? 'start' : 'middle', class: 't-muted' }, `${t.toLocaleString('en-US')}${last ? ' ms' : ''}`));
   }
-  svg.append(s('text', { x: ref, y: 12, 'text-anchor': ref - x0 < 14 ? 'start' : 'middle', class: 't-ref' }, '1×'));
 
   rows.forEach((r, i) => {
     const top = headH + i * rowH;
     const g = s('g', { class: 'row', tabindex: 0, role: 'img', 'aria-label': r.aria });
     g.append(s('rect', { class: 'row-hit', x: 0, y: top, width, height: rowH }));
     if (narrow) {
-      g.append(s('text', { x: 0, y: top + rowPad + 11, class: 't-strong' }, r.label.length > 38 ? r.label.slice(0, 37) + '…' : r.label));
+      g.append(s('text', { x: 0, y: top + rowPad + 11, class: 't-strong' }, r.label.length > 34 ? r.label.slice(0, 33) + '…' : r.label));
       g.append(s('text', { x: width, y: top + rowPad + 11, 'text-anchor': 'end', class: 't-muted' }, r.detail));
     } else {
       const chars = Math.floor(labelW / 7.4);
       g.append(s('text', { x: 0, y: top + rowH / 2 + 5, class: 't-strong' }, r.label.length > chars ? r.label.slice(0, chars - 1) + '…' : r.label));
     }
     const by0 = top + rowPad + labelLine;
+    const fr = r.values[0]?.[1] ?? null;
     r.values.forEach(([lib, v], k) => {
       const y = by0 + k * (barH + gap);
       const cy = y + barH / 2 + 4;
       if (v == null) {
-        g.append(s('text', { x: Math.max(x0, ref) + 6, y: cy, class: 't-muted t-small t-halo' }, `${libName(lib)}: cannot decode`));
+        g.append(s('text', { x: (fr != null ? x(fr) : x0) + 6, y: cy, class: 't-muted t-small t-halo' }, `${libName(lib)}: cannot decode`));
         return;
       }
       const over = v > max;
@@ -194,24 +201,24 @@ function speedBars(root: HTMLElement, rows: BarRow[], ariaLabel: string) {
         // break mark: two paper-coloured slashes near the cut end
         for (const dx of [10, 15]) g.append(s('line', { x1: x0 + w - dx, x2: x0 + w - dx + 4, y1: y + barH + 1, y2: y - 1, stroke: '#fff', 'stroke-width': 1.5 }));
       }
-      g.append(s('text', { x: x0 + w + 4, y: cy, class: `${over ? 't-num' : 't-val'} t-halo` }, fmtBar(v)));
+      const isFr = lib === 'flashraw';
+      const text = barLabel(v, fr, isFr);
+      // past the bar end, or inside it (paper on the bar) when it would run off the chart
+      if (x0 + w + 5 + text.length * 6.8 > width && w > text.length * 6.8 + 24)
+        g.append(s('text', { x: x0 + w - (over ? 22 : 6), y: cy, 'text-anchor': 'end', class: 't-num t-in' }, text));
+      else g.append(s('text', { x: x0 + w + 5, y: cy, class: `${isFr || over ? 't-num' : 't-val'} t-halo` }, text));
     });
+    // FlashRaw's time across the row's bars
+    if (fr != null) {
+      const fx = x(fr);
+      g.append(s('line', { class: 'ref', x1: fx, x2: fx, y1: by0 - 4, y2: by0 + barsH + 4 }));
+    }
     g.addEventListener('pointerenter', () => showTip(g, r.tip()));
     g.addEventListener('pointerleave', hideTip);
     g.addEventListener('focus', () => showTip(g, r.tip()));
     g.addEventListener('blur', hideTip);
     svg.append(g);
   });
-  // the reference line on top of the bars (on narrow screens only beside the bars, so it does
-  // not cross the row labels above them)
-  if (!narrow) svg.append(s('line', { class: 'ref', x1: ref, x2: ref, y1: headH - 4, y2: height - 4 }));
-  else {
-    svg.append(s('line', { class: 'ref', x1: ref, x2: ref, y1: headH - 4, y2: headH + rowPad }));
-    rows.forEach((_, i) => {
-      const y = headH + i * rowH + rowPad + labelLine;
-      svg.append(s('line', { class: 'ref', x1: ref, x2: ref, y1: y - 4, y2: y + barsH + 4 }));
-    });
-  }
   return { svg, max };
 }
 
@@ -247,77 +254,76 @@ const others = (metric: 'decode' | 'rgb') => (metric === 'decode' ? ['libraw', '
 
 function cameraChart(root: HTMLElement, st: CamState) {
   const rows = D.cameras.filter((c) => c.machine === st.machine && c[st.metric].flashraw != null);
-  const libs = others(st.metric).filter((l) => rows.some((r) => r[st.metric][l] != null));
+  const libs = ['flashraw', ...others(st.metric).filter((l) => rows.some((r) => r[st.metric][l] != null))];
   const shown = st.all ? rows : rows.slice(0, 18);
   const bars: BarRow[] = shown.map((r) => {
     const fr = r[st.metric].flashraw!;
-    const values = libs.map((l) => [l, r[st.metric][l] != null ? r[st.metric][l]! / fr : null] as [string, number | null]);
-    const all = ['flashraw', ...libs];
+    const values = libs.map((l) => [l, r[st.metric][l] ?? null] as [string, number | null]);
     return {
       label: r.camera,
       detail: `${r.format} · ${r.mp ?? '?'} MP`,
       values,
-      aria: `${r.camera}, ${r.format} ${r.codec}: FlashRaw ${fmtMs(fr)} ms; ${values.map(([l, v]) => `${libName(l)} ${v == null ? 'cannot decode it' : `${fmtX(v)} slower`}`).join(', ')}`,
-      tip: () =>
-        tipRows(r.camera, `${r.format} · ${r.codec}${r.mp ? ` · ${r.mp} MP` : ''}`, all.map((l) => {
-          const v = r[st.metric][l];
-          return [l, libName(l), v == null ? 'cannot decode it' : `${fmtMs(v)} ms${l !== 'flashraw' ? ` (${fmtX(v / fr)})` : ''}`];
-        })),
+      aria: `${r.camera}, ${r.format} ${r.codec}: ${values.map(([l, v]) => `${libName(l)} ${v == null ? 'cannot decode it' : barLabel(v, fr, l === 'flashraw')}`).join(', ')}`,
+      tip: () => tipRows(r.camera, `${r.format} · ${r.codec}${r.mp ? ` · ${r.mp} MP` : ''}`, values.map(([l, v]) => [l, libName(l), v == null ? 'cannot decode it' : barLabel(v, fr, l === 'flashraw')])),
     };
   });
-  const label = `${st.metric === 'decode' ? 'RAW decode' : 'RAW to RGB'} speedup of FlashRaw per camera (other library time divided by FlashRaw time), linear scale from 0, ${machineName(st.machine)}`;
-  const r = speedBars(root, bars, label);
+  const label = `${st.metric === 'decode' ? 'RAW decode' : 'RAW to RGB'} wall time per camera in milliseconds, FlashRaw and other libraries, linear scale from 0, ${machineName(st.machine)}`;
+  const r = timeBars(root, bars, label);
   return { ...r, total: rows.length, shown: shown.length, libs };
 }
 
+/** Table cell: "182 ms" for FlashRaw, "182 (3.2×)" for the others. */
+const cell = (v: number | null | undefined, fr: number | null | undefined, isFr: boolean) =>
+  v == null ? 'n/a' : `${fmtMs(v)}${isFr || fr == null ? '' : ` (${fmtBar(v / fr)})`}`;
+
 function cameraTable(st: CamState) {
   const rows = D.cameras.filter((c) => c.machine === st.machine);
-  const libs = st.metric === 'decode' ? ['flashraw', 'libraw', 'rawspeed'] : ['flashraw', 'libraw'];
+  const libs = ['flashraw', ...others(st.metric)];
   return h('table', { class: 'plain' },
     h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Camera' }), h('th', { scope: 'col', text: 'Format · codec' }), h('th', { scope: 'col', class: 'num', text: 'MP' }), ...libs.map((l) => h('th', { scope: 'col', class: 'num', text: `${libName(l)} (ms)` })))),
     h('tbody', {}, ...rows.map((r) => h('tr', {},
       h('th', { scope: 'row', text: r.camera }), h('td', { text: `${r.format} · ${r.codec}` }), h('td', { class: 'num', text: r.mp != null ? String(r.mp) : '' }),
-      ...libs.map((l) => h('td', { class: 'num', text: r[st.metric][l] != null ? fmtMs(r[st.metric][l]!) : 'n/a' })),
+      ...libs.map((l) => h('td', { class: 'num', text: cell(r[st.metric][l], r[st.metric].flashraw, l === 'flashraw') })),
     ))),
   );
 }
 
 // ----------------------------------------------------------------- per format
 
-const formatSeries = (metric: 'decode' | 'rgb') =>
-  metric === 'decode'
-    ? ([['decodeVsLibraw', 'libraw'], ['decodeVsRawspeed', 'rawspeed']] as const)
-    : ([['rgbVsLibraw', 'libraw']] as const);
-
 function formatChart(root: HTMLElement, st: CamState) {
-  const series = formatSeries(st.metric);
+  const libs = ['flashraw', ...others(st.metric)];
   const rows = D.formats
-    .map((f) => ({ f, v: f.speedup[st.machine] }))
-    .filter((r) => r.v && series.some(([k]) => r.v[k] != null))
-    .sort((a, b) => (b.v[series[0][0]] ?? 0) - (a.v[series[0][0]] ?? 0));
+    .map((f) => ({ f, v: f.ms[st.machine]?.[st.metric] }))
+    .filter((r) => r.v?.flashraw != null)
+    .sort((a, b) => (b.v.libraw ?? 0) / b.v.flashraw! - (a.v.libraw ?? 0) / a.v.flashraw!);
   const shown = st.all ? rows : rows.slice(0, 18);
   const bars: BarRow[] = shown.map(({ f, v }) => {
     const label = `${f.format} · ${f.codec}`;
+    const fr = v.flashraw!;
+    const values = libs.map((l) => [l, v[l] ?? null] as [string, number | null]);
     return {
       label,
       detail: `${f.files ?? '?'} file${f.files === 1 ? '' : 's'}`,
-      values: series.map(([k, l]) => [l, v[k] ?? null] as [string, number | null]),
-      aria: `${label}: ${series.map(([k, l]) => `vs ${libName(l)} ${v[k] == null ? 'not decoded by it' : fmtX(v[k]!)}`).join(', ')}`,
-      tip: () => tipRows(label, `${f.files ?? '?'} file(s), geometric mean, ${machineName(st.machine)}`, series.map(([k, l]) => [l, `vs ${libName(l)}`, v[k] == null ? 'not decoded by it' : fmtX(v[k]!)])),
+      values,
+      aria: `${label}: ${values.map(([l, x]) => `${libName(l)} ${x == null ? 'cannot decode it' : barLabel(x, fr, l === 'flashraw')}`).join(', ')}`,
+      tip: () => tipRows(label, `${f.files ?? '?'} file(s), geometric mean, ${machineName(st.machine)}`, values.map(([l, x]) => [l, libName(l), x == null ? 'cannot decode it' : barLabel(x, fr, l === 'flashraw')])),
     };
   });
-  const r = speedBars(root, bars, `Geometric-mean speedup of FlashRaw per format and codec, linear scale from 0, ${machineName(st.machine)}`);
-  return { ...r, total: rows.length, shown: shown.length, series };
+  const r = timeBars(root, bars, `Geometric-mean wall time per format and codec in milliseconds, FlashRaw and other libraries, linear scale from 0, ${machineName(st.machine)}`);
+  return { ...r, total: rows.length, shown: shown.length, libs };
 }
 
 function formatTable(st: CamState) {
-  const cols = formatSeries(st.metric);
+  const libs = ['flashraw', ...others(st.metric)];
   return h('table', { class: 'plain' },
-    h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Format' }), h('th', { scope: 'col', text: 'Codec' }), h('th', { scope: 'col', class: 'num', text: 'Files' }), ...cols.map(([, l]) => h('th', { scope: 'col', class: 'num', text: `vs ${libName(l)}` })))),
-    h('tbody', {}, ...D.formats.map((f) => h('tr', {},
-      h('th', { scope: 'row', text: f.format }), h('td', { text: f.codec }), h('td', { class: 'num', text: String(f.files ?? '') }),
-      ...cols.map(([k]) => h('td', { class: 'num', text: f.speedup[st.machine]?.[k] != null ? fmtX(f.speedup[st.machine][k]!) : 'n/a' })),
-    ))),
+    h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Format' }), h('th', { scope: 'col', text: 'Codec' }), h('th', { scope: 'col', class: 'num', text: 'Files' }), ...libs.map((l) => h('th', { scope: 'col', class: 'num', text: `${libName(l)} (ms)` })))),
+    h('tbody', {}, ...D.formats.map((f) => {
+      const v = f.ms[st.machine]?.[st.metric] ?? {};
+      return h('tr', {},
+        h('th', { scope: 'row', text: f.format }), h('td', { text: f.codec }), h('td', { class: 'num', text: String(f.files ?? '') }),
+        ...libs.map((l) => h('td', { class: 'num', text: cell(v[l], v.flashraw, l === 'flashraw') })),
+      );
+    })),
   );
 }
 
@@ -332,7 +338,7 @@ export function renderCharts(root: HTMLElement) {
   root.dataset.state = 'ready';
   root.append(headlineTiles());
   const machineOpts = D.machines.map((m) => [m.id, m.name] as [string, string]);
-  const cut = (max: number) => `axis cut at ${max}×: longer bars are marked and labelled`;
+  const cut = (max: number) => `axis cut at ${max.toLocaleString('en-US')} ms: longer bars are marked and labelled`;
 
   // camera chart card
   const camBody = h('div', { class: 'chart-body' });
@@ -343,10 +349,10 @@ export function renderCharts(root: HTMLElement) {
   const drawCam = () => {
     const r = cameraChart(camBody, st);
     camBody.replaceChildren(r.svg);
-    camLegend.replaceChildren(legend(r.libs.map((l) => [l, `${libName(l)} time ÷ FlashRaw time`])));
+    camLegend.replaceChildren(legend(r.libs));
     camMore.textContent = st.all ? 'Show fewer cameras' : `Show all ${r.total} cameras`;
     camMore.hidden = r.total <= r.shown && !st.all;
-    camSub.textContent = `${st.metric === 'decode' ? 'Open + full sensor decode to 16-bit samples' : 'Decode + demosaic + white balance + colour to 8-bit sRGB'} · ${machineName(st.machine)} · how many times longer the other library takes, linear scale from 0 · ${cut(r.max)}`;
+    camSub.textContent = `${st.metric === 'decode' ? 'Open + full sensor decode to 16-bit samples' : 'Decode + demosaic + white balance + colour to 8-bit sRGB'} · ${machineName(st.machine)} · wall time in ms (lower is better), median of 7 runs, all cores · ${cut(r.max)}`;
     camTable.querySelector('.table-scroll')!.replaceChildren(cameraTable(st));
   };
   camMore.addEventListener('click', () => {
@@ -356,7 +362,7 @@ export function renderCharts(root: HTMLElement) {
   root.append(
     h('div', { class: 'chart-card' },
       h('div', { class: 'chart-head' },
-        h('div', {}, h('h3', { text: 'Popular cameras: speedup per file' }), camSub),
+        h('div', {}, h('h3', { text: 'Popular cameras: time per file' }), camSub),
         h('div', { class: 'chart-controls' },
           segmented('Metric', [['decode', 'RAW decode'], ['rgb', 'RAW → RGB']], st.metric, (v) => { st.metric = v as CamState['metric']; drawCam(); }),
           segmented('Machine', machineOpts, st.machine, (v) => { st.machine = v; drawCam(); }),
@@ -378,10 +384,10 @@ export function renderCharts(root: HTMLElement) {
   const drawF = () => {
     const r = formatChart(fBody, fst);
     fBody.replaceChildren(r.svg);
-    fLegend.replaceChildren(legend(r.series.map(([, l]) => [l, `vs ${libName(l)}`])));
+    fLegend.replaceChildren(legend(r.libs));
     fMore.textContent = fst.all ? 'Show fewer' : `Show all ${r.total} format/codec pairs`;
     fMore.hidden = r.total <= r.shown && !fst.all;
-    fSub.textContent = `Geometric mean of (other library time ÷ FlashRaw time), all cores · ${machineName(fst.machine)} · linear scale from 0 · ${cut(r.max)}`;
+    fSub.textContent = `Geometric mean of the wall times of each format's files, in ms (lower is better), all cores · ${machineName(fst.machine)} · ${cut(r.max)}`;
     fTable.querySelector('.table-scroll')!.replaceChildren(formatTable(fst));
   };
   fMore.addEventListener('click', () => {
@@ -391,7 +397,7 @@ export function renderCharts(root: HTMLElement) {
   root.append(
     h('div', { class: 'chart-card' },
       h('div', { class: 'chart-head' },
-        h('div', {}, h('h3', { text: 'Speedup per format and codec' }), fSub),
+        h('div', {}, h('h3', { text: 'Time per format and codec' }), fSub),
         h('div', { class: 'chart-controls' },
           segmented('Metric', [['decode', 'RAW decode'], ['rgb', 'RAW → RGB']], fst.metric, (v) => { fst.metric = v as CamState['metric']; drawF(); }),
           segmented('Machine', machineOpts, fst.machine, (v) => { fst.machine = v; drawF(); }),
@@ -403,9 +409,6 @@ export function renderCharts(root: HTMLElement) {
       fTable,
     ),
   );
-  if (D.sample) {
-    root.append(h('p', { class: 'fineprint', text: `Data: ${D.source ?? 'docs/benchmarks.md'}.` }));
-  }
 
   drawCam();
   drawF();
