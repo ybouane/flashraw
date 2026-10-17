@@ -386,6 +386,9 @@ async function initThreaded(options, count, binary, source) {
   const glue = await platform.glue(binary);
   const module = await compileSource(source ?? platform.load(binary, options));
   const exports = await glue.default({ module_or_path: module });
+  // Grow the heap for the workers' start-up allocations before they start: memory growing
+  // while other threads run can make their memory.copy / memory.fill trap (see threads.js).
+  if (typeof exports.threadReserve === 'function') glue.threadReserve(count);
   const pool = await ThreadPool.start({
     spawn: (name) => platform.spawnThread(name, options),
     module,
@@ -1302,6 +1305,7 @@ export function _internals() {
     build: { ...build },
     liveCount: live.size,
     threads: threads?.count ?? 0,
+    threadStartGrowth: threads?.memoryGrowth ?? null,
     jpegxl: { loads: jxlLoads, binary: jxl?.build.binary ?? null, threads: jxl?.pool?.count ?? 0 },
     engines: [...engines.keys()],
   };

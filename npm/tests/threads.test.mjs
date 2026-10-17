@@ -80,6 +80,13 @@ describe('threaded build in this process', { skip: process.env.FLASHRAW_WASM_THR
     assert.equal(Object.prototype.toString.call(_internals().wasm.memory.buffer), n > 0 ? '[object SharedArrayBuffer]' : '[object ArrayBuffer]');
   });
 
+  test('the pool starts without growing the shared memory', async () => {
+    // Memory growing while other threads run can make their memory.copy trap (see threads.js).
+    await init();
+    const { threads, threadStartGrowth } = _internals();
+    if (threads > 0) assert.equal(threadStartGrowth, 0);
+  });
+
   test('concurrent decodes on one handle and on several handles', async () => {
     await init();
     const file = fixture('canon-5d3-mlv.dng');

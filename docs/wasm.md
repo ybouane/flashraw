@@ -178,8 +178,17 @@ package (no extra dependency; `npm/src/threads.js`, `crates/flashraw-wasm/src/li
   `scripts/serve.mjs --isolated` serves the headers for local testing.
 - **Thread count**: `navigator.hardwareConcurrency` / `os.availableParallelism()` (capped at 64)
   rayon threads plus the coordinator; `initThreads(n)` / `init({ threads: n })` /
-  `FLASHRAW_WASM_THREADS=n`. Each thread has its own stack and TLS in the shared memory.
-  The pool is created once per page/process.
+  `FLASHRAW_WASM_THREADS=n`. Each thread has its own stack (2 MiB) and TLS in the shared
+  memory. The pool is created once per page/process.
+- **Start-up never grows the memory**: before spawning the workers the main thread grows the
+  heap by what they will allocate while starting (`threadReserve(n)`: their stacks, TLS and
+  pool state) and frees it back to the allocator. When one thread grows a shared memory, V8
+  updates the bounds that *other* threads check `memory.copy` / `memory.fill` against only when
+  they next handle an interrupt, so a thread copying memory that another thread just allocated
+  from a freshly grown range can trap ("memory access out of bounds") although the access is in
+  bounds. With 2 MiB stacks allocated as each worker instantiates, the memory used to grow about
+  once per worker while the first rayon threads were already running, which made a few percent
+  of cold page loads fall back to the single-threaded build.
 - **Memory**: the shared memory has a 4 GiB maximum and never shrinks, like the single-threaded
   build. Zero-copy views (`zeroCopy: true`) point into a `SharedArrayBuffer`; the default copied
   output is a regular `ArrayBuffer`.

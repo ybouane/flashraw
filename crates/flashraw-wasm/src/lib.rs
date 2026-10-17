@@ -279,8 +279,9 @@ mod bindings {
     // ---- Threads (feature `threads`) -----------------------------------------------------------
     //
     // Protocol (npm/src/threads.js):
-    //  1. main thread: instantiate with a shared `WebAssembly.Memory`, start the coordinator
-    //     worker on the same module + memory;
+    //  1. main thread: instantiate with a shared `WebAssembly.Memory`, reserve the workers'
+    //     start-up memory ([`thread_reserve`]), start the coordinator worker on the same
+    //     module + memory;
     //  2. coordinator: `threadPoolBuild(n, onSpawn)`; rayon hands out one `ThreadBuilder` per
     //     thread (forwarded to the main thread as a pointer), then blocks until all threads run;
     //  3. main thread: one worker per pointer, each calling `threadRun(ptr)`, which never
@@ -300,6 +301,46 @@ mod bindings {
 
         fn internal(message: String) -> JsValue {
             to_js(ApiError { corrupt: None, kind: "Internal", message })
+        }
+
+        /// Shadow stack of each worker: wasm-bindgen's default (the JS layer passes no
+        /// `thread_stack_size`), allocated from the shared heap when the worker instantiates.
+        const THREAD_STACK: usize = 2 << 20;
+        /// Per-thread start-up allocations besides the stack (TLS block, rayon and crossbeam
+        /// state), rounded up generously.
+        const THREAD_EXTRA: usize = 128 << 10;
+        /// Pool-wide start-up allocations (rayon registry, coordinator).
+        const POOL_EXTRA: usize = 1 << 20;
+
+        /// Main thread, before any worker starts: grow the heap by what `threads` rayon threads
+        /// plus the coordinator allocate while starting (their stacks, TLS and pool state), then
+        /// hand it back to the allocator, so the start-up runs without `memory.grow`.
+        ///
+        /// Why: when one thread grows the shared memory, V8 updates the bounds other threads
+        /// check bulk-memory instructions (`memory.copy`, `memory.fill`) against only when they
+        /// next handle an interrupt. A thread that receives memory from the newly grown range
+        /// (e.g. a crossbeam-epoch bag allocated by another thread) and copies it before then
+        /// traps with "memory access out of bounds", although the access is in bounds. Each worker allocates a 2 MiB stack as it starts, so without this the memory
+        /// grows ~17 times while the first rayon threads already run. Returns false when the
+        /// allocation fails (start-up then grows the memory as before).
+        #[wasm_bindgen(js_name = threadReserve)]
+        pub fn thread_reserve(threads: usize) -> bool {
+            let bytes =
+                threads.saturating_add(1).saturating_mul(THREAD_STACK + THREAD_EXTRA).saturating_add(POOL_EXTRA);
+            let Ok(layout) = std::alloc::Layout::from_size_align(bytes, 16) else {
+                return false;
+            };
+            // SAFETY: non-zero size; the block is freed right away and never accessed. The
+            // allocator keeps the memory (wasm memory never shrinks) for the next allocations.
+            // `black_box`: the compiler may otherwise elide an allocation that is never used.
+            unsafe {
+                let p = std::hint::black_box(std::alloc::alloc(layout));
+                if p.is_null() {
+                    return false;
+                }
+                std::alloc::dealloc(p, layout);
+            }
+            true
         }
 
         /// Configure rayon's global pool with `n` threads. For each thread, `on_spawn(ptr)` is

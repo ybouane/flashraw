@@ -15,6 +15,14 @@
 //
 // A Rust panic aborts; inside a rayon worker that would leave the coordinator waiting forever,
 // so a trap in any thread poisons the pool: pending and later calls fail with InternalError.
+//
+// Start-up must not grow the memory. When one thread grows a shared memory, V8 updates the
+// bounds that other threads check `memory.copy` / `memory.fill` against only when they next
+// handle an interrupt; until then a copy from the newly grown range traps ("memory access out of
+// bounds") although it is in bounds. Every worker allocates its 2 MiB stack as it instantiates,
+// while the first rayon threads already run (and copy crossbeam-epoch bags other threads
+// allocated), so the caller first reserves that memory (`threadReserve`, see core.js), and
+// `memoryGrowth` reports how much the memory still grew while the pool started (0 expected).
 
 import { InternalError, errorFromKind } from './errors.js';
 
@@ -40,6 +48,9 @@ export class ThreadPool {
   /** Number of rayon threads (the coordinator is not counted). */
   count = 0;
 
+  /** Bytes the shared memory grew by while the pool started. */
+  memoryGrowth = 0;
+
   constructor(coordinator) {
     this.#coordinator = coordinator;
     this.#add(coordinator);
@@ -55,6 +66,7 @@ export class ThreadPool {
   static async start({ spawn, module, memory, count }) {
     let pool = null;
     const workers = [];
+    const size0 = memory.buffer.byteLength;
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(
@@ -96,6 +108,7 @@ export class ThreadPool {
       pool.count = await Promise.race([pool.call('build', { count }), timeout]);
       await Promise.race([Promise.all(started), timeout]);
       for (const w of idle) w.terminate(); // rayon asked for fewer threads than prepared
+      pool.memoryGrowth = memory.buffer.byteLength - size0;
       return pool;
     } catch (e) {
       for (const w of workers) {
