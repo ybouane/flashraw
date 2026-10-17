@@ -1,5 +1,5 @@
 // Minimal static server for dist/ with the production headers (no dependencies).
-//   node scripts/serve.mjs [--port 4173] [--coep credentialless|require-corp|off] [--gzip]
+//   node scripts/serve.mjs [--port 4173] [--coep require-corp|credentialless|off] [--gzip]
 // `--coep off` serves the page without cross-origin isolation (single-threaded WASM).
 
 import { createServer } from 'node:http';
@@ -14,7 +14,7 @@ const opt = (name, def) => {
   return i >= 0 ? args[i + 1] : def;
 };
 const port = Number(opt('port', 4173));
-const coep = opt('coep', 'credentialless');
+const coep = opt('coep', 'require-corp');
 const gzip = args.includes('--gzip');
 const root = fileURLToPath(new URL('../dist/', import.meta.url));
 
