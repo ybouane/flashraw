@@ -22,6 +22,7 @@ const CASES = [
   ['require-corp', 'http://localhost:4175/'],
   ['CPU renderer', 'http://localhost:4173/?renderer=cpu'],
   ['WebGPU build', 'http://localhost:4173/?engine=gpu'],
+  ['threaded build', 'http://localhost:4173/?engine=threads'],
   ['single-threaded', 'http://localhost:4173/?engine=single'],
   ['scalar build', 'http://localhost:4173/?engine=scalar'],
 ];
@@ -70,6 +71,41 @@ for (const b of browsers) {
     if (errors.length) console.log(`       errors: ${errors.join(' || ')}`);
     await page.close();
   }
+  await browser.close();
+}
+// Default engine with WebGPU (Chromium with a software adapter): the WebGPU build with the GPU
+// backend; then switching builds re-opens the file without a reload.
+if (browsers.includes('chromium')) {
+  console.log('\n=== chromium --enable-unsafe-webgpu: default engine (threaded) and switching');
+  const browser = await chromium.launch({ executablePath: process.env.DEMO_CHROMIUM || undefined, args: ['--enable-unsafe-webgpu', '--enable-unsafe-swiftshader'] });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  const done = () => page.waitForFunction(() => /decoded/.test(document.getElementById('status').textContent) || document.getElementById('status').classList.contains('error'), null, { timeout: 180_000 });
+  const state = () => page.evaluate(() => ({ status: document.getElementById('status').textContent, error: document.getElementById('status').classList.contains('error'), ran: document.getElementById('perf-engine').dataset, marked: window.__mark === 1 }));
+  const expect = (cond, msg) => {
+    if (!cond) failures++;
+    console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${msg}`);
+  };
+  await page.goto('http://localhost:4173/');
+  await page.setInputFiles('#file-input', FILE);
+  await done();
+  let r = await state();
+  // Auto picks the fastest decode, the threaded CPU build, even when WebGPU is available (the
+  // WebGPU build cannot use threads); the WebGPU build is an explicit choice.
+  expect(!r.error && r.ran.kind === 'cpu' && r.ran.binary === 'threads', `default with WebGPU available: ${r.status} (${r.ran.binary}, ${r.ran.kind})`);
+  for (const [engine, binary, kind] of [['threads', 'threads', 'cpu'], ['single', 'simd', 'cpu'], ['gpu', 'gpu', 'gpu'], ['threads', 'threads', 'cpu']]) {
+    await page.evaluate(() => {
+      window.__mark = 1;
+      document.getElementById('status').textContent = '';
+      document.querySelector('.decode-opts').open = true;
+    });
+    await page.selectOption('#opt-engine', engine);
+    await done();
+    r = await state();
+    expect(!r.error && r.marked && r.ran.binary === binary && r.ran.kind === kind, `switch to ${engine} without reload: ${r.status} (${r.ran.binary}, ${r.ran.kind}, same document: ${r.marked})`);
+  }
+  expect(!errors.length, `no page errors${errors.length ? `: ${errors.join(' || ')}` : ''}`);
   await browser.close();
 }
 console.log(failures ? `\n${failures} failure(s)` : '\nall modes passed');

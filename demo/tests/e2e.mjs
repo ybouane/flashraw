@@ -81,11 +81,27 @@ async function run(name, launcher) {
   await page.goto(URL_, { waitUntil: 'load' });
   const loadMs = Date.now() - t;
   const wasmEarly = requests.filter((u) => u.endsWith('.wasm'));
-  wasmEarly.length ? fail(`WASM loaded before any interaction: ${wasmEarly}`) : ok(`no WASM before interaction (load ${loadMs} ms, ${requests.length} requests)`);
+  wasmEarly.length ? fail(`WASM requested before the load event: ${wasmEarly}`) : ok(`no WASM before load (load ${loadMs} ms, ${requests.length} requests)`);
+  // preloaded once idle: the decoder (one .wasm) and the sample file
+  try {
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/samples/')), null, { timeout: 15_000 });
+    const pre = requests.filter((u) => u.endsWith('.wasm') || u.includes('/samples/')).map((u) => u.split('/').pop());
+    pre.some((u) => u.endsWith('.wasm')) ? ok(`preloaded when idle: ${pre.join(', ')}`) : fail(`no decoder preload (${pre.join(', ')})`);
+  } catch {
+    fail('the sample was not prefetched when idle');
+  }
   const iso = await page.evaluate(() => self.crossOriginIsolated);
   ok(`crossOriginIsolated=${iso}`);
   await page.screenshot({ path: join(OUT, `${name}-landing.png`) });
   if (name === 'chromium') await page.screenshot({ path: join(OUT, `${name}-landing-full.png`), fullPage: true });
+
+  // "Try a sample": the shipped CC0 file (public/samples/)
+  await page.click('#sample-btn');
+  {
+    const r = await waitDecoded(page);
+    r.error || !/Canon EOS R5 Mark II/.test(r.status) ? fail(`sample: ${r.status}`) : ok(`sample: ${r.status}`);
+    await page.screenshot({ path: join(OUT, `${name}-sample.png`) });
+  }
 
   const files = quick ? FILES.slice(0, 2) : name === 'chromium' ? FILES : FILES.filter(([k]) => ['cr3', 'nef', 'dng-iphone-portrait'].includes(k));
   for (const [key, rel] of files) {

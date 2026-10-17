@@ -117,6 +117,16 @@ Runtime selection (`init()`), first match wins:
 With `init({ jpegxl: 'always' })` steps 2 and 3 load the JPEG XL flavour of the threaded / SIMD
 build instead (see JPEG XL below).
 
+`init()` honours only its first options; `reinit(options)` selects another build later (e.g.
+`{ gpu: true }` after the threaded default) by the same rules. Handles opened before keep their
+build (see Engines below); new handles use the new one. Binaries are never unloaded: wasm-bindgen
+glue holds its instance in module state, an ES module cannot be unloaded and WebAssembly memory
+never shrinks, so every build used stays in memory (threaded: with its workers) for the life of
+the page and is reused, without a new download or new workers, when selected again. The SIMD and
+scalar binaries share `flashraw_bindgen.js`, so once one of them is instantiated `reinit` refuses
+the other with `NotAvailableError` (a reload is the only way to swap them); a refused or failed
+`reinit` leaves the previous selection in place. Calls are serialised.
+
 `getCapabilities()` reports the choice: `wasm.binary`, `threads.{count, reason}`,
 `gpu.{compiled, available, reason, adapter}`, `jpegxl.{mode, loaded, binary, reason}`.
 Browsers use `fetch` + `instantiateStreaming`

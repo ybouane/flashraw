@@ -51,6 +51,11 @@ white balance, colour matrix and lens shading come from the file, that the mean 
 follow the embedded preview's, that the exposure is within -2.6..+0.6 EV of it, and that
 clipped highlights render white.
 
+`crates/flashraw/tests/canon_cr3_colour.rs` develops the corpus R6 Mark III, PowerShot V1
+and R50 V CR3s (with older-layout R6 Mark II / R10 controls) to RGBA8 and checks the
+maker-note black level and that the mean R/G and B/G are within 0.1 of the embedded
+JPEG preview's.
+
 ## 4. Robustness
 
 - `crates/flashraw/tests/malformed.rs`: synthetic DNG/BMFF files with truncated

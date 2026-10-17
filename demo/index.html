@@ -6,7 +6,7 @@
 <title>FlashRaw: the fast, safe camera RAW decoder (Rust, WebAssembly, GPU)</title>
 <meta name="description" content="FlashRaw is a fast, memory-safe camera RAW decoder in Rust with C, C++, Python and JavaScript bindings. Decode CR3, NEF, ARW, RAF, DNG and ~40 RAW formats natively, on the GPU or in your browser. Try it with your own file.">
 <link rel="canonical" href="https://flashraw.ybouane.com/">
-<meta name="theme-color" content="#4733E6">
+<meta name="theme-color" content="#FFFFFF">
 <meta name="color-scheme" content="light">
 <meta name="author" content="Yassine Bouanane">
 
@@ -15,7 +15,8 @@
 <meta property="og:url" content="https://flashraw.ybouane.com/">
 <meta property="og:title" content="FlashRaw: the fast, safe camera RAW decoder">
 <meta property="og:description" content="Decode camera RAW files (CR3, NEF, ARW, RAF, DNG, ~40 formats) in Rust, C, Python or the browser. SIMD, all cores and the GPU. Try it live in your browser.">
-<meta property="og:image" content="https://flashraw.ybouane.com/og-banner.png">
+<meta property="og:image" content="https://flashraw.ybouane.com/og-banner.png?v=2">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="FlashRaw: the fast, safe camera RAW decoder">
@@ -24,7 +25,7 @@
 <meta name="twitter:creator" content="@ybouane">
 <meta name="twitter:title" content="FlashRaw: the fast, safe camera RAW decoder">
 <meta name="twitter:description" content="Decode camera RAW files in Rust, C, Python or the browser. SIMD, all cores and the GPU. Try it live.">
-<meta name="twitter:image" content="https://flashraw.ybouane.com/og-banner.png">
+<meta name="twitter:image" content="https://flashraw.ybouane.com/og-banner.png?v=2">
 <meta name="twitter:image:alt" content="FlashRaw: the fast, safe camera RAW decoder">
 
 <link rel="icon" href="/favicon.ico" sizes="48x48">
@@ -46,7 +47,7 @@
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Image decoding library",
       "operatingSystem": "Linux, macOS, Windows, Web browser",
-      "image": "https://flashraw.ybouane.com/og-banner.png",
+      "image": "https://flashraw.ybouane.com/og-banner.png?v=2",
       "license": "https://opensource.org/licenses/MIT",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "author": { "@id": "https://flashraw.ybouane.com/#author" },
@@ -77,26 +78,26 @@
 <script type="module" src="/src/main.ts"></script>
 </head>
 <body>
-<a class="skip-link" href="#demo">Skip to the demo</a>
+<a class="skip-link" href="#dropzone">Skip to the demo</a>
 
 <header class="site-header">
   <div class="wrap header-inner">
     <a class="brand" href="/" aria-label="FlashRaw home">
-      <img src="/logo.svg" alt="FlashRaw" width="276" height="64" class="brand-logo">
+      <img src="/logo.svg" alt="FlashRaw" width="275" height="64" class="brand-logo">
     </a>
     <nav class="main-nav" aria-label="Main">
-      <a href="#demo">Demo</a>
-      <a href="#why">Why FlashRaw</a>
+      <a href="#why">Why</a>
       <a href="#benchmarks">Benchmarks</a>
+      <a href="#features">Comparison</a>
       <a href="#install">Install</a>
       <a href="#docs">Docs</a>
     </nav>
     <div class="header-actions">
       <a class="icon-link" href="https://x.com/ybouane" rel="noopener" target="_blank" aria-label="Follow @ybouane on X">
-        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M18.9 2H22l-7.6 8.7L23.3 22h-7l-5.5-7.2L4.5 22H1.4l8.1-9.3L1 2h7.2l5 6.6L18.9 2Zm-1.1 18h1.7L7.3 3.9H5.5L17.8 20Z"/></svg>
-        <span class="icon-link-text">Follow @ybouane</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.9 2H22l-7.6 8.7L23.3 22h-7l-5.5-7.2L4.5 22H1.4l8.1-9.3L1 2h7.2l5 6.6L18.9 2Zm-1.1 18h1.7L7.3 3.9H5.5L17.8 20Z"/></svg>
+        <span class="icon-link-text">@ybouane</span>
       </a>
-      <a class="btn btn-dark btn-sm" href="https://github.com/ybouane/flashraw" rel="noopener" target="_blank">
+      <a class="btn btn-outline btn-sm" href="https://github.com/ybouane/flashraw" rel="noopener" target="_blank">
         <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
         GitHub
       </a>
@@ -105,60 +106,53 @@
 </header>
 
 <main id="top">
-  <section class="hero">
-    <div class="wrap hero-inner">
-      <p class="eyebrow">Open source · Rust · MIT / Apache-2.0</p>
-      <h1>Camera RAW<span class="comma">,</span><br> decoded <span class="hl">in a flash</span><span class="comma">.</span></h1>
-      <p class="lead">FlashRaw is a fast, memory-safe camera RAW decoder. It reads ~40 RAW formats from every make
-        and model on raw.pixls.us and hands you the sensor data, the metadata, the embedded previews or a
-        display-ready image: natively from Rust, C, C++ and Python, on the GPU, or right here in your browser.</p>
-      <div class="hero-cta">
-        <a class="btn btn-primary btn-lg" href="#demo">Try it with your RAW file</a>
-        <button class="install-chip" type="button" data-copy="npm install flashraw" aria-label="Copy: npm install flashraw">
-          <code><span class="prompt" aria-hidden="true">$</span> npm install flashraw</code>
-          <span class="copy-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="2" d="M8 8h11v13H8zM5 16H4V3h11v1"/></svg></span>
-        </button>
-      </div>
-      <ul class="hero-facts" aria-label="Key facts">
-        <li><strong>~40</strong><span>RAW formats</span></li>
-        <li><strong>1,980 / 2,016</strong><span>raw.pixls.us files decode</span></li>
-        <li><strong>Memory-safe</strong><span>Rust, fuzzed on every PR</span></li>
-        <li><strong>~620 KiB</strong><span>WASM, brotli</span></li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="demo" class="demo" aria-labelledby="demo-title">
+  <section id="demo" class="hero" aria-labelledby="hero-title">
     <div class="wrap">
-      <div class="section-head">
-        <h2 id="demo-title">Try it: open a RAW file</h2>
-        <p>Decoded by FlashRaw compiled to WebAssembly, entirely in your browser. Your file is never uploaded.</p>
+      <div class="hero-head">
+        <p class="kicker">Open source · Rust · WebAssembly</p>
+        <h1 id="hero-title">Camera <em>RAW</em>,<br> decoded in a flash.</h1>
+        <p class="lead">FlashRaw is a fast, memory-safe decoder for ~40 camera RAW formats, from Rust, C, C++, Python,
+          the GPU, or this page. Open a file: it is decoded here, in WebAssembly, and never leaves your device.</p>
+        <button class="install-chip" type="button" data-copy="npm install flashraw" title="Copy to the clipboard">
+          <code><span class="prompt" aria-hidden="true">$</span> npm install flashraw</code>
+          <span class="copy-label" aria-hidden="true">Copy</span>
+        </button>
       </div>
 
       <div id="dropzone" class="dropzone" data-state="idle">
         <input id="file-input" class="visually-hidden" type="file"
           accept=".dng,.cr2,.cr3,.crw,.nef,.nrw,.arw,.sr2,.srf,.arq,.raf,.rw2,.rwl,.orf,.ori,.pef,.srw,.mrw,.iiq,.mos,.3fr,.fff,.kdc,.dcr,.dcs,.erf,.mef,.x3f,.ari,.raw,.rwz,.gpr,.mdc,.cap,.bay,.k25,.nksc">
-        <div class="dz-icon" aria-hidden="true">
-          <svg viewBox="0 0 48 48" width="48" height="48"><rect x="5" y="11" width="38" height="28" rx="5" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="24" cy="25" r="8" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M15 11l3-5h12l3 5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M26 19l-5 7h4l-2 6 6-8h-4z" fill="currentColor"/></svg>
+        <div class="dz-body">
+          <p class="dz-title"><span class="dz-desktop">Drop a RAW file anywhere on this page</span><span class="dz-touch">Open a RAW file from your device</span></p>
+          <div class="dz-actions">
+            <label for="file-input" class="btn btn-primary btn-lg">Choose a RAW file</label>
+            <button type="button" class="btn btn-outline btn-lg" id="sample-btn" data-src="/samples/canon-eos-r5-mark-ii.cr3" data-name="canon-eos-r5-mark-ii.cr3">Try a sample</button>
+          </div>
+          <p class="dz-note">Nothing is uploaded. The decoder (≈620 KiB) loads in the background once the page is idle. The sample is a 7.6 MB
+            C-RAW CR3 from a Canon EOS R5 Mark II, from <a href="https://raw.pixls.us/">raw.pixls.us</a> (CC0).</p>
         </div>
-        <p class="dz-title"><span class="dz-desktop">Drop a RAW file here, or</span> <label for="file-input" class="btn btn-primary">Choose a RAW file</label></p>
-        <p class="dz-formats">CR3 · CR2 · NEF · ARW · RAF · DNG · ORF · RW2 · PEF · SRW · IIQ · 3FR · X3F · and more</p>
-        <p class="dz-note">Nothing leaves your device. The decoder (≈620 KiB) loads when you pick a file.</p>
+        <svg class="dz-art" viewBox="0 0 160 160" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M.5 .5h99v39H.5zM120.5 .5h39v99h-39zM60.5 120.5h99v39h-99zM.5 60.5h39v99H.5z"/>
+          </g>
+          <path fill="#D9473B" d="M60 60h20v20H60z"/><path fill="#2E9A5C" d="M80 60h20v20H80zM60 80h20v20H60z"/><path fill="#2F63D6" d="M80 80h20v20H80z"/>
+        </svg>
+        <p class="dz-formats"><span>CR3</span> <span>CR2</span> <span>NEF</span> <span>ARW</span> <span>RAF</span> <span>DNG</span> <span>ORF</span> <span>RW2</span> <span>PEF</span> <span>SRW</span> <span>IIQ</span> <span>3FR</span> <span>X3F</span> <span>and ~25 more</span></p>
       </div>
       <p id="status" class="status" role="status" aria-live="polite"></p>
 
       <div id="workspace" class="workspace" hidden>
         <div class="ws-main">
-          <div class="viewer-card card">
+          <div class="viewer-card">
             <div class="viewer-toolbar" role="toolbar" aria-label="Viewer">
               <div class="seg" role="radiogroup" aria-label="Image source">
                 <button type="button" role="radio" aria-checked="true" data-source="raw" id="src-raw">RAW decode</button>
                 <button type="button" role="radio" aria-checked="false" data-source="preview" id="src-preview" disabled>Embedded preview</button>
               </div>
               <div class="zoom-tools">
-                <button type="button" class="tool" id="zoom-out" aria-label="Zoom out" title="Zoom out (−)"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+                <button type="button" class="tool" id="zoom-out" aria-label="Zoom out" title="Zoom out (−)"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="1.5"/></svg></button>
                 <output id="zoom-level" class="zoom-level" aria-live="off">100%</output>
-                <button type="button" class="tool" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h14M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+                <button type="button" class="tool" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h14M12 5v14" stroke="currentColor" stroke-width="1.5"/></svg></button>
                 <button type="button" class="tool tool-text" id="zoom-fit" title="Fit to view (0)">Fit</button>
                 <button type="button" class="tool tool-text" id="zoom-1" title="Actual pixels (1)">1:1</button>
                 <button type="button" class="tool tool-text" id="compare" title="Hold to see the image without adjustments (B)" aria-pressed="false">Before</button>
@@ -179,7 +173,7 @@
         </div>
 
         <aside class="ws-side" aria-label="Adjustments and export">
-          <div class="card side-card">
+          <div class="side-card">
             <div class="side-head">
               <h3>Histogram</h3>
               <ul class="hist-legend" aria-label="Histogram channels">
@@ -190,7 +184,7 @@
             <p id="clip-info" class="muted small"></p>
           </div>
 
-          <div class="card side-card">
+          <div class="side-card">
             <div class="side-head">
               <h3>Adjust</h3>
               <div class="side-actions">
@@ -209,7 +203,7 @@
             <p class="muted small" id="render-info">Adjustments run on the linear-light decode in a WebGL2 shader.</p>
           </div>
 
-          <div class="card side-card">
+          <div class="side-card">
             <h3>Download</h3>
             <div class="btn-col">
               <button type="button" class="btn btn-primary" id="dl-png" disabled>PNG, full resolution</button>
@@ -221,7 +215,7 @@
             <p class="muted small" id="dl-info"></p>
           </div>
 
-          <details class="card side-card decode-opts">
+          <details class="side-card decode-opts">
             <summary><h3>Decoder options</h3></summary>
             <div class="field-row">
               <label for="opt-demosaic">Demosaic</label>
@@ -242,19 +236,21 @@
             <div class="field-row">
               <label for="opt-engine">WASM build</label>
               <select id="opt-engine">
-                <option value="auto">Auto (threads when isolated)</option>
+                <option value="auto">Auto (fastest CPU build)</option>
                 <option value="gpu">WebGPU build</option>
+                <option value="threads">Threaded (when isolated)</option>
                 <option value="single">Single-threaded SIMD</option>
-                <option value="scalar">Scalar fallback</option>
+                <option value="scalar">Scalar fallback (may reload)</option>
               </select>
             </div>
-            <p class="muted small">Changing the WASM build reloads the page.</p>
+            <p class="muted small">Switching the WASM build re-opens the file with it, without a reload.</p>
             <button type="button" class="btn btn-outline" id="redecode" disabled>Decode again</button>
           </details>
         </aside>
 
-        <section class="ws-wide card perf" aria-labelledby="perf-title">
-          <h3 id="perf-title">Performance</h3>
+        <section class="ws-wide perf" aria-labelledby="perf-title">
+          <h3 id="perf-title" class="ws-title">Performance</h3>
+          <p id="perf-engine" class="engine-line"></p>
           <div id="perf-tiles" class="tiles"></div>
           <div id="perf-stages" class="stages"></div>
           <dl id="perf-backend" class="kv kv-cols"></dl>
@@ -262,29 +258,36 @@
 
         <section class="ws-wide meta" aria-labelledby="meta-title">
           <div class="meta-head">
-            <h3 id="meta-title">Metadata</h3>
+            <h3 id="meta-title" class="ws-title">Metadata</h3>
             <button type="button" class="link-btn" id="copy-json">Copy as JSON</button>
           </div>
           <div id="meta-grid" class="meta-grid"></div>
           <div id="previews-card"></div>
-          <details class="card json-card">
+          <details class="json-card">
             <summary>Raw metadata JSON</summary>
             <pre id="meta-json" class="code"></pre>
           </details>
         </section>
       </div>
+
+      <ul class="facts" aria-label="Key facts">
+        <li><strong>~40</strong><span>RAW formats, every make and model on raw.pixls.us</span></li>
+        <li><strong>1,980<small> / 2,016</small></strong><span>raw.pixls.us files decode, with pinned output hashes</span></li>
+        <li><strong>8–15×</strong><span>faster than LibRaw from RAW to display RGB</span></li>
+        <li><strong>620<small> KiB</small></strong><span>of WebAssembly (brotli) for all of it, in the browser</span></li>
+      </ul>
     </div>
   </section>
 
   <section id="why" class="section" aria-labelledby="why-title">
     <div class="wrap">
-      <div class="section-head">
+      <header class="section-head">
+        <span class="section-num" aria-hidden="true">01</span>
         <h2 id="why-title">Why FlashRaw</h2>
         <p>One decoder for every camera, built to be fast on every core and safe on every file.</p>
-      </div>
+      </header>
       <div class="pillars">
-        <article class="pillar card">
-          <div class="pillar-icon" aria-hidden="true">⚡</div>
+        <article class="pillar">
           <h3>Speed</h3>
           <ul>
             <li><strong>Every</strong> decoder is multithreaded, even single-stream codecs (lossless JPEG, Nikon, Pentax, Hasselblad, Panasonic v8, Sony ARW1), by speculative parallel decoding</li>
@@ -293,8 +296,7 @@
             <li>Region and tile decodes, zero-copy embedded previews</li>
           </ul>
         </article>
-        <article class="pillar card">
-          <div class="pillar-icon" aria-hidden="true">🛡️</div>
+        <article class="pillar">
           <h3>Security</h3>
           <ul>
             <li><strong>Memory-safe Rust</strong>: parsers of untrusted files cannot overflow buffers or use freed memory</li>
@@ -303,8 +305,7 @@
             <li><strong>10 fuzz targets</strong> on every PR and nightly; an explicit truncation policy, never silent garbage</li>
           </ul>
         </article>
-        <article class="pillar card">
-          <div class="pillar-icon" aria-hidden="true">📷</div>
+        <article class="pillar">
           <h3>Support</h3>
           <ul>
             <li><strong>~40 RAW formats</strong>, every make and model on raw.pixls.us: 1,980 of 2,016 files decode, with pinned output hashes</li>
@@ -314,29 +315,30 @@
         </article>
       </div>
       <div class="minis">
-        <article class="mini card">
-          <h3><span aria-hidden="true">🧩</span> Bindings</h3>
+        <article class="mini">
+          <h3>Bindings</h3>
           <p>Rust, C, C++, Python (NumPy, zero-copy, GIL released) and JavaScript/TypeScript, plus a compatibility C API for porting existing RAW code.</p>
         </article>
-        <article class="mini card">
-          <h3><span aria-hidden="true">🎮</span> GPU</h3>
+        <article class="mini">
+          <h3>GPU</h3>
           <p>Unpack, demosaic, white balance and colour as WGSL compute shaders: Metal, Vulkan, DX12 and WebGPU. Results can stay on the GPU.</p>
         </article>
-        <article class="mini card">
-          <h3><span aria-hidden="true">🌐</span> Browser</h3>
+        <article class="mini">
+          <h3>Browser</h3>
           <p>One npm package for browsers, Web Workers, Node.js and Deno. WASM SIMD, multithreaded when cross-origin isolated, optional WebGPU.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <section id="benchmarks" class="section section-alt" aria-labelledby="bench-title">
+  <section id="benchmarks" class="section" aria-labelledby="bench-title">
     <div class="wrap">
-      <div class="section-head">
+      <header class="section-head">
+        <span class="section-num" aria-hidden="true">02</span>
         <h2 id="bench-title">Benchmarks</h2>
         <p>Same files, same machine, each library built for speed (LibRaw with OpenMP, RawSpeed with OpenMP and
           <code>-march=native</code>), all cores. Medians of per-file speedups over 62 popular cameras.</p>
-      </div>
+      </header>
       <div id="charts" class="charts" data-state="pending">
         <p class="muted">Loading benchmark charts…</p>
       </div>
@@ -347,13 +349,16 @@
 
   <section id="features" class="section" aria-labelledby="features-title">
     <div class="wrap">
-      <div class="section-head">
+      <header class="section-head">
+        <span class="section-num" aria-hidden="true">03</span>
         <h2 id="features-title">Feature comparison</h2>
         <p>Checked against LibRaw 0.22.0 and RawSpeed (develop, c835b05) sources and builds.</p>
-      </div>
-      <div class="table-scroll card" tabindex="0" role="region" aria-label="Feature comparison table">
+      </header>
+      <p class="table-hint" aria-hidden="true">Scroll sideways for LibRaw and RawSpeed →</p>
+      <div class="table-wrap">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Feature comparison table (scrolls sideways on small screens)">
         <table class="compare">
-          <thead><tr><th scope="col"><span class="visually-hidden">Feature</span></th><th scope="col" class="us">⚡ FlashRaw</th><th scope="col">LibRaw 0.22</th><th scope="col">RawSpeed</th></tr></thead>
+          <thead><tr><th scope="col"><span class="visually-hidden">Feature</span></th><th scope="col" class="us">FlashRaw</th><th scope="col">LibRaw 0.22</th><th scope="col">RawSpeed</th></tr></thead>
           <tbody>
             <tr><th scope="row">Language</th><td class="us">Rust</td><td>C++</td><td>C++</td></tr>
             <tr><th scope="row">Memory-safe parsing of untrusted files</th><td class="us"><i class="y">Yes</i></td><td><i class="n">No</i></td><td><i class="n">No</i></td></tr>
@@ -381,17 +386,19 @@
           </tbody>
         </table>
       </div>
+      </div>
       <p class="fineprint">“Benchmark set” counts the files each library decoded in our runs, with LibRaw and RawSpeed built without optional SDKs (libjpeg, Adobe DNG SDK, GPR SDK). Nikon High Efficiency (TicoRAW) is a proprietary codec that no open decoder supports.</p>
     </div>
   </section>
 
-  <section id="install" class="section section-alt" aria-labelledby="install-title">
+  <section id="install" class="section" aria-labelledby="install-title">
     <div class="wrap">
-      <div class="section-head">
+      <header class="section-head">
+        <span class="section-num" aria-hidden="true">04</span>
         <h2 id="install-title">Install</h2>
         <p>The same decoder, from every language.</p>
-      </div>
-      <div class="tabs card" data-tabs>
+      </header>
+      <div class="tabs" data-tabs>
         <div class="tab-list" role="tablist" aria-label="Language">
           <button role="tab" id="tab-npm" aria-controls="panel-npm" aria-selected="true" type="button">JavaScript</button>
           <button role="tab" id="tab-rust" aria-controls="panel-rust" aria-selected="false" tabindex="-1" type="button">Rust</button>
@@ -455,29 +462,43 @@ flashraw_file_free(f);</code></pre><button class="copy-btn" type="button" data-c
 
   <section id="production" class="section" aria-labelledby="prod-title">
     <div class="wrap">
-      <div class="section-head">
+      <header class="section-head">
+        <span class="section-num" aria-hidden="true">05</span>
         <h2 id="prod-title">Used in production by</h2>
-      </div>
-      <div class="prod-grid">
-        <a class="prod card" href="https://lightflow.dev" rel="noopener" target="_blank">
-          <span class="prod-name">LightFlow</span>
-          <span class="prod-desc">Professional photo correction and colour grading, running locally in your browser with WebGPU.</span>
-          <span class="prod-url">lightflow.dev →</span>
-        </a>
-        <a class="prod card" href="https://imageflow.dev" rel="noopener" target="_blank">
-          <span class="prod-name">ImageFlow</span>
-          <span class="prod-desc">A Photoshop-class image editor in your browser.</span>
-          <span class="prod-url">imageflow.dev →</span>
-        </a>
-      </div>
+        <p>Browser apps that open camera RAW files with FlashRaw.</p>
+      </header>
+      <ul class="prod-list">
+        <li>
+          <a class="prod" href="https://lightflow.dev" rel="noopener" target="_blank">
+            <span class="prod-logo"><img src="/showcase/lightflow.svg" alt="" width="48" height="48" loading="lazy" decoding="async"></span>
+            <span class="prod-text">
+              <span class="prod-name">LightFlow</span>
+              <span class="prod-desc">Professional photo correction and colour grading, running locally in your browser with WebGPU.</span>
+              <span class="prod-url">lightflow.dev <span aria-hidden="true">→</span></span>
+            </span>
+          </a>
+        </li>
+        <li>
+          <a class="prod" href="https://imageflow.dev" rel="noopener" target="_blank">
+            <span class="prod-logo"><img src="/showcase/imageflow.png" alt="" width="48" height="48" loading="lazy" decoding="async"></span>
+            <span class="prod-text">
+              <span class="prod-name">ImageFlow</span>
+              <span class="prod-desc">A Photoshop-class image editor in your browser.</span>
+              <span class="prod-url">imageflow.dev <span aria-hidden="true">→</span></span>
+            </span>
+          </a>
+        </li>
+      </ul>
     </div>
   </section>
 
-  <section id="docs" class="section section-alt" aria-labelledby="docs-title">
+  <section id="docs" class="section" aria-labelledby="docs-title">
     <div class="wrap">
-      <div class="section-head">
+      <header class="section-head">
+        <span class="section-num" aria-hidden="true">06</span>
         <h2 id="docs-title">Documentation</h2>
-      </div>
+        <p>Guides and references in the repository.</p>
+      </header>
       <ul class="doc-links">
         <li><a href="https://github.com/ybouane/flashraw#readme"><strong>README</strong><span>Overview and quick start</span></a></li>
         <li><a href="https://github.com/ybouane/flashraw/blob/main/npm/README.md"><strong>npm package</strong><span>Browser, Node, workers, GPU</span></a></li>
@@ -496,8 +517,8 @@ flashraw_file_free(f);</code></pre><button class="copy-btn" type="button" data-c
 <footer class="site-footer">
   <div class="wrap footer-inner">
     <div class="footer-brand">
-      <img src="/logo-mark.svg" alt="" width="32" height="32" loading="lazy">
-      <p><strong>FlashRaw</strong> · MIT OR Apache-2.0</p>
+      <img src="/logo-dark.svg" alt="FlashRaw" width="138" height="32">
+      <p>The fast, safe camera RAW decoder.<br>MIT OR Apache-2.0</p>
     </div>
     <nav class="footer-nav" aria-label="Footer">
       <a href="https://github.com/ybouane/flashraw">GitHub</a>

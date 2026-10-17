@@ -200,13 +200,16 @@ impl ColorData {
                 let o = 0x55;
                 (Some(o), None, Some(o + 0x2d1), Some(o + 0x2d5), Some(o + 0x102))
             }
-            3973 | 3778 => {
+            // Sub-versions from 64 on use the newer word offsets whatever the count:
+            // R6 Mark III, R50 V and PowerShot V1 keep the 3778-word block but move the
+            // levels 0x14 words on (the old offsets then read a tone-curve table).
+            3973 | 3778 if cd.sub_version < 64 => {
                 cd.version = 11; // R3, R7, R10, R6 Mark II, R8, R50...
                 let o = 0x69;
                 (Some(o), None, Some(o + 0x213), Some(o + 0x217), Some(o + 0x102))
             }
-            4528 => {
-                cd.version = 12; // R1, R5 Mark II
+            4528 | 3778 => {
+                cd.version = 12; // R1, R5 Mark II; R6 Mark III, R50 V, PowerShot V1 (3778)
                 let o = 0x69;
                 (Some(o), None, Some(o + 0x227), Some(o + 0x22b), Some(o + 0x116))
             }
@@ -486,6 +489,27 @@ mod tests {
         // sRAW: RGBG order scaled by max/1024 = 2.
         assert_eq!(cd.sraw_mul, Some([4096, 2048, 3072, 2048]));
         assert_eq!(cd.average_black(), 2047);
+    }
+
+    /// 3778-word blocks: sub-versions below 64 keep the older offsets, 64 and later
+    /// (R6 Mark III, R50 V, PowerShot V1) the newer ones, where the older black offset
+    /// lands in a tone-curve table.
+    #[test]
+    fn colordata_3778_offsets_follow_sub_version() {
+        let mut w = vec![0u16; 3778];
+        w[0x69..0x6d].copy_from_slice(&[2320, 1024, 1024, 1454]);
+        w[0x27c..0x284].copy_from_slice(&[0, 46, 100, 137, 161, 170, 179, 187]);
+        w[0x290..0x296].copy_from_slice(&[512, 512, 512, 512, 13200, 13995]);
+        w[0] = 66;
+        let cd = ColorData::parse(&w, w.len()).unwrap();
+        assert_eq!(cd.version, 12);
+        assert_eq!(cd.as_shot, Some([2320, 1024, 1024, 1454]));
+        assert_eq!(cd.black, Some([512; 4]));
+        assert_eq!((cd.normal_white, cd.specular_white), (Some(13200), Some(13995)));
+        w[0] = 48;
+        let cd = ColorData::parse(&w, w.len()).unwrap();
+        assert_eq!(cd.version, 11);
+        assert_eq!(cd.black, Some([0, 46, 100, 137]));
     }
 
     #[test]

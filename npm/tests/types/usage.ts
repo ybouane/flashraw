@@ -9,6 +9,7 @@ import {
   detectFormat,
   getCapabilities,
   init,
+  reinit,
   FlashRawError,
   GpuUnavailableError,
   GpuFrame,
@@ -21,6 +22,7 @@ import {
   type FlashRawGPUBuffer,
   type GpuOutputFormat,
   type WasmBinary,
+  type BuildInfo,
   type Orientation,
   type OrientationInfo,
   type OrientationPolicy,
@@ -161,7 +163,9 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const n: number = await initThreads(4);
   const binary: WasmBinary = (await init({ threads: false, gpu: false })).binary;
   const tc: number = (await getCapabilities()).threads.count;
-  void [n, binary, tc];
+  const switched: BuildInfo = await reinit({ gpu: true });
+  const back: WasmBinary = (await reinit()).binary;
+  void [n, binary, tc, switched, back];
 
   // JPEG XL variants.
   const jx = await init({ jpegxl: 'auto' as JpegXlMode, jpegxlWasm: new URL('https://cdn.example/flashraw_simd_jxl.wasm') });

@@ -4,8 +4,10 @@
 import {
   FlashRaw,
   FlashRawError,
+  NotAvailableError,
   getCapabilities,
   init,
+  reinit,
   type BuildInfo,
   type Capabilities,
   type DecodedFrame,
@@ -22,14 +24,24 @@ import { bytes, h, renderMetadata } from './metadata';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
-const ENGINE = params.get('engine') ?? 'auto';
 const now = () => performance.now();
 const ms = (v: number | null | undefined) => (v == null ? '–' : v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toString());
 
-// ------------------------------------------------------------------- init (lazy)
+// ------------------------------------------------------------------- engine (lazy)
+//
+// 'auto': the fastest CPU build: threaded on cross-origin isolated pages, otherwise SIMD (the
+// WebGPU build is a choice in Decoder options; see resolveEngine). The build
+// can be switched at any time (`reinit`): the open file is re-opened with the new one.
 
-function initOptions(): InitOptions {
-  switch (ENGINE) {
+type Engine = 'auto' | 'gpu' | 'threads' | 'single' | 'scalar';
+const ENGINES: Engine[] = ['auto', 'gpu', 'threads', 'single', 'scalar'];
+const asEngine = (v: string | null): Engine => (ENGINES.includes(v as Engine) ? (v as Engine) : 'auto');
+let engine: Engine = asEngine(params.get('engine'));
+/** Why 'auto' chose the build it did (shown in the performance panel). */
+let engineNote = '';
+
+function optionsFor(e: Exclude<Engine, 'auto'>): InitOptions {
+  switch (e) {
     case 'gpu':
       return { gpu: true };
     case 'single':
@@ -41,18 +53,50 @@ function initOptions(): InitOptions {
   }
 }
 
+let selected = false;
+/** The first selection is `init()`, later ones `reinit()` (engines are reused, never reloaded). */
+function select(o: InitOptions) {
+  const first = !selected;
+  selected = true;
+  return first ? init(o) : reinit(o);
+}
+
+async function resolveEngine(e: Engine): Promise<BuildInfo> {
+  engineNote = '';
+  if (e !== 'auto') {
+    const b = await select(optionsFor(e));
+    caps = await getCapabilities();
+    return b;
+  }
+  // The browser's WebGPU build cannot also use threads, so its entropy decoding runs on one
+  // core: measured 2-11x slower than the threaded CPU build on real GPUs. Auto therefore picks
+  // the fastest CPU build (threaded when cross-origin isolated); the WebGPU build stays one
+  // choice away in Decoder options. Adjustments render on the GPU (WebGL2) either way.
+  const b = await select({});
+  caps = await getCapabilities();
+  engineNote = b.threads
+    ? 'Auto: the threaded CPU build (fastest decode here; the WebGPU build decodes on one core)'
+    : 'Auto: the SIMD CPU build (this page is not cross-origin isolated, so no threads)';
+  return b;
+}
+
 let initPromise: Promise<BuildInfo> | null = null;
 let initWall = 0;
+function startEngine(e: Engine) {
+  const t = now();
+  const prev = initPromise;
+  const p = (prev ? prev.catch(() => null) : Promise.resolve(null)).then(() => resolveEngine(e)).then((b) => {
+    initWall = now() - t;
+    return b;
+  });
+  initPromise = p;
+  p.catch(() => {
+    if (initPromise === p) initPromise = null;
+  });
+  return p;
+}
 export function warmUp() {
-  if (!initPromise) {
-    const t = now();
-    initPromise = init(initOptions()).then((b) => {
-      initWall = now() - t;
-      return b;
-    });
-    initPromise.catch(() => (initPromise = null));
-  }
-  return initPromise;
+  return initPromise ?? startEngine(engine);
 }
 
 // ------------------------------------------------------------------- state
@@ -111,6 +155,7 @@ const ui = {
   perfTiles: $('perf-tiles'),
   perfStages: $('perf-stages'),
   perfBackend: $('perf-backend'),
+  perfEngine: $('perf-engine'),
   metaGrid: $('meta-grid'),
   previewsCard: $('previews-card'),
   metaJson: $('meta-json'),
@@ -197,20 +242,9 @@ function setupViewer() {
   ui.redecode.addEventListener('click', () => {
     if (raw && currentFile) void decodeAndShow(token);
   });
-  ui.engine.value = ENGINE;
-  ui.engine.addEventListener('change', () => {
-    const p = new URLSearchParams(location.search);
-    if (ui.engine.value === 'auto') p.delete('engine');
-    else p.set('engine', ui.engine.value);
-    location.href = `${location.pathname}${p.size ? `?${p}` : ''}#demo`;
-  });
-  const gpuOpt = ui.backend.querySelector<HTMLOptionElement>('option[value="gpu"]')!;
-  if (ENGINE !== 'gpu') {
-    gpuOpt.disabled = true;
-    gpuOpt.textContent = 'GPU (select the WebGPU build)';
-  } else {
-    ui.backend.value = 'gpu';
-  }
+  ui.engine.value = engine;
+  ui.engine.addEventListener('change', () => void switchEngine(asEngine(ui.engine.value)));
+  ui.backend.addEventListener('change', () => (ui.backend.dataset.touched = '1'));
   ui.copyJson.addEventListener('click', async () => {
     if (!meta) return;
     try {
@@ -221,6 +255,46 @@ function setupViewer() {
       /* ignore */
     }
   });
+}
+
+/** The GPU backend is offered with the WebGPU build only, and is its default. */
+function syncBackend(build: BuildInfo) {
+  const gpuOpt = ui.backend.querySelector<HTMLOptionElement>('option[value="gpu"]')!;
+  const gpu = build.binary === 'gpu';
+  gpuOpt.disabled = !gpu;
+  gpuOpt.textContent = gpu ? 'GPU (WebGPU)' : 'GPU (WebGPU build only)';
+  if (gpu && ui.backend.dataset.touched !== '1') ui.backend.value = 'gpu';
+  if (!gpu && ui.backend.value === 'gpu') ui.backend.value = 'auto';
+}
+
+async function switchEngine(next: Engine) {
+  engine = next;
+  const p = new URLSearchParams(location.search);
+  if (next === 'auto') p.delete('engine');
+  else p.set('engine', next);
+  const url = `${location.pathname}${p.size ? `?${p}` : ''}${location.hash}`;
+  history.replaceState(null, '', url);
+  ui.engine.disabled = true;
+  delete ui.backend.dataset.touched;
+  setStatus('Switching the WASM build…');
+  let build: BuildInfo;
+  try {
+    build = await startEngine(next);
+  } catch (e) {
+    ui.engine.disabled = false;
+    if (e instanceof NotAvailableError) {
+      // the SIMD and scalar builds share one glue module: only a reload can swap them
+      setStatus(`${e.message}. Reloading…`);
+      location.reload();
+      return;
+    }
+    setStatus(`Could not switch the WASM build: ${friendly(e)}`, true);
+    return;
+  }
+  ui.engine.disabled = false;
+  syncBackend(build);
+  if (currentFile) await openFile(currentFile);
+  else setStatus(`Using the ${build.binary} build. Open a file to decode it.`);
 }
 
 function setCompare(on: boolean) {
@@ -290,7 +364,7 @@ function drawHistogram(hg: Histogram) {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, w, hh);
   // grid
-  ctx.strokeStyle = 'rgba(21, 20, 43, 0.07)';
+  ctx.strokeStyle = 'rgba(14, 14, 14, 0.08)';
   ctx.lineWidth = 1;
   for (let i = 1; i < 4; i++) {
     const x = Math.round((w * i) / 4) + 0.5;
@@ -316,9 +390,9 @@ function drawHistogram(hg: Histogram) {
   };
   ctx.globalCompositeOperation = 'multiply';
   const fills: [Uint32Array, string][] = [
-    [hg.r, 'rgba(240, 80, 90, 0.55)'],
-    [hg.g, 'rgba(29, 176, 122, 0.55)'],
-    [hg.b, 'rgba(47, 123, 242, 0.55)'],
+    [hg.r, 'rgba(217, 71, 59, 0.5)'],
+    [hg.g, 'rgba(46, 154, 92, 0.5)'],
+    [hg.b, 'rgba(47, 99, 214, 0.5)'],
   ];
   for (const [bins, color] of fills) {
     path(bins);
@@ -327,7 +401,7 @@ function drawHistogram(hg: Histogram) {
   }
   ctx.globalCompositeOperation = 'source-over';
   path(hg.l);
-  ctx.strokeStyle = 'rgba(61, 63, 92, 0.9)';
+  ctx.strokeStyle = 'rgba(14, 14, 14, 0.9)';
   ctx.lineWidth = 1.5 * dpr;
   ctx.stroke();
   const pct = (n: number) => (n / hg.total) * 100;
@@ -505,6 +579,7 @@ export async function openFile(file: File) {
   try {
     build = await warmUp();
     caps ??= await getCapabilities();
+    syncBackend(build);
   } catch (e) {
     overlay(null);
     setStatus(`Could not load the decoder: ${friendly(e)}`, true);
@@ -692,7 +767,7 @@ async function decodeAndShow(my: number, t0 = now()) {
     ui.compare.disabled = isDefault(adjust);
     const mp = (fi.width * fi.height) / 1e6;
     setStatus(
-      `${meta.camera.name} · decoded ${mp.toFixed(1)} MP in ${ms(ft.totalMs)} ms${note}` +
+      `${meta.camera.name} · decoded ${mp.toFixed(1)} MP in ${ms(ft.totalMs)} ms on the ${fi.backend.kind === 'gpu' ? 'GPU' : 'CPU'} (${BINARY_NAMES[fi.backend.binary] ?? fi.backend.binary})${note}` +
         (fi.incomplete ? ` · ${fi.warnings} warning(s): the file is truncated, missing samples are black` : ''),
     );
     renderPerf(build);
@@ -739,24 +814,24 @@ function renderPreviewsTable(previews: PreviewDescriptor[]) {
         h('th', { scope: 'col' }, h('span', { class: 'visually-hidden', text: 'Download' })))),
     tbody,
   );
-  ui.previewsCard.append(h('div', { class: 'card previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));
+  ui.previewsCard.append(h('div', { class: 'previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));
 }
 
 // ------------------------------------------------------------------- performance panel
 
 const STAGES: [string, string, string][] = [
-  ['containerParse', 'Container parse', '#9b9db5'],
-  ['metadata', 'Metadata', '#5a5d78'],
-  ['entropyDecode', 'Entropy decode', '#4733e6'],
-  ['unpack', 'Unpack', '#2f7bf2'],
-  ['predictor', 'Predictor', '#1baf7a'],
-  ['calibration', 'Calibration', '#e87ba4'],
-  ['postprocess', 'Develop (demosaic, WB, colour)', '#eb6834'],
-  ['gpuUpload', 'GPU upload', '#008300'],
-  ['gpuCompute', 'GPU compute', '#eda100'],
-  ['gpuDownload', 'GPU download', '#e34948'],
-  ['copy', 'Copy out of WASM', '#c9c6dd'],
-  ['texture', 'Texture upload (WebGL)', '#15142b'],
+  ['containerParse', 'Container parse', '#c9c6be'],
+  ['metadata', 'Metadata', '#a3a3a3'],
+  ['entropyDecode', 'Entropy decode', '#0e0e0e'],
+  ['unpack', 'Unpack', '#3a3a3a'],
+  ['predictor', 'Predictor', '#5c5c5c'],
+  ['calibration', 'Calibration', '#7a7a7a'],
+  ['postprocess', 'Develop (demosaic, WB, colour)', '#262626'],
+  ['gpuUpload', 'GPU upload', '#4a4a4a'],
+  ['gpuCompute', 'GPU compute', '#1a1a1a'],
+  ['gpuDownload', 'GPU download', '#6b6b6b'],
+  ['copy', 'Copy out of WASM', '#dcd9d2'],
+  ['texture', 'Texture upload (WebGL)', '#b5b2aa'],
 ];
 
 function tile(label: string, value: string, unit: string, sub: string, hero = false) {
@@ -767,9 +842,42 @@ function tile(label: string, value: string, unit: string, sub: string, hero = fa
   );
 }
 
+const BINARY_NAMES: Record<string, string> = {
+  gpu: 'WebGPU build',
+  threads: 'Threaded build',
+  simd: 'Single-threaded SIMD build',
+  fallback: 'Scalar build',
+  'simd-jxl': 'SIMD build with JPEG XL',
+  'threads-jxl': 'Threaded build with JPEG XL',
+};
+
+/** "WebGPU build · GPU backend (adapter)" or "Threaded build · CPU, 16 threads". */
+function ranOn(build: BuildInfo, be: DecodedFrame['backend'] | undefined) {
+  const bin = BINARY_NAMES[be?.binary ?? build.binary] ?? build.binary;
+  if (!be) return `${bin} · not decoded yet`;
+  return be.kind === 'gpu'
+    ? `${bin} · GPU backend${be.gpuAdapter ? ` (${be.gpuAdapter})` : ''}`
+    : `${bin} · CPU backend, ${be.threads} thread${be.threads === 1 ? '' : 's'}`;
+}
+
+function renderEngine(build: BuildInfo) {
+  const be = lastFrameInfo?.backend;
+  const why = be?.fallbackReason
+    ? `GPU requested, ran on the CPU: ${be.fallbackReason}`
+    : be && be.kind === 'cpu' && /gpu/i.test(be.requested)
+      ? `GPU requested; FlashRaw developed this file on the CPU${meta?.format === 'DNG' ? ' (its DNG opcode lists are applied by the CPU pipeline)' : ''}`
+      : engine === 'auto'
+        ? engineNote
+        : 'selected in Decoder options';
+  ui.perfEngine.replaceChildren(h('span', { class: 'engine-label', text: 'Ran on' }), h('b', { text: ranOn(build, be) }), ...(why ? [h('span', { class: 'engine-why', text: why })] : []));
+  ui.perfEngine.dataset.kind = be?.kind ?? '';
+  ui.perfEngine.dataset.binary = be?.binary ?? build.binary;
+}
+
 function renderPerf(build: BuildInfo) {
   const t = timings;
   if (!t || !meta) return;
+  renderEngine(build);
   const p = t.preview;
   const mp = (meta.width * meta.height) / 1e6; // sensor image pixels (also for half-size output)
   ui.perfTiles.replaceChildren(
@@ -807,7 +915,7 @@ function renderPerf(build: BuildInfo) {
     ['WASM binary', `${be?.binary ?? build.binary}${(be?.jpegxl ?? false) ? ' (JPEG XL variant)' : ''} · ${build.simd ? build.simdLevel || 'SIMD128' : 'scalar'}`],
     ['Threads', build.threads ? `${build.threadCount} (shared-memory WASM threads)` : `1 · ${build.threadsReason ?? threads?.reason ?? 'single-threaded build'}`],
     ['Cross-origin isolated', threads?.crossOriginIsolated ? 'yes' : 'no'],
-    ['GPU (WebGPU)', build.gpu ? (be?.gpuAdapter ?? (build.gpuAvailable ? 'available' : build.gpuReason ?? 'unavailable')) : 'not loaded (select the WebGPU build)'],
+    ['GPU (WebGPU)', build.gpu ? (be?.gpuAdapter ?? (caps?.gpu.available ? 'available' : caps?.gpu.reason ?? 'unavailable')) : 'not in this build'],
     ['Requested backend', be ? `${be.requested} → ${be.kind}${be.fallbackReason ? ` (fallback: ${be.fallbackReason})` : ''}` : '–'],
     ['WASM init', `${ms(build.initMs)} ms (download + compile ${ms(initWall)} ms)`],
     ['Output', lastFrameInfo ? `linear-rgb-f16 ${lastFrameInfo.width} × ${lastFrameInfo.height}, ${lastFrameInfo.demosaic}` : '–'],

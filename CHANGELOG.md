@@ -94,6 +94,13 @@ First complete release of FlashRaw.
   value was off by up to 54 levels, e.g. SD14, DP2/SD1 Merrill). Mean R/G of the corpus
   renders went from 0.004–0.9 (sd Quattro H 4.7) to within 0.2 of the embedded previews.
   Raw buffers are unchanged.
+- Canon EOS R6 Mark III and PowerShot V1 CR3 renders are no longer magenta: their
+  3778-word ColorData (sub-version 64 and later, shared with the R50 V) keeps the R5 Mark
+  II / R1 word offsets, so the black level is read as 512 instead of from a tone-curve table
+  (0/46/100/137 per channel). Mean R/G and B/G of the R6 Mark III renders went from
+  1.55–1.58 / 1.14–1.15 to within 0.06 of the embedded previews (0.90–0.93 / 0.82–0.87). The
+  R6 Mark III also gets its own colour matrix instead of the EOS R6 one. Raw buffers are
+  unchanged.
 - Olympus ORF no longer traps in the multithreaded WASM build ("failed to spawn thread"):
   the pipelined entropy/prediction stages use `rayon::join` on wasm32 instead of
   `std::thread::scope`.
