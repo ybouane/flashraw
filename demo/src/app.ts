@@ -429,7 +429,7 @@ function setSource(s: Source) {
   ui.srcRaw.setAttribute('aria-checked', String(s === 'raw'));
   ui.srcPreview.setAttribute('aria-checked', String(s === 'preview'));
   const size = s === 'raw' ? rawSize : previewSize();
-  viewport!.setImage(size[0], size[1], s === 'raw');
+  viewport!.setImage(size[0], size[1], true);
   updateDims();
   requestRender();
 }
@@ -493,6 +493,7 @@ export async function openFile(file: File) {
   if (my !== token) return;
 
   // reset the previous file
+  viewport?.clear();
   raw?.close();
   raw = null;
   hasRaw = false;
@@ -665,7 +666,8 @@ async function decodeAndShow(my: number, t0 = now()) {
     setSource('raw');
     renderNow();
     timings!.firstPixelsMs = now() - t0;
-    scheduleHistogram();
+    // the histogram reads pixels back (waits for the GPU): after the image and status paint
+    requestAnimationFrame(() => setTimeout(() => my === token && scheduleHistogram(), 0));
     overlay(null);
     for (const b of [ui.dlPng, ui.dlJpeg, ui.redecode]) b.disabled = false;
     ui.autoAdjust.disabled = previewMean === null;
@@ -724,16 +726,18 @@ function renderPreviewsTable(previews: PreviewDescriptor[]) {
 
 // ------------------------------------------------------------------- performance panel
 
+// Stage colours: the brand's sensor red / green / blue for the main decode stages, muted
+// companions for the rest, so each part of the trace stands out.
 const STAGES: [string, string, string][] = [
-  ['containerParse', 'Container parse', '#c9c6be'],
-  ['metadata', 'Metadata', '#a3a3a3'],
-  ['entropyDecode', 'Entropy decode', '#0e0e0e'],
-  ['unpack', 'Unpack', '#3a3a3a'],
-  ['predictor', 'Predictor', '#5c5c5c'],
-  ['calibration', 'Calibration', '#7a7a7a'],
-  ['postprocess', 'Develop (demosaic, WB, colour)', '#262626'],
-  ['copy', 'Copy out of WASM', '#dcd9d2'],
-  ['texture', 'Texture upload (WebGL)', '#b5b2aa'],
+  ['containerParse', 'Container parse', '#8a8f98'],
+  ['metadata', 'Metadata', '#b8a476'],
+  ['entropyDecode', 'Entropy decode', '#d9473b'],
+  ['unpack', 'Unpack', '#e8915f'],
+  ['predictor', 'Predictor', '#cfa83a'],
+  ['calibration', 'Calibration', '#2e9a5c'],
+  ['postprocess', 'Develop (demosaic, WB, colour)', '#2f63d6'],
+  ['copy', 'Copy out of WASM', '#8f7cc4'],
+  ['texture', 'Texture upload (WebGL)', '#4fa3b5'],
 ];
 
 function tile(label: string, value: string, unit: string, sub: string, hero = false) {

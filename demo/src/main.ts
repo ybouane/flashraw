@@ -1,7 +1,7 @@
-// Entry point: kept tiny. The decoder (WASM) and the viewer are preloaded once the page has
-// loaded and the main thread is idle (or earlier, when the visitor shows intent: hovers/drags
-// over the drop zone, focuses the file picker, picks a file); the sample file is prefetched then
-// too, except on slow or data-saving connections. The benchmark charts load when their section
+// Entry point: kept tiny. The decoder starts loading on `load`: the app chunk, the WASM (compiled
+// while it streams), its instantiation and the worker threads, so it is ready before the visitor
+// picks a file. The sample file is downloaded right after, so "Try a sample" decodes at once
+// (skipped when the visitor asked to save data). The benchmark charts load when their section
 // scrolls near.
 
 type AppModule = typeof import('./app');
@@ -38,11 +38,11 @@ input.addEventListener('change', () => {
   input.value = '';
 });
 
-// "Try a sample": a small CC0 file from raw.pixls.us, prefetched when idle (see below).
+// "Try a sample": a small CC0 file from raw.pixls.us, preloaded (see below).
 const sampleBtn = document.getElementById('sample-btn') as HTMLButtonElement | null;
 let samplePromise: Promise<Blob> | null = null;
-function fetchSample(low = false): Promise<Blob> {
-  samplePromise ??= fetch(sampleBtn!.dataset.src!, low ? { priority: 'low' } : {}).then((res) => {
+function fetchSample(): Promise<Blob> {
+  samplePromise ??= fetch(sampleBtn!.dataset.src!).then((res) => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.blob();
   });
@@ -66,27 +66,17 @@ sampleBtn?.addEventListener('click', async () => {
   }
 });
 
-// Prefetch on intent.
-for (const ev of ['pointerenter', 'focusin', 'touchstart'] as const) {
-  dropzone.addEventListener(ev, () => void loadApp(), { once: true, passive: true });
-}
-
-// Preload when idle, after `load`: the decoder chunk, the WASM (compiled while it streams) and
-// its JS glue, so the first decode starts at once; and the sample file, unless the connection is
-// slow or the visitor asked to save data. Low priority, never before first paint.
-interface NetworkInfo { saveData?: boolean; effectiveType?: string }
-function slowConnection() {
-  const c = (navigator as Navigator & { connection?: NetworkInfo }).connection;
-  return !!c && (c.saveData === true || ['slow-2g', '2g', '3g'].includes(c.effectiveType ?? ''));
-}
-const idle = (fn: () => void) =>
-  'requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 1500);
+// Preload as soon as the page has loaded (so the first paint never waits for it): the decoder
+// first (downloaded, compiled, instantiated, threads started), then the sample file, so they do
+// not compete for bandwidth. A sample download that fails is retried on click. A file picked or
+// dropped earlier starts the decoder at once.
+const saveData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
 function preload() {
-  // two idle slots: the decoder first, then the sample, so neither competes with the other
-  idle(() => {
-    void loadApp().catch(() => {});
-    if (sampleBtn && !slowConnection()) idle(() => void fetchSample(true).catch(() => {}));
-  });
+  void loadApp()
+    .catch(() => {})
+    .finally(() => {
+      if (sampleBtn && !saveData()) void fetchSample().catch(() => {});
+    });
 }
 if (document.readyState === 'complete') preload();
 else window.addEventListener('load', preload, { once: true });

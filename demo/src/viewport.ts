@@ -1,4 +1,4 @@
-// Zoom and pan for the image stage: wheel / pinch / drag / double-click / keyboard.
+// Zoom and pan for the image stage: wheel / pinch / drag / keyboard.
 // State is in device pixels: `scale` = device pixels per image pixel, (x, y) = position of the
 // image's top-left corner in the canvas.
 
@@ -31,10 +31,6 @@ export class Viewport {
     el.addEventListener('pointermove', (e) => this.move(e));
     el.addEventListener('pointerup', (e) => this.up(e));
     el.addEventListener('pointercancel', (e) => this.up(e));
-    el.addEventListener('dblclick', (e) => {
-      const p = this.local(e);
-      this.toggle(p.x, p.y);
-    });
     el.addEventListener('keydown', (e) => this.key(e));
     this.resize();
   }
@@ -43,12 +39,31 @@ export class Viewport {
     return window.devicePixelRatio || 1;
   }
 
+  /**
+   * Show an image of w × h. With `keep`, a zoomed view keeps its framing: the same part of the
+   * picture stays in the same place at the same apparent size, also when the new image has
+   * another resolution (embedded preview ↔ RAW).
+   */
   setImage(w: number, h: number, keep = false) {
-    const same = w === this.iw && h === this.ih;
+    const [ow, oh] = [this.iw, this.ih];
     this.iw = w;
     this.ih = h;
-    if (!keep || !same || this.fitted) this.fit();
-    else this.changed();
+    if (!keep || !ow || !oh || this.fitted) return this.fit();
+    const v = this.view;
+    const cx = (v.cw / 2 - v.x) / v.scale / ow;
+    const cy = (v.ch / 2 - v.y) / v.scale / oh;
+    v.scale *= ow / w;
+    v.x = v.cw / 2 - cx * w * v.scale;
+    v.y = v.ch / 2 - cy * h * v.scale;
+    this.fitted = Math.abs(v.scale - this.fitScale) < 1e-6;
+    this.clamp();
+    this.changed();
+  }
+
+  /** Forget the image: the next `setImage` fits (a new file). */
+  clear() {
+    this.iw = 0;
+    this.ih = 0;
   }
 
   get fitScale() {
@@ -86,11 +101,6 @@ export class Viewport {
 
   zoomBy(f: number, px?: number, py?: number) {
     this.zoomTo(this.view.scale * f, px, py);
-  }
-
-  toggle(px?: number, py?: number) {
-    if (this.fitted || this.view.scale < 0.999) this.zoomTo(1, px, py);
-    else this.fit();
   }
 
   pan(dx: number, dy: number) {

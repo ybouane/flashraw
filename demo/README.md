@@ -35,12 +35,12 @@ measured 2-11x slower than the threaded build on an Apple M1 Ultra. Adjustments 
 (WebGL2) with every build.
 
 Loading: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three font files, logo)
-before the `load` event. Then, when the main thread is idle (`requestIdleCallback`), the decoder
-chunk, its JS glue and one `.wasm` (compiled while it streams) are preloaded and initialised, so
-the first decode starts at once; in a second idle slot the sample file is fetched into memory at
-low priority, unless `navigator.connection` reports `saveData` or a 2g/3g connection. Hovering or
-focusing the drop zone, dragging a file over the page or picking a file starts the same preload
-earlier. The benchmark charts are a separate chunk loaded when their section scrolls near.
+before the `load` event. On `load`, the decoder chunk, its JS glue and one `.wasm` (compiled while
+it streams) are downloaded and initialised, worker threads included, so the first decode starts at
+once; the sample file is then downloaded in full, so "Try a sample" decodes on click (skipped when
+`navigator.connection` reports `saveData`). Picking or dropping a file before then starts the
+decoder at once. The histogram (a GPU read-back) runs a frame after the decoded image is shown.
+The benchmark charts are a separate chunk loaded when their section scrolls near.
 
 ## Layout
 
@@ -81,8 +81,8 @@ red, green and blue appear only where they mean colour channels (histogram, CFA,
 
 `public/samples/canon-eos-r5-mark-ii.cr3` (7.6 MB, Canon EOS R5 Mark II, APS-C crop, C-RAW) is
 `Canon/Canon EOS R5m2/APS-C_CRAW.CR3` from <https://raw.pixls.us> (CC0, public domain):
-<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is prefetched when the
-page is idle (see above), or fetched when the visitor clicks "Try a sample".
+<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is downloaded after the
+decoder on page load (see above), or fetched when the visitor clicks "Try a sample".
 
 ## Develop and build
 
@@ -209,5 +209,5 @@ Screenshots go to `test-results/` (`OUT=<dir>` to change). `DEMO_WEBKIT=<path>` 
 ## Peeking widget
 
 Added before `</body>` as its guide (<https://peeking.ybouane.com/readme.md>) describes, with
-`introDelayMs: 15000` (first peek after 15 s) and `crossorigin="anonymous"` on the script so it
+`introDelayMs: 12000` (first peek after 12 s) and `crossorigin="anonymous"` on the script so it
 loads under `require-corp`. It is a page-level singleton; nothing else to configure.

@@ -166,6 +166,16 @@ async function run(name, launcher) {
     z !== '100%' ? ok(`wheel zoom → ${z}`) : fail('wheel zoom had no effect');
     await page.locator('.viewer-card').screenshot({ path: join(OUT, `${name}-zoomed.png`) });
     await page.dblclick('#stage');
+    await page.waitForTimeout(150);
+    const zd = await page.textContent('#zoom-level');
+    zd === z ? ok('double-click leaves the zoom alone') : fail(`double-click changed the zoom: ${z} → ${zd}`);
+    await page.click('#src-preview');
+    await page.waitForTimeout(200);
+    const zp = await page.textContent('#zoom-level');
+    await page.click('#src-raw');
+    await page.waitForTimeout(200);
+    const zr = await page.textContent('#zoom-level');
+    zr === z ? ok(`zoom kept across RAW → preview → RAW (${z} → ${zp} → ${zr})`) : fail(`zoom not kept across sources: ${z} → ${zp} → ${zr}`);
     await page.click('#zoom-fit');
 
     await page.click('#src-preview');
