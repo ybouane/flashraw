@@ -83,7 +83,7 @@ for (const b of browsers) {
       await check(page, `${width}px charts + tables + ${tab}`);
     }
     // all cameras / format pairs, both metrics
-    for (const btn of await page.locator('.chart-more button').all()) await btn.click();
+    for (const btn of await page.locator('.chart-more button:visible').all()) await btn.click();
     for (const seg of await page.locator('.chart-controls [role="radio"]').all()) {
       await seg.click();
       await check(page, `${width}px chart "${await seg.textContent()}"`);
