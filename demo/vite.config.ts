@@ -78,8 +78,23 @@ function chartsData(): Plugin {
   };
 }
 
+/**
+ * Preload the roman text face (headline and body) so it is usually in place before the first
+ * paint: the swap from the fallback would otherwise shift the hero.
+ */
+function preloadFont(): Plugin {
+  return {
+    name: 'flashraw-preload-font',
+    transformIndexHtml(html, ctx) {
+      const file = Object.keys(ctx.bundle ?? {}).find((f) => /newsreader-core.*\.woff2$/.test(f));
+      if (!file) return html;
+      return [{ tag: 'link', attrs: { rel: 'preload', href: `/${file}`, as: 'font', type: 'font/woff2', crossorigin: '' }, injectTo: 'head-prepend' }];
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [brandAssets(), chartsData()],
+  plugins: [brandAssets(), chartsData(), preloadFont()],
   optimizeDeps: { exclude: ['flashraw'] },
   worker: { format: 'es' },
   server: { headers: isolationHeaders, fs: { allow: [repo] } },
