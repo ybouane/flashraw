@@ -76,7 +76,7 @@ for (const b of browsers) {
 // Default engine with WebGPU (Chromium with a software adapter): the WebGPU build with the GPU
 // backend; then switching builds re-opens the file without a reload.
 if (browsers.includes('chromium')) {
-  console.log('\n=== chromium --enable-unsafe-webgpu: default engine and switching');
+  console.log('\n=== chromium --enable-unsafe-webgpu: default engine (threaded) and switching');
   const browser = await chromium.launch({ executablePath: process.env.DEMO_CHROMIUM || undefined, args: ['--enable-unsafe-webgpu', '--enable-unsafe-swiftshader'] });
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
   const errors = [];
@@ -91,7 +91,9 @@ if (browsers.includes('chromium')) {
   await page.setInputFiles('#file-input', FILE);
   await done();
   let r = await state();
-  expect(!r.error && r.ran.kind === 'gpu' && r.ran.binary === 'gpu', `default with WebGPU: ${r.status} (${r.ran.binary}, ${r.ran.kind})`);
+  // Auto picks the fastest decode, the threaded CPU build, even when WebGPU is available (the
+  // WebGPU build cannot use threads); the WebGPU build is an explicit choice.
+  expect(!r.error && r.ran.kind === 'cpu' && r.ran.binary === 'threads', `default with WebGPU available: ${r.status} (${r.ran.binary}, ${r.ran.kind})`);
   for (const [engine, binary, kind] of [['threads', 'threads', 'cpu'], ['single', 'simd', 'cpu'], ['gpu', 'gpu', 'gpu'], ['threads', 'threads', 'cpu']]) {
     await page.evaluate(() => {
       window.__mark = 1;

@@ -29,8 +29,8 @@ const ms = (v: number | null | undefined) => (v == null ? '–' : v < 10 ? v.toF
 
 // ------------------------------------------------------------------- engine (lazy)
 //
-// 'auto': the WebGPU build with the GPU backend when the browser has WebGPU and an adapter,
-// otherwise the threaded build (cross-origin isolated pages) or single-threaded SIMD. The build
+// 'auto': the fastest CPU build: threaded on cross-origin isolated pages, otherwise SIMD (the
+// WebGPU build is a choice in Decoder options; see resolveEngine). The build
 // can be switched at any time (`reinit`): the open file is re-opened with the new one.
 
 type Engine = 'auto' | 'gpu' | 'threads' | 'single' | 'scalar';
@@ -53,21 +53,6 @@ function optionsFor(e: Exclude<Engine, 'auto'>): InitOptions {
   }
 }
 
-interface GpuLike {
-  requestAdapter(): Promise<unknown>;
-}
-
-/** null when WebGPU has an adapter here, otherwise why not. */
-async function webgpuUnavailable(): Promise<string | null> {
-  const gpu = (navigator as Navigator & { gpu?: GpuLike }).gpu;
-  if (!gpu) return 'this browser has no WebGPU';
-  try {
-    return (await gpu.requestAdapter()) ? null : 'WebGPU found no GPU adapter';
-  } catch (e) {
-    return `WebGPU adapter request failed: ${(e as Error).message}`;
-  }
-}
-
 let selected = false;
 /** The first selection is `init()`, later ones `reinit()` (engines are reused, never reloaded). */
 function select(o: InitOptions) {
@@ -83,21 +68,15 @@ async function resolveEngine(e: Engine): Promise<BuildInfo> {
     caps = await getCapabilities();
     return b;
   }
-  let why = await webgpuUnavailable();
-  if (!why) {
-    const b = await select({ gpu: true });
-    if (b.binary === 'gpu') {
-      caps = await getCapabilities(); // requests FlashRaw's WebGPU device
-      if (caps.gpu.available) {
-        engineNote = 'Auto: WebGPU is available, so the WebGPU build with the GPU backend';
-        return b;
-      }
-      why = caps.gpu.reason ?? 'no WebGPU device';
-    } else why = b.gpuReason ?? 'the WebGPU build did not load';
-  }
+  // The browser's WebGPU build cannot also use threads, so its entropy decoding runs on one
+  // core: measured 2-11x slower than the threaded CPU build on real GPUs. Auto therefore picks
+  // the fastest CPU build (threaded when cross-origin isolated); the WebGPU build stays one
+  // choice away in Decoder options. Adjustments render on the GPU (WebGL2) either way.
   const b = await select({});
   caps = await getCapabilities();
-  engineNote = `Auto: the CPU build, because ${why}`;
+  engineNote = b.threads
+    ? 'Auto: the threaded CPU build (fastest decode here; the WebGPU build decodes on one core)'
+    : 'Auto: the SIMD CPU build (this page is not cross-origin isolated, so no threads)';
   return b;
 }
 

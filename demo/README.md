@@ -27,9 +27,12 @@ sample". What the demo does with a file (nothing is uploaded):
    per-stage times (entropy decode, unpack, develop, GPU stages), the copy and texture upload,
    MP/s, and which WASM binary, SIMD level, thread count and backend ran ("Ran on").
 
-Engine: by default ("Auto") the WebGPU build with the GPU backend when the browser has WebGPU and
-an adapter (and FlashRaw gets a device), otherwise the threaded build (cross-origin isolated) or
-single-threaded SIMD; the reason is shown in the performance panel. A GPU decode that cannot run
+Engine: by default ("Auto") the fastest CPU build: threaded on cross-origin isolated pages,
+otherwise single-threaded SIMD; the reason is shown in the performance panel. The WebGPU build is
+an explicit choice: in the browser it cannot also use threads, so its entropy decoding runs on one
+core and full decodes measured 2-11x slower than the threaded build on an Apple M1 Ultra (the GPU
+kernels themselves take 4-25 ms). Adjustments render on the GPU (WebGL2) with every build. A GPU
+decode that cannot run
 falls back to the CPU with its reason. "Decoder options" switches the build without a reload
 (`reinit()` of the npm package): the open file is re-opened with the new one, and a build used
 before is reused. Only swapping single-threaded SIMD and the scalar build reloads the page (they
