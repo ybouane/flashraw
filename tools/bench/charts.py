@@ -23,6 +23,7 @@ import math
 import os
 import statistics
 import sys
+import textwrap
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -141,16 +142,16 @@ def nice_step(vmax, n=5):
 
 def header(T, title, subtitle, legend=True):
     """Title, subtitle and the machine legend; returns (svg parts, y below)."""
-    b = [T.text(title, PAD, PAD + 22, 24, INK, 750),
-         T.text(subtitle, PAD, PAD + 48, 14, SLATE, 500)]
+    b = [T.text(title, PAD, PAD + 22, 27, INK, 750),
+         T.text(subtitle, PAD, PAD + 48, 15.5, SLATE, 500)]
     y = PAD + 74
     if legend:
         x = PAD
         for (key, lab), dark in zip(MACHINES, (True, False)):
             b.append(f'<rect x="{x}" y="{y - 10}" width="12" height="12" rx="{min(RADIUS, 3)}" fill="{OTHER if dark else OTHER_LIGHT}"/>')
             b.append(f'<rect x="{x + 14}" y="{y - 10}" width="12" height="12" rx="{min(RADIUS, 3)}" fill="{INDIGO if dark else INDIGO_LIGHT}"/>')
-            b.append(T.text(lab, x + 34, y, 13, SLATE, 500))
-            x += 34 + T.width(lab, 13) + 28
+            b.append(T.text(lab, x + 34, y, 14.5, SLATE, 500))
+            x += 34 + T.width(lab, 14.5) + 36
         y += 22
     return b, y
 
@@ -183,7 +184,7 @@ def bar_chart(T, title, subtitle, rows, footnotes, unit_label, baseline=1.0):
         gx = sx(t)
         body.append(f'<line x1="{gx:.1f}" y1="{y_plot - 6}" x2="{gx:.1f}" y2="{y_plot + h_plot - row_pad + 6}" '
                     f'stroke="{LINE}" stroke-width="{HAIR}"/>')
-        body.append(T.text(("%g" % t) + "×", gx, y_plot + h_plot - row_pad + 24, 12, MUTED, 500, "mono", "middle"))
+        body.append(T.text(("%g" % t) + "×", gx, y_plot + h_plot - row_pad + 24, 13.5, MUTED, 500, "mono", "middle"))
         t += step
     if baseline:
         bx = sx(baseline)
@@ -192,7 +193,7 @@ def bar_chart(T, title, subtitle, rows, footnotes, unit_label, baseline=1.0):
     for row, ry in zip(rows, ys):
         if len(row) == 1:
             body.append(f'<rect x="{PAD}" y="{ry - group_h + 4}" width="{W - 2 * PAD}" height="{group_h - 10}" fill="{CARD}"/>')
-            body.append(T.text(row[0], PAD, ry - 10, 13, INK, 750))
+            body.append(T.text(row[0], PAD, ry - 10, 14.5, INK, 750))
             body.append(f'<line x1="{PAD}" y1="{ry - 4}" x2="{W - PAD}" y2="{ry - 4}" stroke="{LINE}"/>')
             continue
         lab, sub, fr, vals = row
@@ -200,15 +201,15 @@ def bar_chart(T, title, subtitle, rows, footnotes, unit_label, baseline=1.0):
             body.append(f'<rect x="{PAD - 12}" y="{ry - 9}" width="{W - 2 * PAD + 24}" height="{row_h - row_pad + 18}" '
                         f'rx="{RADIUS * 2}" fill="{MIST}"/>')
         mid = ry + bar_h + gap / 2
-        body.append(T.text(lab, x0 - 16, mid + (0 if sub else 5), 15, INDIGO if fr else INK, 750 if fr else 650,
+        body.append(T.text(lab, x0 - 16, mid + (0 if sub else 5), 16.5, INDIGO if fr else INK, 750 if fr else 650,
                            anchor="end"))
         if sub:
-            body.append(T.text(sub, x0 - 16, mid + 16, 11.5, SLATE, 500, anchor="end"))
+            body.append(T.text(sub, x0 - 16, mid + 16, 13, SLATE, 500, anchor="end"))
         for j, v in enumerate(vals):
             by = ry + j * (bar_h + gap)
             color = (INDIGO if j == 0 else INDIGO_LIGHT) if fr else (OTHER if j == 0 else OTHER_LIGHT)
             if v is None:
-                body.append(T.text("n/a", x0 + 6, by + 12, 12, MUTED, 500, "mono"))
+                body.append(T.text("not measured" if fr else "n/a", x0 + 6, by + 12, 13, MUTED, 500, "mono"))
                 continue
             wbar = max(3.0, sx(v) - x0)
             r = min(RADIUS, wbar / 2)
@@ -216,14 +217,15 @@ def bar_chart(T, title, subtitle, rows, footnotes, unit_label, baseline=1.0):
             body.append(f'<path d="M{x0:.1f},{by:.1f} h{wbar - r:.1f} a{r},{r} 0 0 1 {r},{r} v{bar_h - 2 * r} a{r},{r} 0 0 1 {-r},{r} '
                         f'h{-(wbar - r):.1f} z" fill="{color}"/>')
             txt = ("1× baseline" if j == 0 else "1×") if fr and v == 1.0 else fmt_x(v)
-            body.append(T.text(txt, x0 + wbar + 8, by + 12, 13, INK, 700 if fr else 600, "mono", halo=True,
+            body.append(T.text(txt, x0 + wbar + 8, by + 12, 14.5, INK, 700 if fr else 600, "mono", halo=True,
                                halo_color=MIST if fr else None))
     y = y_plot + h_plot - row_pad + 34
-    body.append(T.text(unit_label, x0, y + 6, 12, MUTED, 500))
+    body.append(T.text(unit_label, x0, y + 6, 13, MUTED, 500))
     y += 16
-    for fn in footnotes:
-        y += 18
-        body.append(T.text(fn, PAD, y, 12, MUTED, 500))
+    width = int((W - 2 * PAD) / (13 * THEME["em"] * 1.04))  # characters per line
+    for fn in textwrap.wrap(" ".join(footnotes), width):
+        y += 19
+        body.append(T.text(fn, PAD, y, 13, MUTED, 500))
     return body, y + PAD - 6
 
 
@@ -232,11 +234,11 @@ def dot_panel(T, body, x0, x1, y0, rows, values, libs, title, ticks):
     lo, hi = math.log10(ticks[0]), math.log10(ticks[-1])
     sx = lambda v: x0 + (x1 - x0) * (math.log10(v) - lo) / (hi - lo)  # noqa: E731
     row_h = 30
-    body.append(T.text(title, x0, y0 - 14, 14, INK, 700))
+    body.append(T.text(title, x0, y0 - 14, 15.5, INK, 700))
     for t in ticks:
         gx = sx(t)
         body.append(f'<line x1="{gx:.1f}" y1="{y0}" x2="{gx:.1f}" y2="{y0 + row_h * len(rows)}" stroke="{LINE}" stroke-width="{HAIR}"/>')
-        body.append(T.text(("%g" % t), gx, y0 + row_h * len(rows) + 18, 11.5, MUTED, 500, "mono", "middle"))
+        body.append(T.text(("%g" % t), gx, y0 + row_h * len(rows) + 18, 13, MUTED, 500, "mono", "middle"))
     for i, cam in enumerate(rows):
         cy = y0 + i * row_h + row_h / 2
         vs = [(lib, values.get((cam, lib))) for lib in libs]
@@ -244,12 +246,13 @@ def dot_panel(T, body, x0, x1, y0, rows, values, libs, title, ticks):
         if pts:
             body.append(f'<line x1="{min(pts):.1f}" y1="{cy}" x2="{max(pts):.1f}" y2="{cy}" stroke="{LINE}" stroke-width="3" '
                         f'stroke-linecap="round"/>')
-        for lib, v in reversed(vs):
+        for lib, v in sorted(vs, key=lambda lv: ("libraw", "rawspeed", "rawler", "flashraw").index(lv[0])):
             if v:
-                body.append(marker(SERIES[lib], sx(v), cy, 6.5 if lib == "flashraw" else 5.5))
+                dy = {"libraw": 4.5, "rawspeed": -4.5}.get(lib, 0)  # keep coinciding markers visible
+                body.append(marker(SERIES[lib], sx(v), cy + dy, 6.5 if lib == "flashraw" else 5.5))
         fr = values.get((cam, "flashraw"))
         if fr:
-            body.append(T.text(fmt_ms(fr), min(pts) - 11, cy + 4, 11, INDIGO, 700, "mono", "end", halo=True))
+            body.append(T.text(fmt_ms(fr), min(pts) - 11, cy + 4, 12.5, INDIGO, 700, "mono", "end", halo=True))
 
 
 def marker(series, x, y, r):
@@ -423,8 +426,8 @@ def main():
     for lib in ("flashraw", "libraw", "rawspeed", "rawler"):
         body.append(marker(SERIES[lib], lx + 6, y - 5, 6))
         lab = compare.LIBS[lib] + (" (no RGB pipeline)" if lib == "rawspeed" else "")
-        body.append(T.text(lab, lx + 18, y, 13, SLATE, 600 if lib == "flashraw" else 500))
-        lx += 18 + T.width(lab, 13) + 26
+        body.append(T.text(lab, lx + 18, y, 14.5, SLATE, 600 if lib == "flashraw" else 500))
+        lx += 18 + T.width(lab, 14.5) + 34
     y += 44
     lab_w = 260
     p0, p1 = PAD + lab_w, (W + PAD + lab_w) / 2 - 12
@@ -433,14 +436,14 @@ def main():
         cy = y + i * 30 + 15
         if i % 2 == 0:
             body.append(f'<rect x="{PAD - 12}" y="{cy - 15}" width="{W - 2 * PAD + 24}" height="30" rx="{RADIUS}" fill="{MIST}" opacity="0.6"/>')
-        body.append(T.text(lab, p0 - 14, cy + 5, 13, INK, 600, anchor="end"))
+        body.append(T.text(lab, p0 - 14, cy + 5, 14.5, INK, 600, anchor="end"))
     dot_panel(T, body, p0, p1, y, labels, vals_d, ["flashraw", "libraw", "rawspeed", "rawler"], "Decode (ms)",
               [1, 3, 10, 30, 100, 300, 1000])
     dot_panel(T, body, q0, q1, y, labels, vals_r, ["flashraw", "libraw", "rawler"], "RAW → RGB (ms)",
               [10, 30, 100, 300, 1000, 3000])
     yb = y + 30 * len(labels) + 46
-    body.append(T.text("Missing marker: that library does not decode the file (RawSpeed: Canon CR3). "
-                       "Full tables: docs/benchmarks.md.", PAD, yb, 12, MUTED, 500))
+    body.append(T.text("Missing marker: that library does not decode the file (RawSpeed: Canon CR3; rawler: Hasselblad X2D). "
+                       "Full tables: docs/benchmarks.md.", PAD, yb, 13, MUTED, 500))
     desc = "; ".join(f"{lab}: decode " + ", ".join(f"{compare.LIBS[l]} {fmt_ms(vals_d[(lab, l)])} ms" for l in SERIES
                                                     if vals_d.get((lab, l))) for lab in labels)
     charts["cameras"] = svg_doc(yb + PAD - 8, body, "Per-camera decode and RAW to RGB times", desc)
