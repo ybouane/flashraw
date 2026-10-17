@@ -13,7 +13,9 @@ Code: `crates/flashraw-formats/src/canon/` (`cr2.rs`, `cr3/`, `crw.rs`, shared
 - **Maker note** (`makernote.rs`): ModelID (0x10), firmware (0x07), CameraSettings,
   ShotInfo white-balance index, SensorInfo (0xE0: sensor size, default crop, left
   optical black), ColorData (0x4001; layouts v1–v12 selected by tag length — note
-  PowerShots store it as UNDEFINED bytes, so the *byte* count selects the layout):
+  PowerShots store it as UNDEFINED bytes, so the *byte* count selects the layout — and,
+  for the 3778-word block, by sub-version: 64 and later (R6 Mark III, R50 V, PowerShot
+  V1) use the v12 offsets):
   as-shot WB, sRAW WB, per-channel black, normal/specular white. Also the EOS-1D
   (0x00A4) and PowerShot G9 (0x0029) WB tables and the multi-shot flag (0x4021, already
   white-balanced composites → unity WB).
