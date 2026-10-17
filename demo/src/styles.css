@@ -80,6 +80,7 @@ img, svg, canvas { display: block; max-width: 100%; }
 a { color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: var(--ash); }
 a:hover { text-decoration-color: var(--ink); }
 code, pre, kbd { font-family: var(--mono); font-size: 0.84em; }
+pre code { font-size: inherit; }
 h1, h2, h3, h4 { font-weight: 400; line-height: 1.1; letter-spacing: -0.01em; margin: 0; }
 strong, b { font-weight: 600; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
@@ -350,7 +351,7 @@ table.plain th { font: 500 0.68rem var(--mono); letter-spacing: 0.08em; text-tra
 table.plain td.num, table.plain th.num { text-align: right; font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .json-card { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 12px; }
 .json-card summary { cursor: pointer; font-size: 1rem; }
-pre.code { margin: 0; padding: 16px 18px; overflow: auto; background: var(--bone); color: var(--ink); border: 1px solid var(--line); font-size: 0.8rem; line-height: 1.6; }
+pre.code { margin: 0; padding: 16px 18px; overflow: auto; background: var(--bone); color: var(--ink); border: 1px solid var(--line); font-size: 0.8rem; line-height: 1.65; }
 .json-card pre.code { margin-top: 12px; max-height: 420px; }
 
 /* ---------------------------------------------------------------- why */
@@ -375,7 +376,7 @@ pre.code { margin: 0; padding: 16px 18px; overflow: auto; background: var(--bone
 .hl-values { display: flex; gap: 32px; margin-top: 14px; flex-wrap: wrap; }
 .hl-value { display: flex; flex-direction: column; }
 .hl-num { font-size: clamp(3.2rem, 6vw, 5.2rem); font-weight: 340; letter-spacing: -0.04em; line-height: 0.95; font-variant-numeric: lining-nums tabular-nums; }
-.hl-machine { font: 0.7rem/1.45 var(--mono); color: var(--muted); margin-top: 8px; max-width: 24ch; }
+.hl-machine { font: 0.7rem/1.45 var(--mono); color: var(--muted); margin-top: 8px; max-width: 36ch; }
 @media (max-width: 900px) { .headline-tiles { grid-template-columns: minmax(0, 1fr); gap: 32px; } }
 .chart-card { margin-top: 80px; border-top: 1px solid var(--ink); padding-top: 18px; }
 .chart-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; }
