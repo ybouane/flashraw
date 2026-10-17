@@ -115,7 +115,7 @@ strong, b { font-weight: 600; }
 .link-btn:disabled { color: var(--muted); opacity: 0.6; cursor: not-allowed; text-decoration: none; }
 
 /* ---------------------------------------------------------------- header */
-.site-header { position: sticky; top: 0; z-index: 50; background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.site-header { position: sticky; top: 0; z-index: 50; background: var(--paper, #fff); border-bottom: 1px solid var(--line); }
 .header-inner { display: flex; align-items: center; gap: 32px; height: 64px; }
 .brand { display: flex; align-items: center; flex-shrink: 0; }
 .brand-logo { height: 26px; width: auto; }
