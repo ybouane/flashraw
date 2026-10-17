@@ -128,7 +128,7 @@
             <label for="file-input" class="btn btn-primary btn-lg">Choose a RAW file</label>
             <button type="button" class="btn btn-outline btn-lg" id="sample-btn" data-src="/samples/canon-eos-r5-mark-ii.cr3" data-name="canon-eos-r5-mark-ii.cr3">Try a sample</button>
           </div>
-          <p class="dz-note">Nothing is uploaded. The decoder (≈620 KiB) loads when you open a file. The sample is a 7.6 MB
+          <p class="dz-note">Nothing is uploaded. The decoder (≈620 KiB) loads in the background once the page is idle. The sample is a 7.6 MB
             C-RAW CR3 from a Canon EOS R5 Mark II, from <a href="https://raw.pixls.us/">raw.pixls.us</a> (CC0).</p>
         </div>
         <svg class="dz-art" viewBox="0 0 160 160" aria-hidden="true">
@@ -236,19 +236,21 @@
             <div class="field-row">
               <label for="opt-engine">WASM build</label>
               <select id="opt-engine">
-                <option value="auto">Auto (threads when isolated)</option>
+                <option value="auto">Auto (WebGPU when available)</option>
                 <option value="gpu">WebGPU build</option>
+                <option value="threads">Threaded (when isolated)</option>
                 <option value="single">Single-threaded SIMD</option>
-                <option value="scalar">Scalar fallback</option>
+                <option value="scalar">Scalar fallback (may reload)</option>
               </select>
             </div>
-            <p class="muted small">Changing the WASM build reloads the page.</p>
+            <p class="muted small">Switching the WASM build re-opens the file with it, without a reload.</p>
             <button type="button" class="btn btn-outline" id="redecode" disabled>Decode again</button>
           </details>
         </aside>
 
         <section class="ws-wide perf" aria-labelledby="perf-title">
           <h3 id="perf-title" class="ws-title">Performance</h3>
+          <p id="perf-engine" class="engine-line"></p>
           <div id="perf-tiles" class="tiles"></div>
           <div id="perf-stages" class="stages"></div>
           <dl id="perf-backend" class="kv kv-cols"></dl>
@@ -352,7 +354,9 @@
         <h2 id="features-title">Feature comparison</h2>
         <p>Checked against LibRaw 0.22.0 and RawSpeed (develop, c835b05) sources and builds.</p>
       </header>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Feature comparison table">
+      <p class="table-hint" aria-hidden="true">Scroll sideways for LibRaw and RawSpeed →</p>
+      <div class="table-wrap">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Feature comparison table (scrolls sideways on small screens)">
         <table class="compare">
           <thead><tr><th scope="col"><span class="visually-hidden">Feature</span></th><th scope="col" class="us">FlashRaw</th><th scope="col">LibRaw 0.22</th><th scope="col">RawSpeed</th></tr></thead>
           <tbody>
@@ -381,6 +385,7 @@
             <tr><th scope="row">LibRaw-compatible C API</th><td class="us"><i class="y">Subset (recompile and relink)</i></td><td>–</td><td><i class="n">No</i></td></tr>
           </tbody>
         </table>
+      </div>
       </div>
       <p class="fineprint">“Benchmark set” counts the files each library decoded in our runs, with LibRaw and RawSpeed built without optional SDKs (libjpeg, Adobe DNG SDK, GPR SDK). Nikon High Efficiency (TicoRAW) is a proprietary codec that no open decoder supports.</p>
     </div>

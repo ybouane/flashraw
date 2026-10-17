@@ -278,12 +278,14 @@ input[type='range']:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1px var(
 .temp-track { --track: linear-gradient(90deg, #7fa0d4, #dcdad4 50%, #d6a45e); }
 .tint-track { --track: linear-gradient(90deg, #7fb08f, #dcdad4 50%, #c48cbd); }
 
-.field-row { display: grid; grid-template-columns: 1fr 1.5fr; align-items: center; gap: 10px; margin-top: 12px; }
+.field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); align-items: center; gap: 10px; margin-top: 12px; }
+@media (max-width: 420px) { .field-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 .field-row label { font-size: 0.98rem; color: var(--ink-2); }
 select {
   width: 100%; min-height: 36px; padding: 6px 28px 6px 10px; border: 1px solid var(--line-2); border-radius: var(--radius);
   background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%230e0e0e' stroke-width='1.2'/%3E%3C/svg%3E") no-repeat right 10px center;
   -webkit-appearance: none; appearance: none; color: var(--ink); font: 0.95rem var(--serif); cursor: pointer;
+  min-width: 0; max-width: 100%; text-overflow: ellipsis;
 }
 select:hover { border-color: var(--ink); }
 #render-info { margin: 12px 0 0; }
@@ -310,6 +312,11 @@ select:hover { border-color: var(--ink); }
 .tile.hero-tile { border-top: 2px solid var(--ink); padding-top: 11px; }
 @media (max-width: 1100px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 24px; } }
 @media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.engine-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 14px 0 0; font-size: 1.02rem; }
+.engine-line:empty { display: none; }
+.engine-label { font: 500 0.68rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.engine-line b { font-weight: 600; overflow-wrap: anywhere; }
+.engine-why { color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; }
 .stages { margin-top: 32px; }
 .stage-bar { display: flex; gap: 2px; height: 14px; overflow: hidden; background: var(--paper); }
 .stage-bar span { display: block; height: 100%; min-width: 3px; }
@@ -345,10 +352,23 @@ select:hover { border-color: var(--ink); }
 .pill-warn { border-color: var(--ink-2); background: var(--bone); color: var(--ink); }
 .previews-card { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 10px; }
 .previews-card h4 { margin: 0 0 10px; font: 500 0.68rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
-.table-scroll { overflow-x: auto; }
+/* Scrolling tables: the wrapper is the containing block of everything inside (an absolutely
+   positioned label must not escape it and widen the page), the first column stays in view, and a
+   soft shadow on the right edge says there is more (covered once scrolled to the end). */
+.table-scroll {
+  position: relative; overflow-x: auto; overscroll-behavior-x: contain; max-width: 100%;
+  background:
+    linear-gradient(to left, var(--paper) 40%, rgba(255, 255, 255, 0)) right / 36px 100% no-repeat local,
+    linear-gradient(to left, rgba(14, 14, 14, 0.14), rgba(14, 14, 14, 0)) right / 14px 100% no-repeat scroll;
+}
+.table-scroll:focus-visible { outline-offset: -2px; }
+.table-scroll table :is(thead, tbody) tr > :first-child { position: sticky; left: 0; z-index: 1; background: var(--paper); }
 table.plain { width: 100%; border-collapse: collapse; font-size: 0.94rem; }
 table.plain th, table.plain td { text-align: left; padding: 7px 12px 7px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
-table.plain th { font: 500 0.68rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+table.plain thead th { font: 500 0.68rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+table.plain tbody th { font-weight: 400; color: var(--ink); }
+.table-scroll table.plain tr > :first-child { padding-right: 16px; box-shadow: inset -1px 0 0 var(--line); }
+table.plain tr > :first-child + * { padding-left: 12px; }
 table.plain td.num, table.plain th.num { text-align: right; font-family: var(--mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .json-card { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 12px; }
 .json-card summary { cursor: pointer; font-size: 1rem; }
@@ -387,11 +407,16 @@ pre.code { margin: 0; padding: 16px 18px; overflow: auto; background: var(--bone
 .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; list-style: none; padding: 0; margin: 22px 0 8px; font-size: 0.95rem; color: var(--ink-2); }
 .legend li { display: inline-flex; align-items: center; gap: 8px; }
 .legend .key { width: 11px; height: 11px; flex: none; }
+.legend .key-ref { width: 0; height: 14px; border-left: 1.5px dashed var(--ink); background: none; }
 .chart-svg { width: 100%; height: auto; overflow: visible; font-family: var(--serif); }
 .chart-svg text { fill: var(--ink-2); font-size: 14px; }
 .chart-svg .t-strong { fill: var(--ink); }
 .chart-svg .t-num { fill: var(--ink); font-family: var(--mono); font-size: 12px; font-weight: 600; }
 .chart-svg .t-muted { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+.chart-svg .t-val { fill: var(--ink-2); font-family: var(--mono); font-size: 11px; }
+.chart-svg .t-small { font-size: 11px; }
+.chart-svg .t-halo { paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
+.chart-svg .t-ref { fill: var(--ink); font-family: var(--mono); font-size: 11px; font-weight: 600; }
 .chart-svg .grid { stroke: var(--grid); stroke-width: 1; }
 .chart-svg .ref { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
 .chart-svg .row-hit { fill: transparent; }
@@ -422,6 +447,24 @@ table.compare i.y::before { content: '✓'; color: var(--ink); font-weight: 700;
 table.compare i.n::before { content: '✕'; color: var(--muted); }
 table.compare i.p::before { content: '~'; color: var(--ink-2); }
 table.compare i.n { color: var(--muted); }
+.table-scroll table.compare tbody th { box-shadow: inset -1px 0 0 var(--line); }
+@media (max-width: 640px) {
+  /* first column sticky and narrower; the three products scroll beside it */
+  table.compare { min-width: 0; width: auto; table-layout: fixed; font-size: 0.92rem; }
+  table.compare th, table.compare td { padding: 10px 12px 10px 0; }
+  table.compare tr > :first-child { width: 124px; padding-right: 12px; }
+  table.compare tr > :not(:first-child) { width: 150px; }
+  table.compare .us { padding-left: 12px; }
+}
+/* the right-edge fade of a scrolling table, drawn over its cells (set by main.ts) */
+.table-wrap { position: relative; }
+.table-wrap::after {
+  content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 40px; pointer-events: none;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0), var(--paper)); opacity: 0; transition: opacity 0.2s;
+}
+.table-wrap[data-more]::after { opacity: 1; }
+.table-hint { display: none; margin: 0 0 10px; font: 500 0.68rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.table-wrap[data-scrolls] + .table-hint, .table-hint:has(+ .table-wrap[data-scrolls]) { display: block; }
 
 /* ---------------------------------------------------------------- tabs */
 .tabs { max-width: 920px; }
