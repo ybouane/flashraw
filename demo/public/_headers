@@ -1,0 +1,10 @@
+# Netlify and Cloudflare Pages. Cross-origin isolation enables the multithreaded WASM build;
+# the page still works (single-threaded) without it. See README.md, "Hosting headers".
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
