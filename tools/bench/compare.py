@@ -727,7 +727,15 @@ def run_dcraw(exe, mode, path, iters):
     camera WB, 8-bit sRGB PPM). Peak RSS from the child's rusage."""
     args = {"decode": ["-c", "-D", "-4"], "rgb": ["-c", "-q", "0", "-w"]}[mode]
     times, rss, err = [], 0, None
-    for it in range(iters + 1):
+    # dcraw "succeeds" on some files it cannot decode (e.g. Canon CR3, newer Fujifilm
+    # compressed RAF), writing an all-zero image: check the warm-up run's output.
+    p = subprocess.run([exe] + args + [path], capture_output=True)
+    if p.returncode == 0:
+        data = p.stdout
+        body = data[data.index(b"\n", data.index(b"\n", data.index(b"\n") + 1) + 1) + 1:] if data.count(b"\n") >= 3 else b""
+        if not body.strip(b"\0"):
+            return {"ok": False, "error": "dcraw wrote an all-zero image (it cannot decode this compression)"}
+    for it in range(1, iters + 1):
         with open(os.devnull, "wb") as null:
             t0 = time.perf_counter()
             p = subprocess.Popen([exe] + args + [path], stdout=null, stderr=subprocess.PIPE)
