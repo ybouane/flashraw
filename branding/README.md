@@ -2,63 +2,72 @@
 
 <img src="logo.svg" alt="FlashRaw" height="64">
 
-## The mark
+## The mark: Aperture
 
-A rounded-square tile split into a 2×2 checker, the RGGB quad of a Bayer colour filter
-array: the two lighter cells sit on the green diagonal, since green is the bright channel.
-An amber lightning bolt, the flash, crosses the quad, with its horizontal jog on the
-quad's centre line. Sensor data, decoded fast.
+Four blades on a 3 × 3 grid close like a square iris. The light that passes through the
+opening lands on one RGGB quad of a Bayer colour filter array: the only colour in the
+identity. Everything else is black on white, or white on black.
 
-The banners carry the same idea at a larger scale: a field of red, green and blue
-photosites, with the bolt lit up in amber where it covers them, as a sensor would sample it.
+The mark is drawn on a 16-unit grid (one unit is one pixel at 16 px): blades 4 units thick,
+2-unit gaps, a 4 × 4 quad in the centre. Every edge falls on a whole pixel at 16, 32, 48 px
+and their multiples, so the favicon needs no separate drawing.
+
+The wordmark is **Flash** in Newsreader and ***Raw*** in Newsreader Italic, weight 540,
+optical size 60, −0.6 % tracking. Its cap height is 58 % of the mark, centred on it; the gap
+between mark and wordmark is 34 % of the mark.
 
 ## Colours
 
 | Name | Hex | Use |
 |---|---|---|
-| Flash Indigo | `#4733E6` | Primary. Links, buttons, the "Raw" half of the wordmark, flat mark tile |
-| Indigo Deep | `#3A26CF` | Mark: darker (R, B) photosites |
-| Indigo Bright | `#5A47F2` | Mark: lighter (G) photosites |
-| Indigo on dark | `#A89BFF` | "Raw" in the wordmark and indigo text on dark backgrounds |
-| Flash Amber | `#FFB224` | The bolt. Highlights; never for text on white |
-| Ink | `#15142B` | Headings, body text, "Flash" in the wordmark, monochrome mark |
-| Slate | `#5A5D78` | Secondary text |
-| Mist | `#F5F4FD` | Tinted panels and section backgrounds |
-| Line | `#E4E2F3` | Borders and dividers |
-| Sensor Red | `#F0505A` | Accent |
-| Sensor Green | `#1DB07A` | Accent |
-| Sensor Blue | `#2F7BF2` | Accent |
+| Ink | `#0E0E0E` | Type, the mark, rules that matter, dark backgrounds |
+| Paper | `#FFFFFF` | Page background, type and mark on dark |
+| Bone | `#F6F4EF` | Warm off-white for quiet panels (code, the image stage) |
+| Graphite | `#3A3A3A` | Secondary text |
+| Stone | `#6B6B6B` | Muted text, captions, labels |
+| Ash | `#A3A3A3` | Non-text grey: chart series, rules on dark |
+| Hairline | `#E2E0DA` | Rules and borders on light backgrounds |
+| Sensor Red | `#D9473B` | The quad; tiny accents |
+| Sensor Green | `#2E9A5C` | The quad; tiny accents |
+| Sensor Blue | `#2F63D6` | The quad; tiny accents |
 
-Contrast: Flash Indigo on white 7.3:1, Ink on white 18:1, Slate on white 6.4:1,
-Indigo on dark on `#0F1020` 7.9:1 (all pass WCAG AA for body text).
+Contrast on Paper: Ink 19.3:1, Graphite 11.4:1, Stone 5.3:1 (all pass WCAG AA for body
+text; Stone also passes on Bone, 4.85:1). Ash is for graphics only (2.5:1).
 
-Use the three sensor colours sparingly, and always as a set: small bullets, chart series,
-the photosite mosaic. They are not text colours.
+The three sensor tints appear inside the quad and, at most, as small accents that mean
+"channel": a histogram, a CFA diagram, a white-balance bar. They are never text colours,
+never backgrounds, never decoration.
 
 ## Typography
 
 | Role | Font | Fallbacks |
 |---|---|---|
-| Wordmark, headings, UI | [Plus Jakarta Sans](https://fonts.google.com/specimen/Plus+Jakarta+Sans) (SIL OFL 1.1) | `Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif` |
-| Code, numbers, URLs | [JetBrains Mono](https://fonts.google.com/specimen/JetBrains+Mono) (SIL OFL 1.1) | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` |
+| Wordmark, headlines, body | [Newsreader](https://fonts.google.com/specimen/Newsreader) and Newsreader Italic, variable (opsz 6–72, wght 200–800), SIL OFL 1.1 | `Georgia, 'Times New Roman', serif` |
+| Labels, numbers, code, URLs | [JetBrains Mono](https://fonts.google.com/specimen/JetBrains+Mono), variable, SIL OFL 1.1 | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` |
 
-The wordmark is Plus Jakarta Sans at weight 750 with −1.5 % tracking: "Flash" in Ink,
-"Raw" in Flash Indigo (white and Indigo on dark on dark backgrounds). Headings use
-weight 700 to 800 with slight negative tracking; body text uses 400 to 500.
+- Headlines: Newsreader at a display optical size, weight 400 to 450, tracking −1 % to −2 %.
+  Italic is for the one word that carries the meaning ("RAW", "Raw"), not for emphasis
+  in general.
+- Body: Newsreader at text sizes (17 to 19 px on screen), weight 400, line height 1.5 to 1.6.
+- Labels: JetBrains Mono, 11 to 13 px, upper case, +8 to +12 % tracking, in Stone.
+  Numbers in tables and timings: JetBrains Mono, tabular.
 
 Every SVG here has its text outlined to paths, so none of them needs a font installed.
 
 ## Usage
 
+- Black on white, white on black. No gradients, shadows or tinted backgrounds.
+- Square corners on the mark and on everything built around it (tiles, buttons, panels:
+  0 to 2 px radius).
 - Clear space around the logo: at least half the mark's height on every side.
-- Minimum size: the horizontal logo 24 px tall; the mark alone 16 px (use `favicon.svg`
-  below 32 px).
-- Use `logo.svg` on white or light backgrounds and `logo-dark.svg` on dark ones. On
-  photos or busy backgrounds, use the mark alone.
-- One colour (print, embossing, watermarks): `logo-mark-mono.svg`, Ink with the bolt
-  knocked out; recolour the single fill as needed (white on dark).
-- Don't recolour, rotate, skew, outline or add shadows to the mark, don't rearrange the
-  checker or the bolt, and don't set "FlashRaw" in another font next to the mark.
+- Minimum size: the horizontal logo 24 px tall; the mark alone 16 px.
+- Use `logo.svg` on white or light backgrounds and `logo-dark.svg` on dark ones. On photos
+  or busy backgrounds, use the mark alone on a Paper or Ink tile.
+- One colour (print, embossing, watermarks): `logo-mark-mono.svg`, the quad filled in the
+  same colour as the blades; recolour the single fill as needed.
+- Don't recolour the blades, rotate or mirror the mark (the blades turn clockwise), round
+  its corners, change the quad's order (R G / G B), or set "FlashRaw" in another font next
+  to it.
 - Write the name as **FlashRaw**: one word, capital F and R.
 
 ## Files
@@ -67,17 +76,18 @@ Every SVG here has its text outlined to paths, so none of them needs a font inst
 |---|---|
 | `logo.svg` | Mark + wordmark, horizontal, for light backgrounds |
 | `logo-dark.svg` | Same, for dark backgrounds |
-| `logo-mark.svg` | The mark alone, square, 16 to 512 px and up |
-| `logo-mark-mono.svg` | One-colour mark (bolt knocked out) |
-| `favicon.svg` | The mark tuned for 16 to 32 px: flat tile, fuller bolt on the pixel grid |
+| `logo-mark.svg` | The mark alone, square, 16 px and up |
+| `logo-mark-mono.svg` | One-colour mark |
+| `favicon.svg` | The mark at 16 units; switches to white blades in dark browser themes |
 | `favicon.ico` | 16, 32 and 48 px |
 | `favicon-32.png` | 32 × 32 |
-| `apple-touch-icon.png` | 180 × 180, opaque, full bleed (iOS rounds the corners) |
-| `icon-192.png`, `icon-512.png` | Web app manifest icons (rounded tile, transparent corners) |
-| `icon-512-maskable.png` | Maskable manifest icon, artwork inside the 80 % safe zone |
+| `apple-touch-icon.png` | 180 × 180, opaque Paper, mark at 7 px per unit (iOS rounds the corners) |
+| `icon-192.png`, `icon-512.png` | Web app manifest icons (mark on a Paper tile) |
+| `icon-512-maskable.png` | Maskable manifest icon, mark inside the 80 % safe zone |
 | `og-banner.png` / `.svg` | 1200 × 630 social and Open Graph image |
 | `readme-banner.png` / `.svg` | 1600 × 500 banner for the top of the README |
 | `tools/build.py` | Regenerates all of the above |
+| `options/`, `tools/options.py` | The four logo directions that were reviewed (history) |
 
 HTML head:
 
@@ -89,7 +99,7 @@ HTML head:
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#4733E6">
+<meta name="theme-color" content="#FFFFFF">
 ```
 
 Manifest icons:

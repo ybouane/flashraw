@@ -4,22 +4,25 @@ Writes every SVG in branding/ and renders the PNG/ICO files from them. All text 
 outlined to paths, so the outputs need no fonts.
 
     pip install pillow fonttools uharfbuzz cairosvg
-    python branding/tools/build.py --fetch-fonts   # once: downloads the two OFL fonts
+    python branding/tools/build.py --fetch-fonts   # once: downloads the OFL fonts to tools/fonts/
     python branding/tools/build.py [OUT_DIR]       # default OUT_DIR: branding/
 """
-import io, os, sys, math, random
+import io, os, sys, math
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FONTS = os.path.join(HERE, "fonts")
-FONT_URLS = {
-    "PlusJakartaSans[wght].ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/plusjakartasans/PlusJakartaSans%5Bwght%5D.ttf",
-    "JetBrainsMono[wght].ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
+GF = "https://raw.githubusercontent.com/google/fonts/main/ofl/"
+FONT_URLS = {  # all SIL Open Font License 1.1
+    "Newsreader[opsz,wght].ttf": GF + "newsreader/Newsreader%5Bopsz,wght%5D.ttf",
+    "Newsreader-Italic[opsz,wght].ttf": GF + "newsreader/Newsreader-Italic%5Bopsz,wght%5D.ttf",
+    "JetBrainsMono[wght].ttf": GF + "jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
 }
 if "--fetch-fonts" in sys.argv:
     os.makedirs(FONTS, exist_ok=True)
     for name, url in FONT_URLS.items():
-        urllib.request.urlretrieve(url, os.path.join(FONTS, name))
+        if not os.path.exists(os.path.join(FONTS, name)):
+            urllib.request.urlretrieve(url, os.path.join(FONTS, name))
     sys.exit(0)
 
 import cairosvg
@@ -29,228 +32,232 @@ from textpath import text_path
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(HERE)
 os.makedirs(OUT, exist_ok=True)
-SANS = os.path.join(FONTS, "PlusJakartaSans[wght].ttf")
+SERIF = os.path.join(FONTS, "Newsreader[opsz,wght].ttf")
+ITALIC = os.path.join(FONTS, "Newsreader-Italic[opsz,wght].ttf")
 MONO = os.path.join(FONTS, "JetBrainsMono[wght].ttf")
 
-# ---- palette -------------------------------------------------------------
-INDIGO = "#4733E6"      # primary
-INDIGO_DK = "#3A26CF"   # mark: R/B photosites (darker)
-INDIGO_LT = "#5A47F2"   # mark: G photosites (lighter, as green is the bright channel)
-INDIGO_ON_DARK = "#A89BFF"
-AMBER = "#FFB224"       # the flash
-INK = "#15142B"
-SLATE = "#5A5D78"
-MIST = "#F5F4FD"
-LINE = "#E4E2F3"
-RED, GREEN, BLUE = "#F0505A", "#1DB07A", "#2F7BF2"
-
-# ---- mark (64-unit grid) -------------------------------------------------
-R = 14
-TILE = f"M{R} 0H{64-R}A{R} {R} 0 0 1 64 {R}V{64-R}A{R} {R} 0 0 1 {64-R} 64H{R}A{R} {R} 0 0 1 0 {64-R}V{R}A{R} {R} 0 0 1 {R} 0Z"
-CELL_TR = f"M32 0H{64-R}A{R} {R} 0 0 1 64 {R}V32H32Z"
-CELL_BL = f"M0 32H32V64H{R}A{R} {R} 0 0 1 0 {64-R}Z"
-BOLT_PTS = [(29.5, 4), (47.5, 4), (35.5, 28), (51, 28), (21, 60), (29, 36), (13.5, 36)]
+# ---- palette (branding/README.md) ------------------------------------------
+INK = "#0E0E0E"       # type, the mark, dark backgrounds
+PAPER = "#FFFFFF"
+BONE = "#F6F4EF"      # warm off-white: quiet panels
+GRAPHITE = "#3A3A3A"  # secondary text
+STONE = "#6B6B6B"     # muted text (5.3:1 on Paper)
+ASH = "#A3A3A3"       # non-text greys: rules on dark, chart series
+HAIRLINE = "#E2E0DA"  # rules and borders on light backgrounds
+SMOKE = "#262626"     # rules on dark backgrounds
+# Sensor tints: only inside the RGGB quad and as tiny accents, never for type.
+RED, GREEN, BLUE = "#D9473B", "#2E9A5C", "#2F63D6"
 
 
-def pts_d(pts, sx=1, sy=1, dx=0, dy=0):
-    f = lambda v: f"{v:.2f}".rstrip("0").rstrip(".")
-    return "M" + "L".join(f"{f(x*sx+dx)} {f(y*sy+dy)}" for x, y in pts) + "Z"
+def num(v):
+    s = f"{v:.3f}".rstrip("0").rstrip(".")
+    return "0" if s in ("-0", "") else s
 
 
-BOLT = pts_d(BOLT_PTS)
-# favicon: fuller bolt, shelf and top edge on the 4-unit (16 px) grid
-BOLT_SMALL = pts_d([(28, 4), (48, 4), (36, 28), (54, 28), (20, 62), (28, 36), (10, 36)])
+def rect(x, y, w, h):
+    return f"M{num(x)} {num(y)}h{num(w)}v{num(h)}h{num(-w)}Z"
 
 
-def mark_body(variant="color"):
-    if variant == "color":
-        return (f'<path fill="{INDIGO_DK}" d="{TILE}"/>'
-                f'<path fill="{INDIGO_LT}" d="{CELL_TR}{CELL_BL}"/>'
-                f'<path fill="{AMBER}" d="{BOLT}"/>')
-    if variant == "mono":  # single colour, bolt knocked out
-        return f'<path fill="{INK}" fill-rule="evenodd" d="{TILE}{BOLT}"/>'
-    if variant == "flat":  # small sizes: flat tile, no photosite checker
-        return f'<path fill="{INDIGO}" d="{TILE}"/><path fill="{AMBER}" d="{BOLT_SMALL}"/>'
-    raise ValueError(variant)
+# ---- the mark: "Aperture" (16-unit grid, one unit = one pixel at 16 px) -----
+# Four blades on a 3 x 3 grid close like a square iris; the light that passes
+# lands on one RGGB quad, the only colour in the identity.
+BLADES = rect(0, 0, 10, 4) + rect(12, 0, 4, 10) + rect(6, 12, 10, 4) + rect(0, 6, 4, 10)
+QUAD = [(RED, rect(6, 6, 2, 2)), (GREEN, rect(8, 6, 2, 2) + rect(6, 8, 2, 2)), (BLUE, rect(8, 8, 2, 2))]
 
 
-def svg_doc(w, h, body, title=None, vb=None):
-    vb = vb or f"0 0 {w} {h}"
-    t = f"<title>{title}</title>" if title else ""
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="{vb}" '
-            f'role="img"{" aria-label=" + chr(34) + title + chr(34) if title else ""}>{t}{body}</svg>\n')
+def mark(fg=INK, mono=False, cls=False):
+    """Mark paths on the 16-unit grid. mono: the quad in the foreground colour."""
+    c = ' class="fg"' if cls else ""
+    if mono:
+        return f'<path{c} fill="{fg}" d="{BLADES}{rect(6, 6, 4, 4)}"/>'
+    return f'<path{c} fill="{fg}" d="{BLADES}"/>' + "".join(f'<path fill="{col}" d="{d}"/>' for col, d in QUAD)
 
 
-# ---- wordmark --------------------------------------------------------------
-WM_WGHT = 750
-WM_TRACK = -0.015
+def mark_at(x, y, size, fg=INK, mono=False):
+    return f'<g transform="translate({num(x)} {num(y)}) scale({num(size / 16)})">{mark(fg, mono)}</g>'
 
 
-def wordmark(x, baseline, size, c1, c2):
-    d1, a1, b1 = text_path("Flash", SANS, size, x, baseline, WM_WGHT, WM_TRACK)
-    gap = WM_TRACK * size
-    d2, a2, b2 = text_path("Raw", SANS, size, x + a1 + gap, baseline, WM_WGHT, WM_TRACK)
-    body = f'<path fill="{c1}" d="{d1}"/><path fill="{c2}" d="{d2}"/>'
-    return body, b2[2]
+# ---- type ------------------------------------------------------------------
+def text(s, x, y, size, fill=INK, font=SERIF, wght=400, opsz=None, track=0.0, anchor="start"):
+    """Outlined text; returns (svg, advance)."""
+    axes = (("opsz", opsz),) if opsz is not None and font != MONO else ()
+    d, adv, bb = text_path(s, font, size, 0, 0, wght=wght, tracking=track, extra_axes=axes)
+    if anchor == "end":
+        x -= adv
+    elif anchor == "middle":
+        x -= adv / 2
+    d, adv, bb = text_path(s, font, size, x, y, wght=wght, tracking=track, extra_axes=axes)
+    return f'<path fill="{fill}" d="{d}"/>', adv
 
 
-CAP = 0.745  # Plus Jakarta Sans cap height / em
+def runs(parts, x, y, size, fill=INK, wght=400, opsz=72, track=0.0):
+    """A line set in roman and italic runs: parts = [(text, italic), ...]."""
+    out, cx = [], x
+    for s, it in parts:
+        svg, adv = text(s, cx, y, size, fill, ITALIC if it else SERIF, wght, opsz, track)
+        out.append(svg)
+        cx += adv + track * size
+    return "".join(out), cx - x
 
 
-def lockup(dark=False, mark_size=64.0):
-    """Horizontal logo. Returns (body, width, height)."""
-    s = mark_size / 64
-    size = mark_size * 0.50 / CAP          # cap height = 50% of mark
-    gap = mark_size * 0.25
-    base = mark_size / 2 + size * CAP / 2  # cap height centred on the mark
-    c1 = "#FFFFFF" if dark else INK
-    c2 = INDIGO_ON_DARK if dark else INDIGO
-    wm, right = wordmark(mark_size + gap, base, size, c1, c2)
-    body = f'<g transform="scale({s:g})">{mark_body()}</g>{wm}' if s != 1 else mark_body() + wm
-    return body, right, mark_size
+# ---- wordmark and lockup ---------------------------------------------------
+WM = dict(wght=540, opsz=60, track=-0.006)
+WM_CAP = 0.58     # cap height as a fraction of the mark
+WM_GAP = 0.34     # mark to wordmark, fraction of the mark
+WM_RAW_DX = 0.0   # extra space before the italic "Raw", in em
+
+
+def cap_height(font=SERIF, wght=WM["wght"], opsz=WM["opsz"]):
+    _, _, bb = text_path("H", font, 1000, 0, 0, wght=wght, extra_axes=(("opsz", opsz),))
+    return -bb[1] / 1000
+
+
+def lockup(fg=INK, M=64.0, mono=False):
+    """Horizontal logo at mark height M. Returns (body, width, height)."""
+    size = WM_CAP * M / cap_height()
+    base = M / 2 + WM_CAP * M / 2            # cap height centred on the mark
+    x = M + WM_GAP * M
+    ax = (("opsz", WM["opsz"]),)
+    d1, a1, _ = text_path("Flash", SERIF, size, x, base, wght=WM["wght"], extra_axes=ax, tracking=WM["track"])
+    d2, _, bb2 = text_path("Raw", ITALIC, size, x + a1 + (WM["track"] + WM_RAW_DX) * size, base,
+                           wght=WM["wght"], extra_axes=ax, tracking=WM["track"])
+    body = mark_at(0, 0, M, fg, mono) + f'<path fill="{fg}" d="{d1}{d2}"/>'
+    return body, bb2[2], M
+
+
+def svg_doc(w, h, body, title="FlashRaw", vb=None, extra=""):
+    vb = vb or f"0 0 {num(w)} {num(h)}"
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{num(w)}" height="{num(h)}" viewBox="{vb}" '
+            f'role="img" aria-label="{title}"><title>{title}</title>{extra}{body}</svg>\n')
 
 
 # ---- render helpers ----------------------------------------------------------
-def write(name, text):
+def write(name, txt):
     with open(os.path.join(OUT, name), "w") as f:
-        f.write(text)
+        f.write(txt)
 
 
-def png(svg_text, w, h, bg=None):
+def png(svg_text, w, h):
     data = cairosvg.svg2png(bytestring=svg_text.encode(), output_width=w, output_height=h)
-    im = Image.open(io.BytesIO(data)).convert("RGBA")
-    if bg:
-        b = Image.new("RGBA", im.size, bg); b.alpha_composite(im); im = b
-    return im
+    return Image.open(io.BytesIO(data)).convert("RGBA")
 
 
-def pad_icon(body, scale, bg):
-    """Square 64-unit icon: body scaled about the centre on an opaque background."""
-    off = 32 * (1 - scale)
-    return svg_doc(64, 64, f'<rect width="64" height="64" fill="{bg}"/>'
-                           f'<g transform="translate({off:g} {off:g}) scale({scale:g})">{body}</g>')
+def icon(S, k, bg=PAPER, fg=INK):
+    """S px square icon on an opaque background, the mark centred at k px per grid unit
+    (whole pixels, so every edge stays crisp)."""
+    off = (S - 16 * k) / 2
+    return svg_doc(S, S, f'<rect width="{S}" height="{S}" fill="{bg}"/>' + mark_at(off, off, 16 * k, fg))
 
 
-# ---- mosaic art ------------------------------------------------------------
-def inside(px, py, poly):
-    c = False
-    n = len(poly)
-    for i in range(n):
-        x1, y1 = poly[i]; x2, y2 = poly[(i + 1) % n]
-        if (y1 > py) != (y2 > py) and px < (x2 - x1) * (py - y1) / (y2 - y1) + x1:
-            c = not c
-    return c
-
-
-def mosaic(x0, y0, w, h, pitch, bolt_box, fade_from, fade_to, seed=7, max_op=0.30):
-    """Bayer RGGB photosite field sampling an amber bolt: each photosite's amber
-    opacity is the fraction of it the bolt covers (an anti-aliased, 'sensed' bolt).
-    bolt_box = (bx, by, bsize): the 64-unit bolt placed at bx,by scaled to bsize."""
-    rnd = random.Random(seed)
-    bx, by, bs = bolt_box
-    poly = [(bx + x * bs / 64, by + y * bs / 64) for x, y in BOLT_PTS]
-    ys = [p[1] for p in poly]; top, bot = min(ys), max(ys)
-    gap = pitch * 0.18
-    cell = pitch - gap
-    rx = cell * 0.24
-    out = []
-    n = 6
-    for j in range(int(math.ceil(h / pitch)) + 1):
-        for i in range(int(math.ceil(w / pitch)) + 1):
-            x = x0 + i * pitch; y = y0 + j * pitch
-            if x > x0 + w or y > y0 + h:
+# ---- banner art ------------------------------------------------------------
+def iris_panel(x0, y0, w, h, msize, pitch, clear=()):
+    """Black panel: a faint photosite lattice behind a large white mark. The lattice is
+    the sensor; only the quad behind the aperture is lit."""
+    out = [f'<rect x="{num(x0)}" y="{num(y0)}" width="{num(w)}" height="{num(h)}" fill="{INK}"/>']
+    mx = x0 + (w - msize) / 2
+    my = y0 + (h - msize) / 2
+    u = msize / 16
+    # lattice aligned to the mark's unit grid, faint photosite points
+    dots = []
+    i0 = math.floor((x0 - mx) / pitch) - 1
+    j0 = math.floor((y0 - my) / pitch) - 1
+    p = pitch
+    for j in range(j0, j0 + int(h / p) + 3):
+        for i in range(i0, i0 + int(w / p) + 3):
+            cx, cy = mx + i * p, my + j * p
+            if not (x0 <= cx - 1.5 and cx + 1.5 <= x0 + w and y0 <= cy - 1.5 and cy + 1.5 <= y0 + h):
                 continue
-            cx = x + cell / 2
-            t = max(0.0, min(1.0, (cx - fade_from) / (fade_to - fade_from)))
-            cov = sum(inside(x - gap / 2 + (a + .5) * pitch / n, y - gap / 2 + (b + .5) * pitch / n, poly)
-                      for a in range(n) for b in range(n)) / (n * n)
-            base = max_op * (t ** 1.5) * (0.6 + 0.4 * rnd.random()) * (cov <= 0.02)
-            if base >= 0.02:
-                col = [[RED, GREEN], [GREEN, BLUE]][j % 2][i % 2]
-                out.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{cell:.1f}" height="{cell:.1f}" rx="{rx:.1f}" fill="{col}" fill-opacity="{base:.2f}"/>')
-            if cov > 0.02:
-                out.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{cell:.1f}" height="{cell:.1f}" rx="{rx:.1f}" fill="url(#amb)" fill-opacity="{cov:.2f}"/>')
-    grad = (f'<linearGradient id="amb" gradientUnits="userSpaceOnUse" x1="0" y1="{top:.0f}" x2="0" y2="{bot:.0f}">'
-            f'<stop offset="0" stop-color="#FFC94A"/><stop offset="1" stop-color="#FF9A1F"/></linearGradient>')
-    return f"<defs>{grad}</defs>" + "".join(out)
-
-
-# ---- banners ---------------------------------------------------------------
-def text(s, x, y, size, color, wght=500, font=SANS, track=0.0):
-    d, adv, bb = text_path(s, font, size, x, y, wght, track)
-    return f'<path fill="{color}" d="{d}"/>', adv
-
-
-def facts_list(x, y, items, size, lh):
-    out = []
-    for k, (col, s) in enumerate(items):
-        yy = y + k * lh
-        sq = size * 0.5
-        out.append(f'<rect x="{x}" y="{yy - size*0.36 - sq/2:.1f}" width="{sq:.1f}" height="{sq:.1f}" rx="{sq*0.22:.1f}" fill="{col}"/>')
-        out.append(text(s, x + sq + size * 0.6, yy, size, INK, 560)[0])
+            if mx - u <= cx <= mx + msize + u and my - u <= cy <= my + msize + u:
+                continue  # clear zone around the mark
+            if any(a <= cx <= c and b <= cy <= d for a, b, c, d in clear):
+                continue
+            dots.append(rect(cx - 1.5, cy - 1.5, 3, 3))
+    out.append(f'<path fill="#3A3A3A" d="{"".join(dots)}"/>')
+    out.append(mark_at(mx, my, msize, PAPER))
     return "".join(out)
+
+
+def kicker(s, x, y, size=13, fill=STONE):
+    return text(s.upper(), x, y, size, fill, MONO, 500, track=0.12)[0]
+
+
+FACTS = [("01", "8–15× faster than the alternatives"),
+         ("02", "Memory-safe Rust · WASM · GPU"),
+         ("03", "Every camera on raw.pixls.us")]
+TITLE = "FlashRaw: the fast, safe camera RAW decoder"
 
 
 def og_banner():
     W, H = 1200, 630
-    lk, lw, lh = lockup(mark_size=60)
-    body = [f'<rect width="{W}" height="{H}" fill="#FFFFFF"/>',
-            '<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="0">'
-            f'<stop offset="0.45" stop-color="#FFFFFF"/><stop offset="1" stop-color="{MIST}"/></linearGradient></defs>',
-            f'<rect width="{W}" height="{H}" fill="url(#g)"/>',
-            mosaic(700, -4, 520, 650, 24, (776, 48, 520), 730, 1180),
-            f'<g transform="translate(80 70)">{lk}</g>',
-            text("The fast, safe", 80, 258, 62, INK, 780, track=-0.025)[0],
-            text("camera RAW decoder.", 80, 332, 62, INK, 780, track=-0.025)[0],
-            facts_list(82, 424, [(RED, "8–15× faster than the alternatives"),
-                                 (GREEN, "Memory-safe Rust · WASM · GPU"),
-                                 (BLUE, "Every camera on raw.pixls.us")], 27, 46),
-            text("flashraw.ybouane.com", 80, 568, 21, INDIGO, 600, font=MONO)[0]]
-    return svg_doc(W, H, "".join(body), "FlashRaw: the fast, safe camera RAW decoder")
+    L = 72
+    PW = 400                                   # black panel width
+    R = W - PW - 64                            # right edge of the text column
+    lk, _, _ = lockup(INK, 46)
+    b = [f'<rect width="{W}" height="{H}" fill="{PAPER}"/>',
+         f'<g transform="translate({L} 64)">{lk}</g>',
+         kicker("Open source · Rust · MIT / Apache-2.0", L, 200),
+         runs([("The fast, safe", False)], L - 3, 276, 70, INK, 420, 72, -0.012)[0],
+         runs([("camera ", False), ("RAW", True), (" decoder.", False)], L - 3, 350, 70, INK, 420, 72, -0.012)[0],
+         f'<path fill="{INK}" d="{rect(L, 404, R - L, 1)}"/>']
+    y = 452
+    for n, s in FACTS:
+        b.append(text(n, L, y, 14, STONE, MONO, 500)[0])
+        b.append(text(s, L + 42, y + 1, 25, INK, SERIF, 420, 18)[0])
+        y += 44
+    b.append(iris_panel(W - PW, 0, PW, H, 208, 208 / 8, clear=[(W - PW + 80, H - 76, W - 80, H - 30)]))
+    b.append(text("flashraw.ybouane.com", W - PW / 2, H - 46, 16, "#BDBDBD", MONO, 500, anchor="middle")[0])
+    return svg_doc(W, H, "".join(b), TITLE)
 
 
 def readme_banner():
     W, H = 1600, 500
-    lk, lw, lh = lockup(mark_size=84)
-    body = [f'<rect width="{W}" height="{H}" fill="#FFFFFF"/>',
-            '<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="0">'
-            f'<stop offset="0.5" stop-color="#FFFFFF"/><stop offset="1" stop-color="{MIST}"/></linearGradient></defs>',
-            f'<rect width="{W}" height="{H}" fill="url(#g)"/>',
-            mosaic(880, -6, 740, 520, 24, (1080, 30, 440), 920, 1480),
-            f'<g transform="translate(96 80)">{lk}</g>',
-            text("The fast, safe camera RAW decoder.", 98, 252, 46, INK, 760, track=-0.022)[0],
-            facts_list(100, 332, [(RED, "8–15× faster than the alternatives"),
-                                  (GREEN, "Memory-safe Rust · WASM · GPU"),
-                                  (BLUE, "Every camera on raw.pixls.us")], 27, 46)]
-    return svg_doc(W, H, "".join(body), "FlashRaw: the fast, safe camera RAW decoder")
+    L = 88
+    PW = 400
+    R = W - PW - 72
+    lk, _, _ = lockup(INK, 48)
+    b = [f'<rect width="{W}" height="{H}" fill="{PAPER}"/>',
+         f'<g transform="translate({L} 80)">{lk}</g>',
+         runs([("The fast, safe camera ", False), ("RAW", True), (" decoder.", False)], L - 3, 262, 66, INK, 420, 72, -0.012)[0]]
+    gutter = 32
+    colw = (R - L - 2 * gutter) / 3
+    for k, (n, s) in enumerate(FACTS):
+        x = L + k * (colw + gutter)
+        b.append(f'<path fill="{INK}" d="{rect(x, 324, colw, 1)}"/>')
+        b.append(text(n, x, 356, 13, STONE, MONO, 500)[0])
+        b.append(text(s, x, 394, 22, INK, SERIF, 420, 18)[0])
+    b.append(iris_panel(W - PW, 0, PW, H, 176, 176 / 8))
+    return svg_doc(W, H, "".join(b), TITLE)
 
 
 def main():
-    # mark + favicon
-    write("logo-mark.svg", svg_doc(64, 64, mark_body(), "FlashRaw"))
-    write("logo-mark-mono.svg", svg_doc(64, 64, mark_body("mono"), "FlashRaw"))
-    write("favicon.svg", svg_doc(64, 64, mark_body("flat"), "FlashRaw"))
-    for dark, name in ((False, "logo.svg"), (True, "logo-dark.svg")):
-        body, w, h = lockup(dark)
-        w = math.ceil(w)
-        write(name, svg_doc(w, 64, body, "FlashRaw"))
-    og = og_banner(); write("og-banner.svg", og); png(og, 1200, 630).convert("RGB").save(os.path.join(OUT, "og-banner.png"), optimize=True)
-    rb = readme_banner(); write("readme-banner.svg", rb); png(rb, 1600, 500).convert("RGB").save(os.path.join(OUT, "readme-banner.png"), optimize=True)
+    # marks
+    write("logo-mark.svg", svg_doc(64, 64, mark(), vb="0 0 16 16"))
+    write("logo-mark-mono.svg", svg_doc(64, 64, mark(mono=True), vb="0 0 16 16"))
+    # favicon: the mark is already drawn in whole pixels at 16 px; follow the browser theme
+    fav_style = ('<style>@media (prefers-color-scheme: dark){.fg{fill:#FFFFFF}}</style>')
+    write("favicon.svg", svg_doc(16, 16, mark(cls=True), extra=fav_style))
+    for fg, name in ((INK, "logo.svg"), (PAPER, "logo-dark.svg")):
+        body, w, h = lockup(fg)
+        write(name, svg_doc(math.ceil(w), h, body))
 
-    fav = open(os.path.join(OUT, "favicon.svg")).read()
-    mark = open(os.path.join(OUT, "logo-mark.svg")).read()
-    png(fav, 32, 32).save(os.path.join(OUT, "favicon-32.png"), optimize=True)
-    ico = [png(fav, s, s) for s in (16, 32, 48)]
+    og = og_banner(); write("og-banner.svg", og)
+    png(og, 1200, 630).convert("RGB").save(os.path.join(OUT, "og-banner.png"), optimize=True)
+    rb = readme_banner(); write("readme-banner.svg", rb)
+    png(rb, 1600, 500).convert("RGB").save(os.path.join(OUT, "readme-banner.png"), optimize=True)
+
+    # raster icons. Small sizes: the 16-unit mark rendered on whole pixels (16, 32, 48 are
+    # exact multiples, so every edge is crisp).
+    flat = svg_doc(16, 16, mark())
+    png(flat, 32, 32).save(os.path.join(OUT, "favicon-32.png"), optimize=True)
+    ico = [png(flat, s, s) for s in (16, 32, 48)]
     ico[2].save(os.path.join(OUT, "favicon.ico"), sizes=[(16, 16), (32, 32), (48, 48)], append_images=ico[:2])
-    png(mark, 192, 192).save(os.path.join(OUT, "icon-192.png"), optimize=True)
-    png(mark, 512, 512).save(os.path.join(OUT, "icon-512.png"), optimize=True)
-    # apple touch: opaque, iOS rounds corners itself -> full-bleed square tile
-    sq = (f'<rect width="64" height="64" fill="{INDIGO_DK}"/><path fill="{INDIGO_LT}" d="M32 0H64V32H32ZM0 32H32V64H0Z"/>')
-    apple = svg_doc(64, 64, sq + f'<g transform="translate(6.4 6.4) scale(0.8)"><path fill="{AMBER}" d="{BOLT}"/></g>')
-    png(apple, 180, 180).convert("RGB").save(os.path.join(OUT, "apple-touch-icon.png"), optimize=True)
-    # maskable: full-bleed background, artwork inside the 80% safe circle
-    mk = svg_doc(64, 64, sq + f'<g transform="translate(9.6 9.6) scale(0.7)"><path fill="{AMBER}" d="{BOLT}"/></g>')
-    png(mk, 512, 512).convert("RGB").save(os.path.join(OUT, "icon-512-maskable.png"), optimize=True)
+    # manifest icons: the mark on a Paper tile, square corners (platforms mask as they like)
+    png(icon(192, 9), 192, 192).save(os.path.join(OUT, "icon-192.png"), optimize=True)
+    png(icon(512, 24), 512, 512).save(os.path.join(OUT, "icon-512.png"), optimize=True)
+    # maskable: artwork inside the 80 % safe circle (the mark at half size: diagonal 0.71)
+    png(icon(512, 16), 512, 512).convert("RGB").save(os.path.join(OUT, "icon-512-maskable.png"), optimize=True)
+    # apple touch: opaque, full bleed (iOS rounds the corners itself)
+    png(icon(180, 7), 180, 180).convert("RGB").save(os.path.join(OUT, "apple-touch-icon.png"), optimize=True)
 
 
 if __name__ == "__main__":
