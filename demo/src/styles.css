@@ -153,20 +153,21 @@ strong, b { font-weight: 600; }
 .dropzone {
   position: relative; margin-top: 48px;
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 48px;
-  padding: 48px 56px 0; border: 1px solid var(--ink); border-radius: 0; background: var(--paper);
-  transition: background-color 0.15s, box-shadow 0.15s;
+  padding: 48px 56px 0; border: 1.5px dashed var(--line-2); border-radius: var(--radius); background: var(--bone);
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.dropzone[data-state='drag'] { background: var(--bone); box-shadow: inset 0 0 0 3px var(--ink); }
+.dropzone:hover { border-color: var(--ash); }
+.dropzone[data-state='drag'] { background: #efece4; border-color: var(--ink); border-style: solid; box-shadow: 0 0 0 4px rgba(14, 14, 14, 0.06); }
 .dz-title { margin: 0; font-size: clamp(1.7rem, 3.2vw, 2.5rem); line-height: 1.12; letter-spacing: -0.015em; }
 .dz-touch { display: none; }
 @media (hover: none) and (pointer: coarse) { .dz-desktop { display: none; } .dz-touch { display: inline; } }
 .dz-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .dz-note { margin: 20px 0 0; max-width: 62ch; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
 .dz-note a { color: var(--ink-2); }
-.dz-art { width: 184px; height: 184px; color: var(--ink); }
+.dz-art { width: 184px; height: 184px; color: var(--ink-2); opacity: 0.85; }
 .dz-formats {
   grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 40px -56px 0; padding: 14px 56px;
-  border-top: 1px solid var(--line); font: 500 0.72rem/1.5 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  border-top: 1px dashed var(--line-2); font: 500 0.72rem/1.5 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
 }
 @media (max-width: 760px) {
   .dropzone { grid-template-columns: minmax(0, 1fr); padding: 28px 22px 0; }
