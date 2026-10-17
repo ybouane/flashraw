@@ -19,6 +19,12 @@
 // opened in the primary engine; when one turns out to need JPEG XL (its frame compression is
 // `jpeg-xl`), the JPEG XL variant matching the primary build is loaded once, on first decode,
 // and that file's bytes move to it. Every other file keeps using the primary engine.
+//
+// `reinit()` selects another primary engine at run time (e.g. the WebGPU build instead of the
+// threaded one). Engines are cached per binary and never torn down: wasm-bindgen glue keeps its
+// instance in module state (an ES module cannot be unloaded) and WebAssembly memory never
+// shrinks, so a binary instantiated once stays for the life of the page and is reused when it is
+// selected again. Handles keep the engine they were opened in.
 
 import * as baseGlue from './flashraw_bindgen.js';
 import { ThreadPool } from './threads.js';
@@ -80,6 +86,8 @@ let wasm = null; // wasm-bindgen exports (incl. `memory`)
 let build = null; // { version, simd, simdLevel, gpu, gpuAvailable, threads, jpegxl, maxSamples, variant, initMs, ... }
 let threads = null; // ThreadPool of the multithreaded build
 let primary = null; // the engine above: { wb, wasm, pool, build }
+const engines = new Map(); // binary name -> engine, every binary instantiated so far
+let reinitChain = Promise.resolve(); // serialises reinit() calls
 let gpuState = null; // Promise<{ reason, adapter }> once a WebGPU device was requested
 let initPromise = null;
 let initOptions = {}; // options of the successful init() (reused to load the JPEG XL variant)
@@ -117,6 +125,36 @@ export function init(options = {}) {
   return initPromise;
 }
 
+/**
+ * Select another build at run time: like `init()`, but always honours `options`. Handles opened
+ * before keep decoding with the build they were opened in; new handles use the new one. A binary
+ * instantiated earlier is reused (no download, no new workers); the previous selection stays in
+ * place when this rejects. The SIMD and scalar single-threaded binaries share one wasm-bindgen
+ * glue module, which holds a single instance per page: once one of them is loaded, selecting the
+ * other rejects with `NotAvailableError`.
+ */
+export function reinit(options = {}) {
+  const run = reinitChain.then(async () => {
+    const prev = initPromise;
+    const prevOptions = initOptions;
+    if (prev) await prev.catch(() => {});
+    if (jxlPromise) await jxlPromise.catch(() => {});
+    const hadEngine = !!primary && !!initPromise;
+    initPromise = null;
+    try {
+      return await init(options);
+    } catch (e) {
+      if (hadEngine && !initPromise) {
+        initOptions = prevOptions;
+        initPromise = Promise.resolve({ ...build });
+      }
+      throw e;
+    }
+  });
+  reinitChain = run.catch(() => {});
+  return run;
+}
+
 function jpegxlMode(o) {
   if (o === undefined || o === null) return 'auto';
   if (!JPEGXL_MODES.includes(o)) {
@@ -142,7 +180,8 @@ async function doInit(options) {
     if (variant !== 'simd') gpuInitReason = `the WebGPU build requires WebAssembly SIMD (${reason})`;
     else {
       try {
-        const { glue, exports } = await initGpuBinary(options);
+        const cached = engines.get('gpu');
+        const { glue, exports } = cached ? { glue: cached.wb, exports: cached.wasm } : await initGpuBinary(options);
         const info = finishInit(glue, exports, null, {
           variant,
           binary: 'gpu',
@@ -175,7 +214,11 @@ async function doInit(options) {
     const count = threadCount(tOpt === true || tOpt === 'auto' ? undefined : tOpt);
     try {
       const binary = always ? 'threads-jxl' : 'threads';
-      const { glue, exports, pool } = await initThreaded(options, count, binary, options.wasm);
+      const cached = engines.get(binary);
+      if (cached?.pool?.broken) throw cached.pool.broken;
+      const { glue, exports, pool } = cached
+        ? { glue: cached.wb, exports: cached.wasm, pool: cached.pool }
+        : await initThreaded(options, count, binary, options.wasm);
       return finishInit(glue, exports, pool, {
         variant,
         binary,
@@ -195,15 +238,22 @@ async function doInit(options) {
   // 3. Single-threaded SIMD / scalar build (the scalar one has no JPEG XL flavour).
   let exports;
   let binary = variant === 'simd' && always ? 'simd-jxl' : variant;
+  const other = { simd: 'fallback', fallback: 'simd' }[binary];
+  if (other && engines.has(other)) throw sharedGlueError(binary);
   let glue = binary === 'simd-jxl' ? await platform.glue('simd-jxl') : baseGlue;
   try {
-    const source = options.wasm ?? (await platform.load(binary, options));
-    exports = await glue.default({ module_or_path: await source });
+    const cached = engines.get(binary);
+    if (cached) exports = cached.wasm;
+    else {
+      const source = options.wasm ?? (await platform.load(binary, options));
+      exports = await glue.default({ module_or_path: await source });
+    }
   } catch (e) {
     if (variant !== 'simd' || options.wasm) throw toError(e, 'failed to load the FlashRaw WebAssembly module');
     // A SIMD-capable probe but a failing SIMD binary (exotic engines, broken CDN): retry scalar.
     variant = binary = 'fallback';
     glue = baseGlue;
+    if (engines.has('simd')) throw sharedGlueError('fallback');
     exports = await baseGlue.default({ module_or_path: await platform.load(variant, options) }).catch((e2) => {
       throw toError(e2, 'failed to load the FlashRaw WebAssembly module');
     });
@@ -220,14 +270,29 @@ async function doInit(options) {
   });
 }
 
+/** `simd` and `fallback` share `flashraw_bindgen.js`, whose module state holds one instance. */
+function sharedGlueError(binary) {
+  const name = (b) => (b === 'simd' ? 'SIMD' : 'scalar');
+  const other = binary === 'simd' ? 'fallback' : 'simd';
+  return new NotAvailableError(
+    `the ${name(binary)} build cannot be loaded next to the ${name(other)} build already in use: both share one ` +
+      'wasm-bindgen glue module, which holds a single instance per page (reload the page to switch between them)',
+  );
+}
+
 function finishInit(glue, exports, pool, extra) {
   const { t0, ...rest } = extra;
-  wb = glue;
-  wasm = exports;
-  threads = pool;
-  build = { ...JSON.parse(wb.buildInfo()), ...rest, initMs: now() - t0 };
-  primary = { wb, wasm, pool, build };
-  if (build.jpegxl) jxl = primary;
+  const info = { ...JSON.parse(glue.buildInfo()), ...rest, initMs: now() - t0 };
+  let eng = engines.get(rest.binary);
+  if (eng) eng.build = info;
+  else engines.set(rest.binary, (eng = { wb: glue, wasm: exports, pool, build: info }));
+  primary = eng;
+  wb = eng.wb;
+  wasm = eng.wasm;
+  threads = eng.pool;
+  build = info;
+  // The JPEG XL engine matching this selection, if it was loaded before.
+  jxl = build.jpegxl ? eng : (engines.get(eng.pool ? 'threads-jxl' : 'simd-jxl') ?? null);
   build.jpegxlReason = build.jpegxl ? null : jpegxlUnavailable();
   return { ...build };
 }
@@ -257,6 +322,8 @@ function loadJpegXl() {
     let threadsReason = build.threadsReason;
     if (threads && !threads.broken) {
       try {
+        const cached = engines.get('threads-jxl');
+        if (cached && !cached.pool?.broken) return cached;
         const { glue, exports, pool } = await initThreaded(o, threads.count, 'threads-jxl', o.jpegxlWasm);
         return engineOf(glue, exports, pool, { binary: 'threads-jxl', threadsReason: null, t0 });
       } catch (e) {
@@ -264,13 +331,18 @@ function loadJpegXl() {
         threadsReason = `the threaded JPEG XL build failed to start: ${e?.message ?? e}`;
       }
     }
+    const cached = engines.get('simd-jxl');
+    if (cached) return cached;
     const glue = await platform.glue('simd-jxl');
     const exports = await glue.default({ module_or_path: await (o.jpegxlWasm ?? platform.load('simd-jxl', o)) });
     return engineOf(glue, exports, null, { binary: 'simd-jxl', threadsReason, t0 });
   })().then(
     (e) => {
+      if (!engines.has(e.build.binary)) {
+        engines.set(e.build.binary, e);
+        jxlLoads++;
+      }
       jxl = e;
-      jxlLoads++;
       jxlError = null;
       return e;
     },
@@ -621,8 +693,11 @@ function makeFrame(eng, frame, extra) {
 }
 
 /** Why the GPU cannot be used without requesting a device, or null if it might be. */
-function gpuStaticReason() {
-  if (!build?.gpu) {
+function gpuStaticReason(eng = primary) {
+  if (eng && eng !== primary && !eng.build.gpu) {
+    return `this file is decoded by the ${eng.build.binary} build, which has no WebGPU backend`;
+  }
+  if (!eng?.build.gpu) {
     return (
       'this FlashRaw WASM binary was built without the `gpu` feature (WebGPU backend not compiled in); ' +
       `load the WebGPU build with init({ gpu: true })${build?.gpuReason ? ` (${build.gpuReason})` : ''}`
@@ -635,10 +710,11 @@ function gpuStaticReason() {
 }
 
 /** Request the WebGPU adapter/device once (WebGPU build). Resolves to `{ reason, adapter }`. */
-function gpuStatus() {
-  const why = gpuStaticReason();
+function gpuStatus(eng = primary) {
+  const why = gpuStaticReason(eng);
   if (why) return Promise.resolve({ reason: why, adapter: null });
-  gpuState ??= wb.gpuInit().then(
+  // Only the WebGPU binary has a device, so one state serves every selection.
+  gpuState ??= eng.wb.gpuInit().then(
     (json) => ({ reason: null, adapter: JSON.parse(json) }),
     (e) => ({ reason: String(e?.message ?? e), adapter: null }),
   );
@@ -656,9 +732,11 @@ const isGpuOutput = (o) => typeof o === 'string' && o.toLowerCase().startsWith('
  */
 export class GpuFrame {
   #out;
-  constructor(info, out) {
+  #eng;
+  constructor(info, out, eng) {
     Object.assign(this, info);
     this.#out = out;
+    this.#eng = eng;
     live.add(this);
   }
   #get() {
@@ -683,7 +761,7 @@ export class GpuFrame {
   }
   /** The `GPUDevice` owning `buffer`. */
   get device() {
-    return wb.gpuDevice();
+    return this.#eng.wb.gpuDevice();
   }
   /** Copy a `gpu-rgba8` frame into a new `rgba8unorm` `GPUTexture` (TEXTURE_BINDING | STORAGE_BINDING | COPY_SRC); the caller owns it. */
   createTexture() {
@@ -697,9 +775,9 @@ export class GpuFrame {
     try {
       f = await out.download();
     } catch (e) {
-      throw toError(e);
+      throw toError(e, undefined, this.#eng);
     }
-    return makeFrame(primary, f, { requested: this.backend.requested, fallbackReason: null, zeroCopy: false, t0 });
+    return makeFrame(this.#eng, f, { requested: this.backend.requested, fallbackReason: null, zeroCopy: false, t0 });
   }
   /** Take ownership of `buffer` (FlashRaw will not recycle it; call `destroy()` when done). */
   detachBuffer() {
@@ -857,7 +935,7 @@ export class FlashRaw {
     try {
       return fn(this.#raw);
     } catch (e) {
-      const err = toError(e);
+      const err = toError(e, undefined, this.#eng);
       if (err.kind === 'Internal') this.#broken = true;
       throw err;
     }
@@ -869,7 +947,7 @@ export class FlashRaw {
     try {
       return await fn(this.#raw);
     } catch (e) {
-      const err = toError(e);
+      const err = toError(e, undefined, this.#eng);
       if (err.kind === 'Internal') this.#broken = true;
       throw err;
     }
@@ -1024,23 +1102,21 @@ export class FlashRaw {
     };
     if (isGpu(backend) || isGpuOutput(rest.output)) {
       if (!this.#raw) throw new ClosedError('this FlashRaw handle is closed');
-      const { reason } =
-        this.#eng === primary
-          ? await gpuStatus()
-          : { reason: `this file is decoded by the ${this.#eng.build.binary} build, which has no WebGPU backend` };
+      const eng = this.#eng;
+      const { reason } = await gpuStatus(eng);
       if (reason) toCpu(reason);
       else {
         // WebGPU build: the asynchronous GPU decode (the browser cannot block on the GPU).
         const json = JSON.stringify({ ...rest, backend: 'gpu' });
         try {
           const r = await this.#callAsync((raw) => raw.decodeGpu(tile ?? -1, json));
-          if (r instanceof wb.GpuOutput) {
+          if (r instanceof eng.wb.GpuOutput) {
             const info = JSON.parse(r.infoJson());
-            info.backend = { ...info.backend, requested: backend, fallbackReason: null, binary: build.binary, jpegxl: false };
+            info.backend = { ...info.backend, requested: backend, fallbackReason: null, binary: eng.build.binary, jpegxl: false };
             info.timings = { ...info.timings, copyMs: 0, wallMs: now() - t0 };
-            return new GpuFrame(info, r);
+            return new GpuFrame(info, r, eng);
           }
-          return makeFrame(primary, r, extra(null));
+          return makeFrame(eng, r, extra(null));
         } catch (e) {
           if (e.kind !== 'GpuUnavailable') throw e;
           toCpu(e.message);
@@ -1227,5 +1303,6 @@ export function _internals() {
     liveCount: live.size,
     threads: threads?.count ?? 0,
     jpegxl: { loads: jxlLoads, binary: jxl?.build.binary ?? null, threads: jxl?.pool?.count ?? 0 },
+    engines: [...engines.keys()],
   };
 }

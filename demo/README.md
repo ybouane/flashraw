@@ -25,12 +25,23 @@ sample". What the demo does with a file (nothing is uploaded):
    and every embedded preview as stored.
 6. Timings: metadata parse, preview extraction and browser decode, the decode with FlashRaw's
    per-stage times (entropy decode, unpack, develop, GPU stages), the copy and texture upload,
-   MP/s, and which WASM binary, SIMD level, thread count and backend ran.
+   MP/s, and which WASM binary, SIMD level, thread count and backend ran ("Ran on").
 
-The WASM is loaded lazily: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three
-font files, logo); the decoder chunk and one `.wasm` binary are fetched when the visitor hovers or
-focuses the drop zone, drags a file over the page, or picks a file. The benchmark charts are
-a separate chunk loaded when their section scrolls near.
+Engine: by default ("Auto") the WebGPU build with the GPU backend when the browser has WebGPU and
+an adapter (and FlashRaw gets a device), otherwise the threaded build (cross-origin isolated) or
+single-threaded SIMD; the reason is shown in the performance panel. A GPU decode that cannot run
+falls back to the CPU with its reason. "Decoder options" switches the build without a reload
+(`reinit()` of the npm package): the open file is re-opened with the new one, and a build used
+before is reused. Only swapping single-threaded SIMD and the scalar build reloads the page (they
+share one wasm-bindgen glue module, which holds one instance per page).
+
+Loading: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three font files, logo)
+before the `load` event. Then, when the main thread is idle (`requestIdleCallback`), the decoder
+chunk, its JS glue and one `.wasm` (compiled while it streams) are preloaded and initialised, so
+the first decode starts at once; in a second idle slot the sample file is fetched into memory at
+low priority, unless `navigator.connection` reports `saveData` or a 2g/3g connection. Hovering or
+focusing the drop zone, dragging a file over the page or picking a file starts the same preload
+earlier. The benchmark charts are a separate chunk loaded when their section scrolls near.
 
 ## Layout
 
@@ -43,7 +54,7 @@ demo/
   src/pipeline.ts         adjustment maths (GLSL + identical JS), orientation helpers
   src/renderer-gl.ts      WebGL2 renderer      src/renderer-cpu.ts   CPU fallback
   src/viewport.ts         zoom / pan / pinch / keyboard
-  src/charts.ts           benchmark charts (SVG)  src/charts-schema.ts  their data schema
+  src/charts.ts           benchmark charts (SVG, linear speedup bars)  src/charts-schema.ts  their schema
   src/charts-data.sample.json   sample chart data (from docs/benchmarks.md)
   src/fonts/              newsreader-core.woff2 (preloaded subset, scripts/subset-fonts.sh), OFL.txt
   public/                 robots.txt, sitemap.xml, site.webmanifest, _headers
@@ -53,6 +64,7 @@ demo/
   scripts/serve.mjs       static server for dist/ with the production headers
   scripts/make-sample-chart-data.mjs   regenerates the sample chart data
   tests/e2e.mjs           Playwright end-to-end test     tests/modes.mjs   hosting/engine modes
+  tests/responsive.mjs    no horizontal overflow at phone/tablet widths, every state
 ```
 
 Brand assets are not copied into this directory: the build reads them from `../branding/`
@@ -72,8 +84,8 @@ red, green and blue appear only where they mean colour channels (histogram, CFA,
 
 `public/samples/canon-eos-r5-mark-ii.cr3` (7.6 MB, Canon EOS R5 Mark II, APS-C crop, C-RAW) is
 `Canon/Canon EOS R5m2/APS-C_CRAW.CR3` from <https://raw.pixls.us> (CC0, public domain):
-<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is fetched only when
-the visitor clicks "Try a sample".
+<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is prefetched when the
+page is idle (see above), or fetched when the visitor clicks "Try a sample".
 
 ## Develop and build
 
@@ -87,8 +99,9 @@ npm run serve                        # serve dist/ with the production headers o
 
 `DEMO_COEP=off npm run dev` serves the page without cross-origin isolation (single-threaded
 path); `DEMO_COEP=require-corp` uses the stricter policy. URL parameters for testing:
-`?engine=gpu` (WebGPU build), `?engine=single` (single-threaded SIMD), `?engine=scalar`,
-`?renderer=cpu`. The engine can also be switched in the demo's "Decoder options".
+`?engine=gpu` (WebGPU build), `?engine=threads`, `?engine=single` (single-threaded SIMD),
+`?engine=scalar`, `?renderer=cpu`. The engine can also be switched in the demo's "Decoder
+options" (the URL follows).
 
 ## Deploy
 
@@ -205,7 +218,9 @@ CORPUS=/path/to/corpus npm test                  # Chromium: the sample, 11 file
 node tests/e2e.mjs --browsers firefox,webkit     # smaller set per engine
 node scripts/serve.mjs --port 4174 --coep off &
 node scripts/serve.mjs --port 4175 --coep require-corp &
-node tests/modes.mjs --browsers chromium,firefox --widget   # headers, engines, CPU renderer, widget
+node tests/modes.mjs --browsers chromium,firefox --widget   # headers, engines, CPU renderer, widget,
+                                                 # WebGPU default + switching builds without reload
+node tests/responsive.mjs --browsers chromium,firefox,webkit  # no horizontal overflow at 320-768 px
 node tests/look.mjs                              # default look vs embedded previews (+ screenshots)
 ```
 
