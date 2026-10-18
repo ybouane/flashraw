@@ -74,7 +74,7 @@ JPEG bytes untouched and is not affected.
 ## ICC output profiles (feature `icc`)
 
 With the `icc` cargo feature (on by default everywhere: the library, the CLI, the C library, the
-Python wheels and the WASM builds; see [building.md](building.md) to leave it out), `DecodeOptions::output_profile` converts RGB outputs to anyPython wheels and the WASM builds), `DecodeOptions::output_profile` converts RGB outputs to any
+Python wheels and the WASM builds; see [building.md](building.md) to leave it out), `DecodeOptions::output_profile` converts RGB outputs to any
 RGB ICC profile (v2 or v4):
 
 ```rust
