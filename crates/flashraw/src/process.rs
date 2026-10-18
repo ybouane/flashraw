@@ -8,6 +8,7 @@
 //! both paths agree.
 
 use crate::RawPixelData;
+use crate::color::{ColorSpace, OutputCurve};
 use crate::options::Demosaic;
 use flashraw_core::*;
 
@@ -332,6 +333,9 @@ pub struct DevelopParams {
     pub orientation: Orientation,
     /// Exposure / black / white points (`None`: none).
     pub levels: Option<Levels>,
+    /// Transfer curve of the display encoders (sRGB unless an output colour space or
+    /// profile is set; the matching primaries are already folded into the matrices).
+    pub curve: OutputCurve,
 }
 
 impl DevelopParams {
@@ -356,7 +360,37 @@ impl DevelopParams {
             cam4_to_rgb,
             orientation: info.orientation,
             levels: None,
+            curve: OutputCurve::Srgb,
         }
+    }
+
+    /// Develop to `cs` instead of sRGB: its primaries are folded into `cam_to_rgb` (and
+    /// `cam4_to_rgb`) once, so the per-pixel cost is unchanged, and the display encoders
+    /// use its transfer curve. sRGB leaves the parameters untouched.
+    pub fn with_color_space(self, cs: ColorSpace) -> Self {
+        if matches!(cs, ColorSpace::Srgb | ColorSpace::Custom) {
+            return self;
+        }
+        self.with_output(cs.matrix_from_srgb(), cs.output_curve())
+    }
+
+    /// Fold `m` (linear sRGB → output RGB) into the camera matrices and select the
+    /// encoder curve.
+    pub fn with_output(mut self, m: [[f64; 3]; 3], curve: OutputCurve) -> Self {
+        // m (3x3) times a (3 x N), in f64.
+        let fold = |a: &[f32], n: usize| -> Vec<f32> {
+            (0..3 * n).map(|k| (0..3).map(|j| m[k / n][j] * a[j * n + k % n] as f64).sum::<f64>() as f32).collect()
+        };
+        let flat: Vec<f32> = self.cam_to_rgb.iter().flatten().copied().collect();
+        let f = fold(&flat, 3);
+        self.cam_to_rgb = std::array::from_fn(|i| std::array::from_fn(|j| f[i * 3 + j]));
+        self.cam4_to_rgb = self.cam4_to_rgb.map(|a| {
+            let flat: Vec<f32> = a.iter().flatten().copied().collect();
+            let f = fold(&flat, 4);
+            std::array::from_fn(|i| std::array::from_fn(|j| f[i * 4 + j]))
+        });
+        self.curve = curve;
+        self
     }
 
     /// The same develop up to camera RGB: no white balance, identity matrix, no levels.
@@ -817,6 +851,91 @@ fn output_dims(img: &RawImage, params: &DevelopParams) -> Result<(Rect, u32, u32
     Ok((crop, ow, oh))
 }
 
+/// How the display encoders read a curve: one table for all channels (the sRGB curve, the
+/// built-in spaces and profiles with equal curves) or one per channel.
+enum Tables<'a, T> {
+    One(&'a [T]),
+    Each([&'a [T]; 3]),
+}
+
+fn tables8(curve: &OutputCurve) -> Tables<'_, u8> {
+    match curve {
+        OutputCurve::Srgb => Tables::One(&srgb_lut()[..]),
+        OutputCurve::Shared(t) => Tables::One(&t.lut8),
+        OutputCurve::Owned(t) => Tables::One(&t.lut8),
+        OutputCurve::PerChannel(a) => Tables::Each([&a[0].lut8, &a[1].lut8, &a[2].lut8]),
+    }
+}
+
+fn tables16(curve: &OutputCurve) -> Tables<'_, f32> {
+    match curve {
+        OutputCurve::Srgb => Tables::One(srgb16_lut()),
+        OutputCurve::Shared(t) => Tables::One(&t.lut16),
+        OutputCurve::Owned(t) => Tables::One(&t.lut16),
+        OutputCurve::PerChannel(a) => Tables::Each([&a[0].lut16, &a[1].lut16, &a[2].lut16]),
+    }
+}
+
+/// Run `$body` with `$enc` bound to the 8-bit encoder through the tables of `$curve`:
+/// `table[trunc(clamp(v, 0, 1) * segments)]`. One arm per table layout, so the common
+/// single-table case keeps its own tight encoder.
+macro_rules! with_encoder8 {
+    ($curve:expr, |$enc:ident| $body:expr) => {
+        match tables8($curve) {
+            // The sRGB curve keeps its original fixed-size table and constant scale.
+            _ if matches!($curve, OutputCurve::Srgb) => {
+                let $enc = rgba8_encoder();
+                $body
+            }
+            Tables::One(t) => {
+                let n = (t.len() - 1) as f32;
+                let $enc = move |p: [f32; 3]| {
+                    [
+                        t[(p[0].clamp(0.0, 1.0) * n) as usize],
+                        t[(p[1].clamp(0.0, 1.0) * n) as usize],
+                        t[(p[2].clamp(0.0, 1.0) * n) as usize],
+                        255,
+                    ]
+                };
+                $body
+            }
+            Tables::Each(t) => {
+                let n = (t[0].len() - 1) as f32;
+                let $enc = move |p: [f32; 3]| {
+                    [
+                        t[0][(p[0].clamp(0.0, 1.0) * n) as usize],
+                        t[1][(p[1].clamp(0.0, 1.0) * n) as usize],
+                        t[2][(p[2].clamp(0.0, 1.0) * n) as usize],
+                        255,
+                    ]
+                };
+                $body
+            }
+        }
+    };
+}
+
+/// As [`with_encoder8!`] for the 16-bit encoder.
+macro_rules! with_encoder16 {
+    ($curve:expr, |$enc:ident| $body:expr) => {
+        match tables16($curve) {
+            _ if matches!($curve, OutputCurve::Srgb) => {
+                let lut = srgb16_lut();
+                let $enc = move |p: [f32; 3]| p.map(|v| srgb16(v, lut));
+                $body
+            }
+            Tables::One(t) => {
+                let $enc = move |p: [f32; 3]| [srgb16(p[0], t), srgb16(p[1], t), srgb16(p[2], t)];
+                $body
+            }
+            Tables::Each(t) => {
+                let $enc = move |p: [f32; 3]| [srgb16(p[0], t[0]), srgb16(p[1], t[1]), srgb16(p[2], t[2])];
+                $body
+            }
+        }
+    };
+}
+
 /// Demosaic + white balance + colour conversion to linear sRGB (f32 RGB), over `params.crop`
 /// (frame coordinates). `origin` is the frame's position in sensor coordinates.
 pub fn develop(
@@ -843,7 +962,8 @@ pub fn develop(
     Ok(Developed { width: ow, height: oh, rgb: out })
 }
 
-/// Fused develop straight to oriented sRGB RGBA8 (no intermediate RGB image).
+/// Fused develop straight to oriented RGBA8 in the colour space of `params` (sRGB by default;
+/// no intermediate RGB image).
 /// Returns `(width, height, pixels)` after orientation.
 pub fn develop_rgba8(
     img: &RawImage,
@@ -854,7 +974,15 @@ pub fn develop_rgba8(
 ) -> Result<(u32, u32, Vec<u8>)> {
     let (crop, w, h) = output_dims(img, params)?;
     let k = kernel(img, info, origin, params, crop);
-    run_oriented(&k, w as usize, h as usize, params.orientation, parallel, None, rgba8_encoder())
+    with_encoder8!(&params.curve, |enc| run_oriented(
+        &k,
+        w as usize,
+        h as usize,
+        params.orientation,
+        parallel,
+        None,
+        enc
+    ))
 }
 
 /// Fused develop to any [`RgbEncoding`] (no intermediate RGB image; display encodings
@@ -907,12 +1035,11 @@ pub(crate) fn develop_staged(
     let ch = enc.channels();
     Ok(match enc {
         RgbEncoding::Rgba8 => {
-            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, rgba8_encoder())?;
+            let (dw, dh, px) = with_encoder8!(&params.curve, |enc| run_oriented(&k, w, h, o, parallel, band, enc))?;
             (dw, dh, ch, RawPixelData::U8(px))
         }
         RgbEncoding::Srgb16 => {
-            let lut = srgb16_lut();
-            let (dw, dh, px) = run_oriented(&k, w, h, o, parallel, band, |p: [f32; 3]| p.map(|v| srgb16(v, lut)))?;
+            let (dw, dh, px) = with_encoder16!(&params.curve, |enc| run_oriented(&k, w, h, o, parallel, band, enc))?;
             (dw, dh, ch, RawPixelData::U16(px))
         }
         RgbEncoding::Linear16 => {
@@ -1160,6 +1287,7 @@ where
 pub(crate) fn encode_image(
     d: Developed,
     enc: RgbEncoding,
+    curve: &OutputCurve,
     orientation: Orientation,
     parallel: bool,
 ) -> (u32, u32, u32, RawPixelData) {
@@ -1167,12 +1295,11 @@ pub(crate) fn encode_image(
     let ch = enc.channels();
     match enc {
         RgbEncoding::Rgba8 => {
-            let (w, h, px) = encode_developed(&d, rgba8_encoder(), o, parallel);
+            let (w, h, px) = with_encoder8!(curve, |enc| encode_developed(&d, enc, o, parallel));
             (w, h, ch, RawPixelData::U8(px))
         }
         RgbEncoding::Srgb16 => {
-            let lut = srgb16_lut();
-            let (w, h, px) = encode_developed(&d, |p: [f32; 3]| p.map(|v| srgb16(v, lut)), o, parallel);
+            let (w, h, px) = with_encoder16!(curve, |enc| encode_developed(&d, enc, o, parallel));
             (w, h, ch, RawPixelData::U16(px))
         }
         RgbEncoding::Linear16 => {
@@ -1184,6 +1311,30 @@ pub(crate) fn encode_image(
             (w, h, ch, RawPixelData::F16(px))
         }
         RgbEncoding::LinearF32 => (d.width, d.height, ch, RawPixelData::F32(d.rgb)),
+    }
+}
+
+/// Encode a developed image whose values are already display-encoded device values in
+/// `[0, 1]` (the output of a profile transform) to `enc` (`Rgba8` or `Srgb16` only).
+#[cfg(feature = "icc")]
+pub(crate) fn encode_device(
+    d: Developed,
+    enc: RgbEncoding,
+    orientation: Orientation,
+    parallel: bool,
+) -> (u32, u32, u32, RawPixelData) {
+    let ch = enc.channels();
+    match enc {
+        RgbEncoding::Rgba8 => {
+            let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            let (w, h, px) =
+                encode_developed(&d, |p: [f32; 3]| [q(p[0]), q(p[1]), q(p[2]), 255], orientation, parallel);
+            (w, h, ch, RawPixelData::U8(px))
+        }
+        _ => {
+            let (w, h, px) = encode_developed(&d, |p: [f32; 3]| p.map(linear16), orientation, parallel);
+            (w, h, ch, RawPixelData::U16(px))
+        }
     }
 }
 

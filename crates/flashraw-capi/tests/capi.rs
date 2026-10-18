@@ -279,6 +279,73 @@ fn metadata_and_raw_decode_match_expected() {
 }
 
 #[test]
+fn color_spaces_and_profiles() {
+    let f = open_path(&fixture("canon-5d3-lossy.dng"));
+    // SAFETY: live handle until freed at the end; buffers outlive each call.
+    unsafe {
+        let mut o = options();
+        o.output = flashraw_output_format::FLASHRAW_OUTPUT_RGBA8 as i32;
+        o.demosaic = flashraw_demosaic::FLASHRAW_DEMOSAIC_HALF_SIZE as i32;
+        let srgb = decode(f, &o).unwrap();
+        assert_eq!(flashraw_frame_color_space(srgb), flashraw_color_space::FLASHRAW_COLOR_SPACE_SRGB as i32);
+        let mut len = 0usize;
+        let p = flashraw_frame_icc_profile(srgb, &mut len);
+        assert!(!p.is_null() && len > 128);
+        assert_eq!(std::slice::from_raw_parts(p.add(36), 4), b"acsp");
+        o.color_space = flashraw_color_space::FLASHRAW_COLOR_SPACE_DISPLAY_P3 as i32;
+        let p3 = decode(f, &o).unwrap();
+        assert_eq!(flashraw_frame_color_space(p3), flashraw_color_space::FLASHRAW_COLOR_SPACE_DISPLAY_P3 as i32);
+        let n = flashraw_frame_sample_count(p3);
+        let a = std::slice::from_raw_parts(flashraw_frame_data(srgb) as *const u8, n);
+        let b = std::slice::from_raw_parts(flashraw_frame_data(p3) as *const u8, n);
+        assert_ne!(a, b, "P3 differs from sRGB for a saturated scene");
+        // The standalone profile getter matches the frame's profile.
+        let need = flashraw_icc_profile(1, false, std::ptr::null_mut(), 0);
+        let mut buf = vec![0u8; need];
+        assert_eq!(flashraw_icc_profile(1, false, buf.as_mut_ptr(), buf.len()), need);
+        let mut plen = 0usize;
+        let pp = flashraw_frame_icc_profile(p3, &mut plen);
+        assert_eq!(std::slice::from_raw_parts(pp, plen), &buf[..]);
+        assert_eq!(flashraw_icc_profile(99, false, std::ptr::null_mut(), 0), 0);
+        // Raw outputs carry no profile.
+        let mut raw = options();
+        raw.color_space = flashraw_color_space::FLASHRAW_COLOR_SPACE_PROPHOTO as i32;
+        let r = decode(f, &raw).unwrap();
+        assert!(flashraw_frame_icc_profile(r, &mut len).is_null() && len == 0);
+        for fr in [srgb, r] {
+            flashraw_frame_free(fr);
+        }
+        // Unknown colour space and malformed profiles are errors, not crashes.
+        o.color_space = 99;
+        let mut fr = null_mut();
+        assert_eq!(flashraw_decode(f, &o, &mut fr), flashraw_status::FLASHRAW_ERROR_INVALID_ARGUMENT);
+        o.color_space = 0;
+        let junk = [0x42u8; 300];
+        o.output_profile = junk.as_ptr();
+        o.output_profile_len = junk.len();
+        assert_eq!(flashraw_decode(f, &o, &mut fr), flashraw_status::FLASHRAW_ERROR_INVALID_ARGUMENT);
+        // A valid profile (the P3 one) is accepted when this build converts profiles.
+        o.output_profile = buf.as_ptr();
+        o.output_profile_len = buf.len();
+        let st = flashraw_decode(f, &o, &mut fr);
+        if flashraw_icc_supported() {
+            assert_eq!(st, flashraw_status::FLASHRAW_OK);
+            assert_eq!(flashraw_frame_color_space(fr), flashraw_color_space::FLASHRAW_COLOR_SPACE_CUSTOM as i32);
+            let n = flashraw_frame_sample_count(fr);
+            let c = std::slice::from_raw_parts(flashraw_frame_data(fr) as *const u8, n);
+            let b = std::slice::from_raw_parts(flashraw_frame_data(p3) as *const u8, n);
+            let worst = b.iter().zip(c).map(|(x, y)| x.abs_diff(*y)).max().unwrap();
+            assert!(worst <= 1, "profile path vs built-in P3: {worst}");
+            flashraw_frame_free(fr);
+        } else {
+            assert_eq!(st, flashraw_status::FLASHRAW_ERROR_INVALID_ARGUMENT);
+        }
+        flashraw_frame_free(p3);
+        flashraw_file_free(f);
+    }
+}
+
+#[test]
 fn previews_are_zero_copy() {
     let f = open_path(&fixture("canon-5d3-lossy.dng"));
     // SAFETY: live handle until freed at the end.

@@ -13,6 +13,7 @@ array's base object owns the decoder's buffer.
 
 from __future__ import annotations
 
+import builtins
 import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
@@ -82,7 +83,10 @@ __all__ = [
     "imread",
     "gpu_available",
     "build_info",
+    "icc_supported",
+    "icc_profile",
     "OUTPUTS",
+    "COLOR_SPACES",
     "BACKENDS",
     # metadata types
     "Rect",
@@ -125,6 +129,9 @@ __all__ = [
     "InternalError",
     "ERROR_KINDS",
 ]
+
+#: Colour spaces accepted by ``color_space=``.
+COLOR_SPACES: Tuple[str, ...] = ("srgb", "display-p3", "adobe-rgb", "prophoto", "rec2020")
 
 OUTPUTS: Tuple[str, ...] = (
     "raw-u16",
@@ -207,6 +214,8 @@ class Frame:
         "stats",
         "warnings",
         "source",
+        "color_space",
+        "icc_profile",
         "metadata",
         "_data_address",
     )
@@ -235,6 +244,13 @@ class Frame:
     warnings: Tuple[DecodeWarning, ...]
     #: ``"sensor"``, or ``"preview"`` when ``preview_fallback`` returned the embedded preview.
     source: str
+    #: Colour space of the RGB outputs: the requested ``color_space`` (``"srgb"``,
+    #: ``"display-p3"``, ...), ``"custom"`` after an ``output_profile``, ``"srgb"`` for raw outputs.
+    color_space: str
+    #: ICC profile (bytes) describing the RGB samples, for tagging files: a display-curve
+    #: profile for ``"rgba8"`` / ``"rgb16"``, a linear one for the linear outputs, or the
+    #: ``output_profile`` that was used. ``None`` for raw outputs and preview frames.
+    icc_profile: Optional[bytes]
     metadata: Metadata
 
     def __init__(self, array: "npt.NDArray[Any]", info: Dict[str, Any], metadata: Metadata, wall_ms: float = 0.0) -> None:
@@ -260,6 +276,8 @@ class Frame:
         self.stats = DecodeStats._from(info["stats"], wall_ms)
         self.warnings = tuple(DecodeWarning._from(w) for w in info["warnings"])
         self.source = info.get("source", "sensor")
+        self.color_space = info.get("color_space", "srgb")
+        self.icc_profile = info.get("icc_profile")
         self.metadata = metadata
         self._data_address = info.get("data_address", 0)
 
@@ -490,6 +508,10 @@ class RawFile:
         black_point: float = 0.0,
         white_point: float = 1.0,
         preview_fallback: bool = False,
+        color_space: str = "srgb",
+        output_profile: Union[bytes, "os.PathLike[str]", str, None] = None,
+        intent: str = "perceptual",
+        black_point_compensation: bool = False,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
 
@@ -523,6 +545,18 @@ class RawFile:
                 Nikon High Efficiency NEF): return the embedded full-size preview instead of
                 raising. The frame then has ``source == "preview"`` and a
                 ``"preview-fallback"`` warning. Never applies to raw outputs or regions.
+            color_space: RGB outputs: ``"srgb"`` (default), ``"display-p3"``, ``"adobe-rgb"``,
+                ``"prophoto"`` or ``"rec2020"``. The linear outputs get the primaries, the
+                display outputs (``"rgba8"``, ``"rgb16"``) also the space's transfer curve;
+                :attr:`Frame.icc_profile` is the matching ICC profile.
+            output_profile: RGB outputs: convert to this ICC profile (the bytes, or a path to
+                a ``.icc`` file) instead of ``color_space``. Needs :func:`icc_supported`.
+                Matrix/TRC profiles cost nothing extra; profiles with lookup tables take a
+                second, slower pass (and only the display outputs). Invalid profiles raise
+                :class:`InvalidArgumentError`.
+            intent: rendering intent for ``output_profile``: ``"perceptual"`` (default),
+                ``"relative"``, ``"saturation"`` or ``"absolute"``.
+            black_point_compensation: black point compensation for ``output_profile``.
         """
         t0 = time.perf_counter()
         array, info = self._native.decode(
@@ -539,6 +573,10 @@ class RawFile:
             black_point,
             white_point,
             preview_fallback,
+            color_space,
+            _profile_bytes(output_profile),
+            intent,
+            black_point_compensation,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 
@@ -559,6 +597,10 @@ class RawFile:
         exposure: float = 0.0,
         black_point: float = 0.0,
         white_point: float = 1.0,
+        color_space: str = "srgb",
+        output_profile: Union[bytes, "os.PathLike[str]", str, None] = None,
+        intent: str = "perceptual",
+        black_point_compensation: bool = False,
     ) -> Frame:
         """Decode one independently decodable tile/strip (see :attr:`tiles`)."""
         t0 = time.perf_counter()
@@ -575,6 +617,11 @@ class RawFile:
             exposure,
             black_point,
             white_point,
+            False,
+            color_space,
+            _profile_bytes(output_profile),
+            intent,
+            black_point_compensation,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 
@@ -583,6 +630,28 @@ class RawFile:
             return "<flashraw.RawFile (closed)>"
         m = self.metadata
         return f"<flashraw.RawFile {m.format} {m.camera.name} {m.width}x{m.height}>"
+
+
+def _profile_bytes(profile: Union[bytes, "os.PathLike[str]", str, None]) -> Optional[bytes]:
+    """The bytes of an ICC profile given as bytes-like or as a file path."""
+    if profile is None:
+        return None
+    if isinstance(profile, (str, os.PathLike)):
+        with builtins.open(profile, "rb") as f:
+            return f.read()
+    return bytes(profile)
+
+
+def icc_supported() -> bool:
+    """True when this build converts to arbitrary ICC profiles (``output_profile=``). The
+    built-in colour spaces and their profiles are always available."""
+    return bool(_flashraw.icc_supported())
+
+
+def icc_profile(color_space: str = "srgb", *, linear: bool = False) -> bytes:
+    """The standard ICC profile (bytes) of a built-in colour space; ``linear=True`` gives
+    the variant with a linear transfer curve, for the linear outputs."""
+    return bytes(_flashraw.icc_profile(color_space, linear))
 
 
 def open(  # noqa: A001 - mirrors the built-in for files

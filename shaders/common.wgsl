@@ -35,7 +35,7 @@ struct Params {
     off_rowd: u32,
     off_cold: u32,
     lut_len: u32,     // linearisation LUT entries at lut[0..lut_len)
-    off_srgb: u32,    // 4097-entry linear -> sRGB8 table in `lut`
+    off_srgb: u32,    // (srgb_n + 1)-entry linear -> 8-bit output table in `lut` (4097 for sRGB)
     off_cfa: u32,     // CFA site descriptors in `lut`
     crop_x: u32,      // develop: crop origin (frame coordinates)
     crop_y: u32,
@@ -51,8 +51,8 @@ struct Params {
     dst_y: u32,
     dst_stride: u32,  // develop: pixels per row of that rectangle
     dst_off: u32,     // word offset of the band's first element inside the `dst` binding
-    off_srgb16: u32,  // 16385-entry linear -> sRGB16 curve in `tab` (OUT_MODE 2)
-    pad1: u32,
+    off_srgb16: u32,  // 16385-entry linear -> output-curve 16-bit table in `tab` (OUT_MODE 2)
+    srgb_n: u32,      // segments of the 8-bit output table (4096 for sRGB)
     wb: vec4<f32>,
     m0: vec4<f32>,    // camera -> linear sRGB matrix rows
     m1: vec4<f32>,

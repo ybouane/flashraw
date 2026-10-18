@@ -4,7 +4,10 @@ mod crops;
 mod output;
 
 use clap::{Args, Parser, Subcommand};
-use flashraw::{Backend, CorruptionPolicy, DecodeOptions, Demosaic, FlashRaw, OutputFormat, Rect};
+use flashraw::{
+    Backend, ColorSpace, CorruptionPolicy, DecodeOptions, Demosaic, FlashRaw, OutputFormat, OutputProfile, Rect,
+    RenderingIntent,
+};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -57,6 +60,21 @@ struct DecodeArgs {
     /// as `"source": "preview"` with --json).
     #[arg(long)]
     preview_fallback: bool,
+    /// RGB outputs: colour space: srgb (default), display-p3, adobe-rgb, prophoto, rec2020.
+    /// TIFF and JPEG files carry the matching ICC profile.
+    #[arg(long, default_value = "srgb")]
+    color_space: String,
+    /// RGB display outputs (rgba8, rgb16): convert to this ICC profile instead of
+    /// --color-space and embed it in TIFF and JPEG files. Profiles with lookup tables use a
+    /// second, slower pass.
+    #[arg(long, value_name = "FILE.icc")]
+    output_profile: Option<PathBuf>,
+    /// Rendering intent for --output-profile: perceptual, relative, saturation, absolute.
+    #[arg(long, default_value = "perceptual")]
+    intent: String,
+    /// Black point compensation for --output-profile.
+    #[arg(long)]
+    bpc: bool,
     /// Print per-stage timings.
     #[arg(long)]
     profile: bool,
@@ -172,7 +190,18 @@ fn policy(strict: bool) -> CorruptionPolicy {
 }
 
 fn decode_options(a: &DecodeArgs) -> Result<DecodeOptions, String> {
+    let output_profile = match &a.output_profile {
+        Some(p) => {
+            let bytes = std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            let intent = RenderingIntent::parse(&a.intent).ok_or_else(|| format!("unknown intent {:?}", a.intent))?;
+            Some(OutputProfile::new(bytes).with_intent(intent).with_black_point_compensation(a.bpc))
+        }
+        None => None,
+    };
     Ok(DecodeOptions {
+        color_space: ColorSpace::parse(&a.color_space)
+            .ok_or_else(|| format!("unknown color space {:?}", a.color_space))?,
+        output_profile,
         backend: Backend::parse(&a.backend).ok_or_else(|| format!("unknown backend {:?}", a.backend))?,
         output: OutputFormat::parse(&a.output).ok_or_else(|| format!("unknown output {:?}", a.output))?,
         threads: a.threads,
@@ -268,6 +297,7 @@ fn run(cli: Cli) -> Result<ExitCode, String> {
                 println!(
                     "{}",
                     serde_json::json!({"width": frame.width, "height": frame.height, "cpp": frame.cpp, "stats": frame.stats,
+                        "color_space": frame.color_space.name(), "icc_profile_bytes": frame.icc_profile().map(<[u8]>::len),
                         "white_balance": frame.white_balance, "white_balance_applied": frame.white_balance_applied,
                         "source": frame.source.name(), "incomplete": frame.is_incomplete(), "warnings": output::warnings_json(frame.warnings())})
                 );

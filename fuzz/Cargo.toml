@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-flashraw = { path = "../crates/flashraw", default-features = false, features = ["simd"] }
+flashraw = { path = "../crates/flashraw", default-features = false, features = ["simd", "icc"] }
 flashraw-core = { path = "../crates/flashraw-core", default-features = false }
 flashraw-codecs = { path = "../crates/flashraw-codecs", default-features = false }
 
@@ -86,6 +86,13 @@ bench = false
 [[bin]]
 name = "dng_opcodes"
 path = "fuzz_targets/dng_opcodes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "icc_profile"
+path = "fuzz_targets/icc_profile.rs"
 test = false
 doc = false
 bench = false

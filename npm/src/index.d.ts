@@ -472,6 +472,12 @@ export type Backend = 'auto' | 'cpu' | 'scalar' | 'cpu-simd' | 'simd' | 'gpu' | 
 /** See `DecodeOptions.corruptionPolicy`. */
 export type CorruptionPolicy = 'recover' | 'strict';
 
+/** Output colour spaces (`DecodeOptions.colorSpace`); aliases such as `'p3'` and `'romm'` are accepted too. */
+export type ColorSpace = 'srgb' | 'display-p3' | 'adobe-rgb' | 'prophoto' | 'rec2020';
+
+/** ICC rendering intent (`DecodeOptions.intent`). */
+export type RenderingIntent = 'perceptual' | 'relative' | 'saturation' | 'absolute';
+
 /** Where a frame's pixels come from: the sensor data, or the embedded preview (`previewFallback`). */
 export type FrameSource = 'sensor' | 'preview';
 
@@ -567,6 +573,22 @@ export interface DecodeOptions {
    * Default false (throw).
    */
   previewFallback?: boolean;
+  /**
+   * Colour space of the RGB outputs (default `'srgb'`). The linear outputs get its primaries;
+   * `rgba8` and `rgb16` also its transfer curve. `frame.iccProfile` is the matching ICC profile.
+   */
+  colorSpace?: ColorSpace;
+  /**
+   * RGB outputs: convert to this ICC profile (the bytes of a `.icc` file) instead of
+   * `colorSpace`. Matrix/TRC profiles cost nothing extra; profiles with lookup tables take a
+   * second, slower pass and only the display outputs (`rgba8`, `rgb16`). Invalid profiles
+   * reject with `InvalidArgumentError`. Not available with the GPU backend (the CPU is used).
+   */
+  outputProfile?: Uint8Array | ArrayBuffer;
+  /** Rendering intent for `outputProfile` (default `'perceptual'`). */
+  intent?: RenderingIntent;
+  /** Black point compensation for `outputProfile` (profiles with lookup tables; default false). */
+  blackPointCompensation?: boolean;
   /** Decode only this region (sensor-buffer coordinates). */
   region?: Rect;
   limits?: Limits;
@@ -670,6 +692,10 @@ export interface FrameFields<O extends OutputFormat = OutputFormat> {
   warnings: DecodeWarning[];
   /** `'preview'` when `previewFallback` substituted the embedded preview; `'sensor'` otherwise. */
   source: FrameSource;
+  /** Colour space of the RGB samples (`'custom'` after `outputProfile`; `'srgb'` for raw outputs). */
+  colorSpace: ColorSpace | 'custom';
+  /** ICC profile describing the RGB samples, for tagging files; null for raw outputs and preview frames. */
+  iccProfile: Uint8Array | null;
 }
 
 /** A decoded frame as returned by `FlashRaw#decode`. */
@@ -706,6 +732,14 @@ export declare class DecodedFrame<O extends OutputFormat = OutputFormat, S exten
   readonly warnings: DecodeWarning[];
   /** `'preview'` when `previewFallback` substituted the embedded preview; `'sensor'` otherwise. */
   readonly source: FrameSource;
+  /** Colour space of the RGB samples (`'custom'` after `outputProfile`; `'srgb'` for raw outputs). */
+  readonly colorSpace: ColorSpace | 'custom';
+  /**
+   * ICC profile describing the RGB samples, for tagging files: a display-curve profile for
+   * `rgba8` / `rgb16`, a linear one for the linear outputs, or the `outputProfile` used.
+   * Null for raw outputs and preview frames.
+   */
+  readonly iccProfile: Uint8Array | null;
   /** Pixels, row-major, `channels` interleaved samples per pixel. */
   readonly data: FrameDataFor<O, S>;
   /** True while `data` is a view into WASM memory (`zeroCopy: true`). */
@@ -756,6 +790,14 @@ export declare class GpuFrame<O extends GpuOutputFormat = GpuOutputFormat> {
   readonly warnings: DecodeWarning[];
   /** `'preview'` when `previewFallback` substituted the embedded preview; `'sensor'` otherwise. */
   readonly source: FrameSource;
+  /** Colour space of the RGB samples (`'custom'` after `outputProfile`; `'srgb'` for raw outputs). */
+  readonly colorSpace: ColorSpace | 'custom';
+  /**
+   * ICC profile describing the RGB samples, for tagging files: a display-curve profile for
+   * `rgba8` / `rgb16`, a linear one for the linear outputs, or the `outputProfile` used.
+   * Null for raw outputs and preview frames.
+   */
+  readonly iccProfile: Uint8Array | null;
   readonly gpuResident: true;
   /**
    * Storage buffer (`STORAGE | COPY_SRC`) holding the pixels; may be larger than `byteLength`.

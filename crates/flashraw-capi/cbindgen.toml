@@ -50,6 +50,8 @@ include = [
     "flashraw_corruption_policy",
     "flashraw_sample_type",
     "flashraw_pixel_source",
+    "flashraw_color_space",
+    "flashraw_rendering_intent",
     "flashraw_cfa_color",
     "flashraw_sensor_layout",
     "flashraw_preview_encoding",

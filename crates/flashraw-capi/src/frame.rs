@@ -56,6 +56,12 @@ pub(crate) fn default_decode_options() -> flashraw_decode_options {
         black_point: 0.0,
         white_point: 1.0,
         preview_fallback: 0,
+        color_space: flashraw_color_space::FLASHRAW_COLOR_SPACE_SRGB as i32,
+        intent: flashraw_rendering_intent::FLASHRAW_INTENT_PERCEPTUAL as i32,
+        black_point_compensation: 0,
+        reserved: 0,
+        output_profile: std::ptr::null(),
+        output_profile_len: 0,
     }
 }
 
@@ -89,7 +95,18 @@ pub(crate) fn to_decode_options(o: &flashraw_decode_options, base: flashraw::Lim
         black_point: o.black_point,
         white_point: o.white_point,
         preview_fallback: o.preview_fallback != 0,
+        color_space: color_space_from(o.color_space)?,
+        output_profile: None,
     };
+    if !o.output_profile.is_null() {
+        // SAFETY: the caller guarantees `output_profile_len` readable bytes (documented on the field).
+        let bytes = unsafe { std::slice::from_raw_parts(o.output_profile, o.output_profile_len) };
+        d.output_profile = Some(
+            flashraw::OutputProfile::new(bytes)
+                .with_intent(intent_from(o.intent)?)
+                .with_black_point_compensation(o.black_point_compensation != 0),
+        );
+    }
     if o.max_samples != 0 {
         d.limits = d.limits.with_max_samples(o.max_samples);
     }
@@ -459,6 +476,61 @@ pub unsafe extern "C" fn flashraw_frame_source(frame: *const flashraw_frame) -> 
             _ => flashraw_pixel_source::FLASHRAW_SOURCE_SENSOR,
         } as i32)
     })
+}
+
+/// Colour space of the RGB samples (`flashraw_color_space`; `FLASHRAW_COLOR_SPACE_CUSTOM`
+/// when an output profile was used, sRGB for sensor-domain outputs). 0 on error.
+///
+/// # Safety
+/// `frame` must be NULL or a live frame.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flashraw_frame_color_space(frame: *const flashraw_frame) -> i32 {
+    with_frame(frame, 0, |f| Ok(color_space_to(f.frame.color_space)))
+}
+
+/// ICC profile describing the RGB samples (for tagging files): the profile of the colour
+/// space (display curve for RGBA8 and RGB16, linear curve for the linear outputs) or the
+/// output profile that was used. Writes the size to `*len` (if non-NULL). Owned by the
+/// frame. NULL for sensor-domain outputs and preview frames.
+///
+/// # Safety
+/// `frame` must be NULL or a live frame; `len` NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flashraw_frame_icc_profile(frame: *const flashraw_frame, len: *mut usize) -> *const u8 {
+    with_frame(frame, std::ptr::null(), |f| {
+        let p = f.frame.icc_profile();
+        // SAFETY: a non-null `len` is writable per the contract.
+        if let Some(l) = unsafe { len.as_mut() } {
+            *l = p.map_or(0, <[u8]>::len);
+        }
+        Ok(p.map_or(std::ptr::null(), <[u8]>::as_ptr))
+    })
+}
+
+/// Copy the standard ICC profile of a built-in colour space into `buf` (`linear` non-zero:
+/// the variant with a linear curve, for the linear outputs). Returns the profile size; when
+/// `buf` is NULL or `capacity` is smaller nothing is written. 0 for an unknown space.
+///
+/// # Safety
+/// `buf` must be NULL or writable for `capacity` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn flashraw_icc_profile(color_space: i32, linear: bool, buf: *mut u8, capacity: usize) -> usize {
+    guard_value(0, || {
+        let cs = color_space_from(color_space)?;
+        let p = if linear { cs.icc_profile_linear() } else { cs.icc_profile() };
+        if !buf.is_null() && capacity >= p.len() {
+            // SAFETY: `buf` is writable for `capacity >= p.len()` bytes (contract).
+            unsafe { std::ptr::copy_nonoverlapping(p.as_ptr(), buf, p.len()) };
+        }
+        Ok(p.len())
+    })
+}
+
+/// True when this build can convert to arbitrary ICC profiles (`output_profile`); the
+/// built-in colour spaces and their profiles are always available.
+#[unsafe(no_mangle)]
+pub extern "C" fn flashraw_icc_supported() -> bool {
+    flashraw::icc_supported()
 }
 
 /// Number of recovery warnings.

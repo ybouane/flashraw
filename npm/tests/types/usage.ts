@@ -35,6 +35,7 @@ import {
   type CorruptInfo,
   type DecodeWarning,
   type FrameSource,
+  type ColorSpace,
 } from 'flashraw';
 import { createWorkerPool, type WorkerFrame } from 'flashraw/worker';
 
@@ -196,6 +197,11 @@ export async function usage(buffer: ArrayBuffer, file: Blob): Promise<void> {
   const frameSource: FrameSource = fb.source;
   const substituted: boolean = fb.warnings.some((w: DecodeWarning) => w.kind === 'preview-fallback');
   void [incomplete, filled, unitIndex, frameSource, substituted];
+  const wide = await decodeRaw(new Uint8Array(buffer), { output: 'rgba8', colorSpace: 'display-p3', intent: 'relative' });
+  const space: ColorSpace | 'custom' = wide.colorSpace;
+  const icc: Uint8Array | null = wide.iccProfile;
+  const tagged = await decodeRaw(new Uint8Array(buffer), { output: 'rgb16', outputProfile: icc ?? new Uint8Array(0) });
+  void [space, tagged.colorSpace];
   const p = await extractPreview(buffer);
   const t = await extractThumbnail(buffer, { format: 'rgba8' });
   const ok: boolean = await supportsFile(buffer);
@@ -231,3 +237,5 @@ void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { output: 'png'
 void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { previewFallback: 'yes' });
 // @ts-expect-error unknown corruption policy
 void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { corruptionPolicy: 'lenient' });
+// @ts-expect-error unknown colour space
+void FlashRaw.prototype.decode.call(null as unknown as FlashRaw, { colorSpace: 'lab' });

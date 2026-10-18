@@ -16,7 +16,7 @@ bytemuck.workspace = true
 pollster.workspace = true
 
 [dev-dependencies]
-flashraw = { workspace = true, features = ["gpu", "rayon", "simd", "mmap"] }
+flashraw = { workspace = true, features = ["gpu", "rayon", "simd", "mmap", "icc"] }
 flashraw-codecs.workspace = true
 # Offline WGSL validation (same naga as wgpu 30) so shader errors are caught without a GPU.
 naga = { version = "30", features = ["wgsl-in"] }

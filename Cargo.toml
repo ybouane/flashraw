@@ -55,6 +55,7 @@ proptest = "1"
 criterion = { version = "0.8", default-features = false }
 toml = "1"
 jpeg-encoder = "0.7"
+moxcms = "0.8"
 
 [workspace.lints.clippy]
 # Indexed loops are the clearest form for the numeric kernels (IDCT, matrices, CFA tables).

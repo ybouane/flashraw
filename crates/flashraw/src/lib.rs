@@ -30,7 +30,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
+mod color;
 mod frame;
+mod icc;
 // GPU backend (see crate::gpu and docs/gpu.md).
 #[cfg(feature = "gpu")]
 pub mod gpu;
@@ -44,6 +46,9 @@ pub mod process;
 mod source;
 mod stagger;
 
+pub use color::ColorSpace;
+#[doc(hidden)]
+pub use color::{CurveTables, OutputCurve};
 pub use flashraw_core::{
     BlackLevel, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression, CorruptReason, DataUnit,
     DecodeUnit, DecodeWarning, DngExtras, DngProfileInfo, EXTRA_CROP_SOURCE, EXTRA_IMAGE_SIZE, Error, ExposureInfo,
@@ -52,6 +57,7 @@ pub use flashraw_core::{
     SampleFormat, SensorLayout, Stage, Truncation, WhiteBalance, WhiteLevel,
 };
 pub use frame::{BackendReport, DecodeStatistics, FrameSource, RawFrame, RawPixelData};
+pub use icc::{OutputProfile, RenderingIntent, icc_supported};
 pub use options::{Backend, CorruptionPolicy, DecodeOptions, Demosaic, OutputFormat, ParseOptionError};
 pub use source::Source;
 
@@ -266,6 +272,11 @@ impl<'a> FlashRaw<'a> {
                 "FlashRaw was built without the `gpu` feature or no adapter was found".into(),
             ));
         }
+        // Colour management of the RGB outputs (sRGB unless requested otherwise).
+        let output = match opts.output.rgb_encoding() {
+            Some(_) => Some(icc::OutputSetup::resolve(opts)?),
+            None => None,
+        };
         // ---- GPU backend hook (crate::gpu): GPU/Auto selection and GPU-resident outputs ----
         #[cfg(feature = "gpu")]
         if let Some(frame) = gpu::decode(self, opts, t0, &profiler)? {
@@ -359,28 +370,53 @@ impl<'a> FlashRaw<'a> {
                 let enc = opts.output.rgb_encoding().expect("RGB output");
                 let crop = if opts.crop { translate(info.crop) } else { Rect::full(img.width, img.height) };
                 let crop = if crop.is_empty() { Rect::full(img.width, img.height) } else { crop };
-                let mut params = process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop);
+                let setup = output.as_ref().expect("RGB output resolved");
+                let lut = setup.lut();
+                if lut.is_some() && !enc.oriented() {
+                    return Err(Error::InvalidArgument(
+                        "an output profile with lookup tables applies to the display outputs (rgba8, rgb16); \
+                         the linear outputs have no device encoding"
+                            .into(),
+                    ));
+                }
+                let mut params = setup.apply(process::DevelopParams::new(&frame_info_for_post, opts.demosaic, crop));
                 params.levels = levels;
                 let staged =
                     opts.apply_opcodes && lists.as_ref().is_some_and(|l| l.has_pixel_ops(1) || l.has_pixel_ops(2));
                 // Staggered lattices (SuperCCD) develop to linear RGB in the stored grid, then
-                // are resampled to square pixels before encoding.
+                // are resampled to square pixels before encoding; so do profiles with lookup
+                // tables, which convert the linear image before quantising.
                 let stagger = stagger::of(self.metadata(), info);
-                let dev_enc = if stagger.is_some() { process::RgbEncoding::LinearF32 } else { enc };
+                let dev_enc = if stagger.is_some() || lut.is_some() { process::RgbEncoding::LinearF32 } else { enc };
                 let developed = profiler.time(Stage::Postprocess, || match lists.as_mut().filter(|_| staged) {
                     Some(l) => l.develop(&img, &frame_info_for_post, origin, &params, dev_enc, ctx.parallel),
                     None => {
                         process::develop_encoded(&img, &frame_info_for_post, origin, &params, dev_enc, ctx.parallel)
                     }
                 })?;
+                let finish = |d: process::Developed| -> Result<(u32, u32, u32, RawPixelData)> {
+                    match lut {
+                        #[cfg(feature = "icc")]
+                        Some(l) => {
+                            let mut d = d;
+                            l.apply(&mut d, ctx.parallel)?;
+                            Ok(process::encode_device(d, enc, info.orientation, ctx.parallel))
+                        }
+                        #[cfg(not(feature = "icc"))]
+                        Some(_) => unreachable!("profiles with lookup tables need the `icc` feature"),
+                        None => Ok(process::encode_image(d, enc, &params.curve, info.orientation, ctx.parallel)),
+                    }
+                };
                 match (stagger, developed) {
                     (Some(mut st), (w, h, _, RawPixelData::F32(rgb))) => profiler.time(Stage::Postprocess, || {
                         st.offset = opts.demosaic != Demosaic::HalfSize;
                         let d = process::Developed { width: w, height: h, rgb };
                         let win = Rect::new(crop.x + origin.0, crop.y + origin.1, crop.width, crop.height);
-                        let d = st.resample(&d, win, ctx.parallel);
-                        Ok::<_, Error>(process::encode_image(d, enc, info.orientation, ctx.parallel))
+                        finish(st.resample(&d, win, ctx.parallel))
                     })?,
+                    (None, (w, h, _, RawPixelData::F32(rgb))) if lut.is_some() => {
+                        profiler.time(Stage::Postprocess, || finish(process::Developed { width: w, height: h, rgb }))?
+                    }
                     (_, r) => r,
                 }
             }
@@ -441,6 +477,8 @@ impl<'a> FlashRaw<'a> {
             stats,
             warnings: ctx.take_warnings(),
             source: FrameSource::Sensor,
+            color_space: output.as_ref().map_or(ColorSpace::Srgb, |o| o.color_space),
+            icc: output.as_ref().and_then(|o| o.profile_for(opts.output)),
         })
     }
 

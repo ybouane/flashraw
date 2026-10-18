@@ -2,8 +2,8 @@
 
 use crate::{convert, invalid, make_error, to_pyerr};
 use flashraw::{
-    Backend, CorruptionPolicy, DecodeOptions, Demosaic, FlashRaw, Limits, OutputFormat, PreviewInfo, RawFrame,
-    RawPixelData, Rect,
+    Backend, ColorSpace, CorruptionPolicy, DecodeOptions, Demosaic, FlashRaw, Limits, OutputFormat, OutputProfile,
+    PreviewInfo, RawFrame, RawPixelData, Rect, RenderingIntent,
 };
 use numpy::ndarray::{ArrayD, IxDyn};
 use numpy::{Element, PyArray};
@@ -301,6 +301,7 @@ impl RawFile {
         corruption_policy: &str,
         levels: (f32, f32, f32),
         preview_fallback: bool,
+        color: (&str, Option<&[u8]>, &str, bool),
         limits: Limits,
     ) -> PyResult<Request> {
         let out = OutputFormat::parse(output).ok_or_else(|| {
@@ -350,7 +351,30 @@ impl RawFile {
                 Some(r)
             }
         };
+        let (color_space, profile, intent, bpc) = color;
+        let color_space = ColorSpace::parse(color_space).ok_or_else(|| {
+            invalid(
+                py,
+                format!(
+                    "unknown color_space {color_space:?} (expected srgb, display-p3, adobe-rgb, prophoto or rec2020)"
+                ),
+            )
+        })?;
+        let output_profile = match profile {
+            Some(bytes) => {
+                let intent = RenderingIntent::parse(intent).ok_or_else(|| {
+                    invalid(
+                        py,
+                        format!("unknown intent {intent:?} (expected perceptual, relative, saturation or absolute)"),
+                    )
+                })?;
+                Some(OutputProfile::new(bytes).with_intent(intent).with_black_point_compensation(bpc))
+            }
+            None => None,
+        };
         let opts = DecodeOptions {
+            color_space,
+            output_profile,
             backend: be,
             output: out,
             threads,
@@ -394,6 +418,7 @@ impl RawFile {
         let mut info = convert::frame(&frame, &req.backend);
         info["data_address"] = serde_json::json!(data_address(&frame.data));
         info["stats"]["call_ms"] = serde_json::json!(call_ms);
+        let icc = frame.icc_profile().map(|p| PyBytes::new(py, p));
         let shape = shape(&frame);
         let data = std::mem::replace(&mut frame.data, RawPixelData::U8(Vec::new()));
         let array = match data {
@@ -405,7 +430,11 @@ impl RawFile {
             #[allow(unreachable_patterns)]
             _ => return Err(make_error(py, "NotAvailable", "the frame is not in host memory", None, None)),
         };
-        Ok((array, convert::to_py(py, &info)?))
+        let info = convert::to_py(py, &info)?;
+        if let Some(icc) = icc {
+            info.set_item("icc_profile", icc)?;
+        }
+        Ok((array, info))
     }
 
     /// Resolve a preview selector: `"largest"`, `"smallest"` or an index.
@@ -534,7 +563,8 @@ impl RawFile {
     #[pyo3(signature = (
         output="raw-u16", backend="auto", threads=None, region=None, crop=None, demosaic="bilinear",
         apply_opcodes=true, corruption_policy="recover", tile=None, exposure=0.0, black_point=0.0,
-        white_point=1.0, preview_fallback=false
+        white_point=1.0, preview_fallback=false, color_space="srgb", output_profile=None,
+        intent="perceptual", black_point_compensation=false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn decode<'py>(
@@ -553,6 +583,10 @@ impl RawFile {
         black_point: f32,
         white_point: f32,
         preview_fallback: bool,
+        color_space: &str,
+        output_profile: Option<&[u8]>,
+        intent: &str,
+        black_point_compensation: bool,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         let mut req = Self::parse_request(
             py,
@@ -566,6 +600,7 @@ impl RawFile {
             corruption_policy,
             (exposure, black_point, white_point),
             preview_fallback,
+            (color_space, output_profile, intent, black_point_compensation),
             self.limits,
         )?;
         if tile.is_some() && req.opts.region.is_some() {

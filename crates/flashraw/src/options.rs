@@ -1,5 +1,7 @@
 //! Decode options and backend selection.
 
+use crate::color::ColorSpace;
+use crate::icc::{OutputProfile, RenderingIntent};
 use flashraw_core::{Limits, Rect};
 
 /// Execution backend.
@@ -44,10 +46,12 @@ pub enum OutputFormat {
     RawF32,
     /// Black-subtracted, white-normalised sensor samples in `[0, 1]` (f32, CFA layout kept).
     NormalizedF32,
-    /// Demosaiced, white-balanced linear camera RGB → linear sRGB primaries, f32 RGB.
+    /// Demosaiced, white-balanced linear camera RGB → linear sRGB primaries (or those of
+    /// [`DecodeOptions::color_space`]), f32 RGB.
     /// Sensor orientation (see [`crate::RawFrame::orientation`]); values are not clipped.
     LinearRgbF32,
-    /// Display-ready 8-bit sRGB RGBA (orientation applied), e.g. for `ImageData`.
+    /// Display-ready 8-bit sRGB RGBA (orientation applied), e.g. for `ImageData`. Uses the
+    /// colour space and transfer curve of [`DecodeOptions::color_space`] (sRGB by default).
     Rgba8,
     /// Display-ready 16-bit sRGB RGB (orientation applied, no alpha): the transfer curve of
     /// [`OutputFormat::Rgba8`] at 16-bit precision, e.g. for 16-bit PNG/TIFF.
@@ -241,6 +245,31 @@ pub struct DecodeOptions {
     /// least 90% of the default crop in each dimension; never applies to sensor-domain
     /// outputs or region decodes. Default: false (the error is returned).
     pub preview_fallback: bool,
+    /// Colour space of the RGB outputs ([`ColorSpace::Srgb`] by default). The primaries are
+    /// part of the develop pass; the display outputs ([`OutputFormat::Rgba8`],
+    /// [`OutputFormat::Rgb16`]) also use the space's transfer curve. Applies to every
+    /// backend, region and tile decode. [`ColorSpace::Custom`] is rejected: use
+    /// [`DecodeOptions::output_profile`].
+    pub color_space: ColorSpace,
+    /// Convert the RGB outputs to this ICC profile instead of `color_space` (needs the
+    /// `icc` cargo feature). Matrix/TRC profiles cost nothing per pixel; profiles with
+    /// lookup tables run a second, slower pass on the CPU. GPU decodes of such profiles
+    /// fall back to the CPU. Default: none.
+    pub output_profile: Option<OutputProfile>,
+}
+
+impl DecodeOptions {
+    /// Set the output colour space.
+    pub fn with_color_space(mut self, cs: ColorSpace) -> Self {
+        self.color_space = cs;
+        self
+    }
+
+    /// Set the output ICC profile.
+    pub fn with_output_profile(mut self, p: OutputProfile) -> Self {
+        self.output_profile = Some(p);
+        self
+    }
 }
 
 impl Default for DecodeOptions {
@@ -259,6 +288,8 @@ impl Default for DecodeOptions {
             black_point: 0.0,
             white_point: 1.0,
             preview_fallback: false,
+            color_space: ColorSpace::Srgb,
+            output_profile: None,
         }
     }
 }
@@ -350,6 +381,8 @@ name_traits!(Backend, "backend");
 name_traits!(OutputFormat, "output format");
 name_traits!(Demosaic, "demosaic");
 name_traits!(CorruptionPolicy, "corruption policy");
+name_traits!(ColorSpace, "color space");
+name_traits!(RenderingIntent, "rendering intent");
 
 #[cfg(test)]
 mod tests {

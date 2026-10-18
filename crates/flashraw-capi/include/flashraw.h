@@ -311,6 +311,81 @@ typedef int32_t flashraw_pixel_source;
 #endif // __cplusplus
 
 /**
+ * Colour space of the RGB outputs (`flashraw_decode_options.color_space`,
+ * `flashraw_frame_color_space()`).
+ */
+enum flashraw_color_space
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : int32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+    /**
+     * sRGB: Rec.709 primaries, D65, sRGB curve. The default.
+     */
+    FLASHRAW_COLOR_SPACE_SRGB = 0,
+    /**
+     * Display P3: DCI-P3 primaries, D65, sRGB curve.
+     */
+    FLASHRAW_COLOR_SPACE_DISPLAY_P3 = 1,
+    /**
+     * Adobe RGB (1998): D65, gamma 563/256.
+     */
+    FLASHRAW_COLOR_SPACE_ADOBE_RGB = 2,
+    /**
+     * ProPhoto RGB: D50, gamma 1.8 with a linear toe.
+     */
+    FLASHRAW_COLOR_SPACE_PROPHOTO = 3,
+    /**
+     * ITU-R BT.2020 primaries, D65, BT.709/BT.2020 OETF.
+     */
+    FLASHRAW_COLOR_SPACE_REC2020 = 4,
+    /**
+     * Described by an ICC output profile only (frames; not valid as an option).
+     */
+    FLASHRAW_COLOR_SPACE_CUSTOM = 255,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum flashraw_color_space flashraw_color_space;
+#else
+typedef int32_t flashraw_color_space;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+/**
+ * Rendering intent for `flashraw_decode_options.output_profile`.
+ */
+enum flashraw_rendering_intent
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : int32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+    /**
+     * Perceptual. The default.
+     */
+    FLASHRAW_INTENT_PERCEPTUAL = 0,
+    /**
+     * Relative colorimetric.
+     */
+    FLASHRAW_INTENT_RELATIVE = 1,
+    /**
+     * Saturation.
+     */
+    FLASHRAW_INTENT_SATURATION = 2,
+    /**
+     * Absolute colorimetric.
+     */
+    FLASHRAW_INTENT_ABSOLUTE = 3,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum flashraw_rendering_intent flashraw_rendering_intent;
+#else
+typedef int32_t flashraw_rendering_intent;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+/**
  * Colour of one CFA site (DNG colour indices, plus emerald).
  */
 enum flashraw_cfa_color
@@ -804,6 +879,33 @@ typedef struct flashraw_decode_options {
      * error is returned.
      */
     int32_t preview_fallback;
+    /**
+     * `flashraw_color_space` of the RGB outputs. Default `FLASHRAW_COLOR_SPACE_SRGB`.
+     */
+    int32_t color_space;
+    /**
+     * `flashraw_rendering_intent` for `output_profile`. Default perceptual.
+     */
+    int32_t intent;
+    /**
+     * Non-zero: black point compensation for `output_profile` (profiles with lookup
+     * tables). Default 0.
+     */
+    int32_t black_point_compensation;
+    /**
+     * Reserved, must be 0.
+     */
+    int32_t reserved;
+    /**
+     * ICC profile to convert the RGB outputs to instead of `color_space` (NULL: none).
+     * Needs a build with ICC support (`flashraw_icc_supported()`); read during
+     * `flashraw_decode()` only, so it need not outlive the call.
+     */
+    const uint8_t *output_profile;
+    /**
+     * Size of `output_profile` in bytes.
+     */
+    size_t output_profile_len;
 } flashraw_decode_options;
 
 /**
@@ -1644,6 +1746,42 @@ bool flashraw_frame_is_incomplete(const struct flashraw_frame *frame);
  * `frame` must be NULL or a live frame.
  */
 int32_t flashraw_frame_source(const struct flashraw_frame *frame);
+
+/**
+ * Colour space of the RGB samples (`flashraw_color_space`; `FLASHRAW_COLOR_SPACE_CUSTOM`
+ * when an output profile was used, sRGB for sensor-domain outputs). 0 on error.
+ *
+ * # Safety
+ * `frame` must be NULL or a live frame.
+ */
+int32_t flashraw_frame_color_space(const struct flashraw_frame *frame);
+
+/**
+ * ICC profile describing the RGB samples (for tagging files): the profile of the colour
+ * space (display curve for RGBA8 and RGB16, linear curve for the linear outputs) or the
+ * output profile that was used. Writes the size to `*len` (if non-NULL). Owned by the
+ * frame. NULL for sensor-domain outputs and preview frames.
+ *
+ * # Safety
+ * `frame` must be NULL or a live frame; `len` NULL or writable.
+ */
+const uint8_t *flashraw_frame_icc_profile(const struct flashraw_frame *frame, size_t *len);
+
+/**
+ * Copy the standard ICC profile of a built-in colour space into `buf` (`linear` non-zero:
+ * the variant with a linear curve, for the linear outputs). Returns the profile size; when
+ * `buf` is NULL or `capacity` is smaller nothing is written. 0 for an unknown space.
+ *
+ * # Safety
+ * `buf` must be NULL or writable for `capacity` bytes.
+ */
+size_t flashraw_icc_profile(int32_t color_space, bool linear, uint8_t *buf, size_t capacity);
+
+/**
+ * True when this build can convert to arbitrary ICC profiles (`output_profile`); the
+ * built-in colour spaces and their profiles are always available.
+ */
+bool flashraw_icc_supported(void);
 
 /**
  * Number of recovery warnings.

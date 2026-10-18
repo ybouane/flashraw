@@ -6,8 +6,8 @@
 
 use crate::error::{FfiError, FfiResult};
 use flashraw::{
-    Backend, CfaColor, ColorSource, CorruptionPolicy, Demosaic, OutputFormat, PreviewEncoding, PreviewKind, Rect,
-    SensorLayout, Stage,
+    Backend, CfaColor, ColorSource, ColorSpace, CorruptionPolicy, Demosaic, OutputFormat, PreviewEncoding, PreviewKind,
+    Rect, RenderingIntent, SensorLayout, Stage,
 };
 
 /// Execution backend (`flashraw_decode_options.backend`).
@@ -70,6 +70,39 @@ pub enum flashraw_corruption_policy {
     FLASHRAW_CORRUPTION_RECOVER = 0,
     /// Fail with `FLASHRAW_ERROR_CORRUPT_FILE`.
     FLASHRAW_CORRUPTION_STRICT = 1,
+}
+
+/// Colour space of the RGB outputs (`flashraw_decode_options.color_space`,
+/// `flashraw_frame_color_space()`).
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum flashraw_color_space {
+    /// sRGB: Rec.709 primaries, D65, sRGB curve. The default.
+    FLASHRAW_COLOR_SPACE_SRGB = 0,
+    /// Display P3: DCI-P3 primaries, D65, sRGB curve.
+    FLASHRAW_COLOR_SPACE_DISPLAY_P3 = 1,
+    /// Adobe RGB (1998): D65, gamma 563/256.
+    FLASHRAW_COLOR_SPACE_ADOBE_RGB = 2,
+    /// ProPhoto RGB: D50, gamma 1.8 with a linear toe.
+    FLASHRAW_COLOR_SPACE_PROPHOTO = 3,
+    /// ITU-R BT.2020 primaries, D65, BT.709/BT.2020 OETF.
+    FLASHRAW_COLOR_SPACE_REC2020 = 4,
+    /// Described by an ICC output profile only (frames; not valid as an option).
+    FLASHRAW_COLOR_SPACE_CUSTOM = 255,
+}
+
+/// Rendering intent for `flashraw_decode_options.output_profile`.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum flashraw_rendering_intent {
+    /// Perceptual. The default.
+    FLASHRAW_INTENT_PERCEPTUAL = 0,
+    /// Relative colorimetric.
+    FLASHRAW_INTENT_RELATIVE = 1,
+    /// Saturation.
+    FLASHRAW_INTENT_SATURATION = 2,
+    /// Absolute colorimetric.
+    FLASHRAW_INTENT_ABSOLUTE = 3,
 }
 
 /// Where a frame's pixels come from (`flashraw_frame_source()`).
@@ -397,6 +430,21 @@ pub struct flashraw_decode_options {
     /// instead (`flashraw_frame_source()` is then `FLASHRAW_SOURCE_PREVIEW`). Default 0: the
     /// error is returned.
     pub preview_fallback: i32,
+    /// `flashraw_color_space` of the RGB outputs. Default `FLASHRAW_COLOR_SPACE_SRGB`.
+    pub color_space: i32,
+    /// `flashraw_rendering_intent` for `output_profile`. Default perceptual.
+    pub intent: i32,
+    /// Non-zero: black point compensation for `output_profile` (profiles with lookup
+    /// tables). Default 0.
+    pub black_point_compensation: i32,
+    /// Reserved, must be 0.
+    pub reserved: i32,
+    /// ICC profile to convert the RGB outputs to instead of `color_space` (NULL: none).
+    /// Needs a build with ICC support (`flashraw_icc_supported()`); read during
+    /// `flashraw_decode()` only, so it need not outlive the call.
+    pub output_profile: *const u8,
+    /// Size of `output_profile` in bytes.
+    pub output_profile_len: usize,
 }
 
 /// Size of the first published layout of each versioned struct. Callers built against an
@@ -449,8 +497,8 @@ pub(crate) unsafe fn read_versioned<T: Versioned>(p: *const T, defaults: T, what
     let mut out = defaults;
     let n = size.min(ours);
     // SAFETY: `out` is a valid `T` of `ours >= n` bytes; every versioned struct consists of
-    // integer and float fields only (no padding, no bools, no pointers), so any byte pattern
-    // is a valid value.
+    // integer, float and raw pointer fields only (no bools, no references), so any byte
+    // pattern is a valid value; pointers are only dereferenced after their length is checked.
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), &mut out as *mut T as *mut u8, n) };
     Ok(out)
 }
@@ -518,6 +566,38 @@ pub(crate) fn output_to(o: OutputFormat) -> i32 {
         OutputFormat::LinearRgbF16 => 7,
         _ => -1,
     }
+}
+
+pub(crate) fn color_space_from(v: i32) -> FfiResult<ColorSpace> {
+    Ok(match v {
+        0 => ColorSpace::Srgb,
+        1 => ColorSpace::DisplayP3,
+        2 => ColorSpace::AdobeRgb,
+        3 => ColorSpace::ProPhoto,
+        4 => ColorSpace::Rec2020,
+        _ => return Err(FfiError::invalid(format!("unknown color space {v}"))),
+    })
+}
+
+pub(crate) fn color_space_to(c: ColorSpace) -> i32 {
+    match c {
+        ColorSpace::Srgb => 0,
+        ColorSpace::DisplayP3 => 1,
+        ColorSpace::AdobeRgb => 2,
+        ColorSpace::ProPhoto => 3,
+        ColorSpace::Rec2020 => 4,
+        _ => 255,
+    }
+}
+
+pub(crate) fn intent_from(v: i32) -> FfiResult<RenderingIntent> {
+    Ok(match v {
+        0 => RenderingIntent::Perceptual,
+        1 => RenderingIntent::RelativeColorimetric,
+        2 => RenderingIntent::Saturation,
+        3 => RenderingIntent::AbsoluteColorimetric,
+        _ => return Err(FfiError::invalid(format!("unknown rendering intent {v}"))),
+    })
 }
 
 pub(crate) fn demosaic_from(v: i32) -> FfiResult<Demosaic> {
@@ -612,8 +692,12 @@ mod tests {
         // changing these numbers is not.
         assert_eq!(size_of::<flashraw_open_options>(), flashraw_open_options::MIN_SIZE);
         assert_eq!(flashraw_decode_options::MIN_SIZE, 64);
-        // Grown since: exposure, black_point, white_point, preview_fallback.
-        assert_eq!(size_of::<flashraw_decode_options>(), 80);
+        // Grown since: exposure, black_point, white_point, preview_fallback (80 bytes), then
+        // color_space, intent, black_point_compensation, reserved and the output profile
+        // pointer and length (pointer-sized, so the total depends on the platform).
+        assert_eq!(std::mem::offset_of!(flashraw_decode_options, preview_fallback), 76);
+        assert_eq!(std::mem::offset_of!(flashraw_decode_options, color_space), 80);
+        assert_eq!(size_of::<flashraw_decode_options>(), 96 + 2 * size_of::<usize>());
         assert_eq!(size_of::<flashraw_preview_info>(), flashraw_preview_info::MIN_SIZE);
         assert_eq!(size_of::<flashraw_decode_stats>(), flashraw_decode_stats::MIN_SIZE);
         assert_eq!(size_of::<flashraw_rect>(), 16);

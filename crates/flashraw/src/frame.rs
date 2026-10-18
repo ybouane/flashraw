@@ -1,7 +1,9 @@
 //! Decoded frames and decode statistics.
 
+use crate::color::ColorSpace;
 use crate::options::OutputFormat;
 use flashraw_core::*;
+use std::sync::Arc;
 
 /// Pixel storage of a decoded frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -216,9 +218,25 @@ pub struct RawFrame {
     /// Where the pixels come from: the sensor data, or the embedded preview when the
     /// preview fallback was used.
     pub source: FrameSource,
+    /// Colour space of the RGB outputs: the requested [`crate::DecodeOptions::color_space`],
+    /// [`ColorSpace::Custom`] when an output profile was used (see
+    /// [`RawFrame::icc_profile`]), and [`ColorSpace::Srgb`] for sensor-domain outputs (which
+    /// have no colour space) and for [`FrameSource::Preview`] frames (the embedded preview
+    /// is passed through as sRGB).
+    pub color_space: ColorSpace,
+    /// ICC profile describing the RGB samples; `None` for the sensor-domain outputs and for
+    /// preview frames.
+    pub(crate) icc: Option<Arc<[u8]>>,
 }
 
 impl RawFrame {
+    /// ICC profile describing the samples of an RGB output, for tagging files: the
+    /// matrix/TRC profile of the colour space (a display curve for [`OutputFormat::Rgba8`]
+    /// and [`OutputFormat::Rgb16`], a linear one for the linear outputs) or the output
+    /// profile that was used. `None` for sensor-domain outputs and preview frames.
+    pub fn icc_profile(&self) -> Option<&[u8]> {
+        self.icc.as_deref()
+    }
     /// Width of the frame in pixels.
     pub fn width(&self) -> u32 {
         self.width

@@ -65,7 +65,8 @@ pub(crate) struct Params {
     pub dst_stride: u32,
     pub dst_off: u32,
     pub off_srgb16: u32,
-    pub pad1: u32,
+    /// Segments of the 8-bit output table at `off_srgb` (4096 for sRGB).
+    pub srgb_n: u32,
     pub wb: [f32; 4],
     pub m0: [f32; 4],
     pub m1: [f32; 4],
@@ -317,7 +318,7 @@ mod tests {
             "dst_stride",
             "dst_off",
             "off_srgb16",
-            "pad1",
+            "srgb_n",
             "wb",
             "m0",
             "m1",

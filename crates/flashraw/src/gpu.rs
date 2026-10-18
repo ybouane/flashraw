@@ -101,6 +101,16 @@ fn workload(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Workload> {
 fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuContext>, Option<String>)>> {
     let resident = opts.output.is_gpu_resident();
     let base = opts.output.host_equivalent();
+    // Output ICC profiles are applied by the CPU pipeline (the GPU kernels know the built-in
+    // colour spaces only).
+    if opts.output_profile.is_some() {
+        if resident {
+            return Err(Error::InvalidArgument(
+                "GPU-resident outputs support the built-in colour spaces only, not output profiles".into(),
+            ));
+        }
+        return Ok(None);
+    }
     // DNG opcode lists that change this output are applied by the CPU pipeline.
     if !resident
         && opts.apply_opcodes
@@ -199,8 +209,9 @@ impl FlashRaw<'_> {
     /// DNG opcode list changes: those are decoded by the CPU pipeline, like [`FlashRaw::decode`].
     pub async fn decode_gpu_async(&self, opts: DecodeOptions) -> Result<RawFrame> {
         if !opts.output.is_gpu_resident()
-            && opts.apply_opcodes
-            && crate::opcodes::Lists::of(self.frame_info()).is_some_and(|l| l.affects(opts.output))
+            && (opts.output_profile.is_some()
+                || opts.apply_opcodes
+                    && crate::opcodes::Lists::of(self.frame_info()).is_some_and(|l| l.affects(opts.output)))
         {
             return self.decode(DecodeOptions { backend: Backend::Auto, ..opts });
         }
@@ -241,6 +252,10 @@ async fn run(
     };
     let threads = flashraw_core::par::threads();
     let levels = process::Levels::new(opts.exposure, opts.black_point, opts.white_point)?;
+    let output = match base.rgb_encoding() {
+        Some(_) => Some(crate::icc::OutputSetup::resolve(opts)?),
+        None => None,
+    };
     let mut black = info.black_level.clone();
     let packed = gpu_packed(raw);
     let img: Option<RawImage>;
@@ -292,7 +307,11 @@ async fn run(
         | OutputFormat::LinearRgbF16 => {
             let crop = if opts.crop { translate(info.crop) } else { Rect::full(fw, fh) };
             let crop = if crop.is_empty() { Rect::full(fw, fh) } else { crop };
-            let params = process::DevelopParams::new(&post_info, opts.demosaic, crop);
+            let params = output.as_ref().expect("RGB output resolved").apply(process::DevelopParams::new(
+                &post_info,
+                opts.demosaic,
+                crop,
+            ));
             GpuOp::Develop(DevelopSpec {
                 crop,
                 half_size: opts.demosaic == crate::Demosaic::HalfSize,
@@ -307,6 +326,10 @@ async fn run(
                     _ => DevelopOutput::LinearRgbF32,
                 },
                 levels: levels.map(|l| [l.scale, l.offset]),
+                curve: match &params.curve {
+                    crate::OutputCurve::Shared(t) => Some(flashraw_gpu::GpuCurve { lut8: &t.lut8, lut16: &t.lut16 }),
+                    _ => None,
+                },
             })
         }
         o => return Err(Error::InvalidArgument(format!("{o:?} is not produced by the GPU backend"))),
@@ -389,6 +412,8 @@ async fn run(
         stats,
         warnings: dctx.take_warnings(),
         source: crate::FrameSource::Sensor,
+        color_space: output.as_ref().map_or(crate::ColorSpace::Srgb, |o| o.color_space),
+        icc: output.as_ref().and_then(|o| o.profile_for(opts.output)),
     })
 }
 

@@ -26,9 +26,9 @@ const APRON: u32 = 18u; // TILE + 2
 var<workgroup> tile: array<f32, 324>; // APRON * APRON normalised samples
 
 fn srgb8(v: f32) -> u32 {
-    // Same quantisation as the CPU LUT: index = trunc(clamp(v, 0, 1) * 4096).
-    let i = u32(clamp(v, 0.0, 1.0) * 4096.0);
-    return lut[P.off_srgb + min(i, 4096u)];
+    // Same quantisation as the CPU LUT: index = trunc(clamp(v, 0, 1) * srgb_n).
+    let i = u32(clamp(v, 0.0, 1.0) * f32(P.srgb_n));
+    return lut[P.off_srgb + min(i, P.srgb_n)];
 }
 
 // Linear -> sRGB 16-bit: the CPU `srgb16` interpolation of the same table.

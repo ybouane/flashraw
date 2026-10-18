@@ -17,7 +17,7 @@ gpu = ["flashraw/gpu"]
 jpegxl = ["flashraw/jpegxl"]
 
 [dependencies]
-flashraw = { workspace = true, features = ["serde", "rayon", "simd", "mmap"] }
+flashraw = { workspace = true, features = ["serde", "rayon", "simd", "mmap", "icc"] }
 flashraw-camera-db = { workspace = true, features = ["tooling"] }
 clap.workspace = true
 serde.workspace = true

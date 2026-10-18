@@ -248,11 +248,14 @@ pub fn write_frame(f: &RawFrame, out: &Path, fmt: &str) -> Result<(), String> {
         }
         "tif" | "tiff" => {
             let s = u16_samples(f)?;
-            write_tiff16(&mut w, f.width, f.height, f.cpp.min(3), f.cpp, &s).map_err(e)?;
+            write_tiff16(&mut w, f.width, f.height, f.cpp.min(3), f.cpp, &s, f.icc_profile()).map_err(e)?;
         }
         "jpg" | "jpeg" => {
             let px = f.as_u8().ok_or("JPEG output requires --output rgba8")?;
-            let enc = jpeg_encoder::Encoder::new(&mut w, 92);
+            let mut enc = jpeg_encoder::Encoder::new(&mut w, 92);
+            if let Some(icc) = f.icc_profile() {
+                enc.add_icc_profile(icc).map_err(|e| e.to_string())?;
+            }
             enc.encode(px, f.width as u16, f.height as u16, jpeg_encoder::ColorType::Rgba)
                 .map_err(|e| e.to_string())?;
         }
@@ -261,14 +264,26 @@ pub fn write_frame(f: &RawFrame, out: &Path, fmt: &str) -> Result<(), String> {
     w.flush().map_err(e)
 }
 
-/// Minimal uncompressed 16-bit TIFF writer (grey or RGB).
-fn write_tiff16(w: &mut impl Write, width: u32, height: u32, spp: u32, src_cpp: u32, s: &[u16]) -> std::io::Result<()> {
+/// Minimal uncompressed 16-bit TIFF writer (grey or RGB), with the ICCProfile tag (34675)
+/// when `icc` is given.
+fn write_tiff16(
+    w: &mut impl Write,
+    width: u32,
+    height: u32,
+    spp: u32,
+    src_cpp: u32,
+    s: &[u16],
+    icc: Option<&[u8]>,
+) -> std::io::Result<()> {
     let data_len = width as u64 * height as u64 * spp as u64 * 2;
-    let n_entries: u16 = 10;
+    let n_entries: u16 = if icc.is_some() { 11 } else { 10 };
     let ifd_off: u32 = 8;
     let extra_off = ifd_off + 2 + n_entries as u32 * 12 + 4;
     let bps_off = extra_off;
-    let data_off = bps_off + 8;
+    let icc_off = bps_off + 8;
+    // The profile is padded to an even length so the pixel data stays word aligned.
+    let icc_len = icc.map_or(0, |p| p.len() as u32);
+    let data_off = icc_off + icc_len.div_ceil(2) * 2;
     w.write_all(b"II*\0")?;
     w.write_all(&ifd_off.to_le_bytes())?;
     w.write_all(&n_entries.to_le_bytes())?;
@@ -292,11 +307,20 @@ fn write_tiff16(w: &mut impl Write, width: u32, height: u32, spp: u32, src_cpp: 
     entry(278, 4, 1, height)?;
     entry(279, 4, 1, data_len as u32)?;
     entry(284, 3, 1, 1)?;
+    if icc.is_some() {
+        entry(34675, 7, icc_len, icc_off)?;
+    }
     w.write_all(&0u32.to_le_bytes())?;
     for _ in 0..3 {
         w.write_all(&16u16.to_le_bytes())?;
     }
     w.write_all(&0u16.to_le_bytes())?;
+    if let Some(p) = icc {
+        w.write_all(p)?;
+        if p.len() % 2 == 1 {
+            w.write_all(&[0])?;
+        }
+    }
     for px in s.chunks(src_cpp as usize) {
         for v in px.iter().take(spp as usize) {
             w.write_all(&v.to_le_bytes())?;

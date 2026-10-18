@@ -18,12 +18,14 @@ test = false
 doctest = false
 
 [features]
-default = ["extension-module"]
+default = ["extension-module", "icc"]
 # Do not link libpython: the interpreter that loads the module provides it. On by default so
 # `cargo build --workspace` works without a Python development library.
 extension-module = ["pyo3/extension-module"]
 # GPU backend (`backend="gpu"`), forwarding to flashraw/gpu.
 gpu = ["flashraw/gpu"]
+# Arbitrary ICC output profiles (`output_profile=`).
+icc = ["flashraw/icc"]
 # JPEG XL compressed DNG (DNG 1.7).
 jpegxl = ["flashraw/jpegxl"]
 

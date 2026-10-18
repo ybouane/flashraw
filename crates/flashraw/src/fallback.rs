@@ -97,6 +97,8 @@ pub(crate) fn preview_frame(raw: &FlashRaw<'_>, opts: &DecodeOptions, cause: Err
         stats,
         warnings: vec![DecodeWarning::new(CorruptReason::PreviewFallback { message: cause.to_string() }, 0)],
         source: FrameSource::Preview,
+        color_space: crate::ColorSpace::Srgb,
+        icc: None,
     })
 }
 

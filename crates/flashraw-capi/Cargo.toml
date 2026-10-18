@@ -16,11 +16,13 @@ name = "flashraw_capi"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [features]
-default = []
+default = ["icc"]
 # GPU backend (FLASHRAW_BACKEND_GPU); host outputs only.
 gpu = ["flashraw/gpu"]
 # JPEG XL compressed DNG.
 jpegxl = ["flashraw/jpegxl"]
+# Arbitrary ICC output profiles (flashraw_decode_options.output_profile).
+icc = ["flashraw/icc"]
 
 [dependencies]
 flashraw = { workspace = true, features = ["serde", "rayon", "simd", "mmap"] }

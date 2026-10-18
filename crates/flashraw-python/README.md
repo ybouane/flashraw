@@ -55,7 +55,9 @@ Outputs: `raw-u16` (uint16 samples as stored), `raw-f32`, `normalized` (float32 
 layout kept), `linear-rgb` (float32, demosaiced, white-balanced) and `rgba8`. Options:
 `backend`, `threads`, `region`, `crop`, `demosaic`, `apply_opcodes`, `corruption_policy`,
 `preview_fallback` (RGB outputs of undecodable sensor data return the embedded full-size
-preview, `frame.source == "preview"`).
+preview, `frame.source == "preview"`), `color_space` (`"display-p3"`, `"adobe-rgb"`, `"prophoto"`,
+`"rec2020"`; `frame.icc_profile` is the matching ICC profile) and `output_profile` (convert to
+any RGB ICC profile).
 
 ```python
 from concurrent.futures import ThreadPoolExecutor

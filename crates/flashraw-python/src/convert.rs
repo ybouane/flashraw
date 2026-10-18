@@ -441,6 +441,7 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
         "height": f.height,
         "channels": f.cpp,
         "output": output_name(f.output),
+        "color_space": f.color_space.name(),
         "bits_per_sample": f.bits_per_sample,
         "cfa": cfa(f.cfa),
         "layout": layout(f.sensor_layout),

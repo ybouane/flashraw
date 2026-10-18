@@ -664,9 +664,28 @@ export class DecodedFrame {
   }
 }
 
+/** Base64 of ICC profile bytes (Uint8Array, ArrayBuffer or any view), for the options JSON. */
+function profileToBase64(p) {
+  let u8;
+  if (p instanceof Uint8Array) u8 = p;
+  else if (ArrayBuffer.isView(p)) u8 = new Uint8Array(p.buffer, p.byteOffset, p.byteLength);
+  else if (p instanceof ArrayBuffer || Object.prototype.toString.call(p) === '[object SharedArrayBuffer]') u8 = new Uint8Array(p);
+  else throw new InvalidArgumentError('`outputProfile` must be a Uint8Array (or ArrayBuffer) of ICC profile bytes');
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** Frame info from the WASM layer: the base64 `iccProfile` becomes a Uint8Array (or null). */
+function withProfile(info) {
+  const b64 = info.iccProfile;
+  info.iccProfile = typeof b64 === 'string' ? Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)) : null;
+  return info;
+}
+
 function makeFrame(eng, frame, extra) {
   const t0 = now();
-  const info = JSON.parse(frame.infoJson());
+  const info = withProfile(JSON.parse(frame.infoJson()));
   const kind = frame.kind;
   const Ctor = kind === 'u8' && info.output === 'rgba8' ? Uint8ClampedArray : ARRAYS[kind];
   const ptr = frame.ptr;
@@ -1084,6 +1103,7 @@ export class FlashRaw {
   async #decode(tile, options) {
     const t0 = now();
     const { backend = 'auto', fallback = 'cpu', zeroCopy = false, init: _init, ...rest } = options;
+    if (rest.outputProfile != null) rest.outputProfile = profileToBase64(rest.outputProfile);
     if (fallback !== 'cpu' && fallback !== 'error') {
       throw new InvalidArgumentError(`\`fallback\` must be "cpu" or "error", got ${JSON.stringify(fallback)}`);
     }
@@ -1113,7 +1133,7 @@ export class FlashRaw {
         try {
           const r = await this.#callAsync((raw) => raw.decodeGpu(tile ?? -1, json));
           if (r instanceof eng.wb.GpuOutput) {
-            const info = JSON.parse(r.infoJson());
+            const info = withProfile(JSON.parse(r.infoJson()));
             info.backend = { ...info.backend, requested: backend, fallbackReason: null, binary: eng.build.binary, jpegxl: false };
             info.timings = { ...info.timings, copyMs: 0, wallMs: now() - t0 };
             return new GpuFrame(info, r, eng);

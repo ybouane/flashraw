@@ -137,6 +137,26 @@ fn gpu_available(py: Python<'_>) -> bool {
     py.detach(flashraw::gpu_available)
 }
 
+/// Whether arbitrary ICC output profiles (`output_profile=`) are supported by this build.
+#[pyfunction]
+fn icc_supported() -> bool {
+    flashraw::icc_supported()
+}
+
+/// The standard ICC profile of a built-in colour space (`linear`: linear-curve variant).
+#[pyfunction]
+#[pyo3(signature = (color_space, linear=false))]
+fn icc_profile<'py>(py: Python<'py>, color_space: &str, linear: bool) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
+    let cs = flashraw::ColorSpace::parse(color_space).ok_or_else(|| {
+        invalid(
+            py,
+            format!("unknown color_space {color_space:?} (expected srgb, display-p3, adobe-rgb, prophoto or rec2020)"),
+        )
+    })?;
+    let p = if linear { cs.icc_profile_linear() } else { cs.icc_profile() };
+    Ok(pyo3::types::PyBytes::new(py, &p))
+}
+
 /// Build information: version, compiled features, SIMD level and default thread count.
 #[pyfunction]
 fn build_info(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
@@ -147,6 +167,8 @@ fn build_info(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
         "threads": threads,
         "gpu": cfg!(feature = "gpu"),
         "jpegxl": cfg!(feature = "jpegxl"),
+        "icc": flashraw::icc_supported(),
+        "color_spaces": ["srgb", "display-p3", "adobe-rgb", "prophoto", "rec2020"],
         "outputs": [
             "raw-u16",
             "raw-f32",
@@ -172,5 +194,7 @@ fn _flashraw(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fnv1a64, m)?)?;
     m.add_function(wrap_pyfunction!(gpu_available, m)?)?;
     m.add_function(wrap_pyfunction!(build_info, m)?)?;
+    m.add_function(wrap_pyfunction!(icc_supported, m)?)?;
+    m.add_function(wrap_pyfunction!(icc_profile, m)?)?;
     Ok(())
 }

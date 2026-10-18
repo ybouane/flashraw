@@ -125,6 +125,17 @@ pub struct DevelopSpec {
     /// Exposure and black/white points after the colour conversion: `v * scale - offset`
     /// (`[scale, offset]`; `None` for none).
     pub levels: Option<[f32; 2]>,
+    /// Transfer-curve tables of the display outputs; `None`: sRGB.
+    pub curve: Option<GpuCurve>,
+}
+
+/// Encoder tables of a non-sRGB output curve (the CPU `CurveTables`).
+#[derive(Debug, Clone, Copy)]
+pub struct GpuCurve {
+    /// 8-bit codes at `lut8.len() - 1` segments of `[0, 1]` (RGBA8 output).
+    pub lut8: &'static [u8],
+    /// 16-bit codes (as `f32`) at 16385 points of `[0, 1]` (16-bit display output).
+    pub lut16: &'static [f32],
 }
 
 /// What to compute.
@@ -353,7 +364,9 @@ impl GpuContext {
                 frame.raster_width, frame.raster_height
             )));
         }
+        let mut curve: Option<GpuCurve> = None;
         let mut p = Params {
+            srgb_n: 4096,
             width: w,
             height: h,
             cpp,
@@ -445,6 +458,7 @@ impl GpuContext {
                 p.dev_w = dw;
                 p.dev_h = dh;
                 p.wb = d.wb;
+                curve = d.curve;
                 let m = d.cam_to_rgb;
                 p.m0 = [m[0][0], m[0][1], m[0][2], 0.0];
                 p.m1 = [m[1][0], m[1][1], m[1][2], 0.0];
@@ -497,7 +511,10 @@ impl GpuContext {
         };
         if key.out_mode == 2 {
             p.off_srgb16 = calib.tab.len() as u32;
-            calib.tab.extend_from_slice(kernels::srgb16_table());
+            match curve {
+                Some(c) if c.lut16.len() == kernels::srgb16_table().len() => calib.tab.extend_from_slice(c.lut16),
+                _ => calib.tab.extend_from_slice(kernels::srgb16_table()),
+            }
         }
         let bps = format.bytes_per_sample() as u64;
         let out_bytes = out_w as u64 * out_h as u64 * channels as u64 * bps;
@@ -525,7 +542,13 @@ impl GpuContext {
             p.lut_len = l.len() as u32;
         }
         p.off_srgb = lut.len() as u32;
-        lut.extend_from_slice(&self.srgb);
+        match curve {
+            Some(c) if key.out_mode == 0 && c.lut8.len() > 1 => {
+                p.srgb_n = (c.lut8.len() - 1) as u32;
+                lut.extend(c.lut8.iter().map(|&v| v as u32));
+            }
+            _ => lut.extend_from_slice(&self.srgb),
+        }
         p.off_cfa = lut.len() as u32;
         lut.extend_from_slice(&sites);
 

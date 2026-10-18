@@ -127,6 +127,8 @@ pub fn frame(f: &RawFrame) -> Value {
         "height": f.height,
         "cpp": f.cpp,
         "output": f.output.name(),
+        "color_space": f.color_space.name(),
+        "icc_profile_bytes": f.icc_profile().map(<[u8]>::len),
         "active_area": f.active_area,
         "crop": f.crop,
         "origin": [f.origin.0, f.origin.1],

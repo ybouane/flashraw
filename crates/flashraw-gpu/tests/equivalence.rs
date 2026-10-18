@@ -289,6 +289,7 @@ fn gpu_develop_matches_cpu() {
                     half_size: half,
                     wb: params.wb,
                     cam_to_rgb: params.cam_to_rgb,
+                    curve: None,
                     orientation,
                     output,
                     levels: None,
@@ -345,6 +346,7 @@ fn gpu_develop_from_packed_and_f32() {
             half_size: false,
             wb: params.wb,
             cam_to_rgb: params.cam_to_rgb,
+            curve: None,
             orientation: Orientation::Normal,
             output: DevelopOutput::LinearRgbF32,
             levels: None,
@@ -372,6 +374,7 @@ fn gpu_develop_from_packed_and_f32() {
         half_size: false,
         wb: params.wb,
         cam_to_rgb: params.cam_to_rgb,
+        curve: None,
         orientation: Orientation::Normal,
         output: DevelopOutput::LinearRgbF32,
         levels: None,
@@ -396,6 +399,7 @@ fn gpu_image_to_texture() {
         half_size: false,
         wb: [1.0; 4],
         cam_to_rgb: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        curve: None,
         orientation: Orientation::Rotate90,
         output: DevelopOutput::Rgba8,
         levels: None,
@@ -509,6 +513,7 @@ fn gpu_tiled_develop_matches_untiled_and_cpu() {
                         half_size: half,
                         wb: params.wb,
                         cam_to_rgb: params.cam_to_rgb,
+                        curve: None,
                         orientation,
                         output,
                         levels: None,
@@ -622,6 +627,7 @@ fn gpu_tiled_packed_develop_and_texture() {
                 half_size: false,
                 wb: [2.0, 1.0, 1.5, 1.0],
                 cam_to_rgb: [[1.6, -0.4, -0.2], [-0.2, 1.4, -0.2], [0.0, -0.5, 1.5]],
+                curve: None,
                 orientation,
                 output: DevelopOutput::Rgba8,
                 levels: None,
@@ -748,6 +754,7 @@ fn gpu_develop_16bit_outputs_match_cpu() {
                             half_size: half,
                             wb: params.wb,
                             cam_to_rgb: params.cam_to_rgb,
+                            curve: None,
                             orientation,
                             output,
                             levels: lv.map(|l| [l.scale, l.offset]),
@@ -773,5 +780,58 @@ fn gpu_develop_16bit_outputs_match_cpu() {
                 }
             }
         }
+    }
+}
+
+/// Output colour spaces: the folded matrix and the curve tables give the GPU the same
+/// results as the CPU (RGBA8 within the usual ±1, 16-bit within one code, linear within 1e-4).
+#[test]
+fn gpu_color_spaces_match_cpu() {
+    let _serial = serial();
+    let Some(ctx) = gpu() else { return };
+    let (w, h) = (157u32, 93u32);
+    let cm = ColorMatrices {
+        color: vec![
+            ColorMatrix::new(Illuminant::D65, 3, vec![0.6, -0.1, -0.05, -0.4, 1.2, 0.2, -0.1, 0.25, 0.6]).unwrap(),
+        ],
+        ..Default::default()
+    };
+    let mut info = calibrated_info(w, h, Some(CfaPattern::RGGB), 1);
+    info.color_matrices = cm;
+    let img = synthetic_u16(w, h, 1, 9);
+    let origin = (1, 3);
+    let frame = GpuFrame::from_u16(img.u16(), w, h, 1).with_origin(origin);
+    let crop = Rect::new(5, 4, w - 9, h - 7);
+    for cs in flashraw::ColorSpace::ALL {
+        let params = DevelopParams::new(&info, flashraw::Demosaic::Bilinear, crop).with_color_space(cs);
+        let curve = match &params.curve {
+            flashraw::OutputCurve::Shared(t) => Some(flashraw_gpu::GpuCurve { lut8: &t.lut8, lut16: &t.lut16 }),
+            _ => None,
+        };
+        let spec = |output| DevelopSpec {
+            crop,
+            half_size: false,
+            wb: params.wb,
+            cam_to_rgb: params.cam_to_rgb,
+            curve,
+            orientation: params.orientation,
+            output,
+            levels: None,
+        };
+        let what = format!("{cs:?}");
+        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec(DevelopOutput::LinearRgbF32))).unwrap();
+        let HostPixels::F32(got) = run.image.download().unwrap().0 else { panic!() };
+        let dev = process::develop(&img, &info, origin, &params, false).unwrap();
+        assert!(max_abs_diff(&got, &dev.rgb) <= 1e-4, "{what}: linear");
+        let (_, _, want) = process::develop_rgba8(&img, &info, origin, &params, false).unwrap();
+        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec(DevelopOutput::Rgba8))).unwrap();
+        let HostPixels::U8(got) = run.image.download().unwrap().0 else { panic!() };
+        cmp_rgba(&got, &want, &format!("{what} rgba8"));
+        let (_, _, _, want) =
+            process::develop_encoded(&img, &info, origin, &params, process::RgbEncoding::Srgb16, false).unwrap();
+        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec(DevelopOutput::Rgb16))).unwrap();
+        let HostPixels::U16(got) = run.image.download_rgb().unwrap().0 else { panic!() };
+        let flashraw::RawPixelData::U16(want) = want else { panic!() };
+        cmp_u16(&got, &want, false, &format!("{what} rgb16"));
     }
 }

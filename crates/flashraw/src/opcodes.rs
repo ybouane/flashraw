@@ -341,7 +341,7 @@ impl Lists {
         });
         drop(dev);
         let out = Developed { width: c.width, height: c.height, rgb };
-        Ok(process::encode_image(out, enc, params.orientation, parallel))
+        Ok(process::encode_image(out, enc, &params.curve, params.orientation, parallel))
     }
 
     pub fn into_notes(self) -> Vec<String> {
@@ -432,7 +432,7 @@ mod tests {
         let window = active_window(info, origin, img.width, img.height);
         if !l.has_pixel_ops(2) || params.demosaic == Demosaic::HalfSize || window.is_none() {
             let d = process::develop(&lin, &linfo, origin, params, false).unwrap();
-            return process::encode_image(d, enc, params.orientation, false);
+            return process::encode_image(d, enc, &params.curve, params.orientation, false);
         }
         let (win, x0, y0) = window.unwrap();
         let cam = DevelopParams { crop: win, ..params.camera_rgb() };
@@ -446,7 +446,13 @@ mod tests {
                 rgb.extend(process::finish_rgb([p[0], p[1], p[2]], &params.wb, &params.cam_to_rgb, params.levels));
             }
         }
-        process::encode_image(Developed { width: c.width, height: c.height, rgb }, enc, params.orientation, false)
+        process::encode_image(
+            Developed { width: c.width, height: c.height, rgb },
+            enc,
+            &params.curve,
+            params.orientation,
+            false,
+        )
     }
 
     #[test]

@@ -405,6 +405,23 @@ pub fn output_name(o: flashraw::OutputFormat) -> &'static str {
     }
 }
 
+/// Standard base64 with padding.
+pub fn base64(b: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(b.len().div_ceil(3) * 4);
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            if i <= c.len() {
+                s.push(T[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                s.push('=');
+            }
+        }
+    }
+    s
+}
+
 /// Everything about a decoded frame except its pixels.
 pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
     let s = &f.stats;
@@ -417,6 +434,8 @@ pub fn frame(f: &RawFrame, requested_backend: &str) -> Value {
         "height": f.height,
         "channels": f.cpp,
         "output": output_name(f.output),
+        "colorSpace": f.color_space.name(),
+        "iccProfile": f.icc_profile().map(base64),
         "bitsPerSample": f.bits_per_sample,
         "cfa": cfa(f.cfa),
         "layout": layout(f.sensor_layout),

@@ -181,3 +181,41 @@ fn resident_outputs_require_gpu_backend() {
     let f = raw.decode(DecodeOptions::default()).unwrap();
     assert!(f.stats.backend.gpu_adapter.is_none());
 }
+
+/// Colour spaces end to end on the bundled fixture (needs a GPU adapter, not the samples):
+/// the GPU backend matches the CPU in every built-in space, GPU-resident outputs honour the
+/// space, and an output ICC profile falls back to the CPU (resident outputs refuse it).
+#[test]
+fn gpu_color_spaces_and_profile_fallback() {
+    if !flashraw::gpu_available() {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    }
+    use flashraw::{ColorSpace, OutputProfile};
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../npm/tests/fixtures/canon-5d3-mlv.dng");
+    let raw = FlashRaw::open_path(path).unwrap();
+    for cs in ColorSpace::ALL {
+        let o =
+            DecodeOptions { color_space: cs, demosaic: Demosaic::HalfSize, ..opts(Backend::Cpu, OutputFormat::Rgba8) };
+        let cpu = raw.decode(o.clone()).unwrap();
+        let gpu = raw.decode(DecodeOptions { backend: Backend::Gpu, ..o.clone() }).unwrap();
+        assert!(gpu.stats.stage_ms(Stage::GpuCompute) > 0.0, "{cs:?} ran on the GPU");
+        assert_eq!((gpu.color_space, gpu.icc_profile()), (cs, Some(&cs.icc_profile()[..])));
+        rgba_close(cpu.as_u8().unwrap(), gpu.as_u8().unwrap(), &format!("rgba8 {cs:?}"));
+        let res = raw.decode(DecodeOptions { backend: Backend::Gpu, output: OutputFormat::GpuRgba8, ..o }).unwrap();
+        assert_eq!(res.color_space, cs);
+        let host = res.download().unwrap();
+        rgba_close(cpu.as_u8().unwrap(), host.as_u8().unwrap(), &format!("gpu-rgba8 {cs:?}"));
+    }
+    let p = OutputProfile::new(ColorSpace::DisplayP3.icc_profile());
+    let o = DecodeOptions {
+        output_profile: Some(p),
+        demosaic: Demosaic::HalfSize,
+        ..opts(Backend::Gpu, OutputFormat::Rgba8)
+    };
+    let f = raw.decode(o.clone()).unwrap();
+    assert!(f.stats.backend.gpu_adapter.is_none(), "profile conversion runs on the CPU");
+    assert_eq!(f.color_space, ColorSpace::Custom);
+    let res = DecodeOptions { output: OutputFormat::GpuRgba8, ..o };
+    assert!(matches!(raw.decode(res), Err(flashraw::Error::InvalidArgument(_))));
+}

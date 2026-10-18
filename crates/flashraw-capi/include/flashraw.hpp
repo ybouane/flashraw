@@ -182,6 +182,23 @@ enum class corruption_policy : std::int32_t {
     strict = FLASHRAW_CORRUPTION_STRICT,
 };
 
+enum class color_space : std::int32_t {
+    srgb = FLASHRAW_COLOR_SPACE_SRGB,
+    display_p3 = FLASHRAW_COLOR_SPACE_DISPLAY_P3,
+    adobe_rgb = FLASHRAW_COLOR_SPACE_ADOBE_RGB,
+    prophoto = FLASHRAW_COLOR_SPACE_PROPHOTO,
+    rec2020 = FLASHRAW_COLOR_SPACE_REC2020,
+    /// A frame converted to an output ICC profile (`frame::icc_profile()`).
+    custom = FLASHRAW_COLOR_SPACE_CUSTOM,
+};
+
+enum class rendering_intent : std::int32_t {
+    perceptual = FLASHRAW_INTENT_PERCEPTUAL,
+    relative = FLASHRAW_INTENT_RELATIVE,
+    saturation = FLASHRAW_INTENT_SATURATION,
+    absolute = FLASHRAW_INTENT_ABSOLUTE,
+};
+
 enum class sample_type : std::int32_t {
     u8 = FLASHRAW_SAMPLE_U8,
     u16 = FLASHRAW_SAMPLE_U16,
@@ -300,6 +317,14 @@ struct decode_options {
     float white_point = 1.0f;
     /// RGB outputs of undecodable sensor data: return the embedded full-size preview.
     bool preview_fallback = false;
+    /// Colour space of the RGB outputs.
+    flashraw::color_space color_space = flashraw::color_space::srgb;
+    /// ICC profile to convert the RGB outputs to instead of `color_space`; needs
+    /// `icc_supported()`. The bytes must outlive the `decode()` call.
+    const std::uint8_t *output_profile = nullptr;
+    std::size_t output_profile_len = 0;
+    flashraw::rendering_intent intent = flashraw::rendering_intent::perceptual;
+    bool black_point_compensation = false;
 
     flashraw_decode_options to_c() const {
         flashraw_decode_options o;
@@ -321,6 +346,11 @@ struct decode_options {
         o.black_point = black_point;
         o.white_point = white_point;
         o.preview_fallback = preview_fallback ? 1 : 0;
+        o.color_space = static_cast<std::int32_t>(color_space);
+        o.output_profile = output_profile;
+        o.output_profile_len = output_profile_len;
+        o.intent = static_cast<std::int32_t>(intent);
+        o.black_point_compensation = black_point_compensation ? 1 : 0;
         return o;
     }
 };
@@ -412,6 +442,16 @@ public:
         return static_cast<flashraw::output_format>(flashraw_frame_output_format(h()));
     }
     std::uint32_t bits_per_sample() const { return flashraw_frame_bits_per_sample(h()); }
+    /// Colour space of the RGB samples (`custom` after an output profile).
+    flashraw::color_space color_space() const {
+        return static_cast<flashraw::color_space>(flashraw_frame_color_space(h()));
+    }
+    /// ICC profile describing the RGB samples, for tagging files; empty for raw outputs.
+    std::vector<std::uint8_t> icc_profile() const {
+        std::size_t n = 0;
+        const std::uint8_t *p = flashraw_frame_icc_profile(h(), &n);
+        return p ? std::vector<std::uint8_t>(p, p + n) : std::vector<std::uint8_t>();
+    }
     /// EXIF orientation still to apply (1 for RGBA8).
     std::uint32_t orientation() const { return flashraw_frame_orientation(h()); }
     flashraw::sensor_layout sensor_layout() const {
@@ -687,6 +727,15 @@ inline std::optional<std::string> detect_format(const void *data, std::size_t le
 
 /// True when the GPU backend is compiled in and an adapter is available.
 inline bool gpu_available() { return flashraw_gpu_available(); }
+/// True when this build converts to arbitrary ICC profiles (`decode_options::output_profile`).
+inline bool icc_supported() { return flashraw_icc_supported(); }
+/// Standard ICC profile of a built-in colour space (`linear`: linear-curve variant).
+inline std::vector<std::uint8_t> icc_profile(color_space cs, bool linear = false) {
+    std::int32_t c = static_cast<std::int32_t>(cs);
+    std::vector<std::uint8_t> v(flashraw_icc_profile(c, linear, nullptr, 0));
+    if (!v.empty()) flashraw_icc_profile(c, linear, v.data(), v.size());
+    return v;
+}
 
 } // namespace flashraw
 

@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
+default = ["icc"]
 # WebGPU backend (forwards to flashraw/gpu). The JS layer reports `capabilities.gpu.compiled`
 # and falls back to the CPU (or errors, per `fallback`) when it is absent.
 gpu = ["flashraw/gpu", "dep:wasm-bindgen-futures"]
@@ -20,6 +20,8 @@ gpu = ["flashraw/gpu", "dep:wasm-bindgen-futures"]
 # rayon in every decoder; the JS layer starts the thread pool in Web Workers / worker_threads
 # (`threadPoolBuild` + `threadRun`) and runs heavy calls on a coordinator worker (`job*`).
 threads = ["flashraw/rayon", "dep:rayon"]
+# Arbitrary ICC output profiles (`outputProfile`); see docs/color-management.md.
+icc = ["flashraw/icc"]
 # JPEG XL DNG (compression 52546; forwards to flashraw/jpegxl, needs Rust 1.88). Shipped as the
 # separate `*_jxl.wasm` variants, which the JS layer loads only when a file needs them.
 jpegxl = ["flashraw/jpegxl"]

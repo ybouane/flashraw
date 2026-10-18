@@ -266,10 +266,61 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
         Some(Value::Bool(b)) => o.preview_fallback = *b,
         Some(_) => return Err(ApiError::invalid("option `previewFallback` must be a boolean")),
     }
+    if let Some(c) = str_opt(&v, "colorSpace")? {
+        o.color_space = flashraw::ColorSpace::parse(c).ok_or_else(|| {
+            ApiError::invalid(format!(
+                "unknown colorSpace {c:?} (expected srgb, display-p3, adobe-rgb, prophoto or rec2020)"
+            ))
+        })?;
+    }
+    // `outputProfile`: the ICC profile bytes as base64 (the JS layer encodes a Uint8Array).
+    if let Some(b64) = str_opt(&v, "outputProfile")? {
+        let bytes = base64_decode(b64)
+            .ok_or_else(|| ApiError::invalid("option `outputProfile` must be a Uint8Array of ICC profile bytes"))?;
+        let intent = match str_opt(&v, "intent")? {
+            None => flashraw::RenderingIntent::Perceptual,
+            Some(i) => flashraw::RenderingIntent::parse(i).ok_or_else(|| {
+                ApiError::invalid(format!(
+                    "unknown intent {i:?} (expected perceptual, relative, saturation or absolute)"
+                ))
+            })?,
+        };
+        let bpc = match v.get("blackPointCompensation") {
+            None | Some(Value::Null) => false,
+            Some(Value::Bool(b)) => *b,
+            Some(_) => return Err(ApiError::invalid("option `blackPointCompensation` must be a boolean")),
+        };
+        o.output_profile =
+            Some(flashraw::OutputProfile::new(bytes).with_intent(intent).with_black_point_compensation(bpc));
+    }
     if let Some(r) = v.get("region").filter(|r| !r.is_null()) {
         o.region = Some(parse_rect(r)?);
     }
     Ok((o, backend.to_ascii_lowercase(), extras))
+}
+
+/// Standard base64 (padding optional) to bytes; `None` on any other character.
+fn base64_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in s.bytes().take_while(|&c| c != b'=') {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        acc = (acc << 6) | v as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 fn is_raw_output(o: OutputFormat) -> bool {
@@ -622,6 +673,36 @@ mod tests {
         let info: Value = serde_json::from_str(&d.info).unwrap();
         assert_eq!((info["source"].as_str(), info["incomplete"].as_bool()), (Some("preview"), Some(true)));
         assert_eq!(info["warnings"][0]["kind"].as_str(), Some("preview-fallback"));
+    }
+
+    #[test]
+    fn color_space_option_and_tagged_frame() {
+        assert_eq!(parse_decode_options("{}").unwrap().0.color_space, flashraw::ColorSpace::Srgb);
+        let o = parse_decode_options(r#"{"colorSpace":"display-p3"}"#).unwrap().0;
+        assert_eq!(o.color_space, flashraw::ColorSpace::DisplayP3);
+        assert_eq!(parse_decode_options(r#"{"colorSpace":"lab"}"#).unwrap_err().kind, "InvalidArgument");
+        assert_eq!(parse_decode_options(r#"{"colorSpace":3}"#).unwrap_err().kind, "InvalidArgument");
+        assert_eq!(parse_decode_options(r#"{"outputProfile":"!!"}"#).unwrap_err().kind, "InvalidArgument");
+        assert_eq!(
+            parse_decode_options(r#"{"outputProfile":"AAAA","intent":"x"}"#).unwrap_err().kind,
+            "InvalidArgument"
+        );
+        let p = parse_decode_options(r#"{"outputProfile":"AAEC","intent":"relative","blackPointCompensation":true}"#)
+            .unwrap()
+            .0
+            .output_profile
+            .unwrap();
+        assert_eq!(p.bytes(), &[0, 1, 2]);
+        assert_eq!(base64_decode("AAECAw==").unwrap(), [0, 1, 2, 3]);
+        assert_eq!(json::base64(&[0, 1, 2, 3]), "AAECAw==");
+        assert_eq!(json::base64(&[0, 1, 2, 3, 4]), "AAECAwQ=");
+        let raw = open(truncated_dng(0), "").unwrap();
+        let info = |opts: &str| -> Value { serde_json::from_str(&decode(&raw, opts).unwrap().info).unwrap() };
+        let p3 = info(r#"{"output":"rgba8","colorSpace":"display-p3"}"#);
+        assert_eq!(p3["colorSpace"], "display-p3");
+        let b64 = p3["iccProfile"].as_str().unwrap();
+        assert_eq!(base64_decode(b64).unwrap(), flashraw::ColorSpace::DisplayP3.icc_profile());
+        assert!(info(r#"{"output":"raw-u16"}"#)["iccProfile"].is_null());
     }
 
     #[test]
