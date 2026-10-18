@@ -169,11 +169,64 @@ pub fn validate(db: &DbFile) -> Vec<String> {
         }
     }
     for m in &db.matrices {
+        let id = format!("matrix {} {}", m.canonical_make, m.model_prefix);
         if m.color_matrix.len() != 9 && m.color_matrix.len() != 12 {
-            problems.push(format!("matrix {} {}: {} values", m.canonical_make, m.model_prefix, m.color_matrix.len()));
+            problems.push(format!("{id}: {} values", m.color_matrix.len()));
         }
     }
     problems
+}
+
+/// Coverage report: per canonical make, how many entries carry each kind of data, and how
+/// many have sample files in the verification corpus. One line per row.
+pub fn coverage(db: &DbFile) -> Vec<String> {
+    // entries, samples, sensor levels, crop, masked areas, colour matrix, image crops, orientation
+    let mut by_make: BTreeMap<String, [usize; 8]> = BTreeMap::new();
+    for c in &db.cameras {
+        let row = by_make.entry(c.canonical_make.clone()).or_default();
+        let flags = [
+            true,
+            c.verification.as_ref().is_some_and(|v| v.corpus_files > 0),
+            !c.sensor.is_empty(),
+            c.crop.is_some(),
+            !c.black_areas_v.is_empty() || !c.black_areas_h.is_empty(),
+            !c.color_matrix.is_empty(),
+            !c.image_crops.is_empty(),
+            c.orientation.is_some(),
+        ];
+        for (slot, on) in row.iter_mut().zip(flags) {
+            *slot += on as usize;
+        }
+    }
+    let head = |name: &str| {
+        format!(
+            "{name:22} {:>7} {:>7} {:>7} {:>6} {:>7} {:>7} {:>7} {:>7}",
+            "entries", "samples", "levels", "crop", "masked", "matrix", "imgcrop", "orient"
+        )
+    };
+    let mut out = vec![head("make")];
+    let mut tot = [0usize; 8];
+    for (m, r) in &by_make {
+        out.push(format!(
+            "{m:22} {:7} {:7} {:7} {:6} {:7} {:7} {:7} {:7}",
+            r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]
+        ));
+        for i in 0..8 {
+            tot[i] += r[i];
+        }
+    }
+    out.push(format!(
+        "{:22} {:7} {:7} {:7} {:6} {:7} {:7} {:7} {:7}",
+        "all", tot[0], tot[1], tot[2], tot[3], tot[4], tot[5], tot[6], tot[7]
+    ));
+    out.push(format!(
+        "fallback matrices {}, alias groups {}, size rules {}, orientation rules {}",
+        db.matrices.len(),
+        db.model_aliases.len(),
+        db.size_rules.len(),
+        db.orientation_rules.len()
+    ));
+    out
 }
 
 /// Compare two databases, reporting entries added/removed/changed.
@@ -227,6 +280,15 @@ pub fn compare(a: &DbFile, b: &DbFile) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::format_json;
+
+    #[test]
+    fn unknown_entry_keys_are_rejected() {
+        let entry = |extra: &str| {
+            format!(r#"{{"cameras":[{{"make":"A","model":"B","canonical_make":"A","canonical_model":"B"{extra}}}]}}"#)
+        };
+        assert!(serde_json::from_str::<super::DbFile>(&entry("")).is_ok());
+        assert!(serde_json::from_str::<super::DbFile>(&entry(r#","extra_key":"x""#)).is_err());
+    }
 
     #[test]
     fn orientation_entries_are_validated() {

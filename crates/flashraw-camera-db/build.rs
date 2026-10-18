@@ -14,6 +14,12 @@ fn main() {
     if !path.exists() {
         path = manifest.join("data/cameras.json");
     }
+    // Tooling override: compile another database file (tools/camera_db/rederive.py builds
+    // the decoders against an empty database to see what the files state by themselves).
+    println!("cargo:rerun-if-env-changed=FLASHRAW_CAMERA_DB");
+    if let Some(p) = std::env::var_os("FLASHRAW_CAMERA_DB") {
+        path = PathBuf::from(p);
+    }
     println!("cargo:rerun-if-changed={}", path.display());
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let db: DbFile = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
