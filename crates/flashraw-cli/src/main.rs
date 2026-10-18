@@ -2,6 +2,7 @@
 
 mod crops;
 mod output;
+mod probe;
 
 use clap::{Args, Parser, Subcommand};
 use flashraw::{
@@ -159,6 +160,11 @@ enum CameraDbCmd {
     Compare { a: PathBuf, b: PathBuf },
     /// Show statistics of the compiled-in database.
     Stats,
+    /// Coverage report: entries per make by the kinds of data they carry and by sample files.
+    Coverage {
+        #[arg(default_value = "camera-db/cameras.json")]
+        db: PathBuf,
+    },
     /// Measure the camera's own image area from files (JSON lines): active area, resolved
     /// default crop and its source, recorded image size, embedded full-size JPEG size.
     /// Aggregated into `image_crops` entries by tools/camera_db_crops.py.
@@ -172,6 +178,10 @@ enum CameraDbCmd {
         #[arg(long)]
         rgba: bool,
     },
+    /// Report what each file states (geometry, CFA, levels, colour matrices, masked areas),
+    /// its sample statistics and its database entry (JSON lines). Used by
+    /// tools/camera_db/rederive.py.
+    Probe { files: Vec<PathBuf> },
 }
 
 fn parse_rect(s: &str) -> Result<Rect, String> {
@@ -390,6 +400,18 @@ fn camera_db(c: CameraDbCmd) -> Result<ExitCode, String> {
         CameraDbCmd::Crops { files, register, rgba } => {
             for f in &files {
                 println!("{}", crops::measure(f, register, rgba));
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        CameraDbCmd::Coverage { db } => {
+            for l in coverage(&load_db(&db)?) {
+                println!("{l}");
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        CameraDbCmd::Probe { files } => {
+            for f in &files {
+                println!("{}", probe::probe(f));
             }
             Ok(ExitCode::SUCCESS)
         }
