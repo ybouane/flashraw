@@ -113,7 +113,11 @@ fn regions_match_the_full_decode() {
             for x in 2..rect.width as usize - 2 {
                 let fi = ((y + rect.y as usize) * fw + x + rect.x as usize) * 3;
                 let pi = (y * part.width as usize + x) * 3;
-                assert_eq!(f[fi..fi + 3], p[pi..pi + 3], "{cs:?} at {x},{y}");
+                // Equal up to f32 contraction differences (FMA on some targets) between SIMD
+                // lanes and tails.
+                for c in 0..3 {
+                    assert!((f[fi + c] - p[pi + c]).abs() <= 1e-6 * f[fi + c].abs().max(1.0), "{cs:?} at {x},{y}");
+                }
                 compared += 1;
             }
         }
