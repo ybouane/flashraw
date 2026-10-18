@@ -137,6 +137,10 @@ frame = raw.decode(
     black_point=0.0,             # RGB outputs: linear value mapped to black (after exposure)
     white_point=1.0,             # RGB outputs: linear value mapped to white
     preview_fallback=False,      # RGB outputs of undecodable sensor data: embedded full-size preview
+    color_space="srgb",          # RGB outputs: "srgb", "display-p3", "adobe-rgb", "prophoto", "rec2020"
+    output_profile=None,         # RGB outputs: ICC profile (bytes or path) to convert to instead
+    intent="perceptual",         # for output_profile: "perceptual", "relative", "saturation", "absolute"
+    black_point_compensation=False,
 )
 raw.decode_region((0, 0, 512, 512))    # same as region=...
 raw.decode_tile(3)                      # one tile/strip of raw.tiles
@@ -158,6 +162,15 @@ raw.decode_tile(3)                      # one tile/strip of raw.tiles
 the colour conversion. Integer outputs clip the result to `[0, 1]`; float outputs keep it.
 There is no tone curve or highlight recovery: editors do that.
 
+`color_space` develops straight to another colour space (see
+[colour management](color-management.md)): the linear outputs get its primaries, `rgba8` and
+`rgb16` also its transfer curve, at no extra cost per pixel. `frame.icc_profile` is the matching
+ICC profile (bytes) for tagging files, e.g. `PIL.Image.save(..., icc_profile=frame.icc_profile)`.
+`output_profile` converts to any RGB ICC profile instead (`flashraw.icc_supported()`; invalid
+profiles raise `InvalidArgumentError`); profiles with lookup tables take a slower second pass and
+only the display outputs. `flashraw.icc_profile("display-p3", linear=False)` returns the standard
+profiles without decoding.
+
 Raw outputs have one sample per pixel for CFA and monochrome sensors and `c` (usually 3) for
 linear DNGs and Foveon sensors.
 
@@ -172,6 +185,7 @@ A `Frame` carries everything needed to interpret the pixels:
 | `cfa`, `layout`, `color_at(x, y)` | CFA pattern (anchored at sensor `(0, 0)`) and the colour at frame coordinates |
 | `black_level`, `white_level`, `white_balance`, `white_balance_applied`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8` and `rgb16`, which have it applied) |
 | `warnings`, `incomplete` | repairs made under `corruption_policy="recover"` (and the `preview-fallback` substitution) |
+| `color_space`, `icc_profile` | colour space of the RGB samples (`"custom"` after `output_profile`) and the ICC profile describing them (`None` for raw outputs and preview frames) |
 | `source` | `"sensor"`, or `"preview"` when `preview_fallback=True` returned the embedded preview of undecodable sensor data (Nikon High Efficiency NEF) |
 | `stats` | `total_ms`, per-stage `stages`, `backend` (`decode`, `simd`, `threads`, ...), `call_ms` (native call), `wall_ms` (Python call) |
 | `metadata` | the file's `Metadata` |

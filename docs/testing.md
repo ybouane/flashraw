@@ -88,7 +88,8 @@ JPEG preview's.
 - `fuzz/`: cargo-fuzz targets `open_decode` (whole pipeline, all formats,
   decoding under both corruption policies with consistency checks), `tiff_parse`,
   `bmff_parse`, `bit_pumps` (with a model check), `huffman`, `ljpeg`, `packed_unpack`
-  (fast path ≡ reference, partial rows), `deflate_float`, `dct12`. Crash inputs are
+  (fast path ≡ reference, partial rows), `deflate_float`, `dct12`, `icc_profile` (arbitrary bytes
+  as an output ICC profile). Crash inputs are
   kept in `fuzz/regressions/<target>/` and replayed in CI.
 
 ```sh

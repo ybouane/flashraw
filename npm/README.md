@@ -266,6 +266,10 @@ const f = await raw.decode({
   whitePoint: 1,            // RGB outputs: linear value mapped to white (integer outputs clip)
   corruptionPolicy: 'recover', // truncated sensor data: 'recover' (zero-fill + warnings) | 'strict' (throw)
   previewFallback: false,   // RGB outputs of undecodable sensor data: true = embedded full-size preview
+  colorSpace: 'srgb',       // RGB outputs: 'srgb' | 'display-p3' | 'adobe-rgb' | 'prophoto' | 'rec2020'
+  outputProfile: undefined, // RGB outputs: Uint8Array of an ICC profile to convert to (instead of colorSpace)
+  intent: 'perceptual',     // for outputProfile: 'perceptual' | 'relative' | 'saturation' | 'absolute'
+  blackPointCompensation: false, // for outputProfile (profiles with lookup tables)
   limits: { maxSamples: 4e8 },
 });
 f.data;            // Uint16Array (raw-u16, rgb16, linear-rgb16, linear-rgb-f16, f16 sample types)
@@ -280,6 +284,8 @@ f.timings;         // { totalMs, stages: { containerParse, entropyDecode, postpr
 f.incomplete;      // true when some samples hold no data (truncated/corrupt input recovered)
 f.warnings;        // [{ kind: 'truncated', unit: 'strip', index, offset, expected, available, fileLength, samplesFilled, message }]
 f.source;          // 'sensor' | 'preview' (previewFallback substituted the embedded preview)
+f.colorSpace;      // 'srgb' | 'display-p3' | ... | 'custom' (outputProfile); 'srgb' for raw outputs
+f.iccProfile;      // Uint8Array: ICC profile of the RGB samples, for tagging files (null for raw outputs)
 
 // For an editor that demosaics on its own GPU: black-subtracted, white-normalised CFA (DNG
 // opcode lists 1 and 2 applied) as half floats, cropped to the active area. `f.origin` is the
@@ -309,6 +315,17 @@ With `previewFallback: true`, RGB outputs (`rgba8`, `linear-rgb`) return the emb
 full-size preview instead, explicitly marked: `f.source === 'preview'` and a warning of kind
 `preview-fallback` (so `f.incomplete` is true). Such a frame is the camera's rendering (8-bit,
 display-referred), not sensor data; raw outputs and regions never fall back.
+
+**Colour management.** RGB outputs are linear sRGB / sRGB-encoded by default. `colorSpace`
+(`'display-p3'`, `'adobe-rgb'`, `'prophoto'`, `'rec2020'`) develops straight to another space
+at no extra per-pixel cost: the linear outputs get its primaries, `rgba8` / `rgb16` also its
+transfer curve, and `f.iccProfile` is the matching standard ICC profile (a `Uint8Array` to embed
+in a PNG/JPEG/TIFF, or to tag a canvas pipeline). `outputProfile` converts to any RGB ICC
+profile instead (the bytes of a `.icc` file; `intent`, `blackPointCompensation`); matrix/TRC
+profiles are folded into the develop pass, profiles with lookup tables take a slower second
+pass and only the display outputs. Invalid profiles reject with `InvalidArgumentError`. The GPU
+backend handles the built-in spaces; `outputProfile` decodes use the CPU. See
+[docs/color-management.md](../docs/color-management.md).
 
 **Memory.** By default `f.data` is a standalone copy (the WASM buffer is freed immediately), so it
 can be kept, transferred to a worker, or wrapped in `ImageData`. For large frames you can skip

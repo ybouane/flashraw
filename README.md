@@ -101,7 +101,8 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
   Pentax, Hasselblad, Panasonic v8, Sony ARW1), by speculative parallel decoding
 - Explicit SIMD: SSE4.1 / AVX2 / AVX-512, NEON and WASM SIMD128, picked at run time
 - 64-bit bit pumps, table-driven Huffman, zero-copy parsing, memory-mapped input
-- Fused single-pass RAW → RGB, on the CPU or the **GPU**
+- Fused single-pass RAW → RGB, on the CPU or the **GPU**, in sRGB, Display P3, Adobe RGB,
+  ProPhoto or Rec. 2020 at no extra per-pixel cost (ICC-tagged, any ICC profile via `icc`)
 - Region and tile decodes, zero-copy embedded previews: no full decode when you
   don't need one
 
@@ -114,7 +115,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
   use freed memory; the few `unsafe` blocks are audited and justified
 - Bounds-checked parsing, checked offset arithmetic, IFD loop and depth tracking
 - Allocation **limits** checked before allocating
-- **10 fuzz targets** on every PR and nightly; crash inputs replayed forever
+- **11 fuzz targets** on every PR and nightly; crash inputs replayed forever
 - Malformed-file and truncation suites, and an explicit **truncation policy**:
   never silent garbage
 
@@ -151,7 +152,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 | GoPro GPR (VC-5) | ✅ | ⚠️ GPR SDK builds only | ✅ | ❌ | ❌ | ❌ | – |
 | DNG opcode lists | ✅ all radiometric opcodes, per stage | ⚠️ Adobe DNG SDK builds only | ⚠️ stage-1 subset | ❌ | ⚠️ one opcode (lossy DNG) | ⚠️ as LibRaw | – |
 | RAW → sRGB image | ✅ one fused pass, CPU or GPU | ✅ `dcraw_process()`, many demosaics | ❌ raw data only | ✅ `RawDevelop` | ✅ | ✅ `postprocess()` | ⚠️ converts colours, does not decode RAW |
-| ICC colour management | ❌ sRGB / linear outputs | ⚠️ with Little CMS compiled in | ❌ | ❌ | ⚠️ with Little CMS | ⚠️ as LibRaw (Little CMS in the wheels) | ✅ ICC v2/v4 |
+| ICC colour management | ✅ built-in spaces (sRGB, P3, Adobe RGB, ProPhoto, Rec. 2020) + embedded profiles; any ICC v2/v4 profile via the `icc` feature | ⚠️ with Little CMS compiled in | ❌ | ❌ | ⚠️ with Little CMS | ⚠️ as LibRaw (Little CMS in the wheels) | ✅ ICC v2/v4 |
 | Embedded previews | ✅ zero-copy | ✅ copied | ❌ | ⚠️ some formats, decoded | ✅ `-e` | ✅ `extract_thumb()` | – |
 | Region / tile decode | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | – |
 | C / C++ API | ✅ `flashraw.h`, `flashraw.hpp` | ✅ | ⚠️ C++ only | ❌ Rust only | ❌ command line only | ❌ | ✅ C |
@@ -159,7 +160,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 | JavaScript / WASM, runs in the browser | ✅ official npm package (WASM SIMD, threads, WebGPU) | ⚠️ third-party ports | ❌ | ❌ | ⚠️ third-party ports | ❌ | ⚠️ third-party ports |
 | Rust | ✅ native | ⚠️ third-party bindings | ❌ | ✅ native | ❌ | ❌ | ⚠️ third-party crate |
 | LibRaw-compatible C API | ✅ subset (recompile and relink) | – | ❌ | ❌ | ❌ | – | – |
-| Fuzzed | ✅ 10 in-tree targets, every PR + nightly | ✅ OSS-Fuzz | ✅ OSS-Fuzz + in-tree | ⚠️ 8 in-tree targets | ❌ | ⚠️ relies on LibRaw | ✅ OSS-Fuzz + in-tree |
+| Fuzzed | ✅ 11 in-tree targets, every PR + nightly | ✅ OSS-Fuzz | ✅ OSS-Fuzz + in-tree | ⚠️ 8 in-tree targets | ❌ | ⚠️ relies on LibRaw | ✅ OSS-Fuzz + in-tree |
 | License | MIT / Apache-2.0 | LGPL-2.1 / CDDL-1.0 | LGPL-2.1+ | LGPL-2.1 | own licence (Foveon code: GPL-2+) | MIT (bundles LibRaw) | MIT |
 
 <sub>¹ Little CMS is not a RAW decoder: it is compared as the colour-management stage of a
@@ -516,11 +517,13 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 | `mmap` | yes | memory-mapped `open_path` |
 | `gpu` | no | wgpu backend (Vulkan / Metal / DX12 / WebGPU) |
 | `jpegxl` | no | JPEG XL compressed DNG (DNG 1.7) |
+| `icc` | no | arbitrary ICC output profiles (`DecodeOptions::output_profile`); the built-in colour spaces and their profiles need no feature |
 | `serde` | no | `Serialize` for metadata types |
 
 ## 📖 Documentation
 
 [Architecture](docs/architecture.md) · [Formats](docs/formats.md) ·
+[Colour management](docs/color-management.md) ·
 [Benchmarks](docs/benchmarks.md) · [GPU](docs/gpu.md) · [WASM](docs/wasm.md) ·
 [C and C++ API](docs/c-api.md) · [LibRaw-compatible API](docs/libraw-compat.md) ·
 [Python](docs/python.md) · [Testing](docs/testing.md) · [Profiling](docs/profiling.md) ·

@@ -130,7 +130,13 @@ All functions are prefixed `flashraw_`. Handles are opaque (`flashraw_file`, `fl
 for the RGB outputs `exposure` (EV), `black_point` and `white_point` (linear values mapped to 0
 and 1; defaults 0, 0, 1), and `preview_fallback` (non-zero: RGB outputs of undecodable sensor
 data, e.g. Nikon High Efficiency NEF, return the embedded full-size preview instead of
-`FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`); `decode(file, &o, &frame)`. The display outputs
+`FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`), `color_space` (`FLASHRAW_COLOR_SPACE_SRGB` default,
+`_DISPLAY_P3`, `_ADOBE_RGB`, `_PROPHOTO`, `_REC2020`) and `output_profile` + `output_profile_len`
+(an ICC profile to convert to instead, with `intent` and `black_point_compensation`; needs
+`flashraw_icc_supported()`, see [colour management](color-management.md)); `decode(file, &o, &frame)`.
+`flashraw_frame_color_space()` and `flashraw_frame_icc_profile()` (bytes owned by the frame, for
+tagging files) describe the result; `flashraw_icc_profile()` copies the standard profile of a
+space. The display outputs
 (`RGBA8`, `RGB16`) have the orientation applied; the linear ones keep the sensor orientation
 (`frame_orientation`).
 

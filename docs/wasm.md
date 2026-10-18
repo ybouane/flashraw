@@ -307,6 +307,20 @@ brotli: rayon is small, and std rebuilt with `build-std` drops some code). Of th
 `wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 6.2 MB tarball (2.7 MB of it the two JPEG XL
 variants), 27 files.
 
+### Colour management in the browser
+
+`decode({ colorSpace: 'display-p3' })` (also `'adobe-rgb'`, `'prophoto'`, `'rec2020'`) develops
+to another colour space at no extra per-pixel cost, and `frame.iccProfile` (a `Uint8Array`) is
+the matching ICC profile for tagging a PNG/JPEG you encode. `outputProfile` (the bytes of a
+`.icc` file, with `intent` and `blackPointCompensation`) converts to an arbitrary RGB profile;
+profiles with lookup tables take a slower second pass and only the display outputs
+(`rgba8`, `rgb16`). All binaries include the pure-Rust colour engine behind `outputProfile`
+(cargo feature `icc` of `flashraw-wasm`, on by default): it costs about 86 KiB brotli-compressed
+per binary, the built-in spaces about 8 KiB. Build with `--no-default-features` to drop it
+(`outputProfile` then rejects with `InvalidArgumentError: built without ICC support`). The WebGPU
+build handles the built-in spaces on the GPU; `outputProfile` decodes use the CPU. See
+[color-management.md](color-management.md).
+
 ## Init latency
 
 Cold process / fresh page, import + fetch/read + compile + instantiate:

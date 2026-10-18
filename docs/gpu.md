@@ -87,6 +87,12 @@ The GPU path reproduces the CPU semantics exactly:
 * **sRGB encode** uses the same 4097-entry LUT, indexed by
   `trunc(clamp(v, 0, 1) * 4096)`; the 16-bit encode interpolates the same 16385-entry curve
   table as the CPU.
+* **Colour spaces**: the output matrix is folded into the camera matrix on the host, so the
+  shader multiplies by the same 3x3 as for sRGB; non-sRGB curves upload their tables instead of
+  the sRGB ones (a 16385-entry 8-bit table indexed by `trunc(clamp(v, 0, 1) * srgb_n)` and the
+  16385-entry 16-bit table), and results match the CPU within the same tolerances. Output ICC
+  profiles are applied by the CPU pipeline (a GPU decode with `output_profile` runs on the CPU;
+  GPU-resident outputs refuse a profile). See [color-management.md](color-management.md).
 * **Half floats** are converted with the CPU's integer algorithm (round to nearest even,
   saturating at ±65504), not `pack2x16float`, which needs an optional shader capability and
   leaves rounding to the implementation.
