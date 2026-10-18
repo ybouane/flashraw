@@ -360,6 +360,7 @@
             <tr><th scope="row">Sigma X3F</th><td class="us"><i class="y">Yes</i></td><td><i class="y">Yes</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">DNG opcode lists</th><td class="us"><i class="y">All radiometric opcodes, per stage</i></td><td><i class="p">Adobe DNG SDK build only</i></td><td><i class="p">Stage 1 subset</i></td></tr>
             <tr><th scope="row">RAW → RGB pipeline</th><td class="us"><i class="y">Bilinear, half-size (CPU or GPU)</i></td><td><i class="y">Many demosaics</i></td><td><i class="n">Raw data only</i></td></tr>
+            <tr><th scope="row">ICC colour management</th><td class="us"><i class="y">P3, Adobe RGB, ProPhoto, Rec. 2020, any ICC profile</i></td><td><i class="p">Needs a Little CMS build</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">Multithreaded decoding</th><td class="us"><i class="y">Every codec</i></td><td><i class="p">3 codecs (OpenMP build)</i></td><td><i class="p">Tiled/sliced codecs (OpenMP)</i></td></tr>
             <tr><th scope="row">Explicit SIMD kernels</th><td class="us"><i class="y">SSE4.1/AVX2/AVX-512, NEON, WASM</i></td><td><i class="n">No</i></td><td><i class="p">One SSE2 routine</i></td></tr>
             <tr><th scope="row">GPU acceleration</th><td class="us"><i class="y">Metal, Vulkan, DX12, WebGPU</i></td><td><i class="n">No</i></td><td><i class="n">No</i></td></tr>
@@ -415,7 +416,7 @@ let m = raw.metadata();
 println!("{} {}x{} ISO {:?}", m.camera(), m.width, m.height, m.exposure.iso);
 
 let rgba = raw.decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() })?;</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
-          <p class="muted small">Features: <code>rayon</code>, <code>simd</code>, <code>mmap</code> (default), <code>gpu</code>, <code>jpegxl</code>, <code>serde</code>. MSRV 1.85.</p>
+          <p class="muted small">Features: <code>rayon</code>, <code>simd</code>, <code>mmap</code>, <code>icc</code> (default), <code>gpu</code>, <code>jpegxl</code>, <code>serde</code>. MSRV 1.85.</p>
         </div>
         <div role="tabpanel" id="panel-python" aria-labelledby="tab-python" class="tab-panel" hidden>
           <div class="snippet"><pre class="code"><code>pip install flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
