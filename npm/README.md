@@ -8,7 +8,7 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **Instant previews**: embedded JPEG previews/thumbnails as bytes (zero decoding), or as RGBA.
 - **Sensor data**: `raw-u16`, `raw-f32`, `normalized`, `linear-rgb`, or display-ready `rgba8`
   (`ImageData`-compatible), bit-identical to the native FlashRaw decoder.
-- **WASM SIMD128** binary with automatic scalar fallback; ~620 KiB brotli (all decoders).
+- **WASM SIMD128** binary with automatic scalar fallback; ~756 KiB brotli (all decoders, built-in colour spaces and ICC profiles).
 - **JPEG XL DNGs** (DNG 1.7): the codec lives in separate, larger binaries that are downloaded
   only when a JPEG XL file is decoded; every other file uses the small build.
 - **Multithreaded**: on cross-origin isolated pages and in Node.js a threaded build decodes one
@@ -433,12 +433,12 @@ await loadJpegXlSupport();           // 'auto' mode: preload it now (e.g. when t
 
 | Binary | When | Raw | gzip | brotli |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | default (no cross-origin isolation) | 2450 KiB | 829 KiB | 618 KiB |
-| `flashraw_simd_threads.wasm` | default when threads are available | 2527 KiB | 822 KiB | 610 KiB |
-| `flashraw.wasm` | engines without WebAssembly SIMD | 2408 KiB | 811 KiB | 604 KiB |
-| `flashraw_simd_gpu.wasm` | `init({ gpu: true })` | 2636 KiB | 900 KiB | 672 KiB |
-| `flashraw_simd_jxl.wasm` | first JPEG XL DNG (single-threaded), or `jpegxl: 'always'` | 3920 KiB | 1321 KiB | 951 KiB |
-| `flashraw_simd_threads_jxl.wasm` | first JPEG XL DNG (threaded), or `jpegxl: 'always'` | 3989 KiB | 1313 KiB | 943 KiB |
+| `flashraw_simd.wasm` | default (no cross-origin isolation) | 2897 KiB | 1006 KiB | 756 KiB |
+| `flashraw_simd_threads.wasm` | default when threads are available | 2976 KiB | 998 KiB | 745 KiB |
+| `flashraw.wasm` | engines without WebAssembly SIMD | 2847 KiB | 986 KiB | 738 KiB |
+| `flashraw_simd_gpu.wasm` | `init({ gpu: true })` | 3087 KiB | 1082 KiB | 812 KiB |
+| `flashraw_simd_jxl.wasm` | first JPEG XL DNG (single-threaded), or `jpegxl: 'always'` | 4362 KiB | 1501 KiB | 1088 KiB |
+| `flashraw_simd_threads_jxl.wasm` | first JPEG XL DNG (threaded), or `jpegxl: 'always'` | 4434 KiB | 1488 KiB | 1078 KiB |
 
 Plus 24–76 KiB of generated JS glue per binary (4–13 KiB gzip). A page downloads one binary,
 plus one JPEG XL variant only if it decodes a JPEG XL DNG.

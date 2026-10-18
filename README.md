@@ -227,7 +227,7 @@ is built for that.
   intrinsics, zeroed allocation, a disjoint-tile writer, the input self-reference, the WASM
   clock hook and the mmap call, each with a `SAFETY:` justification and tests
   ([architecture](docs/architecture.md)).
-- ✅ **Fuzzed continuously.** Ten cargo-fuzz targets (the whole open/decode pipeline over every
+- ✅ **Fuzzed continuously.** Eleven cargo-fuzz targets (the whole open/decode pipeline over every
   format under both corruption policies, TIFF and BMFF parsers, bit pumps against a model,
   Huffman, lossless JPEG, packed unpack, deflate/float, DCT, DNG opcodes) run on every PR and
   for 15 minutes each nightly. Every crash input is kept and replayed.
@@ -517,7 +517,7 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 | `mmap` | yes | memory-mapped `open_path` |
 | `gpu` | no | wgpu backend (Vulkan / Metal / DX12 / WebGPU) |
 | `jpegxl` | no | JPEG XL compressed DNG (DNG 1.7) |
-| `icc` | no | arbitrary ICC output profiles (`DecodeOptions::output_profile`); the built-in colour spaces and their profiles need no feature |
+| `icc` | yes | arbitrary ICC output profiles (`DecodeOptions::output_profile`); the built-in colour spaces and their profiles need no feature. Every feature and dependency: [docs/building.md](docs/building.md) |
 | `serde` | no | `Serialize` for metadata types |
 
 ## 📖 Documentation

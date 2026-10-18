@@ -286,22 +286,22 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
 
 | Binary | Raw | gzip -9 | brotli -11 | Its glue JS (raw / gzip) |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | 2450 KiB | 829 KiB | 618 KiB | 24 / 4 KiB (shared) |
-| `flashraw.wasm` (fallback) | 2408 KiB | 811 KiB | 604 KiB | 24 / 4 KiB (shared) |
-| `flashraw_simd_threads.wasm` | 2527 KiB | 822 KiB | 610 KiB | 30 / 5 KiB |
-| `flashraw_simd_gpu.wasm` | 2636 KiB | 900 KiB | 672 KiB | 76 / 13 KiB |
-| `flashraw_simd_jxl.wasm` | 3920 KiB | 1321 KiB | 951 KiB | 24 / 4 KiB |
-| `flashraw_simd_threads_jxl.wasm` | 3989 KiB | 1313 KiB | 943 KiB | 30 / 5 KiB |
-| All JS (5 glues + wrappers + workers, unminified) | 272 KiB | — | — | |
+| `flashraw_simd.wasm` | 2897 KiB | 1006 KiB | 756 KiB | 24 / 4 KiB (shared) |
+| `flashraw.wasm` (fallback) | 2847 KiB | 986 KiB | 738 KiB | 24 / 4 KiB (shared) |
+| `flashraw_simd_threads.wasm` | 2976 KiB | 998 KiB | 745 KiB | 31 / 5 KiB |
+| `flashraw_simd_gpu.wasm` | 3087 KiB | 1082 KiB | 812 KiB | 76 / 13 KiB |
+| `flashraw_simd_jxl.wasm` | 4362 KiB | 1501 KiB | 1088 KiB | 24 / 4 KiB |
+| `flashraw_simd_threads_jxl.wasm` | 4434 KiB | 1488 KiB | 1078 KiB | 31 / 5 KiB |
+| All JS (5 glues + wrappers + workers, unminified) | 280 KiB | — | — | |
 
 Sizes include every format decoder (measured after all vendor decoders were merged; the
 DNG-only build was 216 KiB brotli). See [benchmarks.md](benchmarks.md#wasm) for the size
 breakdown. Only one binary is downloaded per page (and only its glue: the threads/gpu glues are
-dynamic imports), plus a JPEG XL variant only when a JPEG XL DNG is decoded (+333 KiB brotli
-over the binary it complements: +54 %). The fallback and WebGPU builds have no JPEG XL flavour:
-engines without SIMD predate JPEG XL DNGs, and a WebGPU one would be one more ~950 KiB brotli
+dynamic imports), plus a JPEG XL variant only when a JPEG XL DNG is decoded (+332 KiB brotli
+over the binary it complements: +44 %). The fallback and WebGPU builds have no JPEG XL flavour:
+engines without SIMD predate JPEG XL DNGs, and a WebGPU one would be one more ~1.1 MiB brotli
 file for a CPU-bound codec (the WebGPU build uses `flashraw_simd_jxl.wasm` instead). The
-threaded binary costs nothing extra over the SIMD one (+77 KiB raw, −8 KiB
+threaded binary costs nothing extra over the SIMD one (+79 KiB raw, −11 KiB
 brotli: rayon is small, and std rebuilt with `build-std` drops some code). Of the SIMD binary,
 416 KiB is code and 364 KiB data (mostly the camera database tables, which compress well).
 `wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 6.2 MB tarball (2.7 MB of it the two JPEG XL
@@ -315,7 +315,7 @@ the matching ICC profile for tagging a PNG/JPEG you encode. `outputProfile` (the
 `.icc` file, with `intent` and `blackPointCompensation`) converts to an arbitrary RGB profile;
 profiles with lookup tables take a slower second pass and only the display outputs
 (`rgba8`, `rgb16`). All binaries include the pure-Rust colour engine behind `outputProfile`
-(cargo feature `icc` of `flashraw-wasm`, on by default): it costs about 86 KiB brotli-compressed
+(cargo feature `icc` of `flashraw-wasm`, on by default): it costs about 88 KiB brotli-compressed
 per binary, the built-in spaces about 8 KiB. Build with `FLASHRAW_NO_ICC=1 npm run build` (cargo `--no-default-features`) to drop it
 (`outputProfile` then rejects with `InvalidArgumentError: built without ICC support`). The WebGPU
 build handles the built-in spaces on the GPU; `outputProfile` decodes use the CPU. See
