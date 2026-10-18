@@ -11,7 +11,7 @@ keywords = ["raw", "camera", "dng", "image", "decoder"]
 categories = ["multimedia::images"]
 
 [features]
-default = ["rayon", "simd", "mmap"]
+default = ["rayon", "simd", "mmap", "icc"]
 # Multithreaded decoding via rayon.
 rayon = ["dep:rayon", "flashraw-core/rayon", "flashraw-codecs/rayon", "flashraw-formats/rayon"]
 # Explicit SIMD kernels (runtime-dispatched on x86/ARM, compile-time on WASM).

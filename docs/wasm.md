@@ -316,7 +316,7 @@ the matching ICC profile for tagging a PNG/JPEG you encode. `outputProfile` (the
 profiles with lookup tables take a slower second pass and only the display outputs
 (`rgba8`, `rgb16`). All binaries include the pure-Rust colour engine behind `outputProfile`
 (cargo feature `icc` of `flashraw-wasm`, on by default): it costs about 86 KiB brotli-compressed
-per binary, the built-in spaces about 8 KiB. Build with `--no-default-features` to drop it
+per binary, the built-in spaces about 8 KiB. Build with `FLASHRAW_NO_ICC=1 npm run build` (cargo `--no-default-features`) to drop it
 (`outputProfile` then rejects with `InvalidArgumentError: built without ICC support`). The WebGPU
 build handles the built-in spaces on the GPU; `outputProfile` decodes use the CPU. See
 [color-management.md](color-management.md).

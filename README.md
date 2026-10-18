@@ -523,7 +523,7 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 ## 📖 Documentation
 
 [Architecture](docs/architecture.md) · [Formats](docs/formats.md) ·
-[Colour management](docs/color-management.md) ·
+[Building and features](docs/building.md) · [Colour management](docs/color-management.md) ·
 [Benchmarks](docs/benchmarks.md) · [GPU](docs/gpu.md) · [WASM](docs/wasm.md) ·
 [C and C++ API](docs/c-api.md) · [LibRaw-compatible API](docs/libraw-compat.md) ·
 [Python](docs/python.md) · [Testing](docs/testing.md) · [Profiling](docs/profiling.md) ·

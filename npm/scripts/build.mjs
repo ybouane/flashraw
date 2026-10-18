@@ -20,6 +20,7 @@
 //   FLASHRAW_NIGHTLY  toolchain name for the threaded variant (default: nightly)
 //   WASM_BINDGEN   wasm-bindgen binary; must match the wasm-bindgen version in Cargo.lock.
 //                  When absent or mismatched, the matching CLI is installed into npm/.tools/.
+//   FLASHRAW_NO_ICC=1  build without the `icc` feature (no arbitrary ICC output profiles, ~88 KiB smaller)
 //   WASM_OPT       wasm-opt binary (default: binaryen from node_modules, then PATH)
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -160,6 +161,7 @@ for (const v of variants) {
   const targetDir = join(root, 'target', `wasm-${v.name}`);
   if (!skipCargo) {
     const cargoArgs = ['build', '-p', 'flashraw-wasm', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm-release'];
+    if (process.env.FLASHRAW_NO_ICC) cargoArgs.push('--no-default-features');
     if (v.features) cargoArgs.push('--features', v.features);
     cargoArgs.push('--target-dir', targetDir);
     // Each variant has its own target dir so switching RUSTFLAGS does not force full rebuilds.
