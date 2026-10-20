@@ -164,6 +164,7 @@ pub struct DbCamera {
     /// camera itself records (see "Default crops" in docs/camera-db.md).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub image_crops: Vec<DbImageCrop>,
+    /// Verification record: sample-file counts, observed levels and notes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification: Option<DbVerification>,
 }

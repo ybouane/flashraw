@@ -7,8 +7,6 @@
 //! The database adds per-camera knowledge (crops, masked areas, black/white levels,
 //! CFA layout, colour matrices, decoder hints). Decoders must not require an entry
 //! to decode a file: standards-based metadata comes first, the database refines it.
-//!
-//! Data notes: see `camera-db/README.md`.
 
 #[cfg(feature = "tooling")]
 pub mod tooling;
