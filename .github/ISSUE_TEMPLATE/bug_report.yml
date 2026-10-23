@@ -1,0 +1,55 @@
+name: Bug report
+description: A crash, wrong output, or unexpected error with a file or an option
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems (crashes, hangs or huge allocations on hostile files) go through
+        [private reporting](https://github.com/ybouane/flashraw/blob/main/SECURITY.md), not here.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where do you use FlashRaw?
+      options: [Rust crate, Command line (flashraw), Python, npm / browser, npm / Node.js, C / C++ API, LibRaw-compatible shim]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`flashraw --version`, `flashraw.__version__`, the npm package version or the commit."
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system, CPU and browser or runtime
+      placeholder: "Linux x86-64, Rust 1.90 / macOS arm64, Chrome 150 / Node 22"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The command or code, the options (output, backend, threads, region), and the exact error or warnings.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: info
+    attributes:
+      label: Output of `flashraw info FILE`
+      description: Run it on the file involved (use `--json` for scripts).
+      render: shell
+  - type: input
+    id: sample
+    attributes:
+      label: Sample file
+      description: A link to the file, only if it is yours or CC0. Do not attach private photos.

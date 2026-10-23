@@ -1,0 +1,65 @@
+name: Unsupported camera or format
+description: A camera or compression mode that fails to open, decodes wrongly or is missing from the camera database
+labels: ["camera"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check `flashraw supported` first: it lists every format and the status of each mode
+        (`verified`, `partial`, `experimental`, `unsupported`). Some modes are known gaps, for example
+        Nikon High Efficiency NEF (see docs/formats.md).
+  - type: input
+    id: make
+    attributes:
+      label: Camera make
+      placeholder: Canon
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Camera model
+      placeholder: EOS R6 Mark III
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+    validations:
+      required: true
+  - type: input
+    id: mode
+    attributes:
+      label: File format and compression mode
+      description: Extension and the camera setting, for example "CR3, C-RAW", "NEF, lossless compressed 14-bit", "ARW, uncompressed", "DNG from the phone camera app".
+    validations:
+      required: true
+  - type: dropdown
+    id: problem
+    attributes:
+      label: What goes wrong?
+      options: [The file does not open, The file opens but the decode fails, The decode succeeds but the image is wrong (colours, crop, orientation, levels), The camera is not in the camera database]
+    validations:
+      required: true
+  - type: textarea
+    id: info
+    attributes:
+      label: Output of `flashraw info FILE`
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: sample
+    attributes:
+      label: Sample file link (CC0)
+      description: A link to an original, unmodified file that you release under CC0 (for example uploaded to raw.pixls.us). Without a sample, support cannot be verified.
+    validations:
+      required: true
+  - type: checkboxes
+    id: cc0
+    attributes:
+      label: Licence of the sample
+      options:
+        - label: I took this photo (or may release it) and I release it under CC0, so it can be used as a test file.
+          required: true
