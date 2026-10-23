@@ -131,7 +131,24 @@ strong, b { font-weight: 600; }
 /* ---------------------------------------------------------------- hero = the demo */
 .hero { padding: 64px 0 0; }
 .hero-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 48px; align-items: end; }
+.hero-head { position: relative; }
 .hero-head .kicker { grid-column: 1 / -1; margin-bottom: 20px; }
+/* Floating speed badge (links to the benchmarks): top right on wide screens, in flow on narrow ones. */
+.speed-badge {
+  position: absolute; top: -6px; right: 0; z-index: 1; display: grid; gap: 2px; padding: 12px 16px 11px; text-align: left;
+  border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper); color: var(--ink); text-decoration: none;
+  box-shadow: 5px 5px 0 var(--ink); transform: rotate(-2.5deg); animation: badge-float 6s ease-in-out infinite;
+  transition: box-shadow 0.15s ease;
+}
+.speed-badge:hover, .speed-badge:focus-visible { box-shadow: 7px 7px 0 var(--ink); }
+.sb-num { font: 400 2.5rem/1 var(--serif); letter-spacing: -0.03em; }
+.sb-text { font: 500 0.78rem var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+.sb-sub { font: 400 0.66rem var(--mono); letter-spacing: 0.04em; color: var(--muted); }
+@keyframes badge-float { 0%, 100% { transform: rotate(-2.5deg) translateY(0); } 50% { transform: rotate(-2.5deg) translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .speed-badge { animation: none; } }
+@media (max-width: 860px) {
+  .speed-badge { position: static; justify-self: start; margin: 0 0 22px 4px; transform: rotate(-1.5deg); animation: none; }
+}
 .hero h1 { grid-column: 1 / -1; font-size: clamp(2.9rem, 7.6vw, 7rem); line-height: 0.97; letter-spacing: -0.03em; font-weight: 380; }
 .hero h1 em { font-style: italic; letter-spacing: -0.02em; }
 .lead { margin: 28px 0 0; max-width: 640px; font-size: 1.22rem; line-height: 1.5; color: var(--ink-2); }

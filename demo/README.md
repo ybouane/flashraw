@@ -34,12 +34,13 @@ browser it cannot also use threads, so its entropy decoding runs on one core and
 measured 2-11x slower than the threaded build on an Apple M1 Ultra. Adjustments render on the GPU
 (WebGL2) with every build.
 
-Loading: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three font files, logo)
-before the `load` event. On `load`, the decoder chunk, its JS glue and one `.wasm` (compiled while
-it streams) are downloaded and initialised, worker threads included, so the first decode starts at
-once; the sample file is then downloaded in full, so "Try a sample" decodes on click (skipped when
-`navigator.connection` reports `saveData`). Picking or dropping a file before then starts the
-decoder at once. The histogram (a GPU read-back) runs a frame after the decoded image is shown.
+Loading: the landing page downloads ~210 KiB (HTML, CSS, 2 KiB of JS, three font files, logo).
+Right after the first paint (not at `load`, which also waits for every subresource), the decoder
+chunk, its JS glue and one `.wasm` (compiled while it streams) are downloaded and initialised,
+worker threads included, so the first decode starts at once, and the sample file is downloaded in
+parallel at low priority (so it never delays the WASM), so "Try a sample" decodes on click (the
+sample is skipped when `navigator.connection` reports `saveData`). Picking or dropping a file
+before then starts the decoder at once. The histogram (a GPU read-back) runs a frame after the decoded image is shown.
 The benchmark charts are a separate chunk loaded when their section scrolls near.
 
 ## Layout

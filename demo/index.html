@@ -110,6 +110,11 @@
     <div class="wrap">
       <div class="hero-head">
         <p class="kicker">Open source · Rust · WebAssembly</p>
+        <a class="speed-badge" href="#benchmarks" aria-label="9 to 15 times faster than LibRaw from RAW to RGB, median over 62 camera files, all cores. See the benchmarks.">
+          <span class="sb-num">9–15×</span>
+          <span class="sb-text">faster than LibRaw</span>
+          <span class="sb-sub">RAW → RGB · all cores · median</span>
+        </a>
         <h1 id="hero-title">Camera <em>RAW</em>,<br> decoded in a flash.</h1>
         <p class="lead">FlashRaw is a fast, memory-safe decoder for ~40 camera RAW formats, from Rust, C, C++, Python,
           the GPU, or this page. Open a file: it is decoded here, in WebAssembly, and never leaves your device.</p>
@@ -128,7 +133,7 @@
             <label for="file-input" class="btn btn-primary btn-lg">Choose a RAW file</label>
             <button type="button" class="btn btn-outline btn-lg" id="sample-btn" data-src="/samples/canon-eos-r5-mark-ii.cr3" data-name="canon-eos-r5-mark-ii.cr3">Try a sample</button>
           </div>
-          <p class="dz-note">Nothing is uploaded. The decoder (≈750 KiB) loads in the background once the page is idle. The sample is a 7.6 MB
+          <p class="dz-note">Nothing is uploaded. The decoder (≈750 KiB) loads in the background as soon as the page appears. The sample is a 7.6 MB
             C-RAW CR3 from a Canon EOS R5 Mark II, from <a href="https://raw.pixls.us/">raw.pixls.us</a> (CC0).</p>
         </div>
         <svg class="dz-art" viewBox="0 0 160 160" aria-hidden="true">

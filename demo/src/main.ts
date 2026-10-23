@@ -1,7 +1,7 @@
-// Entry point: kept tiny. The decoder starts loading on `load`: the app chunk, the WASM (compiled
-// while it streams), its instantiation and the worker threads, so it is ready before the visitor
-// picks a file. The sample file is downloaded right after, so "Try a sample" decodes at once
-// (skipped when the visitor asked to save data). The benchmark charts load when their section
+// Entry point: kept tiny. The decoder starts loading right after the first paint: the app chunk,
+// the WASM (compiled while it streams), its instantiation and the worker threads, so it is ready
+// before the visitor picks a file. The sample file is downloaded in parallel at low priority, so
+// "Try a sample" decodes at once (skipped when the visitor asked to save data). The benchmark charts load when their section
 // scrolls near.
 
 type AppModule = typeof import('./app');
@@ -42,7 +42,7 @@ input.addEventListener('change', () => {
 const sampleBtn = document.getElementById('sample-btn') as HTMLButtonElement | null;
 let samplePromise: Promise<Blob> | null = null;
 function fetchSample(): Promise<Blob> {
-  samplePromise ??= fetch(sampleBtn!.dataset.src!).then((res) => {
+  samplePromise ??= fetch(sampleBtn!.dataset.src!, { priority: 'low' } as RequestInit).then((res) => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.blob();
   });
@@ -66,20 +66,25 @@ sampleBtn?.addEventListener('click', async () => {
   }
 });
 
-// Preload as soon as the page has loaded (so the first paint never waits for it): the decoder
-// first (downloaded, compiled, instantiated, threads started), then the sample file, so they do
-// not compete for bandwidth. A sample download that fails is retried on click. A file picked or
-// dropped earlier starts the decoder at once.
+// Preload as soon as the first frame is painted (not at `load`, which also waits for every
+// subresource): the decoder (downloaded, compiled, instantiated, threads started) and the sample
+// file start together. The sample fetch is low priority so it never delays the WASM. A sample
+// download that fails is retried on click. A file picked or dropped earlier starts the decoder at
+// once. The sample is skipped when the visitor asked to save data.
 const saveData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+let preloaded = false;
 function preload() {
-  void loadApp()
-    .catch(() => {})
-    .finally(() => {
-      if (sampleBtn && !saveData()) void fetchSample().catch(() => {});
-    });
+  if (preloaded) return;
+  preloaded = true;
+  if (sampleBtn && !saveData()) void fetchSample().catch(() => {});
+  void loadApp().catch(() => {});
 }
-if (document.readyState === 'complete') preload();
-else window.addEventListener('load', preload, { once: true });
+function schedulePreload() {
+  requestAnimationFrame(() => setTimeout(preload, 0));
+  setTimeout(preload, 1500); // background tabs do not run animation frames
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedulePreload, { once: true });
+else schedulePreload();
 
 // Drag and drop anywhere on the page (the drop zone highlights).
 let dragDepth = 0;
