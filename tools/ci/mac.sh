@@ -11,6 +11,7 @@
 # target/ci-logs-mac/. The build cache is dropped when the host has less than
 # FLASHRAW_MAC_MIN_FREE_GB (default 10) GB free; --clean removes ~/flashraw-ci entirely.
 #   FLASHRAW_MAC_SSH     ssh destination and options, e.g. "-p 2222 -i key.pem user@host"
+#   (the Mac holds only a corpus sample, so the regression test runs with FLASHRAW_ALLOW_NO_CORPUS=1)
 #   FLASHRAW_MAC_SAMPLE  corpus sample filter (regex on corpus paths; default below)
 
 set -euo pipefail
@@ -68,7 +69,7 @@ EOF
 
 status=0
 remote "cd ~/$DIR/src && export PATH=\$HOME/.cargo/bin:\$HOME/$DIR/tools/node/bin:\$HOME/$DIR/tools/cmake/CMake.app/Contents/bin:\$PATH \
-  FLASHRAW_CORPUS=\$HOME/$DIR/corpus && tools/ci/local.sh $*" || status=$?
+  FLASHRAW_CORPUS=\$HOME/$DIR/corpus FLASHRAW_ALLOW_NO_CORPUS=1 && tools/ci/local.sh $*" || status=$?
 
 mkdir -p target/ci-logs-mac
 rsync -a -e "$RSH" "$HOST:$DIR/src/target/ci-logs/" target/ci-logs-mac/ || true
