@@ -20,13 +20,11 @@ FlashRaw opens a camera RAW file and gives you the sensor data plus everything n
 interpret it (CFA layout, black and white levels, white balance, colour matrices, crops,
 orientation), the embedded previews, or a display-ready sRGB image. It is written in memory-safe
 Rust. Of the 2,016 files in the raw.pixls.us corpus, **1,980 decode (98.2%)**, and 1,965 of them have
-pinned output hashes; the other 36 are not corrupt files but formats it does not support yet (28 Nikon
+pinned output hashes; the other 36 are formats it does not support yet or files that are not RAW (28 Nikon
 High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG, a few more: [docs/formats.md](docs/formats.md)).
 On the same machine as the other open-source decoders it is **7.9×–11.4× faster than LibRaw** at
 decoding, **8.8×–15.4× faster** at producing an sRGB image, and needs **1.5×–1.9× less memory** for it
-(medians over 62 popular cameras). Single-thread speedups are lower: 2.9× (Linux) and 1.8× (macOS) at
-decoding and 2.1× and 1.8× at producing an sRGB image, against LibRaw's default build
-([one-thread results](docs/benchmarks.md#headline)).
+(medians over 62 popular cameras).
 
 ## ⚡ FlashRaw vs the others
 
