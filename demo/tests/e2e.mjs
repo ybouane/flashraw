@@ -80,15 +80,47 @@ async function run(name, launcher) {
   const t = Date.now();
   await page.goto(URL_, { waitUntil: 'load' });
   const loadMs = Date.now() - t;
-  const wasmEarly = requests.filter((u) => u.endsWith('.wasm'));
-  wasmEarly.length ? fail(`WASM requested before the load event: ${wasmEarly}`) : ok(`no WASM before load (load ${loadMs} ms, ${requests.length} requests)`);
-  // preloaded once idle: the decoder (one .wasm) and the sample file
+  // The app chunk is requested at once; the WASM and the sample start right after the first paint
+  // (not before it, and not only when idle).
   try {
-    await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/samples/')), null, { timeout: 15_000 });
-    const pre = requests.filter((u) => u.endsWith('.wasm') || u.includes('/samples/')).map((u) => u.split('/').pop());
-    pre.some((u) => u.endsWith('.wasm')) ? ok(`preloaded when idle: ${pre.join(', ')}`) : fail(`no decoder preload (${pre.join(', ')})`);
+    await page.waitForFunction(
+      () => ['.wasm', '/samples/'].every((k) => performance.getEntriesByType('resource').some((e) => e.name.includes(k))),
+      null,
+      { timeout: 5_000 },
+    );
+    const fp = await page.evaluate(() => performance.getEntriesByName('first-paint')[0]?.startTime ?? 0);
+    const starts = await page.evaluate(() => Object.fromEntries(['.wasm', '/samples/', '/assets/app-'].map((k) => [k, performance.getEntriesByType('resource').find((e) => e.name.includes(k))?.startTime ?? -1])));
+    ok(`load ${loadMs} ms, ${requests.length} requests; first paint ${Math.round(fp)} ms; app chunk ${Math.round(starts['/assets/app-'])} ms, WASM ${Math.round(starts['.wasm'])} ms, sample ${Math.round(starts['/samples/'])} ms`);
+    starts['/assets/app-'] >= 0 && starts['/assets/app-'] <= starts['.wasm'] ? ok('app chunk requested before the WASM') : fail(`app chunk not requested before the WASM: ${JSON.stringify(starts)}`);
+    starts['.wasm'] >= fp - 5 ? ok('WASM requested after the first paint') : fail(`WASM requested before the first paint (${starts['.wasm']} < ${fp})`);
+    starts['.wasm'] < 3_000 ? ok('WASM requested within 3 s of navigation start') : fail(`WASM requested late: ${starts['.wasm']} ms`);
   } catch {
-    fail('the sample was not prefetched when idle');
+    fail(`the decoder and the sample were not requested right after the first paint (${requests.filter((u) => u.endsWith('.wasm') || u.includes('/samples/')).join(', ') || 'none'})`);
+  }
+  // Hero speed badge: the accessible name is the visible text, the range is the measured one
+  {
+    const b = await page.evaluate(() => {
+      const el = document.querySelector('.speed-badge');
+      return { text: el?.textContent.replace(/\s+/g, ' ').trim(), label: el?.getAttribute('aria-label'), href: el?.getAttribute('href') };
+    });
+    b.text === '8.8–15×  faster than LibRaw  RAW → RGB · median'.replace(/\s+/g, ' ') && b.label === b.text && b.href === '#benchmarks'
+      ? ok(`badge: "${b.text}" (aria-label identical, links to #benchmarks)`)
+      : fail(`badge text/label mismatch: ${JSON.stringify(b)}`);
+    const facts = await page.evaluate(() => document.querySelector('.facts')?.textContent ?? '');
+    facts.includes('8.8–15×') && !/\b9–15×/.test(await page.content()) ? ok('facts tile uses 8.8–15×, no stale 9–15×') : fail('stale "9–15×" or missing 8.8–15× in the facts tile');
+  }
+  // Keyboard focus on the visually hidden file input shows a ring on the "Choose a RAW file" label
+  {
+    await page.focus('#file-input');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab'); // back onto the input through the keyboard (focus-visible)
+    const ring = await page.evaluate(() => {
+      const l = document.querySelector('label[for="file-input"]');
+      const cs = getComputedStyle(l);
+      return { focused: document.activeElement?.id, style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) };
+    });
+    ring.focused === 'file-input' && ring.style !== 'none' && ring.width >= 2 ? ok(`focus ring on the "Choose a RAW file" label (${ring.width}px ${ring.style})`) : fail(`no visible focus ring on the label: ${JSON.stringify(ring)}`);
+    await page.evaluate(() => document.activeElement?.blur());
   }
   const iso = await page.evaluate(() => self.crossOriginIsolated);
   ok(`crossOriginIsolated=${iso}`);
@@ -101,6 +133,18 @@ async function run(name, launcher) {
     const r = await waitDecoded(page);
     r.error || !/Canon EOS R5 Mark II/.test(r.status) ? fail(`sample: ${r.status}`) : ok(`sample: ${r.status}`);
     await page.screenshot({ path: join(OUT, `${name}-sample.png`) });
+  }
+  // segmented control: roving tabindex and arrow keys; half-size decodes say so on the download buttons
+  if (await page.locator('#src-preview').isEnabled()) {
+    await page.focus('#src-raw');
+    await page.keyboard.press('ArrowRight');
+    const st = await page.evaluate(() => ({ prev: document.getElementById('src-preview').getAttribute('aria-checked'), focus: document.activeElement?.id, t0: document.getElementById('src-raw').tabIndex, t1: document.getElementById('src-preview').tabIndex }));
+    st.prev === 'true' && st.focus === 'src-preview' && st.t0 === -1 && st.t1 === 0 ? ok('radio group: ArrowRight selects the preview, roving tabindex') : fail(`radio keys: ${JSON.stringify(st)}`);
+    await page.keyboard.press('ArrowLeft');
+  }
+  {
+    const dl = await page.evaluate(() => [document.getElementById('dl-png').textContent, document.getElementById('dl-png').title, document.getElementById('dl-info').textContent]);
+    ok(`download button: "${dl[0]}"${dl[1] ? ` (title: ${dl[1]})` : ''}`);
   }
 
   const files = quick ? FILES.slice(0, 2) : name === 'chromium' ? FILES : FILES.filter(([k]) => ['cr3', 'nef', 'dng-iphone-portrait'].includes(k));
@@ -120,6 +164,11 @@ async function run(name, launcher) {
       fail(`${key}: ${r.status}`);
       await page.screenshot({ path: join(OUT, `${name}-${key}-error.png`) });
       continue;
+    }
+    {
+      const dl = await page.evaluate(() => [document.getElementById('dl-png').textContent, document.getElementById('dl-jpeg').textContent, document.getElementById('image-dims').textContent]);
+      const half = /half-size/.test(dl[2]);
+      half === /half-size/.test(dl[0]) && half === /half-size/.test(dl[1]) ? (half ? ok(`${key}: half-size decode, download buttons say "${dl[0]}"`) : null) : fail(`${key}: download labels "${dl[0]}" / "${dl[1]}" do not match the decode (${dl[2]})`);
     }
     const info = await page.evaluate(() => ({
       camera: document.querySelector('.meta-hero')?.textContent,

@@ -125,8 +125,20 @@ strong, b { font-weight: 600; }
 .header-actions { display: flex; align-items: center; gap: 18px; margin-left: auto; }
 .icon-link { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-2); text-decoration: none; font-size: 1rem; padding: 6px 0; }
 .icon-link:hover { color: var(--ink); }
-@media (max-width: 960px) { .main-nav { display: none; } }
+/* Compact menu (details disclosure) where the inline nav is hidden. */
+.nav-menu { display: none; margin-left: auto; }
+.nav-menu summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 12px; border: 1px solid var(--ink); border-radius: var(--radius); background: var(--paper); color: var(--ink); font: 500 0.94rem var(--serif); }
+.nav-menu summary::-webkit-details-marker { display: none; }
+.nav-menu[open] summary { background: var(--ink); color: var(--paper); }
+.nav-menu-icon { width: 14px; height: 1.5px; background: currentColor; box-shadow: 0 -4px 0 currentColor, 0 4px 0 currentColor; }
+.nav-menu-list { position: absolute; top: 100%; left: 0; right: 0; z-index: 60; display: grid; background: var(--paper); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.nav-menu-list a { padding: 14px 24px; color: var(--ink); text-decoration: none; font-size: 1.05rem; border-bottom: 1px solid var(--line); }
+.nav-menu-list a:last-child { border-bottom: 0; }
+.nav-menu-list a:hover, .nav-menu-list a:focus-visible { background: var(--ink); color: var(--paper); outline-offset: -3px; outline-color: var(--paper); }
+@media (max-width: 560px) { .nav-menu-list a { padding-inline: 16px; } }
+@media (max-width: 960px) { .main-nav { display: none; } .nav-menu { display: block; } .header-actions { margin-left: 0; } }
 @media (max-width: 520px) { .icon-link-text { display: none; } .header-inner { gap: 12px; } .brand-logo { height: 24px; } }
+@media (max-width: 420px) { .icon-link { display: none; } .header-inner { gap: 8px; } .brand-logo { height: 20px; } .nav-menu summary { padding: 4px 10px; } .header-actions .btn-sm { padding: 4px 10px; } }
 
 /* ---------------------------------------------------------------- hero = the demo */
 .hero { padding: 64px 0 0; }
@@ -148,6 +160,15 @@ strong, b { font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .speed-badge { animation: none; } }
 @media (max-width: 860px) {
   .speed-badge { position: static; justify-self: start; margin: 0 0 22px 4px; transform: rotate(-1.5deg); animation: none; }
+}
+/* Phones and tablets: one compact block (number beside the two short lines), so the headline stays near the top. */
+@media (max-width: 860px) {
+  .hero-head .kicker { margin-bottom: 12px; }
+  .speed-badge { grid-template-columns: auto auto; column-gap: 10px; align-items: center; padding: 6px 10px; margin: 0 0 14px 0; box-shadow: 3px 3px 0 var(--ink); transform: none; max-width: 100%; }
+  .speed-badge:hover, .speed-badge:focus-visible { box-shadow: 4px 4px 0 var(--ink); }
+  .sb-num { grid-row: 1 / span 2; font-size: 1.75rem; }
+  .sb-text { font-size: 0.68rem; align-self: end; }
+  .sb-sub { font-size: 0.62rem; align-self: start; }
 }
 .hero h1 { grid-column: 1 / -1; font-size: clamp(2.9rem, 7.6vw, 7rem); line-height: 0.97; letter-spacing: -0.03em; font-weight: 380; }
 .hero h1 em { font-style: italic; letter-spacing: -0.02em; }
@@ -178,6 +199,8 @@ strong, b { font-weight: 600; }
 .dz-title { margin: 0; font-size: clamp(1.7rem, 3.2vw, 2.5rem); line-height: 1.12; letter-spacing: -0.015em; }
 .dz-touch { display: none; }
 @media (hover: none) and (pointer: coarse) { .dz-desktop { display: none; } .dz-touch { display: inline; } }
+/* The file input is visually hidden: show its keyboard focus on the button-like label. */
+.dropzone:has(#file-input:focus-visible) label[for='file-input'] { outline: 2px solid var(--ink); outline-offset: 3px; }
 .dz-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .dz-note { margin: 20px 0 0; max-width: 62ch; color: var(--muted); font-size: 0.95rem; line-height: 1.5; }
 .dz-note a { color: var(--ink-2); }
@@ -245,6 +268,7 @@ main > .section:last-child { padding-bottom: 120px; }
 .seg button:hover:not([aria-checked='true']):not(:disabled) { background: var(--bone); color: var(--ink); }
 .seg button:disabled { color: var(--ash); cursor: not-allowed; }
 .seg button:focus-visible { outline-offset: -4px; outline-color: var(--ash); }
+.seg button[aria-checked='true']:focus-visible { outline-color: var(--paper); }
 .zoom-tools { display: inline-flex; align-items: center; gap: 2px; }
 .tool { display: inline-grid; place-items: center; min-width: 34px; height: 34px; padding: 0 8px; border: 1px solid transparent; background: none; color: var(--ink-2); cursor: pointer; font: 500 0.95rem var(--serif); }
 .tool:hover { border-color: var(--line-2); color: var(--ink); }
@@ -264,9 +288,9 @@ main > .section:last-child { padding-bottom: 120px; }
 @media (max-width: 640px) { .stage { height: 58vh; min-height: 260px; } .stage-hint { display: none; } }
 
 .side-card { border-top: 1px solid var(--ink); padding-top: 10px; }
-.side-card h3 { font: 600 0.74rem/1.6 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.side-card h2, .side-card h3 { font: 600 0.74rem/1.6 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .side-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
-.side-card > h3 { margin-bottom: 14px; }
+.side-card > h2, .side-card > h3 { margin-bottom: 14px; }
 .side-actions { display: flex; gap: 16px; }
 .histogram { width: 100%; height: 112px; background: var(--bone); }
 .hist-legend { display: flex; gap: 10px; list-style: none; margin: 0; padding: 0; font: 0.7rem var(--mono); color: var(--muted); }
@@ -351,7 +375,7 @@ select:hover { border-color: var(--ink); }
 .meta-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 24px; }
 .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px 32px; }
 .meta-card { border-top: 1px solid var(--line); padding: 10px 0 20px; min-width: 0; }
-.meta-card h4 { margin: 0 0 10px; font: 500 0.68rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.meta-card h3 { margin: 0 0 10px; font: 500 0.68rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 .meta-card .kv { margin: 0; font-size: 0.94rem; gap: 4px 14px; }
 .meta-card .kv dt { white-space: nowrap; }
 .meta-hero { font-size: 1.5rem; letter-spacing: -0.01em; margin: 0 0 8px; }
@@ -367,7 +391,7 @@ select:hover { border-color: var(--ink); }
 .pill-good { border-color: var(--ink); color: var(--ink); }
 .pill-warn { border-color: var(--ink-2); background: var(--bone); color: var(--ink); }
 .previews-card { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 10px; }
-.previews-card h4 { margin: 0 0 10px; font: 500 0.68rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.previews-card h3 { margin: 0 0 10px; font: 500 0.68rem/1.5 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
 /* Scrolling tables: the wrapper is the containing block of everything inside (an absolutely
    positioned label must not escape it and widen the page), the first column stays in view, and a
    soft shadow on the right edge says there is more (covered once scrolled to the end). */
@@ -525,3 +549,4 @@ table.compare i.n { color: var(--muted); }
 .footer-nav { display: flex; gap: 24px; flex-wrap: wrap; }
 .footer-nav a { color: #fff; text-decoration: none; border-bottom: 1px solid #555; }
 .footer-nav a:hover { border-bottom-color: #fff; }
+.btn svg { flex-shrink: 0; }

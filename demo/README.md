@@ -4,7 +4,7 @@ The site at <https://flashraw.ybouane.com>: the project page plus a live demo th
 RAW file in the browser with the `flashraw` npm package (this repository's `npm/`).
 
 The page opens on the demo: a headline and a drop zone with "Choose a RAW file" and "Try a
-sample". What the demo does with a file (nothing is uploaded):
+sample". What the demo does with a file (the file never leaves your device):
 
 1. `FlashRaw.open(file)`: metadata (camera, lens, exposure, size, CFA, levels, white
    balance, colour matrices, orientation, compression, DNG fields, previews, vendor extras).
@@ -21,7 +21,8 @@ sample". What the demo does with a file (nothing is uploaded):
    tone-curve selector's "Linear" gives FlashRaw's neutral output; "Auto" sets Exposure so the
    mean brightness matches the embedded preview. Without WebGL2 the same pipeline runs in JavaScript
    (`src/renderer-cpu.ts`; force it with `?renderer=cpu`).
-5. Downloads: the adjusted image at full resolution as PNG or JPEG (rendered in 2048 px tiles),
+5. Downloads: the adjusted image as PNG or JPEG at the size of the decode (rendered in 2048 px
+   tiles; the buttons say "half-size" with the real size when the decode fell back to half-size),
    and every embedded preview as stored.
 6. Timings: metadata parse, preview extraction and browser decode, the decode with FlashRaw's
    per-stage times (entropy decode, unpack, develop), the copy and texture upload, MP/s, and
@@ -82,8 +83,11 @@ red, green and blue appear only where they mean colour channels (histogram, CFA,
 
 `public/samples/canon-eos-r5-mark-ii.cr3` (7.6 MB, Canon EOS R5 Mark II, APS-C crop, C-RAW) is
 `Canon/Canon EOS R5m2/APS-C_CRAW.CR3` from <https://raw.pixls.us> (CC0, public domain):
-<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is downloaded after the
-decoder on page load (see above), or fetched when the visitor clicks "Try a sample".
+<https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is downloaded in the
+background right after the first paint (not on 2g/3g connections or with Save-Data; then it is
+fetched when the visitor hovers, focuses or touches "Try a sample", or clicks it). It is served with
+`Cache-Control: public, max-age=86400, stale-while-revalidate=604800` (`public/_headers`,
+`vercel.json`): the file name is stable, so it is not `immutable`.
 
 ## Develop and build
 

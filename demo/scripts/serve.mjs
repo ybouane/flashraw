@@ -48,6 +48,8 @@ createServer(async (req, res) => {
       headers['Cross-Origin-Embedder-Policy'] = coep;
     }
     if (path.startsWith('/assets/')) headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+    else if (path.startsWith('/samples/')) headers['Cache-Control'] = 'public, max-age=86400, stale-while-revalidate=604800';
+    headers['Referrer-Policy'] = 'strict-origin-when-cross-origin';
     if (gzip && /text|javascript|json|wasm|svg|xml/.test(type) && /gzip/.test(req.headers['accept-encoding'] ?? '')) {
       body = gzipSync(body, { level: 6 });
       headers['Content-Encoding'] = 'gzip';

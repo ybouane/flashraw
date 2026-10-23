@@ -173,6 +173,17 @@ function setupViewer() {
   });
   for (const b of [ui.srcRaw, ui.srcPreview]) {
     b.addEventListener('click', () => setSource(b.dataset.source as Source));
+    // radio group: arrow keys move and select, only the checked radio is in the tab order
+    b.addEventListener('keydown', (e) => {
+      const radios = [ui.srcRaw, ui.srcPreview].filter((r) => !r.disabled);
+      const i = radios.indexOf(b);
+      const next = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? i + 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? radios.length - 1 : null;
+      if (next === null || radios.length < 2) return;
+      e.preventDefault();
+      const target = radios[(next + radios.length) % radios.length];
+      setSource(target.dataset.source as Source);
+      target.focus();
+    });
   }
   buildSliders();
   ui.tone.addEventListener('change', () => {
@@ -428,6 +439,8 @@ function setSource(s: Source) {
   source = s;
   ui.srcRaw.setAttribute('aria-checked', String(s === 'raw'));
   ui.srcPreview.setAttribute('aria-checked', String(s === 'preview'));
+  ui.srcRaw.tabIndex = s === 'raw' ? 0 : -1;
+  ui.srcPreview.tabIndex = s === 'preview' ? 0 : -1;
   const size = s === 'raw' ? rawSize : previewSize();
   viewport!.setImage(size[0], size[1], true);
   updateDims();
@@ -510,6 +523,7 @@ export async function openFile(file: File) {
   for (const b of [ui.dlPng, ui.dlJpeg, ui.dlPreview, ui.redecode]) b.disabled = true;
   ui.srcPreview.disabled = true;
   ui.dlInfo.textContent = '';
+  setDownloadLabels(null);
   ui.fileLabel.textContent = file.name;
   ui.dims.textContent = '';
   overlay('Reading metadata…');
@@ -664,6 +678,7 @@ async function decodeAndShow(my: number, t0 = now()) {
       copyMs: ft.copyMs,
     });
     setSource('raw');
+    setDownloadLabels(demosaic === 'half-size' ? { w: rawSize[0], h: rawSize[1], note } : null);
     renderNow();
     timings!.firstPixelsMs = now() - t0;
     // the histogram reads pixels back (waits for the GPU): after the image and status paint
@@ -721,7 +736,7 @@ function renderPreviewsTable(previews: PreviewDescriptor[]) {
         h('th', { scope: 'col' }, h('span', { class: 'visually-hidden', text: 'Download' })))),
     tbody,
   );
-  ui.previewsCard.append(h('div', { class: 'previews-card' }, h('h4', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));
+  ui.previewsCard.append(h('div', { class: 'previews-card' }, h('h3', { text: `Embedded previews (${previews.length})` }), h('div', { class: 'table-scroll' }, table)));
 }
 
 // ------------------------------------------------------------------- performance panel
@@ -838,6 +853,16 @@ function saveBlob(blob: Blob, name: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+/** The export is the decoded frame: say so when the decode was half-size (user choice or fallback). */
+function setDownloadLabels(half: { w: number; h: number; note: string } | null) {
+  for (const [btn, name] of [[ui.dlPng, 'PNG'], [ui.dlJpeg, 'JPEG']] as const) {
+    btn.textContent = half ? `${name}, half-size (${half.w} × ${half.h})` : `${name}, full resolution`;
+    const why = half?.note ? half.note.replace(/^ \(half-size: /, ' (').replace(/\)$/, ')') : ' (as selected in Decoder options)';
+    btn.title = half ? `The RAW was decoded at half size${why}, so this ${name} is ${half.w} × ${half.h}.${half.note ? '' : ' Choose the bilinear demosaic and decode again for full size.'}` : '';
+  }
+  if (half) ui.dlInfo.textContent = `Downloads are ${half.w} × ${half.h} (half-size decode${half.note ? '' : ', as selected'}).`;
 }
 
 async function download(type: 'image/png' | 'image/jpeg') {

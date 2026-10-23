@@ -92,6 +92,16 @@
       <a href="#install">Install</a>
       <a href="#docs">Docs</a>
     </nav>
+    <details class="nav-menu" id="nav-menu">
+      <summary aria-label="Menu"><span class="nav-menu-label">Menu</span><span class="nav-menu-icon" aria-hidden="true"></span></summary>
+      <nav class="nav-menu-list" aria-label="Main (menu)">
+        <a href="#why">Why</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#features">Comparison</a>
+        <a href="#install">Install</a>
+        <a href="#docs">Docs</a>
+      </nav>
+    </details>
     <div class="header-actions">
       <a class="icon-link" href="https://x.com/ybouane" rel="noopener" target="_blank" aria-label="Follow @ybouane on X">
         <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.9 2H22l-7.6 8.7L23.3 22h-7l-5.5-7.2L4.5 22H1.4l8.1-9.3L1 2h7.2l5 6.6L18.9 2Zm-1.1 18h1.7L7.3 3.9H5.5L17.8 20Z"/></svg>
@@ -110,10 +120,11 @@
     <div class="wrap">
       <div class="hero-head">
         <p class="kicker">Open source · Rust · WebAssembly</p>
-        <a class="speed-badge" href="#benchmarks" aria-label="9 to 15 times faster than LibRaw from RAW to RGB, median over 62 camera files, all cores. See the benchmarks.">
-          <span class="sb-num">9–15×</span>
+        <a class="speed-badge" href="#benchmarks" aria-label="8.8–15× faster than LibRaw RAW → RGB · median"
+          title="Median speedup over LibRaw, all cores, 62 camera files: 8.8× on a Ryzen 7 9700X, 15× on an Apple M1 Ultra. See the benchmarks.">
+          <span class="sb-num">8.8–15×</span>
           <span class="sb-text">faster than LibRaw</span>
-          <span class="sb-sub">RAW → RGB · all cores · median</span>
+          <span class="sb-sub">RAW → RGB · median</span>
         </a>
         <h1 id="hero-title">Camera <em>RAW</em>,<br> decoded in a flash.</h1>
         <p class="lead">FlashRaw is a fast, memory-safe decoder for ~40 camera RAW formats, from Rust, C, C++, Python,
@@ -133,7 +144,7 @@
             <label for="file-input" class="btn btn-primary btn-lg">Choose a RAW file</label>
             <button type="button" class="btn btn-outline btn-lg" id="sample-btn" data-src="/samples/canon-eos-r5-mark-ii.cr3" data-name="canon-eos-r5-mark-ii.cr3">Try a sample</button>
           </div>
-          <p class="dz-note">Nothing is uploaded. The decoder (≈750 KiB) loads in the background as soon as the page appears. The sample is a 7.6 MB
+          <p class="dz-note">Your file never leaves your device. The decoder (≈750 KiB) loads in the background as soon as the page appears. The sample is a 7.6 MB
             C-RAW CR3 from a Canon EOS R5 Mark II, from <a href="https://raw.pixls.us/">raw.pixls.us</a> (CC0).</p>
         </div>
         <svg class="dz-art" viewBox="0 0 160 160" aria-hidden="true">
@@ -180,7 +191,7 @@
         <aside class="ws-side" aria-label="Adjustments and export">
           <div class="side-card">
             <div class="side-head">
-              <h3>Histogram</h3>
+              <h2>Histogram</h2>
               <ul class="hist-legend" aria-label="Histogram channels">
                 <li><i class="sw sw-r"></i>R</li><li><i class="sw sw-g"></i>G</li><li><i class="sw sw-b"></i>B</li><li><i class="sw sw-l"></i>Luma</li>
               </ul>
@@ -191,7 +202,7 @@
 
           <div class="side-card">
             <div class="side-head">
-              <h3>Adjust</h3>
+              <h2>Adjust</h2>
               <div class="side-actions">
                 <button type="button" class="link-btn" id="auto-adjust" disabled title="Match the brightness of the embedded camera preview">Auto</button>
                 <button type="button" class="link-btn" id="reset-adjust">Reset</button>
@@ -209,7 +220,7 @@
           </div>
 
           <div class="side-card">
-            <h3>Download</h3>
+            <h2>Download</h2>
             <div class="btn-col">
               <button type="button" class="btn btn-primary" id="dl-png" disabled>PNG, full resolution</button>
               <div class="btn-row">
@@ -221,7 +232,7 @@
           </div>
 
           <details class="side-card decode-opts">
-            <summary><h3>Decoder options</h3></summary>
+            <summary><h2>Decoder options</h2></summary>
             <div class="field-row">
               <label for="opt-demosaic">Demosaic</label>
               <select id="opt-demosaic">
@@ -242,7 +253,7 @@
         </aside>
 
         <section class="ws-wide perf" aria-labelledby="perf-title">
-          <h3 id="perf-title" class="ws-title">Performance</h3>
+          <h2 id="perf-title" class="ws-title">Performance</h2>
           <p id="perf-engine" class="engine-line"></p>
           <div id="perf-tiles" class="tiles"></div>
           <div id="perf-stages" class="stages"></div>
@@ -251,21 +262,21 @@
 
         <section class="ws-wide meta" aria-labelledby="meta-title">
           <div class="meta-head">
-            <h3 id="meta-title" class="ws-title">Metadata</h3>
+            <h2 id="meta-title" class="ws-title">Metadata</h2>
             <button type="button" class="link-btn" id="copy-json">Copy as JSON</button>
           </div>
           <div id="meta-grid" class="meta-grid"></div>
           <div id="previews-card"></div>
           <details class="json-card">
             <summary>Raw metadata JSON</summary>
-            <pre id="meta-json" class="code"></pre>
+            <pre id="meta-json" class="code" tabindex="0" role="region" aria-label="Raw metadata JSON"></pre>
           </details>
         </section>
       </div>
 
       <ul class="facts" aria-label="Key facts">
-        <li><strong>~40</strong><span>RAW formats, every make and model on raw.pixls.us</span></li>
-        <li><strong>9–15×</strong><span>faster than LibRaw from RAW to display RGB</span></li>
+        <li><strong>~40</strong><span>RAW formats; 1,980 of the 2,016 raw.pixls.us samples decode</span></li>
+        <li><strong>8.8–15×</strong><span>faster than LibRaw from RAW to display RGB</span></li>
         <li><strong>750<small> KiB</small></strong><span>of WebAssembly (brotli) for all of it, in the browser</span></li>
       </ul>
     </div>
@@ -283,7 +294,7 @@
           <h3>Speed</h3>
           <ul>
             <li><strong>Every</strong> decoder is multithreaded, even single-stream codecs (lossless JPEG, Nikon, Pentax, Hasselblad, Panasonic v8, Sony ARW1), by speculative parallel decoding</li>
-            <li>Explicit SIMD: SSE4.1, AVX2, AVX-512, NEON and WASM SIMD128, picked at run time</li>
+            <li>Explicit SIMD kernels: SSSE3/SSE4.1 on x86-64, NEON on Arm and WASM SIMD128</li>
             <li>Fused single-pass RAW → RGB on the CPU or the <strong>GPU</strong></li>
             <li>Region and tile decodes, zero-copy embedded previews</li>
           </ul>
@@ -294,13 +305,13 @@
             <li><strong>Memory-safe Rust</strong>: parsers of untrusted files cannot overflow buffers or use freed memory</li>
             <li>Bounds-checked parsing, checked offset arithmetic, IFD loop and depth tracking</li>
             <li>Allocation <strong>limits</strong> checked before allocating</li>
-            <li><strong>11 fuzz targets</strong> on every PR and nightly; an explicit truncation policy, never silent garbage</li>
+            <li><strong>11 fuzz targets</strong> in the repository, run locally; an explicit truncation policy, never silent garbage</li>
           </ul>
         </article>
         <article class="pillar">
           <h3>Support</h3>
           <ul>
-            <li><strong>~40 RAW formats</strong>, every make and model on raw.pixls.us, each checked against pinned output hashes</li>
+            <li><strong>~40 RAW formats</strong>, checked against pinned output hashes. Of the 2,016 files in the raw.pixls.us corpus, 1,980 decode; the other 36 are valid files in formats not supported yet, mainly 28 Nikon High Efficiency NEF</li>
             <li><strong>CR3</strong> incl. C-RAW, <strong>JPEG XL DNG</strong>, lossy and deflate DNG, GoPro GPR, Sigma X3F, Fuji compressed, Panasonic v4–v8, IIQ, 3FR/FFF</li>
             <li>1,000+ models in the built-in camera database</li>
             <li><strong>Colour management</strong>: sRGB, Display P3, Adobe RGB, ProPhoto or Rec. 2020 output with embedded ICC profiles, or any ICC profile you supply</li>
@@ -367,12 +378,12 @@
             <tr><th scope="row">RAW → RGB pipeline</th><td class="us"><i class="y">Bilinear, half-size (CPU or GPU)</i></td><td><i class="y">Many demosaics</i></td><td><i class="n">Raw data only</i></td></tr>
             <tr><th scope="row">ICC colour management</th><td class="us"><i class="y">P3, Adobe RGB, ProPhoto, Rec. 2020, any ICC profile</i></td><td><i class="p">Needs a Little CMS build</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">Multithreaded decoding</th><td class="us"><i class="y">Every codec</i></td><td><i class="p">3 codecs (OpenMP build)</i></td><td><i class="p">Tiled/sliced codecs (OpenMP)</i></td></tr>
-            <tr><th scope="row">Explicit SIMD kernels</th><td class="us"><i class="y">SSE4.1/AVX2/AVX-512, NEON, WASM</i></td><td><i class="n">No</i></td><td><i class="p">One SSE2 routine</i></td></tr>
+            <tr><th scope="row">Explicit SIMD kernels</th><td class="us"><i class="y">SSSE3/SSE4.1, NEON, WASM SIMD128</i></td><td><i class="n">No</i></td><td><i class="p">One SSE2 routine</i></td></tr>
             <tr><th scope="row">GPU acceleration</th><td class="us"><i class="y">Metal, Vulkan, DX12, WebGPU</i></td><td><i class="n">No</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">Browser / WebAssembly package</th><td class="us"><i class="y">Official npm package</i></td><td><i class="p">Third-party ports</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">Region and tile decoding</th><td class="us"><i class="y">Yes</i></td><td><i class="n">No</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">Zero-copy embedded previews</th><td class="us"><i class="y">Yes</i></td><td><i class="p">Copied</i></td><td><i class="n">No previews</i></td></tr>
-            <tr><th scope="row">Continuous fuzzing</th><td class="us"><i class="y">In-tree, every PR</i></td><td><i class="y">OSS-Fuzz</i></td><td><i class="y">In-tree</i></td></tr>
+            <tr><th scope="row">Fuzz targets</th><td class="us"><i class="y">In-tree (cargo-fuzz)</i></td><td><i class="y">OSS-Fuzz</i></td><td><i class="y">In-tree</i></td></tr>
             <tr><th scope="row">C / C++ API</th><td class="us"><i class="y"><code>flashraw.h</code> / <code>flashraw.hpp</code></i></td><td><i class="y">Yes</i></td><td><i class="p">C++ only</i></td></tr>
             <tr><th scope="row">Python</th><td class="us"><i class="y"><code>pip install flashraw</code> (NumPy, zero-copy)</i></td><td><i class="p">Third-party (rawpy)</i></td><td><i class="n">No</i></td></tr>
             <tr><th scope="row">Rust</th><td class="us"><i class="y">Native</i></td><td><i class="p">Third-party bindings</i></td><td><i class="n">No</i></td></tr>
@@ -400,8 +411,8 @@
           <button role="tab" id="tab-c" aria-controls="panel-c" aria-selected="false" tabindex="-1" type="button">C / C++</button>
         </div>
         <div role="tabpanel" id="panel-npm" aria-labelledby="tab-npm" class="tab-panel">
-          <div class="snippet"><pre class="code"><code>npm install flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
-          <div class="snippet"><pre class="code"><code>import { FlashRaw } from 'flashraw';
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="JavaScript code 1"><code>npm install flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="JavaScript code 2"><code>import { FlashRaw } from 'flashraw';
 
 const raw = await FlashRaw.open(file);          // File, Blob, ArrayBuffer, Uint8Array
 console.log(raw.metadata.camera.name, raw.metadata.exposure.iso);
@@ -413,8 +424,8 @@ raw.close();</code></pre><button class="copy-btn" type="button" data-copy-from="
           <p class="muted small">Browsers, Web Workers, Node.js ≥ 18 and Deno. Vite, webpack, Rollup and esbuild. <a href="https://github.com/ybouane/flashraw/blob/main/npm/README.md">npm README</a> · <a href="https://github.com/ybouane/flashraw/blob/main/docs/wasm.md">WASM internals</a></p>
         </div>
         <div role="tabpanel" id="panel-rust" aria-labelledby="tab-rust" class="tab-panel" hidden>
-          <div class="snippet"><pre class="code"><code>cargo add flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
-          <div class="snippet"><pre class="code"><code>use flashraw::{FlashRaw, DecodeOptions, OutputFormat};
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="Rust code 1"><code>cargo add flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="Rust code 2"><code>use flashraw::{FlashRaw, DecodeOptions, OutputFormat};
 
 let raw = FlashRaw::open_path("photo.NEF")?;     // memory-mapped, headers only
 let m = raw.metadata();
@@ -424,8 +435,8 @@ let rgba = raw.decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::de
           <p class="muted small">Features: <code>rayon</code>, <code>simd</code>, <code>mmap</code>, <code>icc</code> (default), <code>gpu</code>, <code>jpegxl</code>, <code>serde</code>. MSRV 1.85.</p>
         </div>
         <div role="tabpanel" id="panel-python" aria-labelledby="tab-python" class="tab-panel" hidden>
-          <div class="snippet"><pre class="code"><code>pip install flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
-          <div class="snippet"><pre class="code"><code>import flashraw
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="Python code 1"><code>pip install flashraw</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="Python code 2"><code>import flashraw
 
 with flashraw.open("photo.NEF") as raw:
     print(raw.metadata.camera.name, raw.metadata.exposure.iso)
@@ -434,8 +445,8 @@ with flashraw.open("photo.NEF") as raw:
           <p class="muted small">Decoding releases the GIL, so Python threads decode files in parallel. <a href="https://github.com/ybouane/flashraw/blob/main/docs/python.md">Python docs</a></p>
         </div>
         <div role="tabpanel" id="panel-c" aria-labelledby="tab-c" class="tab-panel" hidden>
-          <div class="snippet"><pre class="code"><code>cargo build --release -p flashraw-capi   # or CMake: find_package(flashraw)</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
-          <div class="snippet"><pre class="code"><code>#include &lt;flashraw.h&gt;
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="C and C++ code 1"><code>cargo build --release -p flashraw-capi   # or CMake: find_package(flashraw)</code></pre><button class="copy-btn" type="button" data-copy-from="prev">Copy</button></div>
+          <div class="snippet"><pre class="code" tabindex="0" role="region" aria-label="C and C++ code 2"><code>#include &lt;flashraw.h&gt;
 
 flashraw_file *f = NULL;
 if (flashraw_open_path("photo.NEF", NULL, &amp;f) != FLASHRAW_OK) return 1;

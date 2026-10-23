@@ -1,18 +1,24 @@
-// Entry point: kept tiny. The decoder starts loading right after the first paint: the app chunk,
-// the WASM (compiled while it streams), its instantiation and the worker threads, so it is ready
-// before the visitor picks a file. The sample file is downloaded in parallel at low priority, so
-// "Try a sample" decodes at once (skipped when the visitor asked to save data). The benchmark charts load when their section
-// scrolls near.
+// Entry point: kept tiny. The app chunk starts downloading as soon as this module runs. Right after
+// the first paint the WASM (compiled while it streams), its instantiation and the worker threads
+// start, so the decoder is ready before the visitor picks a file. The sample file is downloaded in
+// parallel at low priority, so "Try a sample" decodes at once (skipped on slow or metered
+// connections and when the visitor asked to save data; then it is fetched when the visitor
+// approaches the button). The benchmark charts load when their section scrolls near.
 
 type AppModule = typeof import('./app');
 
-let appPromise: Promise<AppModule> | null = null;
+// The chunk (JavaScript only, no WASM yet) is requested at once, not after the first paint.
+const appChunk: Promise<AppModule> = import('./app');
+appChunk.catch(() => {});
+let warmed = false;
 function loadApp(): Promise<AppModule> {
-  appPromise ??= import('./app').then((m) => {
-    m.warmUp();
+  return appChunk.then((m) => {
+    if (!warmed) {
+      warmed = true;
+      void m.warmUp().catch(() => (warmed = false));
+    }
     return m;
   });
-  return appPromise;
 }
 
 const dropzone = document.getElementById('dropzone')!;
@@ -49,6 +55,10 @@ function fetchSample(): Promise<Blob> {
   samplePromise.catch(() => (samplePromise = null));
   return samplePromise;
 }
+// Fallback when the automatic prefetch is skipped: start the download when the visitor approaches.
+for (const ev of ['pointerenter', 'focus', 'touchstart'] as const) {
+  sampleBtn?.addEventListener(ev, () => void fetchSample().catch(() => {}), { once: true, passive: true });
+}
 sampleBtn?.addEventListener('click', async () => {
   const name = sampleBtn.dataset.name ?? sampleBtn.dataset.src!.split('/').pop()!;
   sampleBtn.disabled = true;
@@ -70,13 +80,16 @@ sampleBtn?.addEventListener('click', async () => {
 // subresource): the decoder (downloaded, compiled, instantiated, threads started) and the sample
 // file start together. The sample fetch is low priority so it never delays the WASM. A sample
 // download that fails is retried on click. A file picked or dropped earlier starts the decoder at
-// once. The sample is skipped when the visitor asked to save data.
-const saveData = () => (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+// once. The sample is skipped on 2g/3g connections and with Save-Data.
+const slowOrMetered = () => {
+  const c = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  return c?.saveData === true || c?.effectiveType === 'slow-2g' || c?.effectiveType === '2g' || c?.effectiveType === '3g';
+};
 let preloaded = false;
 function preload() {
   if (preloaded) return;
   preloaded = true;
-  if (sampleBtn && !saveData()) void fetchSample().catch(() => {});
+  if (sampleBtn && !slowOrMetered()) void fetchSample().catch(() => {});
   void loadApp().catch(() => {});
 }
 function schedulePreload() {
@@ -116,6 +129,26 @@ window.addEventListener('drop', (e) => {
     void openFile(file);
   }
 });
+
+// ------------------------------------------------------------------ compact menu (narrow screens)
+// A <details> disclosure: closes on Escape (focus back to the summary), on a click outside and
+// when a link is followed.
+const navMenu = document.getElementById('nav-menu') as HTMLDetailsElement | null;
+if (navMenu) {
+  const summary = navMenu.querySelector('summary')!;
+  navMenu.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && navMenu.open) {
+      navMenu.open = false;
+      summary.focus();
+    }
+  });
+  navMenu.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('a')) navMenu.open = false;
+  });
+  document.addEventListener('click', (e) => {
+    if (navMenu.open && !navMenu.contains(e.target as Node)) navMenu.open = false;
+  });
+}
 
 // ------------------------------------------------------------------ copy buttons
 async function copyText(text: string, el: HTMLElement) {
