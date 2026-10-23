@@ -104,8 +104,9 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 
 ### ⚡ Speed
 
-- **Every** decoder is multithreaded, even single-stream codecs (lossless JPEG, Nikon,
-  Pentax, Hasselblad, Panasonic v8, Sony ARW1), by speculative parallel decoding
+- Multithreaded decoding wherever the format allows it, including single-stream codecs (lossless JPEG,
+  Nikon, Pentax, Hasselblad, Panasonic v8, Sony ARW1) through speculative parallel decoding; a few
+  strictly sequential codecs (for example Samsung V2) decode on one thread
 - SIMD unpack kernels for packed data (SSSE3/SSE4.1 on x86-64, NEON on aarch64, WASM SIMD128), picked
   at run time; the rest of the pipeline relies on the compiler's auto-vectorisation
 - 64-bit bit pumps, table-driven Huffman, zero-copy parsing, memory-mapped input
@@ -153,7 +154,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 | Written in | 🦀 Rust | C++ | C++ | 🦀 Rust | C | Python + C++ (LibRaw) | C |
 | Memory-safe | ✅ (a few audited `unsafe` blocks) | ❌ | ❌ | ⚠️ Rust, but it panics on bad input and advises against untrusted files | ❌ | ❌ | ❌ |
 | Uses the GPU | ✅ Metal, Vulkan, DX12, WebGPU | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Multithreading | ✅ every codec (speculative decoding of sequential streams) + develop | ⚠️ OpenMP builds: CR3, Fuji, Panasonic v8, some demosaics | ⚠️ OpenMP: tiled/sliced codecs | ✅ rayon: tiles, several codecs, develop | ❌ | ⚠️ as LibRaw; wheels: OpenMP on Linux/Windows, not macOS | ⚠️ one thread per transform (threaded plugin: GPL-3 or commercial) |
+| Multithreading | ✅ wherever the format allows (speculative decoding of sequential streams) + develop | ⚠️ OpenMP builds: CR3, Fuji, Panasonic v8, some demosaics | ⚠️ OpenMP: tiled/sliced codecs | ✅ rayon: tiles, several codecs, develop | ❌ | ⚠️ as LibRaw; wheels: OpenMP on Linux/Windows, not macOS | ⚠️ one thread per transform (threaded plugin: GPL-3 or commercial) |
 | SIMD kernels | ⚠️ packed-bit unpack only: SSSE3/SSE4.1, NEON, WASM SIMD128 | ❌ | ⚠️ one SSE2 routine | ⚠️ compiler multiversioning, no intrinsics | ❌ | ❌ | ⚠️ SSE2 in the fast_float plugin (GPL-3 or commercial) |
 | Cameras | 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%), 1,600+ entries in its camera DB, any DNG | 1,284 (its own count) | ~920 make/model | ~850 make/model | ~570 colour profiles (last release 2018) | as LibRaw | – |
 | Canon CR3 (incl. C-RAW) | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | – |

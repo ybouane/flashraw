@@ -86,7 +86,7 @@ fn dng_tags(compression: u16, bps: u16) -> Vec<Entry> {
 
 fn samples(bits: u32) -> Vec<u16> {
     let m = (1u32 << bits) - 1;
-    (0..W * H).map(|i| (((i * 2_654_435_761u32) >> 7) & m).max(1) as u16).collect()
+    (0..W * H).map(|i| ((i.wrapping_mul(2_654_435_761u32) >> 7) & m).max(1) as u16).collect()
 }
 
 /// MSB-first bit packing of `v` at `bits` per sample.
