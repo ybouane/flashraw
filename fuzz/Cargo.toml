@@ -96,3 +96,31 @@ path = "fuzz_targets/icc_profile.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "decode_rgb"
+path = "fuzz_targets/decode_rgb.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_parallel"
+path = "fuzz_targets/decode_parallel.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_region"
+path = "fuzz_targets/decode_region.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_limits"
+path = "fuzz_targets/decode_limits.rs"
+test = false
+doc = false
+bench = false

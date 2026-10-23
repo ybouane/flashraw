@@ -36,7 +36,10 @@ with a clear error (unsupported codecs, mislabelled files).
 
 `tests/regression/*.tsv` lists 1,965 corpus files with the hash of their full decoded
 buffer (sensor data as stored, without DNG opcode lists). The test decodes each listed
-file and fails on any change. It is skipped when the corpus is absent. A listed file that
+file and fails on any change. It also fails when the corpus is absent or a listed file is
+missing (a green run must mean the hashes were checked); `FLASHRAW_ALLOW_NO_CORPUS=1` skips
+deliberately (`tools/ci/local.sh` sets it when there is no corpus directory). The real-file mutations of
+the malformed suite follow the same rule. A listed file that
 decodes with a recovery warning (see below) also fails: complete files never warn.
 
 `crates/flashraw/tests/orientation.rs` checks orientation records (standard tag, vendor
@@ -88,12 +91,20 @@ JPEG preview's.
 - `fuzz/`: cargo-fuzz targets `open_decode` (whole pipeline, all formats,
   decoding under both corruption policies with consistency checks), `tiff_parse`,
   `bmff_parse`, `bit_pumps` (with a model check), `huffman`, `ljpeg`, `packed_unpack`
-  (fast path ≡ reference, partial rows), `deflate_float`, `dct12`, `icc_profile` (arbitrary bytes
-  as an output ICC profile). Crash inputs are
-  kept in `fuzz/regressions/<target>/` and replayed in CI.
+  (fast path ≡ reference, partial rows), `deflate_float`, `dct12`, `dng_opcodes` (parse and apply
+  arbitrary opcode lists), `icc_profile` (arbitrary bytes as an output ICC profile), and four
+  that take their options from the last input bytes so the file's magic survives mutation:
+  `decode_rgb` (demosaic, colour spaces, crops and the RGB output formats; frame size must match
+  its geometry), `decode_parallel` (any thread count must equal the single-threaded result),
+  `decode_region` (rectangles and tile indices, including hostile ones; a region must equal the
+  same window of the full decode) and `decode_limits` (small and varying `Limits`; no frame or
+  preview may exceed them). That is 15 targets, the entries of `fuzz/Cargo.toml`. Crash inputs are
+  kept in `fuzz/regressions/<target>/` and replayed in CI; `fuzz/seeds/<target>/` holds small seed
+  files (a valid tiled DNG and hostile tile sizes) and `fuzz/dictionaries/tiff.dict` TIFF/DNG tokens:
 
 ```sh
-cargo +nightly fuzz run -O open_decode fuzz/corpus/open_decode -- -max_total_time=600
+cargo +nightly fuzz run -O open_decode fuzz/corpus/open_decode fuzz/seeds/open_decode \
+  -- -max_total_time=600 -dict=fuzz/dictionaries/tiff.dict
 ```
 
 ## CI

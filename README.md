@@ -123,7 +123,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
   use freed memory; the few `unsafe` blocks are audited and justified
 - Bounds-checked parsing, checked offset arithmetic, IFD loop and depth tracking
 - Allocation **limits** checked before allocating
-- **11 fuzz targets**, run locally before releases; crash inputs replayed forever
+- **15 fuzz targets**, run locally before releases; crash inputs replayed forever
 - Malformed-file and truncation suites, and an explicit **truncation policy**:
   never silent garbage
 
@@ -236,9 +236,11 @@ is built for that.
   intrinsics, zeroed allocation, a disjoint-tile writer, the input self-reference, the WASM
   clock hook and the mmap call, each with a `SAFETY:` justification and tests
   ([architecture](docs/architecture.md)).
-- ✅ **Fuzzed.** Eleven cargo-fuzz targets (the whole open/decode pipeline over every
-  format under both corruption policies, TIFF and BMFF parsers, bit pumps against a model,
-  Huffman, lossless JPEG, packed unpack, deflate/float, DCT, DNG opcodes) are run locally before
+- ✅ **Fuzzed.** Fifteen cargo-fuzz targets (the whole open/decode pipeline over every
+  format under both corruption policies, the RGB develop path with several outputs, colour
+  spaces and backends, parallel against single-threaded decode, region and tile decode against
+  the full decode, varying resource limits, TIFF and BMFF parsers, bit pumps against a model,
+  Huffman, lossless JPEG, packed unpack, deflate/float, DCT, DNG opcodes, ICC profiles) are run locally before
   releases (`tools/ci/local.sh`, 30 s per target; longer runs by hand); there is no continuous fuzzing
   service. Every crash input is kept and replayed.
 - ✅ **Malformed-file suite.** Truncation at every cut point, invalid offsets and counts,
