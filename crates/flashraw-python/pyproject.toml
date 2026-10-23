@@ -8,6 +8,7 @@ description = "Fast, safe camera RAW decoding (DNG, CR2, CR3, NEF, ARW, RAF, RW2
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 authors = [{ name = "Yassine Bouanane" }]
 keywords = ["raw", "camera", "dng", "image", "decoder", "numpy"]
 classifiers = [

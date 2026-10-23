@@ -80,7 +80,9 @@
     "dist/*.js",
     "dist/*.d.ts",
     "dist/*.wasm",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
