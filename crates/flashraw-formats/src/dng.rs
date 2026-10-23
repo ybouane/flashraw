@@ -52,6 +52,7 @@ struct DngRaw<'a> {
     units: Vec<(usize, usize)>,
     linearization: Option<Vec<u16>>,
     dng_bug16: bool,
+    limits: Limits,
     vc5_white: u32,
     vc5_phase: Option<flashraw_codecs::vc5::CfaPhase>,
     /// RowInterleaveFactor and ColumnInterleaveFactor: a tile stores its rows (columns)
@@ -399,6 +400,46 @@ fn white_xy_neutral(cals: &[Calibration], analog_balance: &[f32], x: f64, y: f64
     (max > 0.0 && n.iter().all(|&v| v.is_finite() && v > 0.0)).then(|| n.iter().map(|&v| (v / max) as f32).collect())
 }
 
+/// Floor of the per-side tile cap: tiles may be padded past the image edge, but a few
+/// hundred bytes of header must not size a multi-gigabyte per-tile buffer.
+const MIN_TILE_SIDE_CAP: u32 = 1024;
+
+/// Bound the tile (or strip) geometry read from the tags before any per-tile buffer is
+/// sized from it. Every derived size is computed with checked arithmetic.
+fn check_tile_geometry(
+    tile_w: u32,
+    tile_h: u32,
+    width: u32,
+    height: u32,
+    cpp: u32,
+    bps: u32,
+    limits: &Limits,
+) -> Result<()> {
+    // A tile may overhang the image by at most the 16-sample alignment, unless the image
+    // is small enough that the floor applies.
+    let side_cap =
+        |image: u32| u32::try_from(u64::from(image).next_multiple_of(16)).unwrap_or(u32::MAX).max(MIN_TILE_SIDE_CAP);
+    let bad =
+        |what: &str| Error::LimitExceeded(format!("DNG tile {tile_w}x{tile_h} {what} for a {width}x{height} image"));
+    if tile_w > limits.max_dimension
+        || tile_h > limits.max_dimension
+        || tile_w > side_cap(width)
+        || tile_h > side_cap(height)
+    {
+        return Err(bad("is larger than the image allows"));
+    }
+    let samples = u64::from(tile_w) * u64::from(tile_h) * u64::from(cpp.max(1));
+    if samples > limits.max_samples {
+        return Err(bad("exceeds the sample limit"));
+    }
+    // Largest per-tile scratch: samples * bytes per sample (at least 4 for the f32 path).
+    let bytes = samples.checked_mul(u64::from(bps.div_ceil(8).max(4)));
+    if bytes.and_then(|b| usize::try_from(b).ok()).is_none() {
+        return Err(bad("overflows the address space"));
+    }
+    Ok(())
+}
+
 fn parse_raw<'a>(
     data: &'a [u8],
     tiff: &Tiff<'a>,
@@ -449,6 +490,7 @@ fn parse_raw<'a>(
     if tile_w == 0 || tile_h == 0 {
         return Err(Error::invalid_metadata("DNG tile size is zero"));
     }
+    check_tile_geometry(tile_w, tile_h, width, height, cpp, bps, &opts.limits)?;
     let expected = width.div_ceil(tile_w) as usize * height.div_ceil(tile_h) as usize;
     if units.len() < expected {
         // Single-strip files sometimes claim RowsPerStrip < height with one strip; treat as one unit.
@@ -723,6 +765,7 @@ fn parse_raw<'a>(
         units,
         linearization,
         dng_bug16,
+        limits: opts.limits,
         vc5_white: info.white_level.max(),
         vc5_phase: info.cfa.as_ref().and_then(flashraw_codecs::vc5::CfaPhase::from_pattern),
         interleave,
@@ -1100,7 +1143,10 @@ impl DngRaw<'_> {
             Payload::Deflate => {
                 let bytes_ps = self.bps.div_ceil(8) as usize;
                 let row_bytes = trl * bytes_ps;
-                let raw = deflate::inflate_zlib(src, row_bytes * self.tile_h as usize)?;
+                let max_out = row_bytes
+                    .checked_mul(self.tile_h as usize)
+                    .ok_or_else(|| Error::LimitExceeded("DNG deflate tile size overflows".into()))?;
+                let raw = deflate::inflate_zlib(src, max_out)?;
                 if raw.len() < (sy + h) * row_bytes {
                     return Err(Error::corrupt(format!(
                         "deflate data decodes to {} bytes, {} rows of {row_bytes} needed",
@@ -1137,7 +1183,7 @@ impl DngRaw<'_> {
                 Ok(())
             }
             Payload::LossyJpeg => {
-                let img = flashraw_codecs::jpeg::decode(src)?;
+                let img = flashraw_codecs::jpeg::decode(src, &self.limits)?;
                 let ccount = img.components;
                 for y in 0..h {
                     let r = t.row(y);
@@ -1244,8 +1290,13 @@ impl DngRaw<'_> {
         let raw: &[u8] = match self.payload {
             Payload::Uncompressed => src,
             Payload::Deflate => {
-                let need = row_bytes * self.tile_h as usize;
+                let need = row_bytes
+                    .checked_mul(self.tile_h as usize)
+                    .ok_or_else(|| Error::LimitExceeded("DNG deflate tile size overflows".into()))?;
                 if scratch.len() < need {
+                    scratch
+                        .try_reserve_exact(need - scratch.len())
+                        .map_err(|_| Error::OutOfMemory(format!("DNG deflate tile scratch of {need} bytes")))?;
                     scratch.resize(need, 0);
                 }
                 let n = deflate::inflate_zlib_into(src, &mut scratch[..need])?;

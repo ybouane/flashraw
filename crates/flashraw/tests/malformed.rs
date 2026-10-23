@@ -6,7 +6,7 @@
 //! invalid offsets, recursive IFDs, huge dimensions, invalid bit depth, bad Huffman
 //! tables, corrupted strip offsets, overlapping data, BMFF size errors, integer
 //! overflow, dangling maker-note pointers). Part 2 mutates real corpus files of every
-//! format when the corpus is available. The DNG opcode-list test also checks that
+//! format (this part fails without the corpus unless `FLASHRAW_ALLOW_NO_CORPUS=1`). The DNG opcode-list test also checks that
 //! lists apply in their stages and that unparsable lists are reported and ignored.
 
 mod common;
@@ -233,6 +233,39 @@ fn huge_dimensions_and_overflow() {
     exercise(&d.build()).unwrap();
 }
 
+/// Tile sizes taken straight from the tags must be bounded before any per-tile buffer is
+/// sized from them (a 293-byte file used to abort the process with an 8.6 GB allocation
+/// or overflow the size arithmetic). Also covered by `fuzz/regressions/open_decode`.
+#[test]
+fn hostile_tile_sizes() {
+    let tiled_deflate = |tw: u32, th: u32, bps: u16, float: bool| {
+        // The payload is never reached: the geometry is rejected when the file opens.
+        let mut d = Dng::new(8, bps, vec![0x78, 0x01, 0x03, 0x00, 0, 0, 0, 1]);
+        d.set(0x0142, 4, 1, longs(&[tw]));
+        d.set(0x0143, 4, 1, longs(&[th]));
+        d.set(0x0144, 4, 1, longs(&[0]));
+        d.set(0x0145, 4, 1, longs(&[0]));
+        d.entries.retain(|e| e.0 != 0x0111 && e.0 != 0x0117 && e.0 != 0x0116);
+        if float {
+            d.set(0x0153, 3, 1, shorts(&[3]));
+        }
+        d
+    };
+    for (tw, th) in
+        [(65535, 65535), (u32::MAX, u32::MAX), (u32::MAX, 1), (1, u32::MAX), (1 << 20, 1 << 20), (40000, 40000)]
+    {
+        for (bps, float) in [(16, false), (32, true), (16, true)] {
+            let bytes = tiled_deflate(tw, th, bps, float).build();
+            exercise(&bytes).unwrap();
+            let r = FlashRaw::open(&bytes[..]).and_then(|r| r.decode(DecodeOptions::default()));
+            assert!(r.is_err(), "tile {tw}x{th} bps {bps} float {float} must be rejected");
+        }
+    }
+    // A tile that overhangs the image modestly is still accepted at open.
+    let ok = tiled_deflate(256, 256, 16, false);
+    FlashRaw::open(&ok.build()[..]).expect("padded tile opens");
+}
+
 #[test]
 fn invalid_bit_depths() {
     for bps in [0u16, 1, 7, 17, 31, 33, 64, 255, 65535] {
@@ -374,7 +407,14 @@ fn corpus_mutations() {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
     if !corpus.exists() {
-        eprintln!("corpus not present; skipping");
+        // Same rule as the regression test: a green run must mean something was checked.
+        assert!(
+            std::env::var("FLASHRAW_ALLOW_NO_CORPUS").is_ok_and(|v| !v.is_empty() && v != "0"),
+            "corpus not found at {}: no real-file mutations were run. Fetch it with tools/corpus/fetch.py, \
+             set FLASHRAW_CORPUS, or set FLASHRAW_ALLOW_NO_CORPUS=1 to skip this test deliberately",
+            corpus.display()
+        );
+        eprintln!("corpus not present; skipping (FLASHRAW_ALLOW_NO_CORPUS is set)");
         return;
     }
     // One small-ish file per extension.

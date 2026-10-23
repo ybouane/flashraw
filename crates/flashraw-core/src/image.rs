@@ -40,9 +40,12 @@ impl Limits {
         if width > self.max_dimension || height > self.max_dimension {
             return Err(Error::LimitExceeded(format!("dimension {width}x{height} exceeds {}", self.max_dimension)));
         }
-        let n = width as u64 * height as u64 * cpp.max(1) as u64;
-        if n > self.max_samples {
-            return Err(Error::LimitExceeded(format!("{n} samples exceeds limit {}", self.max_samples)));
+        let n = (width as u64 * height as u64).checked_mul(cpp.max(1) as u64);
+        if n.is_none_or(|n| n > self.max_samples) {
+            return Err(Error::LimitExceeded(format!(
+                "{width}x{height}x{cpp} samples exceeds limit {}",
+                self.max_samples
+            )));
         }
         Ok(())
     }
@@ -106,11 +109,15 @@ pub mod zeroable {
     /// Implementors must be plain numeric types for which all-zero bytes are valid
     /// and that are not zero-sized.
     pub unsafe trait Zeroable: Copy + Send + Sync + 'static {}
-    // SAFETY: primitive numeric types; zero bytes are a valid value.
+    // SAFETY: `u8` is a primitive numeric type, not zero-sized; all-zero bytes are a valid value.
     unsafe impl Zeroable for u8 {}
+    // SAFETY: `u16` is a primitive numeric type, not zero-sized; all-zero bytes are a valid value.
     unsafe impl Zeroable for u16 {}
+    // SAFETY: `u32` is a primitive numeric type, not zero-sized; all-zero bytes are a valid value.
     unsafe impl Zeroable for u32 {}
+    // SAFETY: `i32` is a primitive numeric type, not zero-sized; all-zero bytes are a valid value.
     unsafe impl Zeroable for i32 {}
+    // SAFETY: `f32` is a primitive numeric type, not zero-sized; all-zero bytes are a valid value.
     unsafe impl Zeroable for f32 {}
 }
 

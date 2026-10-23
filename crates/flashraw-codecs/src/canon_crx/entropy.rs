@@ -621,7 +621,8 @@ fn line_detail(
 /// values already offset by +4).
 pub(crate) fn decode_qp_map(data: &[u8], qp_w: usize, qp_h: usize) -> Result<Vec<i32>> {
     let mut b = CrxBits::new(data);
-    let mut out = Vec::with_capacity(qp_w * qp_h);
+    let n = qp_w.checked_mul(qp_h).ok_or_else(|| Error::corrupt("CRX: quantisation map size overflows"))?;
+    let mut out = Vec::with_capacity(n.min(1 << 22));
     let stride = qp_w + 2;
     let mut lines = vec![0i32; 2 * stride];
     let mut k = 0u32;

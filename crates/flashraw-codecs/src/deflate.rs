@@ -8,7 +8,10 @@ use flashraw_core::{Error, Result};
 
 /// Inflate a zlib stream, refusing to produce more than `max_out` bytes.
 pub fn inflate_zlib(data: &[u8], max_out: usize) -> Result<Vec<u8>> {
-    let opts = zune_inflate::DeflateOptions::default().set_limit(max_out).set_size_hint(max_out);
+    // Deflate cannot expand more than 1032:1, so the preallocation hint never needs to
+    // exceed that multiple of the input, whatever the caller allows as a maximum.
+    let hint = max_out.min(data.len().saturating_mul(1032).saturating_add(64));
+    let opts = zune_inflate::DeflateOptions::default().set_limit(max_out).set_size_hint(hint);
     let mut d = zune_inflate::DeflateDecoder::new_with_options(data, opts);
     d.decode_zlib().map_err(|e| Error::corrupt(format!("deflate: {e:?}")))
 }

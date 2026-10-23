@@ -278,7 +278,7 @@ mod simd12 {
         pub unsafe fn unpack(src: &[u8], dst: &mut [u16], msb: bool) -> usize {
             let n = super::groups(src, dst);
             let shuf = if msb { super::SHUF_MSB } else { super::SHUF_LSB };
-            // SAFETY (whole block): `groups` guarantees for each g < n that bytes
+            // SAFETY: (whole block) `groups` guarantees for each g < n that bytes
             // [12g, 12g+16) are in `src` and samples [8g, 8g+8) are in `dst`;
             // unaligned load/store intrinsics are used.
             unsafe {

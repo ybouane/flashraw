@@ -207,7 +207,10 @@ pub struct DecodeOptions {
     /// Worker threads. `None` (the default) uses all cores (the global thread pool);
     /// `Some(1)` decodes single-threaded on the calling thread; `Some(n)` uses a pool of `n`
     /// workers (shared by decodes with the same count; on Apple platforms its threads run
-    /// with the user-initiated quality of service).
+    /// with the user-initiated quality of service). `Some(0)` means the same as `None`.
+    /// `n` is clamped to 256, at most 8 distinct pool sizes are kept alive (the oldest is
+    /// released when a ninth is requested), and a pool that cannot be started falls back to
+    /// the global pool.
     pub threads: Option<usize>,
     /// Decode only this region (sensor-buffer coordinates).
     pub region: Option<Rect>,

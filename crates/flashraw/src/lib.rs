@@ -150,6 +150,8 @@ pub struct FlashRaw<'a> {
     decoder: Box<dyn RawDecoder + 'a>,
     source: Source<'a>,
     parse_ms: f64,
+    /// Limits the file was opened with; they also bound embedded-preview decoding.
+    limits: Limits,
 }
 
 impl std::fmt::Debug for FlashRaw<'_> {
@@ -178,7 +180,7 @@ impl<'a> FlashRaw<'a> {
         let bytes: &'a [u8] = unsafe { std::slice::from_raw_parts(bytes.as_ptr(), bytes.len()) };
         let decoder = flashraw_formats::open(bytes, &flashraw_formats::OpenOptions { limits })?;
         let parse_ms = flashraw_core::profile::now_ms() - t0;
-        Ok(FlashRaw { decoder, source, parse_ms })
+        Ok(FlashRaw { decoder, source, parse_ms, limits })
     }
 
     /// Normalised metadata (no pixel decoding involved).
@@ -248,8 +250,14 @@ impl<'a> FlashRaw<'a> {
         let b = self.preview_bytes(p)?;
         match p.encoding {
             PreviewEncoding::Jpeg => {
-                let d = flashraw_codecs::jpeg::decode(b)?;
-                let rgb = if d.components == 1 { d.data.iter().flat_map(|&v| [v, v, v]).collect() } else { d.data };
+                let d = flashraw_codecs::jpeg::decode(b, &self.limits)?;
+                let rgb = if d.components == 1 {
+                    let mut rgb = Vec::with_capacity(d.data.len() * 3);
+                    rgb.extend(d.data.iter().flat_map(|&v| [v, v, v]));
+                    rgb
+                } else {
+                    d.data
+                };
                 Ok(PreviewImage { width: d.width as u32, height: d.height as u32, rgb })
             }
             PreviewEncoding::Rgb8 => Ok(PreviewImage { width: p.width, height: p.height, rgb: b.to_vec() }),
@@ -687,22 +695,35 @@ pub fn gpu_available() -> bool {
     }
 }
 
+/// Largest worker count a `threads: Some(n)` request builds; larger values are clamped.
+#[cfg(feature = "rayon")]
+const MAX_POOL_THREADS: usize = 256;
+/// Number of distinct pool sizes kept alive; the oldest is dropped (its threads exit once
+/// no decode is using it) when a new size is requested beyond this.
+#[cfg(feature = "rayon")]
+const MAX_CACHED_POOLS: usize = 8;
+
 #[cfg(feature = "rayon")]
 fn thread_pool(threads: Option<usize>) -> Option<std::sync::Arc<rayon::ThreadPool>> {
-    use std::collections::HashMap;
     use std::sync::{Arc, Mutex, OnceLock};
-    let n = threads?;
+    let n = threads?.min(MAX_POOL_THREADS);
     if n == 0 {
         return None;
     }
-    static POOLS: OnceLock<Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>> = OnceLock::new();
+    // Insertion-ordered, so eviction is first in, first out.
+    type Pools = Vec<(usize, Arc<rayon::ThreadPool>)>;
+    static POOLS: OnceLock<Mutex<Pools>> = OnceLock::new();
     let mut pools = POOLS.get_or_init(Default::default).lock().ok()?;
-    if let Some(p) = pools.get(&n) {
+    if let Some((_, p)) = pools.iter().find(|(k, _)| *k == n) {
         return Some(p.clone());
     }
+    // A pool that cannot be built (thread limits) falls back to the global pool.
     let p =
         Arc::new(rayon::ThreadPoolBuilder::new().num_threads(n).start_handler(|_| raise_worker_qos()).build().ok()?);
-    pools.insert(n, p.clone());
+    if pools.len() >= MAX_CACHED_POOLS {
+        pools.remove(0);
+    }
+    pools.push((n, p.clone()));
     Some(p)
 }
 

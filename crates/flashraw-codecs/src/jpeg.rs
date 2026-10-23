@@ -1,6 +1,6 @@
 //! Baseline (lossy) JPEG decoding for lossy DNG tiles and preview conversion.
 
-use flashraw_core::{Error, Result};
+use flashraw_core::{Error, Limits, Result};
 
 /// A decoded 8-bit image.
 pub struct Decoded8 {
@@ -11,22 +11,22 @@ pub struct Decoded8 {
 }
 
 /// Decode a baseline/progressive JPEG to 8-bit samples, keeping the native colour
-/// components (1 for grey, 3 for RGB).
-pub fn decode(data: &[u8]) -> Result<Decoded8> {
+/// components (1 for grey, 3 for RGB). The declared dimensions are checked against
+/// `limits` before the decoder allocates its output.
+pub fn decode(data: &[u8], limits: &Limits) -> Result<Decoded8> {
     use zune_jpeg::zune_core::colorspace::ColorSpace;
     use zune_jpeg::zune_core::options::DecoderOptions;
-    let opts =
-        DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGB).set_max_width(65535).set_max_height(65535);
-    let mut d = zune_jpeg::JpegDecoder::new_with_options(data, opts);
+    // The format itself cannot exceed 65535 per side.
+    let cap = limits.max_dimension.min(65535) as usize;
+    let options = |cs| DecoderOptions::default().jpeg_set_out_colorspace(cs).set_max_width(cap).set_max_height(cap);
+    let mut d = zune_jpeg::JpegDecoder::new_with_options(data, options(ColorSpace::RGB));
     d.decode_headers().map_err(|e| Error::corrupt(format!("JPEG: {e:?}")))?;
     let info = d.info().ok_or_else(|| Error::corrupt("JPEG: no header info"))?;
     let gray = info.components == 1;
+    limits.check_dims(u32::from(info.width), u32::from(info.height), 3)?;
     if gray {
-        let opts = DecoderOptions::default()
-            .jpeg_set_out_colorspace(ColorSpace::Luma)
-            .set_max_width(65535)
-            .set_max_height(65535);
-        d = zune_jpeg::JpegDecoder::new_with_options(data, opts);
+        // Headers only so far, so switching the output colour space costs a header re-parse.
+        d = zune_jpeg::JpegDecoder::new_with_options(data, options(ColorSpace::Luma));
     }
     let pixels = d.decode().map_err(|e| Error::corrupt(format!("JPEG: {e:?}")))?;
     let (w, h) = d.dimensions().ok_or_else(|| Error::corrupt("JPEG: no dimensions"))?;
