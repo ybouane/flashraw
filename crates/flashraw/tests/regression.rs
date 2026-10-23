@@ -2,8 +2,11 @@
 //! and the FNV-1a hash of its full decoded sensor buffer (the decode was validated
 //! when the row was added).
 //!
-//! Runs when the corpus is present (`$FLASHRAW_CORPUS` or `<repo>/corpus`); fetch it with
-//! `tools/corpus/fetch.py`. Set `FLASHRAW_REGRESSION_FILTER=substring` to narrow.
+//! Needs the corpus (`$FLASHRAW_CORPUS` or `<repo>/corpus`; fetch it with
+//! `tools/corpus/fetch.py`). Without it, or with rows whose file is missing, the test
+//! fails: a green run must mean the hashes were verified. Set
+//! `FLASHRAW_ALLOW_NO_CORPUS=1` to accept a missing or partial corpus (the skipped rows
+//! are still reported). Set `FLASHRAW_REGRESSION_FILTER=substring` to narrow.
 
 use std::path::PathBuf;
 
@@ -14,9 +17,17 @@ fn repo() -> PathBuf {
 #[test]
 fn corpus_regression() {
     let corpus = std::env::var("FLASHRAW_CORPUS").map(PathBuf::from).unwrap_or_else(|_| repo().join("corpus"));
+    let allow_partial = std::env::var("FLASHRAW_ALLOW_NO_CORPUS").is_ok_and(|v| !v.is_empty() && v != "0");
     if !corpus.exists() {
-        eprintln!("corpus not found at {}; skipping (see tools/corpus/fetch.py)", corpus.display());
-        return;
+        if allow_partial {
+            eprintln!("corpus not found at {}; skipping (FLASHRAW_ALLOW_NO_CORPUS is set)", corpus.display());
+            return;
+        }
+        panic!(
+            "regression corpus not found at {}: nothing was verified. Fetch it with tools/corpus/fetch.py, \
+             point FLASHRAW_CORPUS at it, or set FLASHRAW_ALLOW_NO_CORPUS=1 to skip this test deliberately",
+            corpus.display()
+        );
     }
     let filter = std::env::var("FLASHRAW_REGRESSION_FILTER").unwrap_or_default().to_lowercase();
     let mut rows = Vec::new();
@@ -71,11 +82,26 @@ fn corpus_regression() {
         }
     });
     let failures = failures.into_inner().unwrap();
+    let missing = missing.into_inner();
     eprintln!(
-        "{} regression files checked, {} missing from corpus, {} failures",
+        "{} regression rows, {} verified, {} missing from corpus, {} failures",
         rows.len(),
-        missing.into_inner(),
+        rows.len() - missing,
+        missing,
         failures.len()
     );
     assert!(failures.is_empty(), "regressions:\n{}", failures.join("\n"));
+    if !allow_partial {
+        assert!(
+            rows.len() > missing,
+            "no regression row was verified: no listed file exists in the corpus (filter {filter:?})"
+        );
+        assert!(
+            missing == 0,
+            "{missing} of {} regression files are missing from the corpus at {}; fetch the full corpus \
+             (tools/corpus/fetch.py) or set FLASHRAW_ALLOW_NO_CORPUS=1 to accept a partial one",
+            rows.len(),
+            corpus.display()
+        );
+    }
 }
