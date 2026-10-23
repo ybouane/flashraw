@@ -29,6 +29,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ybouane/flashraw"
+homepage = "https://flashraw.ybouane.com"
 authors = ["Yassine Bouanane"]
 
 [workspace.dependencies]

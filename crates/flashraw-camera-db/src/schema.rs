@@ -1,5 +1,5 @@
 // Shared between build.rs (via `include!`) and the `tooling` module: the schema of
-// the single camera database file, camera-db/cameras.json.
+// the single camera database file, data/cameras.json.
 
 /// The whole camera database.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]

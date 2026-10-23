@@ -9,12 +9,12 @@ use flashraw_core::{FrameInfo, PackOrder};
 
 /// `common.wgsl` + kernel file (WGSL has no `#include`).
 pub(crate) const UNPACK_WGSL: &str =
-    concat!(include_str!("../../../shaders/common.wgsl"), "\n", include_str!("../../../shaders/unpack.wgsl"));
+    concat!(include_str!("../shaders/common.wgsl"), "\n", include_str!("../shaders/unpack.wgsl"));
 pub(crate) const NORMALIZE_WGSL: &str =
-    concat!(include_str!("../../../shaders/common.wgsl"), "\n", include_str!("../../../shaders/normalize.wgsl"));
+    concat!(include_str!("../shaders/common.wgsl"), "\n", include_str!("../shaders/normalize.wgsl"));
 pub(crate) const DEVELOP_WGSL: &str =
-    concat!(include_str!("../../../shaders/common.wgsl"), "\n", include_str!("../../../shaders/develop.wgsl"));
-pub(crate) const TO_TEXTURE_WGSL: &str = include_str!("../../../shaders/to_texture.wgsl");
+    concat!(include_str!("../shaders/common.wgsl"), "\n", include_str!("../shaders/develop.wgsl"));
+pub(crate) const TO_TEXTURE_WGSL: &str = include_str!("../shaders/to_texture.wgsl");
 
 /// WGSL sources of every kernel module, for embedding in other runtimes (e.g. a
 /// hand-written WebGPU pipeline in JavaScript). Each entry is `(name, source)`.
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<Params>(), 240);
         assert_eq!(std::mem::offset_of!(Params, wb), 160);
         // Every WGSL field name appears in the host struct in the same order.
-        let src = include_str!("../../../shaders/common.wgsl");
+        let src = include_str!("../shaders/common.wgsl");
         let start = src.find("struct Params {").unwrap();
         let body = &src[start..start + src[start..].find('}').unwrap()];
         let names: Vec<&str> = body

@@ -14,7 +14,7 @@ pub struct SensorLayout {
     /// Columns/rows to drop at the right/bottom after the margins.
     pub right_trim: u32,
     pub bottom_trim: u32,
-    /// Extra insets of the left/right masked column bands (see [`SensorLayout::masked_columns`]).
+    /// Extra insets of the left/right masked column bands (see `SensorLayout::masked_columns`).
     pub mask_left_start: u32,
     pub mask_left_end_inset: u32,
     pub mask_right_start: u32,

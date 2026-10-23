@@ -110,6 +110,7 @@ add_library(flashraw::flashraw ALIAS flashraw)
 
 # ---- install ----
 install(FILES include/flashraw.h include/flashraw.hpp DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(FILES LICENSE-MIT LICENSE-APACHE DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 install(FILES "${_out}/${FLASHRAW_STATIC_NAME}" DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 if(WIN32)
   install(FILES "${_out}/${FLASHRAW_SHARED_NAME}" DESTINATION "${CMAKE_INSTALL_BINDIR}")

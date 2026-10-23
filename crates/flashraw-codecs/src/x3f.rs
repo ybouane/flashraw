@@ -274,7 +274,7 @@ const TT_FULL: u32 = 1 << 6;
 const TT_VALID: u32 = 1 << 7;
 
 /// TRUE-engine decoding table: one probe yields the code *and* its difference bits
-/// whenever both fit in [`TT_BITS`] (almost always), falling back to the tree.
+/// whenever both fit in `TT_BITS` (almost always), falling back to the tree.
 #[derive(Debug, Clone)]
 pub struct TrueTable {
     lut: Vec<u32>,

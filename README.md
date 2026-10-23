@@ -532,7 +532,7 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 
 ## 📄 License
 
-Code and data (including `camera-db/`): MIT OR Apache-2.0, at your option. See
+Code and data (including `crates/flashraw-camera-db/data/`): MIT OR Apache-2.0, at your option. See
 [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
 
 ---

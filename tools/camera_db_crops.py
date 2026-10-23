@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the cameras' own image areas from files and record them in camera-db/cameras.json.
+"""Measure the cameras' own image areas from files and record them in crates/flashraw-camera-db/data/cameras.json.
 
 The camera's image size is what the camera itself produced: the size its files record
 (EXIF pixel dimensions, maker-note image-size fields, Canon SensorInfo/AspectInfo, Sony
@@ -14,7 +14,7 @@ usage:
       manifest $FLASHRAW_REALWORLD/manifest.tsv when present) and write JSON lines.
   tools/camera_db_crops.py propose [--in FILE] [--write]
       Aggregate measurements per camera-database entry and active-area size; print the
-      proposed `image_crops`, and with --write store them in camera-db/cameras.json.
+      proposed `image_crops`, and with --write store them in crates/flashraw-camera-db/data/cameras.json.
   tools/camera_db_crops.py check [--in FILE]
       Every crop lies inside its active area, crops follow the camera's image size, and
       (after `measure --rgba`) RGBA outputs have the camera's image dimensions.
@@ -23,7 +23,7 @@ import collections, json, os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(ROOT, "camera-db/cameras.json")
+DB = os.path.join(ROOT, "crates/flashraw-camera-db/data/cameras.json")
 BIN = os.environ.get("FLASHRAW_BIN", os.path.join(ROOT, "target/release/flashraw"))
 DEFAULT_OUT = "camera-crops.jsonl"
 # Registrations below this correlation are ignored (lens corrections or heavy processing

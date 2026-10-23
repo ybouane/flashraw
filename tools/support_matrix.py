@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble docs/support-matrix.tsv (used by `flashraw supported`) and the support table
+"""Assemble crates/flashraw-cli/data/support-matrix.tsv (used by `flashraw supported`) and the support table
 in docs/formats.md from the per-vendor docs/support/*.tsv files.
 
 usage: tools/support_matrix.py [--check]   (--check fails if the outputs are stale)
@@ -38,7 +38,7 @@ fmt = open(fmt_path, encoding="utf-8").read()
 a = fmt.index("<!-- BEGIN GENERATED SUPPORT TABLE")
 b = fmt.index("<!-- END GENERATED SUPPORT TABLE -->") + len("<!-- END GENERATED SUPPORT TABLE -->\n")
 new_fmt = fmt[:a] + table + fmt[b:]
-mpath = os.path.join(ROOT, "docs/support-matrix.tsv")
+mpath = os.path.join(ROOT, "crates/flashraw-cli/data/support-matrix.tsv")
 if "--check" in sys.argv:
     stale = open(mpath, encoding="utf-8").read() != matrix or fmt != new_fmt
     if stale:

@@ -2,7 +2,7 @@
 //!
 //! Two families of camera-database entries carry a `filesize` hint:
 //!
-//! - **size table** (`mode = "naked-<size>"`, `camera-db/cameras.json`):
+//! - **size table** (`mode = "naked-<size>"`, `crates/flashraw-camera-db/data/cameras.json`):
 //!   raster size, margins, CFA, packing flags (`load_flags`) and white-level shift. The bit depth
 //!   is derived from the file size and selects the unpacker:
 //!   6 bits → Minolta RD-175 interleave, 8 → bytes (through a tone curve), 10 → MIPI

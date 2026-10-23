@@ -5,7 +5,7 @@
 //! version 4.x for Quattro bodies), a directory (`SECd`) at the offset stored in the
 //! last four bytes, and sections: `SECp` (UTF-16 property list: make, model, ISO,
 //! exposure, lens), `SECi` (images: raw, JPEG/RGB/Huffman thumbnails) and `SECc`
-//! (CAMF calibration block, see [`camf`]; its colour, shading and ISO calibration is used).
+//! (CAMF calibration block, see `camf`; its colour, shading and ISO calibration is used).
 //!
 //! ## Raw image types
 //! | type/format | cameras | coding |
@@ -33,12 +33,12 @@
 //! ## Calibration (CAMF)
 //! - White balance and colour: the as-shot preset is named by the `WB_DESC` property
 //!   (or the version 2.1 – 3.x header) or by the CAMF `WhiteBalance` index (Quattro);
-//!   the preset's channel gains and colour matrices ([`camf`]) are reported as
+//!   the preset's channel gains and colour matrices (`camf`) are reported as
 //!   [`FrameInfo::white_balance`] and an XYZ → camera matrix ([`ColorSource::File`]).
 //! - Black: the optically shielded rows (`DarkShieldTop`/`DarkShieldBottom`) of classic
 //!   and Merrill bodies become [`FrameInfo::masked_areas`] with `black_from_masked`.
 //! - Lens shading (classic, TRUE I and Merrill bodies): the spatial gain tables and the
-//!   Merrill colour shading factors ([`camf::shading`]) become an OpcodeList2 of three
+//!   Merrill colour shading factors (`camf::shading`) become an OpcodeList2 of three
 //!   GainMaps in [`FrameInfo::opcodes`], applied to RGB outputs; raw samples are as stored.
 //! - ISO: above `SensorISO` the camera amplifies digitally (the raw samples stay at base
 //!   gain); the white level is lowered by `CaptureISO / SensorISO` so RGB outputs have the

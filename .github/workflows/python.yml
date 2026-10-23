@@ -82,10 +82,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # flashraw-camera-db's build script reads ../../camera-db/cameras.json, falling back to
-      # data/cameras.json (packaged with the crate): put the database where the sdist picks it up.
-      - name: Package the camera database with its crate
-        run: mkdir -p crates/flashraw-camera-db/data && cp camera-db/cameras.json crates/flashraw-camera-db/data/
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:

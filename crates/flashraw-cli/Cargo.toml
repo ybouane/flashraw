@@ -1,11 +1,17 @@
 [package]
 name = "flashraw-cli"
-description = "The flashraw command-line tool"
+description = "The flashraw command-line tool: inspect, decode, convert and benchmark camera RAW files"
 version.workspace = true
 edition.workspace = true
 rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-cli"
+readme = "README.md"
+keywords = ["raw", "camera", "cli", "dng", "image"]
+categories = ["command-line-utilities", "multimedia::images"]
+include = ["src/**", "data/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [[bin]]
 name = "flashraw"

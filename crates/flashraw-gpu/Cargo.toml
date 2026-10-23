@@ -1,11 +1,17 @@
 [package]
 name = "flashraw-gpu"
-description = "Optional wgpu/WebGPU compute backend for FlashRaw"
+description = "Optional wgpu/WebGPU compute backend for FlashRaw (Vulkan, Metal, DX12, WebGPU). Use the `flashraw` crate with its `gpu` feature instead."
 version.workspace = true
 edition.workspace = true
 rust-version = "1.87"
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-gpu"
+readme = "README.md"
+keywords = ["raw", "gpu", "wgpu", "webgpu", "image"]
+categories = ["multimedia::images", "graphics"]
+include = ["src/**", "shaders/**", "benches/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [dependencies]
 flashraw-core.workspace = true
@@ -16,7 +22,8 @@ bytemuck.workspace = true
 pollster.workspace = true
 
 [dev-dependencies]
-flashraw = { workspace = true, features = ["gpu", "rayon", "simd", "mmap", "icc"] }
+# Path-only (no version): cargo drops it when packaging, which breaks the flashraw <-> flashraw-gpu publish cycle.
+flashraw = { path = "../flashraw", default-features = false, features = ["gpu", "rayon", "simd", "mmap", "icc"] }
 flashraw-codecs.workspace = true
 # Offline WGSL validation (same naga as wgpu 30) so shader errors are caught without a GPU.
 naga = { version = "30", features = ["wgsl-in"] }

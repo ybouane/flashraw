@@ -84,15 +84,15 @@ pub struct CanonMakernote {
     pub firmware: Option<String>,
     pub serial: Option<u32>,
     pub lens_model: Option<String>,
-    /// CameraSettings[3].
+    /// CameraSettings\[3\].
     pub quality: Option<u16>,
-    /// CameraSettings[9] (1 = JPEG, 2 = CRW+THM, 3 = AVI+THM, 4 = TIF, 5 = TIF+JPEG, 6 = CR2, 7 = CR2+JPEG, 9 = MOV...).
+    /// CameraSettings\[9\] (1 = JPEG, 2 = CRW+THM, 3 = AVI+THM, 4 = TIF, 5 = TIF+JPEG, 6 = CR2, 7 = CR2+JPEG, 9 = MOV...).
     pub record_mode: Option<u16>,
-    /// CameraSettings[46].
+    /// CameraSettings\[46\].
     pub sraw_quality: Option<u16>,
     /// Lens focal range (min, max) in mm from CameraSettings.
     pub focal_range: Option<(f32, f32)>,
-    /// White-balance index from ShotInfo[7].
+    /// White-balance index from ShotInfo\[7\].
     pub wbi: Option<u16>,
     pub sensor: Option<SensorInfo>,
     /// AspectInfo (tag 0x009a): `(width, height)` of the image for the aspect ratio set

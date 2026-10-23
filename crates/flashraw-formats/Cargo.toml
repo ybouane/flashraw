@@ -1,11 +1,17 @@
 [package]
 name = "flashraw-formats"
-description = "RAW container parsers and per-vendor format decoders for FlashRaw"
+description = "Internal crate of FlashRaw: RAW container parsers and per-vendor format decoders. Use the `flashraw` crate instead."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-formats"
+readme = "README.md"
+keywords = ["raw", "camera", "dng", "tiff", "decoder"]
+categories = ["multimedia::images", "parser-implementations"]
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 default = ["rayon", "simd"]

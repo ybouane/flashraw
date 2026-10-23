@@ -27,7 +27,7 @@ fn lut() -> Vec<u16> {
 }
 
 /// [`decode`] that decodes large streams on all threads when `parallel` is set: the
-/// difference codes are decoded speculatively ([`crate::par_entropy`]), the running sum
+/// difference codes are decoded speculatively (`par_entropy`), the running sum
 /// becomes per-column prefixes (column totals, then an exclusive scan) and columns are
 /// rebuilt in parallel. Output and errors are identical to [`decode`].
 pub fn decode_par(

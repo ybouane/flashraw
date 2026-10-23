@@ -1,11 +1,17 @@
 [package]
 name = "flashraw-core"
-description = "Core types, bounds-safe readers, bit pumps and container parsers for FlashRaw"
+description = "Internal crate of FlashRaw: core types, bounds-safe readers, bit pumps and parallel helpers. Use the `flashraw` crate instead."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-core"
+readme = "README.md"
+keywords = ["raw", "camera", "image", "decoder", "dng"]
+categories = ["multimedia::images", "parsing"]
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 default = ["rayon", "simd"]

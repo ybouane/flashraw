@@ -1,6 +1,6 @@
 # Camera database
 
-`camera-db/cameras.json` is the single camera database for the whole library. It is
+`crates/flashraw-camera-db/data/cameras.json` is the single camera database for the whole library. It is
 compiled into static tables by `crates/flashraw-camera-db/build.rs` (no runtime
 parsing) and used by the decoders at decode time.
 
@@ -278,7 +278,7 @@ and left unchanged.
 ## Tooling
 
 ```sh
-flashraw camera-db validate [camera-db/cameras.json]   # schema + semantic checks (CI)
+flashraw camera-db validate [crates/flashraw-camera-db/data/cameras.json]   # schema + semantic checks (CI)
 flashraw camera-db generate                            # load, sort, rewrite (normalised formatting)
 flashraw camera-db compare old.json new.json           # added / removed / changed entries
 flashraw camera-db stats                               # compiled-in contents

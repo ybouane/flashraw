@@ -162,7 +162,7 @@ pub fn decode(
 }
 
 /// [`decode`] that entropy-decodes large predictor-1 streams on all threads
-/// ([`crate::par_entropy`]) when `parallel` is set. Output and errors are identical to
+/// (`par_entropy`) when `parallel` is set. Output and errors are identical to
 /// [`decode`]: anything speculation cannot prove takes the sequential path.
 pub fn decode_par(
     data: &[u8],

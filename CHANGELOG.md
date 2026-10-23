@@ -240,7 +240,7 @@ First complete release of FlashRaw.
   explicit pools run their workers at the user-initiated QoS on Apple platforms.
 
 ### Camera database
-- Single JSON database (`camera-db/cameras.json`): 1,624 camera entries, 814 fallback
+- Single JSON database (`crates/flashraw-camera-db/data/cameras.json`): 1,624 camera entries, 814 fallback
   matrices, 71 model-alias groups, 25 size rules.
 - Entries are checked against FlashRaw's decodes of the corpus; 24 cameras come from corpus files.
 - Orientation policies per make (`orientation_rules`) and per camera (`orientation`: policy

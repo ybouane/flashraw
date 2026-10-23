@@ -1,7 +1,7 @@
 //! Camera database tooling: validation, generation, comparison.
 //!
 //! Exposed through `flashraw camera-db {validate,generate,compare,stats,coverage}`.
-//! `camera-db/cameras.json` is the source of truth that `build.rs` compiles; never edit
+//! `data/cameras.json` is the source of truth that `build.rs` compiles; never edit
 //! the generated Rust tables.
 
 use std::collections::BTreeMap;

@@ -122,7 +122,7 @@ enum Cmd {
         files: Vec<PathBuf>,
         #[arg(long)]
         json: bool,
-        /// Also write raw u16 samples to <file>.flashraw.u16 next to the output dir.
+        /// Also write raw u16 samples to `<file>.flashraw.u16` next to the output dir.
         #[arg(long)]
         dump_dir: Option<PathBuf>,
         /// Hash the samples with DNG opcode lists applied (the default decode). Without
@@ -148,12 +148,12 @@ enum Cmd {
 enum CameraDbCmd {
     /// Validate the database file.
     Validate {
-        #[arg(default_value = "camera-db/cameras.json")]
+        #[arg(default_value = "crates/flashraw-camera-db/data/cameras.json")]
         db: PathBuf,
     },
     /// Re-normalise (load, sort and rewrite) the database file.
     Generate {
-        #[arg(default_value = "camera-db/cameras.json")]
+        #[arg(default_value = "crates/flashraw-camera-db/data/cameras.json")]
         db: PathBuf,
     },
     /// Compare two database files.
@@ -162,7 +162,7 @@ enum CameraDbCmd {
     Stats,
     /// Coverage report: entries per make by the kinds of data they carry and by sample files.
     Coverage {
-        #[arg(default_value = "camera-db/cameras.json")]
+        #[arg(default_value = "crates/flashraw-camera-db/data/cameras.json")]
         db: PathBuf,
     },
     /// Measure the camera's own image area from files (JSON lines): active area, resolved

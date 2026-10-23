@@ -36,7 +36,7 @@ An sdist needs the camera database next to its crate (the build script falls bac
 `crates/flashraw-camera-db/data/cameras.json` outside the repository):
 
 ```sh
-mkdir -p crates/flashraw-camera-db/data && cp camera-db/cameras.json crates/flashraw-camera-db/data/
+mkdir -p crates/flashraw-camera-db/data && cp crates/flashraw-camera-db/data/cameras.json crates/flashraw-camera-db/data/
 cd crates/flashraw-python && maturin sdist
 ```
 

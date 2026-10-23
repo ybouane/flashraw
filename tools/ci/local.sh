@@ -15,6 +15,8 @@
 # non-zero if any step failed. A step whose tools are missing is reported as SKIP (never as
 # a pass). Environment:
 #   FLASHRAW_CORPUS  corpus root for the regression/malformed suites (default: ./corpus)
+#   FLASHRAW_ALLOW_NO_CORPUS  set to 1 automatically when there is no corpus directory, so the
+#                    corpus tests skip instead of failing
 #   CMAKE, CTEST     CMake binaries (default: cmake / ctest on PATH)
 #   PYTHON_VENV      virtualenv for the Python bindings (default: target/ci-venv, created)
 
@@ -24,6 +26,9 @@ ROOT="$PWD"
 export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-always}"
 export FLASHRAW_CORPUS="${FLASHRAW_CORPUS:-$ROOT/corpus}"
+# The regression test fails without a (complete) corpus unless told otherwise; a machine with
+# no corpus at all skips the corpus step below, so let its workspace test run skip too.
+[ -d "$FLASHRAW_CORPUS" ] || export FLASHRAW_ALLOW_NO_CORPUS=1
 CMAKE="${CMAKE:-cmake}"
 CTEST="${CTEST:-ctest}"
 MODE=changed
@@ -45,8 +50,8 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-ALL="fmt clippy test-debug test-release no-default-features corpus msrv camera-db c-header gpu c-api c-api-pkgconfig wasm npm npm-browser npm-bundlers python fuzz benches"
-QUICK="fmt clippy test-debug test-release corpus camera-db wasm"
+ALL="licenses fmt clippy test-debug test-release no-default-features corpus msrv camera-db c-header gpu c-api c-api-pkgconfig wasm npm npm-browser npm-bundlers python fuzz benches"
+QUICK="licenses fmt clippy test-debug test-release corpus camera-db wasm"
 
 # --- Step selection -----------------------------------------------------------------------
 select_changed() {
@@ -59,16 +64,18 @@ select_changed() {
   local rust_core="fmt clippy test-debug test-release corpus"
   while IFS= read -r f; do
     case "$f" in
-      *.md|LICENSE*|docs/*|benches/results/*) ;;   # documentation and recorded results
+      LICENSE*|*/LICENSE*|crates/flashraw-python/pyproject.toml|npm/package.json|tools/ci/check-licenses.sh)
+        add licenses ;;
+      *.md|docs/*|benches/results/*) ;;   # documentation and recorded results
       Cargo.toml|Cargo.lock|*/Cargo.toml|rust-toolchain*)
-        add $rust_core no-default-features msrv wasm python c-api c-api-pkgconfig c-header ;;
+        add licenses $rust_core no-default-features msrv wasm python c-api c-api-pkgconfig c-header ;;
       crates/flashraw-core/*|crates/flashraw-codecs/*|crates/flashraw-formats/*)
         add $rust_core no-default-features wasm ;;
       crates/flashraw/*)
         add $rust_core no-default-features wasm python c-api c-header ;;
       crates/flashraw-camera-db/*|camera-db/*|tools/support_matrix.py|docs/support*)
         add $rust_core camera-db ;;
-      crates/flashraw-gpu/*|shaders/*) add $rust_core gpu wasm npm ;;
+      crates/flashraw-gpu/*) add $rust_core gpu wasm npm ;;
       crates/flashraw-cli/*) add $rust_core ;;
       crates/flashraw-capi/*|examples/*) add fmt clippy test-release c-header c-api c-api-pkgconfig ;;
       crates/flashraw-libraw-compat/*) add fmt clippy test-release ;;
@@ -131,6 +138,7 @@ T_START=$SECONDS
 echo "=== mode: $MODE$([ "$MODE" = changed ] && echo " (since $BASE)"); steps:$STEPS"
 
 # --- Rust: format, lints, tests ----------------------------------------------------------
+step licenses "tools/ci/check-licenses.sh"
 step fmt "cargo fmt --all --check"
 step clippy "cargo clippy --workspace --all-targets -- -D warnings && cargo clippy -p flashraw --all-features -- -D warnings"
 step test-debug "cargo test --lib -p flashraw-core -p flashraw-codecs -p flashraw-formats -p flashraw"
@@ -157,7 +165,7 @@ if wanted msrv; then
 fi
 
 # --- Camera database, generated header, GPU build ---------------------------------------
-step camera-db "cargo run -q --release -p flashraw-cli -- camera-db validate camera-db/cameras.json && python3 tools/support_matrix.py --check"
+step camera-db "cargo run -q --release -p flashraw-cli -- camera-db validate crates/flashraw-camera-db/data/cameras.json && python3 tools/support_matrix.py --check"
 if wanted c-header; then
   if have cbindgen; then
     step c-header "cbindgen --quiet --config crates/flashraw-capi/cbindgen.toml --crate flashraw-capi --output target/ci-flashraw.h \

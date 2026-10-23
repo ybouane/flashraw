@@ -645,7 +645,7 @@ impl<'a> RowOps<'a> {
 }
 
 /// Apply pixel opcodes to `img`, whose samples are in the units the list expects
-/// (OpcodeList1: stored values; OpcodeList2: linear reference values in [0,1];
+/// (OpcodeList1: stored values; OpcodeList2: linear reference values in `[0, 1]`;
 /// OpcodeList3: demosaiced values). `cfa_period` is the CFA repeat (2 for Bayer) used by
 /// the bad-pixel opcodes; `value_scale` maps sample values to the 16-bit table/constant
 /// domain (1 for stored values, 65535 for normalised ones). Returns the names of

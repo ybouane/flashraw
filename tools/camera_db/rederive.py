@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Re-derive camera-database fields from FlashRaw's own decodes of sample files.
 
-This tool decides, field by field, which values of `camera-db/cameras.json` the sample
+This tool decides, field by field, which values of `crates/flashraw-camera-db/data/cameras.json` the sample
 files (the CC0 corpus plus the local real-world set) reproduce or measure by themselves,
 corrects the values the files contradict, and writes a ledger of what the files cover.
 
@@ -30,7 +30,7 @@ usage:
       Classify every entry/field (a: reproduced, b: derivable but different,
       c: no sample, d: not derivable from files), print counts per field group and make.
   tools/camera_db/rederive.py apply [--write]
-      Compute the corrections; with --write store them in camera-db/cameras.json
+      Compute the corrections; with --write store them in crates/flashraw-camera-db/data/cameras.json
       (normalised with `flashraw camera-db generate`).
   tools/camera_db/rederive.py ledger [--out FILE]
       Write the audit ledger (default reference/camera-db-ledger.json, untracked): per entry
@@ -43,14 +43,14 @@ usage:
       `tools/camera_db_crops.py measure corpus`), image-crop origins that the camera's
       embedded JPEG or a camera-written DNG places elsewhere. Corrections are written
       with --write.
-  audit, apply and ledger take --db FILE (default camera-db/cameras.json) and --probes FILE
+  audit, apply and ledger take --db FILE (default crates/flashraw-camera-db/data/cameras.json) and --probes FILE
   (default target/rederive/probes.json) to work on another database or probe set.
 """
 import collections, json, math, os, re, statistics, struct, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(ROOT, "camera-db/cameras.json")
+DB_PATH = os.path.join(ROOT, "crates/flashraw-camera-db/data/cameras.json")
 WORK = os.environ.get("FLASHRAW_REDERIVE_DIR", os.path.join(ROOT, "target/rederive"))
 BIN = os.environ.get("FLASHRAW_BIN", os.path.join(ROOT, "target/release/flashraw"))
 CARGO = os.environ.get("CARGO", os.path.expanduser("~/.cargo/bin/cargo"))

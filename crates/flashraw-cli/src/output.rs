@@ -610,7 +610,7 @@ pub fn supported(as_json: bool) {
 }
 
 fn flashraw_support_matrix() -> Vec<Value> {
-    let text = include_str!("../../../docs/support-matrix.tsv");
+    let text = include_str!("../data/support-matrix.tsv");
     text.lines()
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
         .map(|l| {

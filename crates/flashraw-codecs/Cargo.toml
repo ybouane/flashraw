@@ -1,11 +1,17 @@
 [package]
 name = "flashraw-codecs"
-description = "RAW compression codecs (lossless JPEG, packed, vendor entropy coders) for FlashRaw"
+description = "Internal crate of FlashRaw: RAW compression codecs (lossless JPEG, packed bits, vendor entropy coders). Use the `flashraw` crate instead."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-codecs"
+readme = "README.md"
+keywords = ["raw", "camera", "codec", "jpeg", "decoder"]
+categories = ["multimedia::images", "compression"]
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 default = ["rayon", "simd"]

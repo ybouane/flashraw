@@ -1,31 +1,101 @@
 //! # FlashRaw
 //!
-//! Fast, safe RAW image decoding.
+//! Fast, safe camera RAW decoding: DNG, CR2, CR3, NEF, ARW, RAF, RW2, ORF, PEF, X3F and more
+//! (`flashraw supported` lists every format and the status of each compression mode). Of the 2,016
+//! files in the raw.pixls.us corpus, 1,980 decode (98.2%); the other 36 are valid files in formats
+//! that are not supported yet (28 Nikon High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG).
+//!
+//! The crate parses the container with bounds-checked readers, reports metadata and embedded
+//! previews without touching the sensor data, and decodes the sensor data in parallel into
+//! sensor-domain samples ([`OutputFormat::RawU16`]) or developed RGB ([`OutputFormat::Rgba8`],
+//! [`OutputFormat::Rgb16`], linear 16-bit, half and single-precision float). The same API is
+//! available from the `flashraw` command line tool, WebAssembly (npm), Python and C.
+//!
+//! ## Quick start
 //!
 //! ```no_run
-//! use flashraw::{FlashRaw, DecodeOptions, Backend, OutputFormat};
+//! use flashraw::{Backend, DecodeOptions, FlashRaw, OutputFormat};
 //!
 //! # fn main() -> flashraw::Result<()> {
+//! // Memory-maps the file and parses the headers; no sensor data is read yet.
 //! let raw = FlashRaw::open_path("photo.NEF")?;
-//! println!("{} {}x{}", raw.metadata().camera(), raw.metadata().width, raw.metadata().height);
+//! let meta = raw.metadata();
+//! println!("{} {}x{}", meta.camera(), meta.width, meta.height);
 //!
-//! // Embedded JPEG preview without touching the sensor data:
+//! // The embedded JPEG preview, without decoding the sensor data:
 //! if let Some(p) = raw.preview() {
 //!     std::fs::write("preview.jpg", raw.preview_bytes(p)?)?;
 //! }
 //!
+//! // Develop to 8-bit sRGB RGBA (orientation applied):
 //! let frame = raw.decode(DecodeOptions {
 //!     backend: Backend::Auto,
-//!     output: OutputFormat::RawU16,
+//!     output: OutputFormat::Rgba8,
 //!     ..Default::default()
 //! })?;
-//! println!("{}x{} via {}", frame.width(), frame.height(), frame.stats().backend.decode);
+//! let rgba: &[u8] = frame.as_u8().expect("Rgba8 output is u8");
+//! assert_eq!(rgba.len(), frame.width() as usize * frame.height() as usize * 4);
+//! for w in frame.warnings() {
+//!     eprintln!("warning: {w:?}"); // repaired corruption, preview fallback, ...
+//! }
 //! # Ok(()) }
 //! ```
 //!
-//! The decode result is sensor-domain data ([`RawFrame`]) plus everything needed to
-//! interpret it (CFA, black/white levels, white balance, colour matrices, crops).
-//! Convenience RGB outputs are available via [`OutputFormat`].
+//! Input that is not a RAW file is an error, never a panic:
+//!
+//! ```
+//! use flashraw::FlashRaw;
+//!
+//! assert!(flashraw::supports(&[0u8; 64]).is_none());
+//! assert!(FlashRaw::open(vec![0u8; 64]).is_err());
+//! ```
+//!
+//! ## Untrusted files
+//!
+//! Open files from users with explicit [`Limits`] (`FlashRaw::open_with`, and
+//! [`DecodeOptions::limits`]): the defaults allow 1.2 G samples and 65,535 pixels per side, which
+//! suits 400 MP medium format but permits several GB of allocation. Truncated or corrupt sensor
+//! data is zero-filled and reported in [`RawFrame::warnings`] unless
+//! [`CorruptionPolicy::Strict`] is set. Limit `threads` in services. Memory-mapped input
+//! (`FlashRaw::open_path`) can raise `SIGBUS` if another process truncates the file while it is
+//! mapped; read the bytes yourself (`std::fs::read`, then [`FlashRaw::open`]) when that matters.
+//!
+//! ## What the decode returns
+//!
+//! A [`RawFrame`] holds the samples ([`RawPixelData`]: u8, u16, f16 bits, f32 or a GPU buffer) and
+//! the metadata needed to interpret them (CFA, black and white levels, white balance, colour
+//! matrices, crops, orientation). Raw and linear outputs keep the sensor orientation
+//! ([`RawFrame::orientation`]); only [`OutputFormat::Rgba8`] and [`OutputFormat::Rgb16`] apply it.
+//! Do not assume 8-bit sensor data: raw samples are `u16` (or `f32` for floating-point DNG) and the
+//! white level is in the metadata.
+//!
+//! ## Cargo features
+//!
+//! | Feature | Default | Effect |
+//! |---|---|---|
+//! | `rayon` | yes | Multithreaded decoding (native targets). |
+//! | `simd` | yes | SIMD unpack kernels with runtime dispatch (SSSE3/SSE4.1 on x86-64, NEON on aarch64, SIMD128 on WebAssembly); scalar fallbacks are always built. |
+//! | `mmap` | yes | [`FlashRaw::open_path`] memory-maps the file instead of reading it. |
+//! | `icc` | yes | Arbitrary ICC output profiles ([`DecodeOptions::output_profile`]), pure Rust. The built-in colour spaces never need it. |
+//! | `gpu` | no | wgpu compute backend (Vulkan, Metal, DX12, WebGPU): `Backend::Gpu`, GPU-resident outputs, the `gpu` module. Not built on docs.rs. |
+//! | `jpegxl` | no | JPEG XL compressed DNG (needs Rust 1.88). |
+//! | `serde` | no | `Serialize`/`Deserialize` for metadata and option types. |
+//!
+//! With `default-features = false` the crate is single-threaded and portable (`wasm32` included).
+//!
+//! ## Links
+//!
+//! * [Repository and guide](https://github.com/ybouane/flashraw): CLI, Python, JavaScript and C
+//!   bindings, benchmarks, supported cameras.
+//! * [Packages](https://github.com/ybouane/flashraw/blob/main/docs/packages.md): every crate, the npm
+//!   and PyPI packages and the C library.
+//! * [Formats](https://github.com/ybouane/flashraw/blob/main/docs/formats.md),
+//!   [colour management](https://github.com/ybouane/flashraw/blob/main/docs/color-management.md),
+//!   [GPU](https://github.com/ybouane/flashraw/blob/main/docs/gpu.md),
+//!   [security policy](https://github.com/ybouane/flashraw/blob/main/SECURITY.md).
+//!
+//! The internal crates (`flashraw-core`, `-codecs`, `-formats`, `-camera-db`, `-gpu`) have no
+//! semver guarantee of their own; depend on this crate.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]

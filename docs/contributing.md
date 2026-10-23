@@ -10,7 +10,7 @@ changing a decoder.
 | `crates/flashraw-core` | Errors, bounds-checked byte access (`bytes`), bit pumps (`bits`), Huffman (`huffman`), TIFF/BMFF parsers, EXIF, value types (`types`), `FrameInfo`/`RawDecoder` contract (`decoder`), parallel helpers (`par`), profiling. No format knowledge. |
 | `crates/flashraw-codecs` | Reusable compression codecs (lossless JPEG, packed unpack + SIMD, deflate/float, lossy JPEG, JPEG XL, vendor entropy coders). Codecs decode into caller buffers or row sinks; they never know about containers. |
 | `crates/flashraw-formats` | One module per vendor/container: parse, build `FrameInfo` + `RawMetadata`, decode payload with codecs. `common.rs` has shared helpers. |
-| `crates/flashraw-camera-db` + `camera-db/` | Camera database (`cameras.json` → compiled static tables). |
+| `crates/flashraw-camera-db` (code + `data/cameras.json`) | Camera database (`cameras.json` → compiled static tables). |
 | `crates/flashraw` | Public API (`FlashRaw`, `RawFrame`, options, backend selection, optional post-processing). |
 | `crates/flashraw-cli` | The `flashraw` binary. |
 | `tools/` | Corpus download (`corpus/`), benchmark runner (`bench/`), support matrix. |

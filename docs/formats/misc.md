@@ -13,7 +13,7 @@ without a TIFF header (Raspberry Pi JPEG+BRCM first, then the file-size table).
 Identified only by exact file size, after every signature-based format declined the file. Two kinds
 of camera-database entries carry a `filesize` hint:
 
-1. **File-size table** — `camera-db/cameras.json`, `mode = "naked-<size>"` (138 sizes; the
+1. **File-size table** — `crates/flashraw-camera-db/data/cameras.json`, `mode = "naked-<size>"` (138 sizes; the
    Nikon/Olympus "diag raw" dumps with CMYG-type layouts are omitted). Hints:
    `full_width`/`full_height` (stored raster), `offset` (or `reversed` for bottom-up rows),
    `load_flags` (packing flags), `max_shift` (white = 2^bits − 2^max_shift), `flip`, `zero_is_bad`,

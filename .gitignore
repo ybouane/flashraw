@@ -19,4 +19,3 @@ __pycache__/
 /crates/flashraw-python/python/flashraw/*.so
 /crates/flashraw-python/python/flashraw/*.pyd
 /crates/flashraw-python/dist/
-/crates/flashraw-camera-db/data/

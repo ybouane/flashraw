@@ -5,8 +5,8 @@
 //! plane) is coded independently:
 //!
 //! * **Lossless RAW** (`levels == 0`): one band per tile plane, coded line by line
-//!   with an edge-aware predictor and adaptive Golomb–Rice residuals ([`entropy`]).
-//! * **C-RAW** (`levels == 3`): a 3-level integer 5/3 wavelet ([`wavelet`]); the LL
+//!   with an edge-aware predictor and adaptive Golomb–Rice residuals (`entropy`).
+//! * **C-RAW** (`levels == 3`): a 3-level integer 5/3 wavelet (`wavelet`); the LL
 //!   band is predictive, the detail bands use a context-adaptive coder. Coefficients
 //!   are dequantised with a per-band step that is either updated per line (header
 //!   version 0x100) or read from a per-tile quantisation map (version 0x200).

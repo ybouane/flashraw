@@ -1,6 +1,6 @@
 //! # flashraw-camera-db
 //!
-//! Static camera database compiled from `camera-db/cameras.json` at build time
+//! Static camera database compiled from `data/cameras.json` at build time
 //! (see `build.rs`). Lookups are binary searches over a sorted, normalised key
 //! index — no parsing happens at runtime.
 //!

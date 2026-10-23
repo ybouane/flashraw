@@ -312,7 +312,7 @@ where
 }
 
 /// [`decode_predictive`] that entropy-decodes large single-table streams on all threads
-/// ([`crate::par_entropy`]) when `parallel` is set. Returns the first row that ran past
+/// (`par_entropy`) when `parallel` is set. Returns the first row that ran past
 /// its data ([`ExactBits::dead_row`]; `None` when the stream was complete). Output is identical to [`decode_predictive`]: streams whose
 /// speculation cannot be proven equal (table switches, truncation, invalid codes) take
 /// the sequential path. `declared` is the payload length the container states (`src`

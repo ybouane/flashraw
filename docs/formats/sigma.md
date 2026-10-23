@@ -46,7 +46,7 @@ concurrently (3 threads); each plane is a strictly sequential stream.
 ## Metadata
 
 Margins (active area) and white level come from the camera database (entries
-`mode = "x3f-<width>x<height>"` in `camera-db/cameras.json`), the fallback black level from the
+`mode = "x3f-<width>x<height>"` in `crates/flashraw-camera-db/data/cameras.json`), the fallback black level from the
 camera database's colour table (prefix-matched). Unknown bodies/sizes still decode with full-frame
 geometry, the colour-table black and white 0x3fff.
 

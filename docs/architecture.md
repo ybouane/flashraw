@@ -28,10 +28,10 @@ RawFrame  (+ optional fused post-processing: normalise / demosaic / WB / colour 
 |---|---|---|
 | `flashraw-core` | errors, byte/bit readers, Huffman, TIFF/BMFF, EXIF, value types, `RawDecoder` contract, parallel helpers, profiling | — |
 | `flashraw-codecs` | compression codecs (lossless JPEG, packed + SIMD, deflate/float, DCT-12, lossy JPEG, JPEG XL, vendor codecs) | core |
-| `flashraw-camera-db` | camera database compiled from `camera-db/cameras.json` at build time | — |
+| `flashraw-camera-db` | camera database compiled from `crates/flashraw-camera-db/data/cameras.json` at build time | — |
 | `flashraw-formats` | container parsers + per-vendor decoders | core, codecs, camera-db |
 | `flashraw` | public API, backend selection, post-processing | all of the above |
-| `flashraw-gpu` | optional wgpu/WebGPU compute backend (WGSL in `shaders/`) | core |
+| `flashraw-gpu` | optional wgpu/WebGPU compute backend (WGSL in `crates/flashraw-gpu/shaders/`) | core |
 | `flashraw-cli` | `flashraw` binary | flashraw |
 | `flashraw-wasm` | wasm-bindgen bindings for the npm package | flashraw |
 | `flashraw-python` | PyO3 bindings for the `flashraw` Python package (built with maturin, not a default workspace member) | flashraw |
@@ -117,7 +117,7 @@ above (lossless JPEG predictors 2-7, Samsung V0), reconstruction runs as a wavef
 (`par::wavefront`): rows are cut into bands and columns into blocks, and a block starts
 as soon as its left neighbour and the block above it are done.
 
-**Camera knowledge as data.** `camera-db/cameras.json` — one database for the whole
+**Camera knowledge as data.** `crates/flashraw-camera-db/data/cameras.json` — one database for the whole
 library — holds camera entries (aliases, modes, crops, masked areas, per-ISO levels,
 CFA, colour matrices, decoder hints, verification records), fallback colour tables,
 model-alias groups and size-based geometry rules. `build.rs` compiles it into static

@@ -5,7 +5,7 @@
 //! JPEG's size and, with `--register`, where that JPEG sits inside the active area: the
 //! camera's own rendering is matched against a half-size development of the raw data by
 //! normalised cross-correlation. `tools/camera_db_crops.py` aggregates the output into
-//! `image_crops` entries of `camera-db/cameras.json`.
+//! `image_crops` entries of `crates/flashraw-camera-db/data/cameras.json`.
 
 use flashraw::{DecodeOptions, Demosaic, FlashRaw, OutputFormat, PreviewEncoding, PreviewInfo, PreviewKind, Rect};
 use serde_json::{Value, json};

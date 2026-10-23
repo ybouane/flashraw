@@ -1,13 +1,18 @@
 [package]
 name = "flashraw-camera-db"
-description = "Camera database (aliases, crops, levels, CFA, colour matrices, quirks) for FlashRaw"
+description = "Camera database for FlashRaw: aliases, crops, black/white levels, CFA patterns and colour matrices compiled into static tables, with the validation tooling"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "MIT OR Apache-2.0"
+license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-camera-db"
+readme = "README.md"
+keywords = ["raw", "camera", "database", "dng", "image"]
+categories = ["multimedia::images", "data-structures"]
+include = ["src/**", "build.rs", "data/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 build = "build.rs"
-include = ["src/**", "build.rs", "data/**", "Cargo.toml"]
 
 [features]
 # Validate/compare tooling used by `flashraw camera-db ...` (not needed at runtime).

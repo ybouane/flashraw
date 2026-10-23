@@ -6,9 +6,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-readme = "../../README.md"
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw"
+readme = "README.md"
 keywords = ["raw", "camera", "dng", "image", "decoder"]
 categories = ["multimedia::images"]
+include = ["src/**", "benches/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
 
 [features]
 default = ["rayon", "simd", "mmap", "icc"]
@@ -49,3 +52,9 @@ harness = false
 
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+# The documented feature set without `gpu` (wgpu needs a GPU stack the docs.rs builders lack;
+# its API is described in docs/gpu.md).
+features = ["serde", "jpegxl"]
+rustdoc-args = ["--cfg", "docsrs"]

@@ -19,7 +19,7 @@
 //!
 //! Every kernel has a CPU scalar reference (`flashraw::process`,
 //! `flashraw_codecs::packed`) and equivalence tests (`tests/equivalence.rs`).
-//! WGSL sources live in the repository's `shaders/` directory.
+//! WGSL sources live in this crate's `shaders/` directory.
 //!
 //! ```no_run
 //! # fn main() -> flashraw_core::Result<()> {
