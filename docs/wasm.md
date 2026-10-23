@@ -372,8 +372,8 @@ Findings:
 
 - **WASM vs native, same thread count**: entropy-decoded formats (LJPEG) run at 1.2–1.6× native
   single-thread time; the full rgba8 pipeline at 1.2–1.4×. Packed/uncompressed formats are
-  memory-bound and fast either way (2–3 ms per frame) but 2–3× native, since native uses AVX-512
-  unpack kernels. These tables are single-threaded WASM; the threaded build (next section)
+  memory-bound and fast either way (2–3 ms per frame) but 2–3× native (native runs the SSE4.1
+  unpack kernel, not an AVX one; the cause of the gap was not investigated). These tables are single-threaded WASM; the threaded build (next section)
   closes most of the multi-core gap.
 - **SIMD128 vs scalar WASM**: identical output (tested); a clear win only where explicit WASM
   SIMD kernels exist today — the packed-bit unpack (`flashraw-codecs/src/packed.rs`): 12-bit

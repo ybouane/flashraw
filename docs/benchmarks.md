@@ -73,7 +73,7 @@ one-thread time is used in the all-cores rows.
 
 | Library | Version, build | decode | RAW → RGB |
 |---|---|---|---|
-| **FlashRaw** | this repository (commit `06b36cc`), `cargo build --release -p flashraw-cli --features jpegxl` (+ `gpu` on macOS) | `flashraw benchmark --output raw-u16 --backend simd`: open + full sensor decode to 16-bit samples, CPU | `--output rgba8 --backend simd`: decode + bilinear demosaic + as-shot WB + colour matrix + sRGB 8-bit RGBA + orientation, one fused pass |
+| **FlashRaw** | this repository, version 0.1.0 (the development tree at the time of the runs; the commit the results were produced from was rewritten out of the history, so the exact state is not recorded — reproduce with the commands below), `cargo build --release -p flashraw-cli --features jpegxl` (+ `gpu` on macOS) | `flashraw benchmark --output raw-u16 --backend simd`: open + full sensor decode to 16-bit samples, CPU | `--output rgba8 --backend simd`: decode + bilinear demosaic + as-shot WB + colour matrix + sRGB 8-bit RGBA + orientation, one fused pass |
 | **FlashRaw GPU** (macOS) | same, `--features gpu` | – | `--backend gpu --output rgba8`: CPU decode (or GPU unpack for packed data), Metal develop, image downloaded to host memory |
 | **LibRaw** | 0.22.0, its `Makefile.dist`, `-O3` (+ `-march=native` on x86-64), zlib; all cores = OpenMP build, 1 thread = default build | `open_buffer()` + `unpack()` | + `dcraw_process()` (`user_qual=0` bilinear, `use_camera_wb=1`, `output_bps=8`, sRGB) + `dcraw_make_mem_image()` |
 | **LibRaw + Little CMS** | LibRaw as above + Little CMS 2.19.1 (static, `-O3`) | – | LibRaw `unpack()` + `dcraw_process()` to **16-bit linear ProPhoto RGB** (bilinear, camera WB, `gamm = 1, 1`, `no_auto_bright`) + `dcraw_make_mem_image()`, then an lcms2 transform (linear ProPhoto → sRGB IEC 61966-2.1, perceptual, `TYPE_RGB_16` → `TYPE_RGBA_8`); profiles and transform created per image. All cores: the transform runs over 32-row blocks with OpenMP (a shared transform is reentrant); 1 thread: one `cmsDoTransform` call |
@@ -824,12 +824,13 @@ single-thread time and the RAW → RGBA8 pipeline at 1.2–1.4×; the threaded b
 uncompressed ARW to a resident texture in 15 ms. SIMD128 halves packed unpack time vs the
 non-SIMD build.
 
-Bundle size with all decoders (wasm-opt -O3):
+Bundle size with all decoders (wasm-opt -O3), from [wasm.md](wasm.md#sizes), which has every variant
+(threads, WebGPU, JPEG XL):
 
-| Binary | Raw | gzip | brotli |
+| Binary | Raw | gzip -9 | brotli -11 |
 |---|---:|---:|---:|
-| `flashraw_simd.wasm` | 1978 KiB | 678 KiB | 507 KiB |
-| `flashraw.wasm` (fallback) | 1946 KiB | 666 KiB | 497 KiB |
+| `flashraw_simd.wasm` | 2897 KiB | 1006 KiB | 756 KiB |
+| `flashraw.wasm` (fallback) | 2847 KiB | 986 KiB | 738 KiB |
 
 ## Performance regression detection
 

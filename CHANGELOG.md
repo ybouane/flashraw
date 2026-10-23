@@ -30,8 +30,9 @@ First complete release of FlashRaw.
   variants, high-res), PEF, SRW (V0/V1/V2), MRW, IIQ (formats 0/3/5/6/8), MOS,
   3FR/FFF, KDC/DCR/DCS/Kodak RAW, ERF, MEF, Sinar, X3F (TRUE I/II/III, Quattro, old
   Huffman), headerless/CHDK raws identified by size, ARRI ARI.
-- All 1,980 decodable files of the 2,016-file CC0 corpus (every make and model on
-  raw.pixls.us) decode; full-buffer hashes of 1,965 are pinned by the regression suite.
+- 1,980 of the 2,016 files of the raw.pixls.us CC0 corpus decode (98.2%); full-buffer hashes of 1,965
+  are pinned by the regression suite. The other 36 are valid files in formats not supported yet (28
+  Nikon High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG, a few more; docs/formats.md).
 - Region and tile decoding for tiled/row-addressable formats; honest
   `RandomAccess` reporting.
 - Zero-copy embedded preview/thumbnail access.
@@ -209,7 +210,7 @@ First complete release of FlashRaw.
 
 ### Performance
 - 64-bit bit pumps, LUT Huffman with fully-decoded short diffs, SIMD packed unpack
-  (SSE4.1/NEON/SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed
+  (SSSE3/SSE4.1, NEON, SIMD128), tile/strip/stripe/packet/row parallelism, calloc-backed
   output buffers, fused single-pass RGB development with orientation.
 - Speculative parallel decoding of single sequential entropy streams (Huffman
   self-synchronisation; anything speculation cannot prove exact falls back to the
@@ -292,8 +293,8 @@ First complete release of FlashRaw.
   status codes matching the error kinds with a thread-local last error, caught panics,
   size-versioned option structs), a header-only C++17 wrapper `flashraw.hpp` (RAII
   handles, exception per error kind, span views), CMake install with
-  `find_package(flashraw)` and pkg-config, C and C++ examples built in CI on
-  Linux/macOS/Windows. See `docs/c-api.md` for the ABI stability policy.
+  `find_package(flashraw)` and pkg-config, C and C++ examples (built by the local CI on
+  Linux and macOS). See `docs/c-api.md` for the ABI stability policy.
 - `crates/flashraw-libraw-compat`: a source-compatible implementation of a documented
   subset of a widely used RAW library's C API (and the common members of its C++ class) on
   top of FlashRaw, so existing clients can switch by recompiling and relinking; see
@@ -345,7 +346,8 @@ First complete release of FlashRaw.
 
 ### Quality
 - Regression corpus, malformed-input suite, 10 fuzz targets, criterion benchmarks,
-  benchmark runner with regression detection, CI for Linux/macOS/Windows/ARM64.
+  benchmark runner with regression detection, a local CI (`tools/ci/local.sh`, Linux and macOS;
+  the GitHub workflows run on manual dispatch only).
 - Comparative benchmarks against other open-source RAW decoders on Linux x86-64 and
   Apple M1 Ultra (`tools/bench/compare.py`, `benches/popular-cameras.tsv`,
   `benches/results/*-compare.*`, `docs/benchmarks.md`); README rewritten around speed,

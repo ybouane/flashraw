@@ -20,8 +20,8 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - One package for Vite, webpack 5, Rollup/Rolldown, esbuild, Node.js ≥ 18, Deno.
 
 Formats: DNG, CR2, CR3, CRW, NEF/NRW, ARW/SR2/SRF/ARQ, RAF, RW2/RWL, ORF/ORI, PEF, SRW, MRW,
-IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI and more (every make and model on
-raw.pixls.us; see `docs/formats.md`). The JS API is format-agnostic.
+IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI and more (1,980 of the 2,016 files of
+the raw.pixls.us corpus decode; the rest are formats not supported yet, see `docs/formats.md`). The JS API is format-agnostic.
 
 ```sh
 npm install flashraw

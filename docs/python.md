@@ -11,7 +11,8 @@ sensor data (or display-ready RGB) straight into NumPy arrays without copying.
 - **Typed**: metadata are frozen dataclasses, errors a `FlashRawError` hierarchy; the package
   ships `py.typed` and passes `mypy --strict`.
 - **One wheel per platform**: abi3 wheels for CPython 3.9 and later on Linux (manylinux x86-64,
-  ARM64), macOS (x86-64, ARM64) and Windows (x64).
+  ARM64), macOS (x86-64, ARM64) and Windows (x64). The build definition covers these platforms
+  (`.github/workflows/python.yml`, manual dispatch); the maintainers test Linux x86-64 and macOS arm64.
 
 Sources: `crates/flashraw-python` (native extension in `src/`, Python API in
 `python/flashraw/`, tests in `tests/`, benchmark in `bench/`).

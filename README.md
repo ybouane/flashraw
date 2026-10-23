@@ -10,16 +10,23 @@ RAW file right in your browser.
 
 Rust core · C, C++, Python and JavaScript bindings · SIMD, all cores and the GPU · runs in the browser
 
+Pre-release: nothing is published yet. See [docs/packages.md](docs/packages.md) for every package, its
+status and install command.
+
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#-license)
 [![MSRV 1.85](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](#api-stability)
 
 FlashRaw opens a camera RAW file and gives you the sensor data plus everything needed to
 interpret it (CFA layout, black and white levels, white balance, colour matrices, crops,
-orientation), the embedded previews, or a display-ready sRGB image. It handles every make and
-model on raw.pixls.us, it is written in memory-safe Rust, and on the same machine as the other
-open-source decoders it is **7.9×–11.4× faster than LibRaw** at decoding,
-**8.8×–15.4× faster** at producing an sRGB image, and needs
-**1.5×–1.9× less memory** for it (medians over 62 popular cameras).
+orientation), the embedded previews, or a display-ready sRGB image. It is written in memory-safe
+Rust. Of the 2,016 files in the raw.pixls.us corpus, **1,980 decode (98.2%)**, and 1,965 of them have
+pinned output hashes; the other 36 are not corrupt files but formats it does not support yet (28 Nikon
+High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG, a few more: [docs/formats.md](docs/formats.md)).
+On the same machine as the other open-source decoders it is **7.9×–11.4× faster than LibRaw** at
+decoding, **8.8×–15.4× faster** at producing an sRGB image, and needs **1.5×–1.9× less memory** for it
+(medians over 62 popular cameras). Single-thread speedups are lower: 2.9× (Linux) and 1.8× (macOS) at
+decoding and 2.1× and 1.8× at producing an sRGB image, against LibRaw's default build
+([one-thread results](docs/benchmarks.md#headline)).
 
 ## ⚡ FlashRaw vs the others
 
@@ -99,7 +106,8 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 
 - **Every** decoder is multithreaded, even single-stream codecs (lossless JPEG, Nikon,
   Pentax, Hasselblad, Panasonic v8, Sony ARW1), by speculative parallel decoding
-- Explicit SIMD: SSE4.1 / AVX2 / AVX-512, NEON and WASM SIMD128, picked at run time
+- SIMD unpack kernels for packed data (SSSE3/SSE4.1 on x86-64, NEON on aarch64, WASM SIMD128), picked
+  at run time; the rest of the pipeline relies on the compiler's auto-vectorisation
 - 64-bit bit pumps, table-driven Huffman, zero-copy parsing, memory-mapped input
 - Fused single-pass RAW → RGB, on the CPU or the **GPU**, in sRGB, Display P3, Adobe RGB,
   ProPhoto or Rec. 2020 at no extra per-pixel cost (ICC-tagged, any ICC profile via `icc`)
@@ -115,7 +123,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
   use freed memory; the few `unsafe` blocks are audited and justified
 - Bounds-checked parsing, checked offset arithmetic, IFD loop and depth tracking
 - Allocation **limits** checked before allocating
-- **11 fuzz targets** on every PR and nightly; crash inputs replayed forever
+- **11 fuzz targets**, run locally before releases; crash inputs replayed forever
 - Malformed-file and truncation suites, and an explicit **truncation policy**:
   never silent garbage
 
@@ -124,13 +132,14 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 
 ### 📷 Support
 
-- **~40 RAW formats**, every make and model on raw.pixls.us: 1,980 of 2,016 corpus
-  files decode, with pinned output hashes
+- **~40 RAW formats**: 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%), 1,965 with
+  pinned output hashes; the other 36 are formats not supported yet (mainly Nikon High Efficiency NEF)
 - **CR3** incl. C-RAW, **JPEG XL DNG**, lossy and deflate DNG, GoPro GPR, Sigma X3F,
   Fuji compressed, Panasonic v4–v8, IIQ, 3FR/FFF, …
 - **GPU**: Metal, Vulkan, DX12 and **WebGPU**
 - **Everywhere**: Rust, C, C++, Python, npm (browsers, Web Workers, Node)
-- Linux, macOS, Windows · x86-64 and ARM64 · WebAssembly
+- Tested on Linux x86-64 and macOS arm64; WebAssembly in browsers and Node.js; Windows and other
+  architectures are [not regularly tested](#platforms)
 
 </td>
 </tr>
@@ -145,8 +154,8 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 | Memory-safe | ✅ (a few audited `unsafe` blocks) | ❌ | ❌ | ⚠️ Rust, but it panics on bad input and advises against untrusted files | ❌ | ❌ | ❌ |
 | Uses the GPU | ✅ Metal, Vulkan, DX12, WebGPU | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Multithreading | ✅ every codec (speculative decoding of sequential streams) + develop | ⚠️ OpenMP builds: CR3, Fuji, Panasonic v8, some demosaics | ⚠️ OpenMP: tiled/sliced codecs | ✅ rayon: tiles, several codecs, develop | ❌ | ⚠️ as LibRaw; wheels: OpenMP on Linux/Windows, not macOS | ⚠️ one thread per transform (threaded plugin: GPL-3 or commercial) |
-| Explicit SIMD | ✅ SSE4.1, AVX2, AVX-512, NEON, WASM SIMD128 | ❌ | ⚠️ one SSE2 routine | ⚠️ compiler multiversioning, no intrinsics | ❌ | ❌ | ⚠️ SSE2 in the fast_float plugin (GPL-3 or commercial) |
-| Cameras | every make and model on raw.pixls.us (1,980 of 2,016 files), 1,000+ in its camera DB, any DNG | 1,284 (its own count) | ~920 make/model | ~850 make/model | ~570 colour profiles (last release 2018) | as LibRaw | – |
+| SIMD kernels | ⚠️ packed-bit unpack only: SSSE3/SSE4.1, NEON, WASM SIMD128 | ❌ | ⚠️ one SSE2 routine | ⚠️ compiler multiversioning, no intrinsics | ❌ | ❌ | ⚠️ SSE2 in the fast_float plugin (GPL-3 or commercial) |
+| Cameras | 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%), 1,600+ entries in its camera DB, any DNG | 1,284 (its own count) | ~920 make/model | ~850 make/model | ~570 colour profiles (last release 2018) | as LibRaw | – |
 | Canon CR3 (incl. C-RAW) | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | – |
 | JPEG XL DNG (DNG 1.7, e.g. Samsung Galaxy) | ✅ | ⚠️ Adobe DNG SDK builds only | ❌ | ✅ | ❌ | ❌ | – |
 | GoPro GPR (VC-5) | ✅ | ⚠️ GPR SDK builds only | ✅ | ❌ | ❌ | ❌ | – |
@@ -160,7 +169,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 | JavaScript / WASM, runs in the browser | ✅ official npm package (WASM SIMD, threads, WebGPU) | ⚠️ third-party ports | ❌ | ❌ | ⚠️ third-party ports | ❌ | ⚠️ third-party ports |
 | Rust | ✅ native | ⚠️ third-party bindings | ❌ | ✅ native | ❌ | ❌ | ⚠️ third-party crate |
 | LibRaw-compatible C API | ✅ subset (recompile and relink) | – | ❌ | ❌ | ❌ | – | – |
-| Fuzzed | ✅ 11 in-tree targets, every PR + nightly | ✅ OSS-Fuzz | ✅ OSS-Fuzz + in-tree | ⚠️ 8 in-tree targets | ❌ | ⚠️ relies on LibRaw | ✅ OSS-Fuzz + in-tree |
+| Fuzzed | ✅ 11 in-tree targets, run locally before releases | ✅ OSS-Fuzz | ✅ OSS-Fuzz + in-tree | ⚠️ 8 in-tree targets | ❌ | ⚠️ relies on LibRaw | ✅ OSS-Fuzz + in-tree |
 | License | MIT / Apache-2.0 | LGPL-2.1 / CDDL-1.0 | LGPL-2.1+ | LGPL-2.1 | own licence (Foveon code: GPL-2+) | MIT (bundles LibRaw) | MIT |
 
 <sub>¹ Little CMS is not a RAW decoder: it is compared as the colour-management stage of a
@@ -227,10 +236,11 @@ is built for that.
   intrinsics, zeroed allocation, a disjoint-tile writer, the input self-reference, the WASM
   clock hook and the mmap call, each with a `SAFETY:` justification and tests
   ([architecture](docs/architecture.md)).
-- ✅ **Fuzzed continuously.** Eleven cargo-fuzz targets (the whole open/decode pipeline over every
+- ✅ **Fuzzed.** Eleven cargo-fuzz targets (the whole open/decode pipeline over every
   format under both corruption policies, TIFF and BMFF parsers, bit pumps against a model,
-  Huffman, lossless JPEG, packed unpack, deflate/float, DCT, DNG opcodes) run on every PR and
-  for 15 minutes each nightly. Every crash input is kept and replayed.
+  Huffman, lossless JPEG, packed unpack, deflate/float, DCT, DNG opcodes) are run locally before
+  releases (`tools/ci/local.sh`, 30 s per target; longer runs by hand); there is no continuous fuzzing
+  service. Every crash input is kept and replayed.
 - ✅ **Malformed-file suite.** Truncation at every cut point, invalid offsets and counts,
   recursive IFDs, overflowing dimensions, broken Huffman tables, corrupted entropy data,
   garbage behind every magic number, and mutations of a real file of every extension: each
@@ -248,15 +258,31 @@ is built for that.
 | | |
 |---|---|
 | **Formats** | DNG (uncompressed, lossless JPEG, deflate int/float, lossy JPEG, **JPEG XL**, GoPro VC-5, Blackmagic), CR2 (incl. sRAW/mRAW), **CR3** (CRX and C-RAW), CRW, NEF/NRW, ARW/SR2/SRF/ARQ, RAF (incl. compressed X-Trans), RW2/RWL (Panasonic v4–v8), ORF/ORI, PEF, SRW, MRW, IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI, headerless and CHDK raws |
-| **Cameras** | every make and model on raw.pixls.us (1,980 of 2,016 files decode), 1,000+ models in the built-in camera database, and DNG from any camera, phone or drone |
-| **Not supported** | Nikon High Efficiency (proprietary TicoRAW codec) and a few rare variants: see [formats](docs/formats.md) |
+| **Cameras** | 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%; 1,965 with pinned hashes), 1,600+ entries in the built-in camera database, and DNG from cameras, phones and drones |
+| **Not supported yet** | 36 corpus files are valid files in formats that are not implemented: 28 Nikon High Efficiency NEF (proprietary TicoRAW codec), Light L16, Casio CAM, JPEG-in-DNG and a few rare variants (see [formats](docs/formats.md)). Their metadata and embedded previews still work |
 | **Outputs** | raw `u16` / `f32`, normalised `f32`, linear RGB `f32`, display RGBA8 (bilinear or half-size demosaic, as-shot white balance, colour matrix, sRGB, orientation), GPU-resident textures |
 | **GPU** | wgpu: Metal, Vulkan and DX12 natively, WebGPU in browsers; `Backend::Auto` uses the GPU only where it measures a win ([GPU](docs/gpu.md)) |
 | **Languages** | Rust, C, C++, Python, JavaScript/TypeScript, plus a LibRaw-compatible C API |
-| **Platforms** | Linux, macOS, Windows (x86-64, ARM64); WebAssembly in Chrome, Edge, Firefox and Safari, Web Workers and Node.js, multithreaded where the page is cross-origin isolated |
+| **Platforms** | tested on Linux x86-64 and macOS arm64; WebAssembly in browsers (Chromium, Firefox and WebKit are in the browser test suite), Web Workers and Node.js, multithreaded where the page is cross-origin isolated. Windows and Linux ARM64 are [not regularly tested](#platforms) |
 
-Support is tracked per format *and mode* (`verified`, `partial`, `experimental`,
-`unsupported`): see [docs/formats.md](docs/formats.md) or run `flashraw supported`.
+Support is tracked per format *and mode*; `flashraw supported` (and [docs/formats.md](docs/formats.md))
+lists each with one of these statuses:
+
+| Status | Meaning |
+|---|---|
+| `verified` | representative corpus files decode with full-buffer hashes pinned by the regression suite, metadata checked, tests and corruption handling in place |
+| `partial` | decodes a documented part of the mode (for example only the first frame of a burst or pixel-shift file, or without the vendor's calibration block); the notes say what is missing |
+| `experimental` | implemented from the format structure with few or no sample files, so not covered by pinned hashes |
+| `unsupported` | detected and rejected with a clear error |
+| `supported` | used for a feature rather than a codec mode (currently only DNG opcode lists): implemented, applied by default and covered by tests and fuzzing, with no per-file pinned hash |
+
+### Platforms
+
+Tested by the maintainer with `tools/ci/local.sh` and `tools/ci/mac.sh` (the repository has no
+automatic GitHub workflows): **Linux x86-64** and **macOS arm64** (Rust, C, Python, npm, WASM).
+The workflows in `.github/workflows/` define builds for Linux ARM64, macOS x86-64 and Windows
+(wheels, the C library, the LibRaw shim) but run only on manual dispatch and have not been run
+regularly; Windows paths are untested. See [docs/testing.md](docs/testing.md).
 
 ## 🚀 Quick start
 
@@ -400,7 +426,9 @@ recompile against its headers and link `-lraw` from FlashRaw. See
 ### 💻 CLI
 
 ```sh
-cargo install --path crates/flashraw-cli
+cargo install flashraw-cli                          # CPU only: no `gpu` and no `jpegxl` feature
+cargo install flashraw-cli --features gpu,jpegxl    # + GPU backend (`--backend gpu`) and JPEG XL DNG
+# from a checkout: cargo install --path crates/flashraw-cli [--features gpu,jpegxl]
 
 flashraw info photo.CR3                     # summary (--json for machine output)
 flashraw dump-metadata photo.ARW            # everything, as JSON
@@ -414,13 +442,17 @@ flashraw benchmark photo.NEF --iterations 10 --threads 8
 flashraw verify photo.ORF --json            # geometry, levels and full-buffer hashes
 flashraw verify cut.DNG --json --strict     # fail on truncated data (default: recover + warnings)
 flashraw supported                          # format/mode support matrix
-flashraw camera-db validate|generate|compare|stats
+flashraw camera-db validate|generate|compare|stats|coverage|crops|probe
 ```
 
-Options: `--backend auto|cpu|simd|gpu`,
+Options of `decode` and `benchmark` (`flashraw decode --help` is authoritative):
+`--format`, `--backend auto|cpu|simd|gpu`,
 `--output raw-u16|raw-f32|normalized|linear-rgb|linear-rgb16|linear-rgb-f16|rgba8|rgb16`,
-`--region x,y,w,h`, `--tile N`, `--threads N`, `--demosaic bilinear|half`,
-`--exposure EV`, `--black-point V`, `--white-point V`, `--profile`, `--json`.
+`--region x,y,w,h`, `--tile N`, `--threads N`, `--demosaic bilinear|half`, `--no-opcodes`,
+`--exposure EV`, `--black-point V`, `--white-point V`, `--strict`, `--preview-fallback`,
+`--color-space srgb|display-p3|adobe-rgb|prophoto|rec2020`, `--output-profile FILE.icc`,
+`--intent perceptual|relative|saturation|absolute`, `--bpc`, `--profile`, `--json`. Names differ
+slightly between bindings: [docs/api-names.md](docs/api-names.md).
 
 ```
 $ flashraw decode photo.DNG out.jpg --output rgba8 --profile
@@ -513,12 +545,12 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 | feature | default | effect |
 |---|---|---|
 | `rayon` | yes | multithreaded decoding |
-| `simd` | yes | explicit SIMD kernels (runtime dispatch on x86-64) |
+| `simd` | yes | SIMD unpack kernels (SSSE3/SSE4.1 on x86-64 with runtime dispatch, NEON, WASM SIMD128) |
 | `mmap` | yes | memory-mapped `open_path` |
 | `gpu` | no | wgpu backend (Vulkan / Metal / DX12 / WebGPU) |
 | `jpegxl` | no | JPEG XL compressed DNG (DNG 1.7) |
 | `icc` | yes | arbitrary ICC output profiles (`DecodeOptions::output_profile`); the built-in colour spaces and their profiles need no feature. Every feature and dependency: [docs/building.md](docs/building.md) |
-| `serde` | no | `Serialize` for metadata types |
+| `serde` | no | `Serialize` and `Deserialize` for metadata and option types |
 
 ## 📖 Documentation
 
@@ -526,8 +558,10 @@ FlashRaw follows semver. The public API is everything documented at the crate ro
 [Building and features](docs/building.md) · [Colour management](docs/color-management.md) ·
 [Benchmarks](docs/benchmarks.md) · [GPU](docs/gpu.md) · [WASM](docs/wasm.md) ·
 [C and C++ API](docs/c-api.md) · [LibRaw-compatible API](docs/libraw-compat.md) ·
-[Python](docs/python.md) · [Testing](docs/testing.md) · [Profiling](docs/profiling.md) ·
-[Camera DB](docs/camera-db.md) · [Contributing](docs/contributing.md) ·
+[Python](docs/python.md) · [Packages](docs/packages.md) · [Releasing](docs/releasing.md) ·
+[Names across bindings](docs/api-names.md) · [Testing](docs/testing.md) · [Profiling](docs/profiling.md) ·
+[Camera DB](docs/camera-db.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) ·
+[Decoder contract](docs/contributing.md) · [For coding agents](AGENTS.md) ·
 [References](docs/references.md)
 
 ## 📄 License

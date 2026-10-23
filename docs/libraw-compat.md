@@ -37,8 +37,8 @@ and comparing). `libraw_data_t`, however, omits LibRaw's vendor maker-note block
 binary compiled against LibRaw's headers must therefore never be run against this library; the
 shared library has no LibRaw SONAME, so an existing binary will not pick it up by accident.
 
-The `tests/layout.rs` test checks that the Rust definitions match the C header (Linux and
-macOS CI; Windows CI compiles and runs the C client with MSVC).
+The `tests/layout.rs` test checks that the Rust definitions match the C header (run on Linux and
+macOS; the Windows MSVC build of the C client is defined in the manual workflow but untested).
 
 ## Supported subset
 

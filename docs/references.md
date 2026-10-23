@@ -2,7 +2,7 @@
 
 FlashRaw is an independent Rust implementation. Behaviour was established from the
 format specifications below and from study of the files themselves: the CC0 corpus of
-every make and model on raw.pixls.us, whose decodes are pinned by the regression suite
+raw.pixls.us (2,016 files), whose decodes are pinned by the regression suite
 (see [testing.md](testing.md)).
 
 | Document | Used for |

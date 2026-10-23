@@ -47,7 +47,7 @@ Licences: all dependencies are permissive (MIT, Apache-2.0, BSD-3-Clause, Zlib).
 | Feature | Default | Effect |
 |---|---|---|
 | `rayon` | yes | Multithreaded decoding and development. Without it everything runs on the calling thread. |
-| `simd` | yes | Explicit SIMD kernels (SSE4.1, AVX2, AVX-512, NEON; WASM SIMD128 at compile time). Scalar code is always compiled. |
+| `simd` | yes | SIMD unpack kernels: SSSE3/SSE4.1 on x86-64 (runtime dispatch), NEON on aarch64, SIMD128 on WebAssembly (compile time). Only packed-bit unpacking has explicit kernels; the rest of the pipeline relies on compiler auto-vectorisation. Scalar code is always compiled. |
 | `mmap` | yes | `FlashRaw::open_path` memory-maps the file. Without it the file is read into memory. |
 | `icc` | yes | `DecodeOptions::output_profile`: arbitrary ICC profiles. Without it a profile returns `InvalidArgument("built without ICC support")`; the built-in colour spaces and `icc_profile()` still work. |
 | `jpegxl` | no | JPEG XL compressed DNG. Needs Rust 1.88. |

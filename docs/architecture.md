@@ -131,7 +131,7 @@ happen; entropy decoders stop on overrun. `unsafe` is confined to: zeroed alloca
 `GridWriter`, SIMD intrinsics, the input self-reference, the WASM clock hook, the Apple
 worker quality-of-service call, the mmap call and the pointer handling at the C ABI boundary (`flashraw-capi`,
 `flashraw-libraw-compat`) — each with a `SAFETY:` justification and tests. Nine fuzz targets plus a
-malformed-file suite run in CI.
+malformed-file suite run in the local CI.
 
 **Profiling built in.** Decoders record stage timings (`Stage::ContainerParse`,
 `EntropyDecode`, `Unpack`, `Calibration`, `Postprocess`, GPU stages...) into a

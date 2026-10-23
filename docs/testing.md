@@ -24,7 +24,7 @@ cargo build --release -p flashraw-cli
 find corpus -type f -print0 | xargs -0 -n 50 target/release/flashraw verify --json > verify.jsonl
 ```
 
-`tools/corpus/manifest.tsv` lists the 2,016 files (every make and model available).
+`tools/corpus/manifest.tsv` lists the 2,016 files of the raw.pixls.us corpus.
 `flashraw verify --json` decodes each file out of process and records geometry, CFA,
 black/white levels, white balance, colour matrix, orientation, the active-area maximum
 and 99.99th percentile, and an FNV-1a 64 hash of the full sensor buffer. New decoders
@@ -138,3 +138,7 @@ needed, drops the build cache when the host has less than `FLASHRAW_MAC_MIN_FREE
 (default 10) GB free, and `--clean` removes the directory. Windows has no local runner:
 the Windows-specific paths (MSVC builds of the C APIs, `raw.dll`) are untested until one
 is available.
+
+Tested platforms: Linux x86-64 (`tools/ci/local.sh`) and macOS arm64 (`tools/ci/mac.sh`). The hosted
+workflows also define Linux ARM64, macOS x86-64 and Windows builds, but they only run on manual dispatch
+and have not been run regularly, so those platforms count as untested.

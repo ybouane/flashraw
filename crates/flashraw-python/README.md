@@ -2,7 +2,7 @@
 
 Fast, safe camera RAW decoding for Python, with zero-copy NumPy output.
 
-`flashraw` reads RAW files from virtually every camera — DNG, CR2, CR3, CRW, NEF/NRW,
+`flashraw` reads RAW files from most cameras (1,980 of the 2,016 files of the raw.pixls.us corpus; the rest are formats not supported yet, see docs/formats.md) — DNG, CR2, CR3, CRW, NEF/NRW,
 ARW/SR2/SRF, RAF, RW2, ORF, PEF, SRW, IIQ, 3FR/FFF, X3F, MRW, KDC/DCR, ERF, MEF and more —
 and returns sensor-domain data (or display-ready RGB) as NumPy arrays, together with everything
 needed to interpret them: CFA layout, black/white levels, white balance, colour matrices,
@@ -19,7 +19,8 @@ crops, orientation, lens and exposure metadata, and embedded previews.
 - **Typed**: frozen dataclasses for metadata, `py.typed`, `mypy --strict` clean.
 
 One abi3 wheel per platform supports CPython 3.9 and later (Linux x86-64/ARM64, macOS
-x86-64/ARM64, Windows x64). The only dependency is NumPy.
+x86-64/ARM64, Windows x64; tested by the maintainers on Linux x86-64 and macOS arm64). The only
+dependency is NumPy.
 
 ## Install
 
@@ -51,13 +52,28 @@ with flashraw.open("photo.NEF") as raw:          # path, bytes, bytearray, memor
 image = flashraw.imread("photo.CR3")              # RGBA8 array
 ```
 
-Outputs: `raw-u16` (uint16 samples as stored), `raw-f32`, `normalized` (float32 in [0, 1], CFA
-layout kept), `linear-rgb` (float32, demosaiced, white-balanced) and `rgba8`. Options:
-`backend`, `threads`, `region`, `crop`, `demosaic`, `apply_opcodes`, `corruption_policy`,
+Outputs (`output=`, the first argument of `decode` / `imread`):
+
+| `output` | dtype, shape | content |
+|---|---|---|
+| `raw-u16` | uint16 `(h, w)` or `(h, w, c)` | sensor samples as stored (default) |
+| `raw-f32` | float32 `(h, w)` or `(h, w, c)` | the same as floats (floating-point DNGs unscaled) |
+| `normalized` | float32 `(h, w)` or `(h, w, c)` | black-subtracted, white-normalised to [0, 1], CFA layout kept |
+| `linear-rgb` | float32 `(h, w, 3)` | demosaiced, white-balanced, linear sRGB primaries (or `color_space`) |
+| `linear-rgb-f16` | float16 `(h, w, 3)` | the same as half floats |
+| `linear-rgb16` | uint16 `(h, w, 3)` | the same, clipped to [0, 1] and scaled to [0, 65535] |
+| `rgba8` | uint8 `(h, w, 4)` | display-ready sRGB, orientation applied |
+| `rgb16` | uint16 `(h, w, 3)` | display-ready sRGB at 16 bits, orientation applied |
+
+Options of `decode`: `backend` (`"auto"`, `"cpu"`, `"simd"`, `"gpu"`), `threads`, `region`, `crop`
+(`True`, or `"active"` for raw outputs), `demosaic` (`"bilinear"`, `"half-size"`), `apply_opcodes`,
+`corruption_policy` (`"recover"`, `"strict"`), `exposure`, `black_point`, `white_point`,
 `preview_fallback` (RGB outputs of undecodable sensor data return the embedded full-size
-preview, `frame.source == "preview"`), `color_space` (`"display-p3"`, `"adobe-rgb"`, `"prophoto"`,
-`"rec2020"`; `frame.icc_profile` is the matching ICC profile) and `output_profile` (convert to
-any RGB ICC profile).
+preview, `frame.source == "preview"`), `color_space` (`"srgb"`, `"display-p3"`, `"adobe-rgb"`,
+`"prophoto"`, `"rec2020"`; `frame.icc_profile` is the matching ICC profile), `output_profile` (convert
+to any RGB ICC profile; with `intent` and `black_point_compensation`). `flashraw.open` takes
+`max_samples` and `max_dimension` to tighten the limits for untrusted files. Names that differ from
+the other bindings: [docs/api-names.md](https://github.com/ybouane/flashraw/blob/main/docs/api-names.md).
 
 ```python
 from concurrent.futures import ThreadPoolExecutor

@@ -256,5 +256,5 @@ confined to dereferencing caller pointers, with a `SAFETY:` comment on each bloc
 - `crates/flashraw-capi/tests/examples.rs` compiles the C example against the static library
   and the C++ example against the shared library (`-Wall -Wextra -Werror -pedantic`), runs
   them, and compiles both headers in strict C99/C11 and C++17/C++20 modes.
-- CI (`c-api` job, Linux/macOS/Windows) builds and installs the library with CMake, builds the
+- The local CI (`c-api` step on Linux and macOS; the Windows job of the manual workflow is not run regularly) builds and installs the library with CMake, builds the
   examples with `find_package(flashraw)`, runs them, and checks that the header is up to date.

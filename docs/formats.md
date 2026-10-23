@@ -1,15 +1,28 @@
 # Supported formats
 
 Support is tracked per **format and mode** (bit depth, compression variant, size/crop
-mode), not per extension. A mode is `verified` when representative corpus files decode
-with full-buffer hashes pinned by the regression suite, their metadata (geometry, CFA,
-levels, white balance, colour matrix, orientation) has been checked, tests exist and
-corruption handling is in place. `partial` and `experimental` modes are implemented but
-lack that evidence; `unsupported` modes are detected and rejected with a clear error.
+mode), not per extension. Of the 2,016 files in the raw.pixls.us corpus, 1,980 decode
+(98.2%) and 1,965 of those have pinned output hashes. The other 36 are not corrupt files:
+they are valid files in formats that are not supported yet (28 Nikon High Efficiency NEF,
+Light L16, Casio CAM, JPEG-in-DNG and a few more, listed below).
+
+Status vocabulary (`flashraw supported` prints the same words):
+
+* `verified`: representative corpus files decode with full-buffer hashes pinned by the
+  regression suite, their metadata (geometry, CFA, levels, white balance, colour matrix,
+  orientation) has been checked, tests exist and corruption handling is in place.
+* `partial`: decodes a documented part of the mode (for example only the first frame of a
+  burst or pixel-shift file); the notes say what is missing.
+* `experimental`: implemented from the format structure with few or no sample files, so not
+  covered by pinned hashes.
+* `unsupported`: detected and rejected with a clear error.
+* `supported`: used for a feature rather than a codec mode (currently only DNG opcode
+  lists): implemented, applied by default, covered by tests and fuzzing, with no per-file
+  pinned hash.
 
 ## Coverage of the CC0 corpus
 
-2,016 files from raw.pixls.us (all makes and models available):
+2,016 files from raw.pixls.us (the CC0 corpus, every file the site offered when it was crawled):
 
 | Format | Files | Decoded |
 |---|---:|---:|
