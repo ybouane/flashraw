@@ -181,9 +181,9 @@ def kicker(s, x, y, size=13, fill=STONE):
     return text(s.upper(), x, y, size, fill, MONO, 500, track=0.12)[0]
 
 
-FACTS = [("01", "8–15× faster than the alternatives"),
+FACTS = [("01", "8.8–15× faster than LibRaw"),
          ("02", "Memory-safe Rust · WASM · GPU"),
-         ("03", "Every camera on raw.pixls.us")]
+         ("03", "~40 RAW formats · 1,600+ cameras")]
 TITLE = "FlashRaw: the fast, safe camera RAW decoder"
 
 
