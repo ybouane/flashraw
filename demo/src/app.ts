@@ -690,6 +690,7 @@ async function decodeAndShow(my: number, t0 = now()) {
     const mp = (fi.width * fi.height) / 1e6;
     setStatus(
       `${meta.camera.name} · decoded ${mp.toFixed(1)} MP in ${ms(ft.totalMs)} ms on the CPU (${BINARY_NAMES[fi.backend.binary] ?? fi.backend.binary})${note}` +
+        ` · on screen ${ms(timings!.firstPixelsMs ?? 0)} ms after opening` +
         (fi.incomplete ? ` · ${fi.warnings} warning(s): the file is truncated, missing samples are black` : ''),
     );
     renderPerf(build);

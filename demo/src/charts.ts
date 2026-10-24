@@ -290,12 +290,19 @@ function cameraTable(st: CamState) {
 
 // ----------------------------------------------------------------- per format
 
+// The most common formats first (what people shoot today), then the rest by number of files.
+const COMMON_FORMATS = ['CR3', 'CR2', 'NEF', 'ARW', 'RAF', 'DNG', 'RW2', 'ORF', 'PEF', 'SRW', 'RWL', '3FR', 'IIQ'];
+const formatRank = (format: string) => {
+  const i = COMMON_FORMATS.indexOf(format.toUpperCase());
+  return i < 0 ? COMMON_FORMATS.length : i;
+};
+
 function formatChart(root: HTMLElement, st: CamState) {
   const libs = ['flashraw', ...others(st.metric)];
   const rows = D.formats
     .map((f) => ({ f, v: f.ms[st.machine]?.[st.metric] }))
     .filter((r) => r.v?.flashraw != null)
-    .sort((a, b) => (b.v.libraw ?? 0) / b.v.flashraw! - (a.v.libraw ?? 0) / a.v.flashraw!);
+    .sort((a, b) => formatRank(a.f.format) - formatRank(b.f.format) || (b.f.files ?? 0) - (a.f.files ?? 0) || a.f.codec.localeCompare(b.f.codec));
   const shown = st.all ? rows : rows.slice(0, 18);
   const bars: BarRow[] = shown.map(({ f, v }) => {
     const label = `${f.format} · ${f.codec}`;
@@ -332,7 +339,7 @@ function formatTable(st: CamState) {
 const tableBox = () => h('details', { class: 'chart-table' }, h('summary', { text: 'Show the data as a table' }), h('div', { class: 'table-scroll', tabindex: '0' }));
 
 export function renderCharts(root: HTMLElement) {
-  const st: CamState = { machine: D.machines[D.machines.length - 1]?.id ?? 'macos', metric: 'decode', all: false };
+  const st: CamState = { machine: D.machines.find((m) => m.id === 'macos')?.id ?? D.machines[D.machines.length - 1]?.id ?? 'macos', metric: 'rgb', all: false };
   const fst: CamState = { ...st };
   root.textContent = '';
   root.dataset.state = 'ready';

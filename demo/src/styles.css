@@ -447,7 +447,7 @@ pre.code { margin: 0; padding: 16px 18px; overflow: auto; background: var(--bone
 .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; list-style: none; padding: 0; margin: 22px 0 8px; font-size: 0.95rem; color: var(--ink-2); }
 .legend li { display: inline-flex; align-items: center; gap: 8px; }
 .legend .key { width: 11px; height: 11px; flex: none; }
-.legend .key-ref { width: 0; height: 14px; border-left: 1.5px dashed var(--ink); background: none; }
+.legend .key-ref { width: 2px; height: 15px; background: repeating-linear-gradient(to bottom, var(--ink) 0 3px, transparent 3px 6px); }
 .legend .legend-note { color: var(--muted); font-family: var(--mono); font-size: 0.78rem; }
 .chart-svg { width: 100%; height: auto; overflow: visible; font-family: var(--serif); }
 .chart-svg text { fill: var(--ink-2); font-size: 14px; }
