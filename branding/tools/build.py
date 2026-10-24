@@ -188,24 +188,25 @@ TITLE = "FlashRaw: the fast, safe camera RAW decoder"
 
 
 def og_banner():
+    # Social previews are shown at 300-600 px wide: every line is set large enough to read there.
     W, H = 1200, 630
-    L = 72
-    PW = 400                                   # black panel width
-    R = W - PW - 64                            # right edge of the text column
-    lk, _, _ = lockup(INK, 46)
+    L = 64
+    PW = 300                                   # black panel width
+    R = W - PW - 48                            # right edge of the text column
+    lk, _, _ = lockup(INK, 60)
     b = [f'<rect width="{W}" height="{H}" fill="{PAPER}"/>',
-         f'<g transform="translate({L} 64)">{lk}</g>',
-         kicker("Open source · Rust · MIT / Apache-2.0", L, 200),
-         runs([("The fast, safe", False)], L - 3, 276, 70, INK, 420, 72, -0.012)[0],
-         runs([("camera ", False), ("RAW", True), (" decoder.", False)], L - 3, 350, 70, INK, 420, 72, -0.012)[0],
-         f'<path fill="{INK}" d="{rect(L, 404, R - L, 1)}"/>']
-    y = 452
+         f'<g transform="translate({L} 48)">{lk}</g>',
+         kicker("Open source · Rust · MIT / Apache-2.0", L, 176, 20),
+         runs([("The fast, safe", False)], L - 3, 270, 80, INK, 420, 72, -0.012)[0],
+         runs([("camera ", False), ("RAW", True), (" decoder.", False)], L - 3, 354, 80, INK, 420, 72, -0.012)[0],
+         f'<path fill="{INK}" d="{rect(L, 392, R - L, 2)}"/>']
+    y = 450
     for n, s in FACTS:
-        b.append(text(n, L, y, 14, STONE, MONO, 500)[0])
-        b.append(text(s, L + 42, y + 1, 25, INK, SERIF, 420, 18)[0])
-        y += 44
-    b.append(iris_panel(W - PW, 0, PW, H, 208, 208 / 8, clear=[(W - PW + 80, H - 76, W - 80, H - 30)]))
-    b.append(text("flashraw.ybouane.com", W - PW / 2, H - 46, 16, "#BDBDBD", MONO, 500, anchor="middle")[0])
+        b.append(text(n, L, y, 20, STONE, MONO, 500)[0])
+        b.append(text(s, L + 56, y + 1, 38, INK, SERIF, 420, 18)[0])
+        y += 58
+    b.append(iris_panel(W - PW, 0, PW, H, 156, 156 / 8, clear=[(W - PW + 24, H - 84, W - 24, H - 28)]))
+    b.append(text("flashraw.ybouane.com", W - PW / 2, H - 46, 21, "#E0E0E0", MONO, 600, anchor="middle")[0])
     return svg_doc(W, H, "".join(b), TITLE)
 
 
