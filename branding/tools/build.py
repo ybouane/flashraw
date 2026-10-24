@@ -188,23 +188,18 @@ TITLE = "FlashRaw: the fast, safe camera RAW decoder"
 
 
 def og_banner():
-    # Social previews are shown at 300-600 px wide: every line is set large enough to read there.
+    # Social previews are shown at 300-600 px wide: few elements, set large.
     W, H = 1200, 630
     L = 64
     PW = 300                                   # black panel width
     R = W - PW - 48                            # right edge of the text column
     lk, _, _ = lockup(INK, 60)
     b = [f'<rect width="{W}" height="{H}" fill="{PAPER}"/>',
-         f'<g transform="translate({L} 48)">{lk}</g>',
-         kicker("Open source · Rust · MIT / Apache-2.0", L, 176, 20),
-         runs([("The fast, safe", False)], L - 3, 270, 80, INK, 420, 72, -0.012)[0],
-         runs([("camera ", False), ("RAW", True), (" decoder.", False)], L - 3, 354, 80, INK, 420, 72, -0.012)[0],
-         f'<path fill="{INK}" d="{rect(L, 392, R - L, 2)}"/>']
-    y = 450
-    for n, s in FACTS:
-        b.append(text(n, L, y, 20, STONE, MONO, 500)[0])
-        b.append(text(s, L + 56, y + 1, 38, INK, SERIF, 420, 18)[0])
-        y += 58
+         f'<g transform="translate({L} 56)">{lk}</g>',
+         runs([("The fast, safe", False)], L - 3, 290, 80, INK, 420, 72, -0.012)[0],
+         runs([("camera ", False), ("RAW", True), (" decoder.", False)], L - 3, 376, 80, INK, 420, 72, -0.012)[0],
+         f'<path fill="{INK}" d="{rect(L, 438, R - L, 2)}"/>',
+         text(FACTS[0][1], L, 520, 48, INK, SERIF, 420, 18)[0]]
     b.append(iris_panel(W - PW, 0, PW, H, 156, 156 / 8, clear=[(W - PW + 24, H - 84, W - 24, H - 28)]))
     b.append(text("flashraw.ybouane.com", W - PW / 2, H - 46, 21, "#E0E0E0", MONO, 600, anchor="middle")[0])
     return svg_doc(W, H, "".join(b), TITLE)
