@@ -6,12 +6,16 @@ RAW file in the browser with the `flashraw` npm package (this repository's `npm/
 The page opens on the demo: a headline and a drop zone with "Choose a RAW file" and "Try a
 sample". What the demo does with a file (the file never leaves your device):
 
-1. `FlashRaw.open(file)`: metadata (camera, lens, exposure, size, CFA, levels, white
-   balance, colour matrices, orientation, compression, DNG fields, previews, vendor extras).
-2. `raw.preview()`: the largest embedded preview, decoded by the browser and shown at once.
-3. `raw.decode({ output: 'linear-rgb-f16', zeroCopy: true })`: the RAW decode, once, to
+1. `FlashRaw.open(file)`: parses the container (about a millisecond); the loader in the preview
+   area covers only the decode that follows.
+2. `raw.decode({ output: 'linear-rgb-f16', zeroCopy: true })`: the RAW decode, once, to
    linear light. The half floats go straight from WASM memory into an `RGB16F` WebGL2
-   texture (plus a half-float mip pyramid for zoomed-out views).
+   texture (plus a half-float mip pyramid for zoomed-out views). The image is shown, and the
+   loader removed, as soon as this is done.
+3. Then, with the image already on screen: the metadata (camera, lens, exposure, size, CFA,
+   levels, white balance, colour matrices, orientation, compression, DNG fields, previews,
+   vendor extras) and `raw.preview()`, the largest embedded preview, decoded by the browser (it
+   feeds "Auto" exposure and the preview/RAW compare; if the decode fails it is shown instead).
 4. Adjustments (exposure, contrast, highlights, shadows, temperature, tint, vibrance,
    saturation, tone curve), sRGB encoding and the histogram run in a fragment shader: a slider
    move is one draw call. All sliders at 0 mean the default "Film" look, calibrated against

@@ -526,7 +526,7 @@ export async function openFile(file: File) {
   setDownloadLabels(null);
   ui.fileLabel.textContent = file.name;
   ui.dims.textContent = '';
-  overlay('Reading metadata…');
+  overlay('Decoding…');
 
   try {
     const to = now();
@@ -540,16 +540,23 @@ export async function openFile(file: File) {
     const metaMs = now() - tm;
     timings = { openMs, parseMs: r.parseMs, metaMs, preview: null };
     baseline = meta.dng?.baselineExposure != null ? meta.dng.baselineExposure + (meta.dng.profile?.baselineExposureOffset ?? 0) : LOOK.cameraEV;
+    ui.stage.setAttribute('aria-label', `${meta.camera.name} RAW image, ${meta.width} × ${meta.height}`);
+    setStatus(`${meta.camera.name} · ${meta.format} · metadata in ${ms(r.parseMs)} ms`);
+
+    // 1. the RAW decode first: the loader in the preview area covers only this, and the image is
+    //    shown (and the loader removed) as soon as it is done
+    await decodeAndShow(my, t0);
+    if (my !== token) return;
+
+    // 2. then the rest, with the image already on screen: metadata, the previews table, and the
+    //    embedded preview (decoded by the browser; it also feeds "Auto" exposure and the compare view)
+    await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
+    if (my !== token) return;
     renderMetadata(ui.metaGrid, meta, info, file);
     ui.metaJson.textContent = JSON.stringify(meta, null, 2);
     renderPreviewsTable(r.previews);
-    ui.stage.setAttribute('aria-label', `${meta.camera.name} RAW image, ${meta.width} × ${meta.height}`);
-    setStatus(`${meta.camera.name} · ${meta.format} · metadata in ${ms(r.parseMs)} ms`);
     renderPerf(build);
-
-    // 1. instant: the embedded preview, decoded by the browser
     if (r.previews.length) {
-      overlay('Extracting the embedded preview…');
       try {
         timings.preview = await loadPreview(r);
       } catch (e) {
@@ -562,15 +569,17 @@ export async function openFile(file: File) {
         ui.hist.dataset.previewMean = previewMean.toFixed(2);
         ui.srcPreview.disabled = false;
         ui.dlPreview.disabled = false;
-        if (!hasRaw) setSource('preview');
+        if (hasRaw) ui.autoAdjust.disabled = false;
+        else {
+          // the decode failed: show the embedded preview instead
+          setSource('preview');
+          ui.status.textContent += ' Showing the embedded preview instead.';
+        }
       } else if (timings.preview) {
         ui.dlPreview.disabled = false;
       }
       renderPerf(build);
     }
-
-    // 2. the RAW decode
-    await decodeAndShow(my, t0);
   } catch (e) {
     if (my !== token) return;
     overlay(null);
@@ -698,7 +707,7 @@ async function decodeAndShow(my: number, t0 = now()) {
     if (my !== token) return;
     overlay(null);
     const msg = friendly(e);
-    setStatus(timings?.preview?.bitmap ? `${msg} Showing the embedded preview instead.` : msg, true);
+    setStatus(msg, true);
     renderPerf(build);
     console.error(e);
   } finally {
