@@ -534,7 +534,20 @@ flashraw_file_free(f);</code></pre><button class="copy-btn" type="button" data-c
   </div>
 </footer>
 
-<script>window.YbouanePeeking = { poster: "Like FlashRaw?\nI'm @ybouane", theme: 'light', introDelayMs: 12000 };</script>
-<script src="https://peeking.ybouane.com/peeking-widget.js" async crossorigin="anonymous"></script>
+<script>
+window.YbouanePeeking = { poster: "Like FlashRaw?\nI'm @ybouane", theme: 'light', introDelayMs: 15000 };
+// The widget is added once the page has loaded, so its first peek comes 15 s after `load`.
+(function () {
+  function add() {
+    var s = document.createElement('script');
+    s.src = 'https://peeking.ybouane.com/peeking-widget.js';
+    s.crossOrigin = 'anonymous';
+    s.async = true;
+    document.body.appendChild(s);
+  }
+  if (document.readyState === 'complete') add();
+  else window.addEventListener('load', add, { once: true });
+})();
+</script>
 </body>
 </html>

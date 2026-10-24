@@ -218,5 +218,5 @@ Screenshots go to `test-results/` (`OUT=<dir>` to change). `DEMO_WEBKIT=<path>` 
 ## Peeking widget
 
 Added before `</body>` as its guide (<https://peeking.ybouane.com/readme.md>) describes, with
-`introDelayMs: 12000` (first peek after 12 s) and `crossorigin="anonymous"` on the script so it
+`introDelayMs: 15000` (first peek 15 s after the page has loaded: the script is added on `load`) and `crossorigin="anonymous"` on the script so it
 loads under `require-corp`. It is a page-level singleton; nothing else to configure.
