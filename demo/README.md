@@ -169,6 +169,12 @@ Ready-made configs:
 
   (nginx drops inherited `add_header`s inside a `location` that has its own, hence the
   repetition.)
+  Brotli without an nginx module: compress `dist/assets/*.{wasm,js,css,svg}` at quality 11 (Node's
+  `zlib.brotliCompressSync`) to `<file>.br` before publishing, and serve the `.br` file with
+  `Content-Encoding: br` to clients whose `Accept-Encoding` contains `br` (a `map` on the header
+  plus a `rewrite ... break` in an `if`, `gzip off` in that branch, `default_type` set per
+  extension, `Vary: Accept-Encoding`). The threaded WASM goes from about 950 KB (a CDN's fast
+  brotli) to 745 KiB.
 - **Apache**: `Header always set Cross-Origin-Opener-Policy "same-origin"` and
   `Header always set Cross-Origin-Embedder-Policy "require-corp"` (mod_headers);
   `AddType application/wasm .wasm`.
