@@ -60,7 +60,6 @@ demo/
   public/                 robots.txt, sitemap.xml, site.webmanifest, _headers
   public/showcase/        LightFlow and ImageFlow logos ("Used in production by")
   public/samples/         the "Try a sample" file (see below)
-  vercel.json             Vercel config (headers)
   scripts/serve.mjs       static server for dist/ with the production headers
   tests/e2e.mjs           Playwright end-to-end test     tests/modes.mjs   hosting/engine modes
   tests/responsive.mjs    no horizontal overflow at phone/tablet widths, every state
@@ -86,8 +85,8 @@ red, green and blue appear only where they mean colour channels (histogram, CFA,
 <https://raw.pixls.us/data/Canon/Canon%20EOS%20R5m2/APS-C_CRAW.CR3>. It is downloaded in the
 background right after the first paint (not on 2g/3g connections or with Save-Data; then it is
 fetched when the visitor hovers, focuses or touches "Try a sample", or clicks it). It is served with
-`Cache-Control: public, max-age=86400, stale-while-revalidate=604800` (`public/_headers`,
-`vercel.json`): the file name is stable, so it is not `immutable`.
+`Cache-Control: public, max-age=86400, stale-while-revalidate=604800` (`public/_headers`, and the
+nginx config of the live site): the file name is stable, so it is not `immutable`.
 
 ## Develop and build
 
@@ -142,7 +141,6 @@ Ready-made configs:
 - **Netlify, Cloudflare Pages**: `public/_headers` (copied to `dist/_headers`). Build command
   `npm run build`, output directory `dist` (base directory `demo`; the build needs `../npm/dist`
   and `../branding`, so build the npm package first or deploy a prebuilt `dist/`).
-- **Vercel**: `vercel.json` (project root `demo`).
 - **nginx**:
 
   ```nginx
