@@ -25,9 +25,8 @@ few more). For those, metadata and embedded previews still work.
 
 ## Install
 
-Nothing is published yet (the GitHub repository, crates.io, PyPI and npm names all return 404 at the time
-of writing), so the commands below do not work until the first release. Until then build from a checkout
-(`git clone` the repository, then `cargo build --release`; see [docs/building.md](docs/building.md)).
+Version 0.1.0 is published on crates.io (`flashraw`, `flashraw-cli`), PyPI (`flashraw`) and npm (`flashraw`).
+The C library is built from source (`cargo build --release -p flashraw-capi`, see [docs/building.md](docs/building.md)).
 All packages and their status: [docs/packages.md](docs/packages.md).
 
 | Language | After release | From a checkout |
@@ -338,7 +337,7 @@ commands were run on a Canon EOS 40D CR2 from the CC0 corpus on Linux x86-64: th
 documented types and sizes, errors and limits fire as described. The Python and C runs used libraries
 built earlier from this tree (the Python extension without a wheel build); the JavaScript run used the built
 `npm/dist`. Not run: GPU (no adapter on the test machine), browsers, Windows, macOS, the `pip`, `npm` and
-`cargo` install lines (nothing is published), cross-origin-isolation behaviour in a browser.
+`cargo` install lines (checked only after publishing, for pip and npm), cross-origin-isolation behaviour in a browser.
 
 ## Working on this repository
 
