@@ -2,11 +2,9 @@
 
 Everything FlashRaw distributes, what is in it and who needs it.
 
-**Status of every package: unreleased.** At the time of writing nothing is published:
-the GitHub repository, crates.io, PyPI and npm names below all return 404, and the install
-commands do not work yet. Until the first release, build from a checkout ([building](building.md)).
-Every version is `0.1.0` (the workspace version in [Cargo.toml](../Cargo.toml); the CHANGELOG entry is
-"unreleased"). The release procedure is in [releasing.md](releasing.md).
+**Status: version 0.1.0 of the crates, the npm package and the Python package is published**
+(2026-10-25). The C library and the LibRaw-compatible shim are built from source.
+Every version is `0.1.0` (the workspace version in [Cargo.toml](../Cargo.toml)). The release procedure is in [releasing.md](releasing.md).
 
 If you are not sure what to install:
 
@@ -22,13 +20,13 @@ If you are not sure what to install:
 
 | Package | Registry name | Version | Status | Install | Documentation |
 |---|---|---|---|---|---|
-| Rust library | crates.io `flashraw` | 0.1.0 | unreleased (404) | `cargo add flashraw` | [crate docs](https://docs.rs/flashraw), [README](../README.md#-quick-start) |
-| Command-line tool | crates.io `flashraw-cli` (binary `flashraw`) | 0.1.0 | unreleased (404) | `cargo install flashraw-cli` | [README CLI section](../README.md#-cli) |
-| npm package | npm `flashraw` | 0.1.0 | unreleased (404) | `npm install flashraw` | [npm/README.md](../npm/README.md), [wasm.md](wasm.md) |
-| Python package | PyPI `flashraw` | 0.1.0 | unreleased (404) | `pip install flashraw` | [python.md](python.md), [crate README](../crates/flashraw-python/README.md) |
-| C library + headers | GitHub release assets (planned), source build | 0.1.0 | unreleased | `cargo build --release -p flashraw-capi` or CMake | [c-api.md](c-api.md) |
+| Rust library | crates.io `flashraw` | 0.1.0 | published | `cargo add flashraw` | [crate docs](https://docs.rs/flashraw), [README](../README.md#-quick-start) |
+| Command-line tool | crates.io `flashraw-cli` (binary `flashraw`) | 0.1.0 | published | `cargo install flashraw-cli` | [README CLI section](../README.md#-cli) |
+| npm package | npm `flashraw` | 0.1.0 | published | `npm install flashraw` | [npm/README.md](../npm/README.md), [wasm.md](wasm.md) |
+| Python package | PyPI `flashraw` | 0.1.0 | published | `pip install flashraw` | [python.md](python.md), [crate README](../crates/flashraw-python/README.md) |
+| C library + headers | GitHub release assets (planned), source build | 0.1.0 | source build | `cargo build --release -p flashraw-capi` or CMake | [c-api.md](c-api.md) |
 | LibRaw-compatible shim | none (not published) | 0.1.0 | build from source | `cargo build --release -p flashraw-libraw-compat` | [libraw-compat.md](libraw-compat.md) |
-| Internal crates | crates.io `flashraw-core`, `-codecs`, `-formats`, `-camera-db`, `-gpu` | 0.1.0 | unreleased (404) | pulled in by `flashraw` | below |
+| Internal crates | crates.io `flashraw-core`, `-codecs`, `-formats`, `-camera-db`, `-gpu` | 0.1.0 | published | pulled in by `flashraw` | below |
 | Demo site | not a package | - | deployed separately | open <https://flashraw.ybouane.com> | `demo/README.md` |
 
 All packages are licensed MIT OR Apache-2.0 and ship `LICENSE-MIT` and `LICENSE-APACHE`.

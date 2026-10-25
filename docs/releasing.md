@@ -1,7 +1,7 @@
 # Releasing
 
-A checklist for a release of all packages ([packages.md](packages.md)). Nothing has been released yet;
-the first release is `0.1.0`. There are no automatic GitHub workflows: everything below is run by hand, after
+A checklist for a release of all packages ([packages.md](packages.md)). The first release, `0.1.0`, was published on 2026-10-25
+(crates.io, PyPI and npm by hand). There are no automatic GitHub workflows: everything below is run by hand, after
 the local CI ([testing.md](testing.md), `tools/ci/local.sh --full` on Linux and `tools/ci/mac.sh --full`).
 
 ## Before tagging
@@ -44,5 +44,5 @@ the local CI ([testing.md](testing.md), `tools/ci/local.sh --full` on Linux and 
 
 ## After
 
-* Replace "unreleased" in `docs/packages.md` and the install notes; add badges (crates.io, docs.rs, npm, PyPI).
+* Update the status in `docs/packages.md` and the install notes; add badges (crates.io, docs.rs, npm, PyPI).
 * Open the next `CHANGELOG.md` section.

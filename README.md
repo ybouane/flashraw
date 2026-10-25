@@ -13,6 +13,10 @@ Rust core · C, C++, Python and JavaScript bindings · SIMD, all cores and the G
 Pre-release: nothing is published yet. See [docs/packages.md](docs/packages.md) for every package, its
 status and install command.
 
+[![crates.io](https://img.shields.io/crates/v/flashraw.svg)](https://crates.io/crates/flashraw)
+[![docs.rs](https://img.shields.io/docsrs/flashraw)](https://docs.rs/flashraw)
+[![npm](https://img.shields.io/npm/v/flashraw.svg)](https://www.npmjs.com/package/flashraw)
+[![PyPI](https://img.shields.io/pypi/v/flashraw.svg)](https://pypi.org/project/flashraw/)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#-license)
 [![MSRV 1.85](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](#api-stability)
 
