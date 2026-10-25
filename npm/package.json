@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "description": "Fast, safe camera RAW decoding (DNG, CR2, CR3, NEF, ARW, RAF, ...) for browsers and Node.js via WebAssembly",
   "license": "MIT OR Apache-2.0",
-  "author": "Yassine Bouanane",
+  "author": { "name": "Yassine Bouanane", "url": "https://x.com/ybouane" },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ybouane/flashraw.git",
     "directory": "npm"
   },
-  "homepage": "https://github.com/ybouane/flashraw/tree/main/npm#readme",
+  "homepage": "https://flashraw.ybouane.com",
+  "bugs": { "url": "https://github.com/ybouane/flashraw/issues" },
   "keywords": [
     "raw",
     "dng",

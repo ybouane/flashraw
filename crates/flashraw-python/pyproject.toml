@@ -32,10 +32,15 @@ pil = ["pillow>=8"]
 test = ["pytest>=7", "pillow>=8"]
 
 [project.urls]
-Homepage = "https://github.com/ybouane/flashraw"
+Homepage = "https://flashraw.ybouane.com"
+Website = "https://flashraw.ybouane.com"
+Demo = "https://flashraw.ybouane.com"
+Repository = "https://github.com/ybouane/flashraw"
 Documentation = "https://github.com/ybouane/flashraw/blob/main/docs/python.md"
 Source = "https://github.com/ybouane/flashraw"
 Changelog = "https://github.com/ybouane/flashraw/blob/main/CHANGELOG.md"
+Issues = "https://github.com/ybouane/flashraw/issues"
+"Author on X" = "https://x.com/ybouane"
 
 [tool.maturin]
 # Mixed project: the public API is pure Python (python/flashraw), the decoder is the

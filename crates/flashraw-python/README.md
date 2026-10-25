@@ -1,5 +1,13 @@
 # flashraw
 
+<!-- flashraw-intro -->
+<p align="center"><a href="https://flashraw.ybouane.com"><img src="https://raw.githubusercontent.com/ybouane/flashraw/main/branding/readme-banner.png" alt="FlashRaw: the fast, safe camera RAW decoder" width="100%"></a></p>
+
+**[FlashRaw](https://flashraw.ybouane.com)** is a fast, memory-safe camera RAW decoder written in Rust, with Rust, C, C++, Python and JavaScript (WebAssembly) bindings. It decodes about 40 RAW formats (CR2, CR3, NEF, ARW, RAF, DNG, RW2, ORF, PEF and more) with SIMD kernels, multithreading and an optional GPU backend, converts to display-ready RGB with ICC colour management, and runs in the browser.
+
+**Official website and live demo: [flashraw.ybouane.com](https://flashraw.ybouane.com)** (it decodes your file locally in the browser) · [Source on GitHub](https://github.com/ybouane/flashraw) · Follow [@ybouane on X](https://x.com/ybouane)
+<!-- /flashraw-intro -->
+
 Fast, safe camera RAW decoding for Python, with zero-copy NumPy output.
 
 `flashraw` reads RAW files from most cameras (1,980 of the 2,016 files of the raw.pixls.us corpus; the rest are formats not supported yet, see docs/formats.md) — DNG, CR2, CR3, CRW, NEF/NRW,
@@ -95,3 +103,12 @@ FlashRaw is also available as a Rust crate, a command-line tool and an npm packa
 ## License
 
 MIT OR Apache-2.0.
+
+<!-- flashraw-outro -->
+## Built with FlashRaw
+
+- **[LightFlow](https://lightflow.dev)**: professional photo correction and colour grading, running locally in your browser with WebGPU.
+- **[ImageFlow](https://imageflow.dev)**: a Photoshop-class image editor in your browser.
+
+Official website: **[flashraw.ybouane.com](https://flashraw.ybouane.com)** · Created by [@ybouane](https://x.com/ybouane) · Licence: MIT OR Apache-2.0
+<!-- /flashraw-outro -->
