@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 — 2026-10-25
+
+Package pages only; no code changes.
+
+- READMEs of every crate, the npm package and the Python package: banner, a short description of FlashRaw,
+  the official website (flashraw.ybouane.com), the example projects LightFlow and ImageFlow, and the author's X account.
+- Registry metadata: homepage and project links point to the website (npm, PyPI).
+
 ## 0.1.0 — 2026-10-25
 
 First complete release of FlashRaw.

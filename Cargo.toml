@@ -24,7 +24,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -33,12 +33,12 @@ homepage = "https://flashraw.ybouane.com"
 authors = ["Yassine Bouanane"]
 
 [workspace.dependencies]
-flashraw = { path = "crates/flashraw", version = "0.1.0", default-features = false }
-flashraw-core = { path = "crates/flashraw-core", version = "0.1.0" }
-flashraw-codecs = { path = "crates/flashraw-codecs", version = "0.1.0" }
-flashraw-formats = { path = "crates/flashraw-formats", version = "0.1.0" }
-flashraw-camera-db = { path = "crates/flashraw-camera-db", version = "0.1.0" }
-flashraw-gpu = { path = "crates/flashraw-gpu", version = "0.1.0" }
+flashraw = { path = "crates/flashraw", version = "0.1.1", default-features = false }
+flashraw-core = { path = "crates/flashraw-core", version = "0.1.1" }
+flashraw-codecs = { path = "crates/flashraw-codecs", version = "0.1.1" }
+flashraw-formats = { path = "crates/flashraw-formats", version = "0.1.1" }
+flashraw-camera-db = { path = "crates/flashraw-camera-db", version = "0.1.1" }
+flashraw-gpu = { path = "crates/flashraw-gpu", version = "0.1.1" }
 rayon = "1.12"
 memmap2 = "0.9"
 thiserror = "2"

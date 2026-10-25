@@ -448,7 +448,7 @@ checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "flashraw"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "criterion",
  "flashraw-camera-db",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-camera-db"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-capi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flashraw",
  "memmap2",
@@ -482,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "flashraw",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-codecs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flashraw-core",
  "jxl-oxide",
@@ -508,7 +508,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "proptest",
@@ -519,7 +519,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-formats"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flashraw-camera-db",
  "flashraw-codecs",
@@ -529,7 +529,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-gpu"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytemuck",
  "flashraw",
@@ -542,7 +542,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-libraw-compat"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flashraw",
  "libc",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flashraw",
  "memmap2",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flashraw",
  "js-sys",

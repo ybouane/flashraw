@@ -1,6 +1,6 @@
 {
   "name": "flashraw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fast, safe camera RAW decoding (DNG, CR2, CR3, NEF, ARW, RAF, ...) for browsers and Node.js via WebAssembly",
   "license": "MIT OR Apache-2.0",
   "author": { "name": "Yassine Bouanane", "url": "https://x.com/ybouane" },
