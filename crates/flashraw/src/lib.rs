@@ -2,8 +2,8 @@
 //!
 //! Fast, safe camera RAW decoding: DNG, CR2, CR3, NEF, ARW, RAF, RW2, ORF, PEF, X3F and more
 //! (`flashraw supported` lists every format and the status of each compression mode). Of the 2,016
-//! files in the raw.pixls.us corpus, 1,980 decode (98.2%); the other 36 are valid files in formats
-//! that are not supported yet (28 Nikon High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG).
+//! files in the raw.pixls.us corpus, 2,008 decode (99.6%); the other 8 are valid files in formats
+//! that are not supported yet (Light L16, Casio CAM, JPEG-in-DNG).
 //!
 //! The crate parses the container with bounds-checked readers, reports metadata and embedded
 //! previews without touching the sensor data, and decodes the sensor data in parallel into

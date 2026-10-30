@@ -11,11 +11,33 @@ NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_12bit_uncompressed.NEF	b0cfd8d747f722a2	
 NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_14bit.NEF	efd58fe8bd34d61e	NEF	nikon-huffman
 NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_14bit_uncompressed.NEF	67a2e88df1ca2bd0	NEF	uncompressed
 NIKON CORPORATION/NIKON Z50_2/DSC_0060_DX_Lossless.NEF	b8966b21ac27ad07	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z50_2/DSC_0061_DX_HE_Star.NEF	c350af4ef3305e17	NEF	nikon-he
+NIKON CORPORATION/NIKON Z50_2/DSC_0062_DX_HE.NEF	827c5770ff253e86	NEF	nikon-he
 NIKON CORPORATION/NIKON Z50_2/DSC_0063_1x1_Lossless.NEF	25104e1dd77c010f	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z50_2/DSC_0064_1x1_HE_Star.NEF	b3258fa9ff36ecfc	NEF	nikon-he
+NIKON CORPORATION/NIKON Z50_2/DSC_0065_1x1_HE.NEF	17b4466979e57a79	NEF	nikon-he
 NIKON CORPORATION/NIKON Z50_2/DSC_0066_16x9_Lossless.NEF	3a52768a1cab50dd	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z50_2/DSC_0067_16x9_HE_Star.NEF	9901f8f504a0ad1f	NEF	nikon-he
+NIKON CORPORATION/NIKON Z50_2/DSC_0068_16x9_HE.NEF	d341652e3c8bba4d	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_1-1.NEF	1f6cb0af585998c0	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_16-9.NEF	ae3c1c11e8c219f5	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_DX.NEF	5934e2cfa10ec6c7	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_FX_1.NEF	d644861feb0e1b32	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_Star_1-1.NEF	5eefc1d137ae37ee	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_Star_16-9.NEF	79384b3bc651af60	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_Star_DX.NEF	3573c8a2f47f52b5	NEF	nikon-he
+NIKON CORPORATION/NIKON Z5_2/High_Efficiency_Star_FX_1.NEF	ae93afe788638f80	NEF	nikon-he
 NIKON CORPORATION/NIKON Z5_2/Lossless_compression_1-1.NEF	ec01146a2b7acfe5	NEF	nikon-huffman
 NIKON CORPORATION/NIKON Z5_2/Lossless_compression_DX.NEF	984858a84c0a68ee	NEF	nikon-huffman
 NIKON CORPORATION/NIKON Z5_2/Lossless_compression_FX_1.NEF	777225f7e0104027	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_16_9.NEF	5f0e2164f1842302	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_1_1.NEF	3fd8a91670145653	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_DX.NEF	8fc5ff80c46d7eb4	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_FX.NEF	0d17923e7bddebb5	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_Star_16_9.NEF	0ffa2544dafa9237	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_Star_1_1.NEF	a4eebcac44af3d1e	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_Star_DX.NEF	30416b70611a5c6d	NEF	nikon-he
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_High_Efficiency_Star_FX.NEF	b2894fbc36a23e49	NEF	nikon-he
 NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_16_9.NEF	901c37c25cdac6c5	NEF	nikon-huffman
 NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_1_1.NEF	b592c20acc4b86d4	NEF	nikon-huffman
 NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_DX.NEF	70099d60941a628a	NEF	nikon-huffman
@@ -255,8 +277,14 @@ Nikon/Z 7_2/Z72_0029.NEF	8d5a790bddc35dc8	NEF	nikon-huffman
 Nikon/Z 7_2/Z72_0030.NEF	0f22f135022854bd	NEF	nikon-huffman
 Nikon/Z 7_2/Z72_0031.NEF	2abee5e322660431	NEF	uncompressed
 Nikon/Z 7_2/Z72_0032.NEF	4024eb5ca566704b	NEF	uncompressed
+Nikon/Z 8/Nikon_Z8_high_efficiency_low.NEF	5fb1095b3271f93e	NEF	nikon-he
 Nikon/Z 8/Nikon_Z8_raw_14_bit_lossless_compression.NEF	716e1158bab28b76	NEF	nikon-huffman
+Nikon/Z 8/Nikon_Z8_raw_high_efficiency_hight.NEF	7624ff2fa0702484	NEF	nikon-he
 Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF	7be180fdf125bc18	NEF	nikon-huffman
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF	8bf222f53a5c024c	NEF	nikon-he
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency_Star).NEF	fa90c9e030b17cbf	NEF	nikon-he
 Nikon/Z f/DSC_0040.NEF	af0c0b9b1993c467	NEF	nikon-huffman
+Nikon/Z f/DSC_0042.NEF	d15601868e6e9800	NEF	nikon-he
+Nikon/Z f/DSC_0043.NEF	2dcad6ffcdea95c6	NEF	nikon-he
 Nikon/Z fc/_DSC0018.nef	a65e5bf469373625	NEF	nikon-huffman
 Nikon/Z fc/_DSC0070.nef	625b9ae15f51a38e	NEF	nikon-huffman

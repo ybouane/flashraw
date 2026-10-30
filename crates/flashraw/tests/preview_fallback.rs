@@ -2,8 +2,9 @@
 //! `UnsupportedCompression` by default; with the option, RGB outputs return the embedded
 //! full-size preview, marked `FrameSource::Preview` with a `PreviewFallback` warning.
 //!
-//! A synthetic Nikon High Efficiency NEF (JPEG XS payload, full-size RGB preview in IFD0)
-//! covers the rules; the corpus High Efficiency files are checked when present.
+//! A synthetic Nikon High Efficiency NEF (JPEG XS payload that does not decode, full-size
+//! RGB preview in IFD0) covers the rules; the corpus High Efficiency files, which do decode,
+//! are checked when present never to take the preview.
 
 use flashraw::{CorruptReason, DecodeOptions, Error, FlashRaw, FrameSource, Orientation, OutputFormat, RawPixelData};
 
@@ -236,10 +237,11 @@ fn nefs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-/// Every corpus High Efficiency NEF: an error by default, the full-size preview with the
+/// Every corpus High Efficiency NEF decodes its sensor data: no error, no warning, and an
+/// RGB output made from the sensor, not from the embedded preview, with or without the
 /// option.
 #[test]
-fn corpus_high_efficiency_nefs() {
+fn corpus_high_efficiency_nefs_decode_the_sensor() {
     let Some(corpus) = corpus() else {
         eprintln!("corpus not present; skipping");
         return;
@@ -255,20 +257,14 @@ fn corpus_high_efficiency_nefs() {
             continue;
         }
         let f = path.display();
-        let e = raw.decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() }).unwrap_err();
-        assert!(matches!(e, Error::UnsupportedCompression { .. }), "{f}: {e}");
-        let fr = raw.decode(fallback(OutputFormat::Rgba8)).unwrap_or_else(|e| panic!("{f}: {e}"));
-        assert_eq!(fr.source, FrameSource::Preview, "{f}");
-        let crop = raw.frame_info().crop;
-        let (lo, hi) = (fr.width.min(fr.height) as f64, fr.width.max(fr.height) as f64);
-        let (clo, chi) = (crop.width.min(crop.height) as f64, crop.width.max(crop.height) as f64);
-        assert!(lo >= clo * 0.9 && hi >= chi * 0.9, "{f}: {}x{} vs crop {crop}", fr.width, fr.height);
-        // A real picture, not a blank frame.
-        let px = fr.as_u8().unwrap();
-        let mean = px.iter().step_by(4 * 97).map(|&v| v as f64).sum::<f64>() / (px.len() / (4 * 97)) as f64;
-        assert!(mean > 5.0 && mean < 250.0, "{f}: mean {mean}");
+        for preview_fallback in [false, true] {
+            let options = DecodeOptions { preview_fallback, ..fallback(OutputFormat::Rgba8) };
+            let fr = raw.decode(options).unwrap_or_else(|e| panic!("{f}: {e}"));
+            assert_eq!(fr.source, FrameSource::Sensor, "{f}");
+            assert!(fr.warnings().is_empty(), "{f}: {:?}", fr.warnings());
+        }
         checked += 1;
     }
     // A partial corpus (e.g. a sample copied to another machine) may have none.
-    eprintln!("high efficiency fallback: {checked} files");
+    eprintln!("high efficiency decoded: {checked} files");
 }

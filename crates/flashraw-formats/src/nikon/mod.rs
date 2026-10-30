@@ -15,7 +15,7 @@
 //! | 14-bit LSB, rows padded to 16 bytes | Z / D6 uncompressed 14-bit | [`packed`] |
 //! | 12-bit LSB, rows padded to 16 bytes | Z / D6 uncompressed 12-bit | [`packed`] |
 //! | small/medium sNEF (YCbCr 4:2:2, 12-bit) | `w*h*3` bytes | YCbCr → RGB (3 samples/pixel) |
-//! | high efficiency (TicoRAW / JPEG XS) | JPEG XS SOC marker at the payload start | unsupported |
+//! | high efficiency (TicoRAW / JPEG XS) | JPEG XS SOC marker at the payload start | [`nikon_he`] |
 //!
 //! Geometry, black and white levels follow per-camera conventions (camera-specific
 //! visible-area trims, makernote black in 14-bit units scaled to 12-bit files).
@@ -26,6 +26,7 @@ mod makernote;
 
 use crate::common::*;
 use conventions::{select_raw_ifd, wb_from_cam_mul};
+use flashraw_codecs::nikon_he;
 use flashraw_codecs::nikon_huffman::{self, NikonMeta};
 use flashraw_codecs::nikon_packed::{self, PackedSpec};
 use flashraw_codecs::packed::{self, PackedLayout};
@@ -57,7 +58,7 @@ enum Payload {
     Ycbcr,
     /// Nikon Scan (Coolscan) RGB or grey TIFF data.
     Coolscan { samples: u32, bits: u32, order: ByteOrder },
-    /// "High efficiency" TicoRAW (JPEG XS based); not decodable.
+    /// "High efficiency" TicoRAW (JPEG XS based), decoded by [`nikon_he`].
     HighEfficiency,
 }
 
@@ -550,12 +551,6 @@ impl<'a> NefRaw<'a> {
     fn decode(&self, ctx: &DecodeContext) -> Result<RawImage> {
         let (w, h) = (self.width, self.height);
         match &self.payload {
-            Payload::HighEfficiency => {
-                return Err(Error::unsupported_compression(
-                    "NEF",
-                    "Nikon high-efficiency (TicoRAW / JPEG XS) is a proprietary codec",
-                ));
-            }
             Payload::Ycbcr => return ctx.profiler.time(Stage::EntropyDecode, || self.decode_ycbcr(ctx)),
             Payload::Coolscan { samples, bits, order } => {
                 return ctx.profiler.time(Stage::Unpack, || self.decode_coolscan(ctx, *samples, *bits, *order));
@@ -566,6 +561,9 @@ impl<'a> NefRaw<'a> {
         let out = img.u16_mut();
         let unit = DataUnit::Strip(0);
         match &self.payload {
+            Payload::HighEfficiency => {
+                ctx.profiler.time(Stage::EntropyDecode, || nikon_he::decode(self.src, out, w, h, w, ctx.parallel))?;
+            }
             Payload::Huffman { meta, rows } => {
                 let rows = (*rows).min(h);
                 let dead_row = ctx
@@ -613,7 +611,7 @@ impl<'a> NefRaw<'a> {
                 ctx.profiler
                     .time(Stage::Unpack, || packed::unpack(src, layout, out, w, ctx.parallel, ctx.simd, ctx.recover))?;
             }
-            Payload::HighEfficiency | Payload::Ycbcr | Payload::Coolscan { .. } => unreachable!("handled above"),
+            Payload::Ycbcr | Payload::Coolscan { .. } => unreachable!("handled above"),
         }
         Ok(img)
     }
@@ -818,10 +816,9 @@ mod tests {
             mutate(&data, i as u64 * 7919 + 1);
             tested += 1;
         }
-        // High-efficiency files are recognised but rejected with a clear error.
+        // High-efficiency files decode cleanly.
         if let Some(d) = corpus_file("NIKON CORPORATION/NIKON Z50_2/DSC_0062_DX_HE.NEF") {
-            let e = open_decode(&d).unwrap_err();
-            assert_eq!(e.kind(), "UnsupportedCompression");
+            open_decode(&d).unwrap_or_else(|e| panic!("Z50_2 HE: {e}"));
         }
         eprintln!("nikon robustness: {tested} samples");
     }

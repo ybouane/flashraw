@@ -7,7 +7,7 @@ body:
       value: |
         Check `flashraw supported` first: it lists every format and the status of each mode
         (`verified`, `partial`, `experimental`, `unsupported`). Some modes are known gaps, for example
-        Nikon High Efficiency NEF (see docs/formats.md).
+        Light L16 `.lri` files (see docs/formats.md).
   - type: input
     id: make
     attributes:

@@ -187,7 +187,7 @@ A `Frame` carries everything needed to interpret the pixels:
 | `black_level`, `white_level`, `white_balance`, `white_balance_applied`, `color_matrices`, `orientation` | calibration for this frame (`orientation` is 1 for `rgba8` and `rgb16`, which have it applied) |
 | `warnings`, `incomplete` | repairs made under `corruption_policy="recover"` (and the `preview-fallback` substitution) |
 | `color_space`, `icc_profile` | colour space of the RGB samples (`"custom"` after `output_profile`) and the ICC profile describing them (`None` for raw outputs and preview frames) |
-| `source` | `"sensor"`, or `"preview"` when `preview_fallback=True` returned the embedded preview of undecodable sensor data (Nikon High Efficiency NEF) |
+| `source` | `"sensor"`, or `"preview"` when `preview_fallback=True` returned the embedded preview of undecodable sensor data (a compression mode FlashRaw does not implement) |
 | `stats` | `total_ms`, per-stage `stages`, `backend` (`decode`, `simd`, `threads`, ...), `call_ms` (native call), `wall_ms` (Python call) |
 | `metadata` | the file's `Metadata` |
 

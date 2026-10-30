@@ -566,7 +566,7 @@ export interface DecodeOptions {
   corruptionPolicy?: CorruptionPolicy;
   /**
    * RGB outputs (`rgba8`, `linear-rgb`) of files whose sensor data cannot be decoded
-   * (`UnsupportedCompressionError`, e.g. Nikon High Efficiency NEF): return the embedded
+   * (`UnsupportedCompressionError`, e.g. a compression mode FlashRaw does not implement): return the embedded
    * full-size preview instead of throwing. The frame then has `source: 'preview'` and a
    * `preview-fallback` warning; its levels and colour fields describe the 8-bit preview. Needs a
    * preview covering at least 90% of the default crop; never applies to raw outputs or regions.
