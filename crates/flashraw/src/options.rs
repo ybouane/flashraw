@@ -241,7 +241,7 @@ pub struct DecodeOptions {
     /// above `black_point`. Default: 1.
     pub white_point: f32,
     /// When the sensor data cannot be decoded ([`crate::Error::UnsupportedCompression`],
-    /// e.g. Nikon High Efficiency NEF), return the embedded full-size preview for the RGB
+    /// e.g. a compression mode FlashRaw does not implement), return the embedded full-size preview for the RGB
     /// outputs ([`OutputFormat::Rgba8`], [`OutputFormat::LinearRgbF32`]) instead of
     /// failing. The frame is marked [`crate::FrameSource::Preview`] and carries a
     /// [`crate::CorruptReason::PreviewFallback`] warning. Needs a preview covering at

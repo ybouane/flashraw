@@ -542,7 +542,7 @@ class RawFile:
                 outputs clip outside [black_point, white_point]; float outputs keep the values.
             preview_fallback: RGB outputs (``"rgba8"``, ``"linear-rgb"``) of files whose
                 sensor data cannot be decoded (:class:`UnsupportedCompressionError`, e.g.
-                Nikon High Efficiency NEF): return the embedded full-size preview instead of
+                a compression mode FlashRaw does not implement): return the embedded full-size preview instead of
                 raising. The frame then has ``source == "preview"`` and a
                 ``"preview-fallback"`` warning. Never applies to raw outputs or regions.
             color_space: RGB outputs: ``"srgb"`` (default), ``"display-p3"``, ``"adobe-rgb"``,
