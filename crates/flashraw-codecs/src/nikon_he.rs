@@ -4,6 +4,14 @@
 //! JPEG XS codestream (ISO/IEC 21122) with four components on a quarter-size grid (one per
 //! 2x2 Bayer quad position).
 //!
+//! # Provenance
+//!
+//! This module is a port, onto FlashRaw's bit pumps, parallel helpers and error types, of the
+//! Nikon High Efficiency decoder of RAWmakase (<https://github.com/pch/rawmakase>,
+//! `crates/rawmakase-raw/src/codec/nikon_he.rs`, by Piotr Chmolowski), which is MIT-licensed:
+//! Copyright (c) 2026 RAWmakase contributors. Its samples equal that decoder's on every
+//! Nikon High Efficiency file of the raw.pixls.us corpus (`tests/regression/nikon.tsv`).
+//!
 //! # Codec Architecture
 //!
 //! 1. **Codestream Container**: Markers SOC (`0xff10`), CAP (`0xff50`), PIH (`0xff12`),
