@@ -58,7 +58,7 @@ enum Payload {
     Ycbcr,
     /// Nikon Scan (Coolscan) RGB or grey TIFF data.
     Coolscan { samples: u32, bits: u32, order: ByteOrder },
-    /// "High efficiency" TicoRAW (JPEG XS based); not decodable.
+    /// "High efficiency" TicoRAW (JPEG XS based), decoded by [`nikon_he`].
     HighEfficiency,
 }
 

@@ -10,7 +10,7 @@
 
 Fast, safe camera RAW decoding for Python, with zero-copy NumPy output.
 
-`flashraw` reads RAW files from most cameras (1,980 of the 2,016 files of the raw.pixls.us corpus; the rest are formats not supported yet, see docs/formats.md) — DNG, CR2, CR3, CRW, NEF/NRW,
+`flashraw` reads RAW files from most cameras (2,008 of the 2,016 files of the raw.pixls.us corpus; the rest are formats not supported yet, see docs/formats.md) — DNG, CR2, CR3, CRW, NEF/NRW,
 ARW/SR2/SRF, RAF, RW2, ORF, PEF, SRW, IIQ, 3FR/FFF, X3F, MRW, KDC/DCR, ERF, MEF and more —
 and returns sensor-domain data (or display-ready RGB) as NumPy arrays, together with everything
 needed to interpret them: CFA layout, black/white levels, white balance, colour matrices,

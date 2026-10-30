@@ -94,5 +94,6 @@ FlashRaw decodes the codestream via `flashraw_codecs::nikon_he`:
 
 The CC0 corpus holds 289 NEF/NRW files. Every file with plain sensor data decodes and is
 covered by regression hashes in `tests/regression/nikon.tsv` (12/14-bit lossy and
-lossless Huffman across D1X…Z 9, all uncompressed variants, NRW, sNEF, Coolscan);
-High Efficiency files are reported as unsupported.
+lossless Huffman across D1X…Z 9, all uncompressed variants, NRW, sNEF, Coolscan, and the
+28 High Efficiency / High Efficiency★ files of the Z 8, Z 9, Z f, Z5 II, Z6 III and Z50 II,
+every crop mode). Those 28 decode with no warning, single- and multi-threaded alike.

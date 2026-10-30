@@ -23,9 +23,9 @@ package and its install command.
 FlashRaw opens a camera RAW file and gives you the sensor data plus everything needed to
 interpret it (CFA layout, black and white levels, white balance, colour matrices, crops,
 orientation), the embedded previews, or a display-ready sRGB image. It is written in memory-safe
-Rust. Of the 2,016 files in the raw.pixls.us corpus, **1,980 decode (98.2%)**, and 1,965 of them have
-pinned output hashes; the other 36 are formats it does not support yet or files that are not RAW (28 Nikon
-High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG, a few more: [docs/formats.md](docs/formats.md)).
+Rust. Of the 2,016 files in the raw.pixls.us corpus, **2,008 decode (99.6%)**, and 1,993 of them have
+pinned output hashes; the other 8 are formats it does not support yet or files that are not RAW (Light L16,
+Casio CAM, JPEG-in-DNG, a few more: [docs/formats.md](docs/formats.md)).
 On the same machine as the other open-source decoders it is **7.9×–11.4× faster than LibRaw** at
 decoding, **8.8×–15.4× faster** at producing an sRGB image, and needs **1.5×–1.9× less memory** for it
 (medians over 62 popular cameras).
@@ -135,8 +135,8 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 
 ### 📷 Support
 
-- **~40 RAW formats**: 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%), 1,965 with
-  pinned output hashes; the other 36 are formats not supported yet (mainly Nikon High Efficiency NEF)
+- **~40 RAW formats**: 2,008 of the 2,016 raw.pixls.us corpus files decode (99.6%), 1,993 with
+  pinned output hashes; the other 8 are formats not supported yet or files that are not RAW
 - **CR3** incl. C-RAW, **JPEG XL DNG**, lossy and deflate DNG, GoPro GPR, Sigma X3F,
   Fuji compressed, Panasonic v4–v8, IIQ, 3FR/FFF, …
 - **GPU**: Metal, Vulkan, DX12 and **WebGPU**
@@ -158,7 +158,7 @@ Both open camera RAW files with FlashRaw's WebAssembly package, right in the bro
 | Uses the GPU | ✅ Metal, Vulkan, DX12, WebGPU | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Multithreading | ✅ wherever the format allows (speculative decoding of sequential streams) + develop | ⚠️ OpenMP builds: CR3, Fuji, Panasonic v8, some demosaics | ⚠️ OpenMP: tiled/sliced codecs | ✅ rayon: tiles, several codecs, develop | ❌ | ⚠️ as LibRaw; wheels: OpenMP on Linux/Windows, not macOS | ⚠️ one thread per transform (threaded plugin: GPL-3 or commercial) |
 | SIMD kernels | ⚠️ packed-bit unpack only: SSSE3/SSE4.1, NEON, WASM SIMD128 | ❌ | ⚠️ one SSE2 routine | ⚠️ compiler multiversioning, no intrinsics | ❌ | ❌ | ⚠️ SSE2 in the fast_float plugin (GPL-3 or commercial) |
-| Cameras | 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%), 1,600+ entries in its camera DB, any DNG | 1,284 (its own count) | ~920 make/model | ~850 make/model | ~570 colour profiles (last release 2018) | as LibRaw | – |
+| Cameras | 2,008 of the 2,016 raw.pixls.us corpus files decode (99.6%), 1,600+ entries in its camera DB, any DNG | 1,284 (its own count) | ~920 make/model | ~850 make/model | ~570 colour profiles (last release 2018) | as LibRaw | – |
 | Canon CR3 (incl. C-RAW) | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | – |
 | JPEG XL DNG (DNG 1.7, e.g. Samsung Galaxy) | ✅ | ⚠️ Adobe DNG SDK builds only | ❌ | ✅ | ❌ | ❌ | – |
 | GoPro GPR (VC-5) | ✅ | ⚠️ GPR SDK builds only | ✅ | ❌ | ❌ | ❌ | – |
@@ -180,8 +180,7 @@ typical LibRaw-based pipeline (see the benchmarks above). Checked against the so
 of LibRaw 0.22, RawSpeed (develop, c835b05), rawler 0.8.0, dcraw 9.28, rawpy 0.27.1 and Little
 CMS 2.19.1 (October 2026). Camera counts are not directly comparable: LibRaw counts its own
 way, the RawSpeed and rawler figures are unique make/model pairs in their camera lists, dcraw's
-is the size of its colour table. Nikon High Efficiency (TicoRAW) is a proprietary codec no open
-decoder supports.</sub>
+is the size of its colour table.</sub>
 
 ## 🏁 Benchmarks: popular cameras
 
@@ -263,8 +262,8 @@ is built for that.
 | | |
 |---|---|
 | **Formats** | DNG (uncompressed, lossless JPEG, deflate int/float, lossy JPEG, **JPEG XL**, GoPro VC-5, Blackmagic), CR2 (incl. sRAW/mRAW), **CR3** (CRX and C-RAW), CRW, NEF/NRW, ARW/SR2/SRF/ARQ, RAF (incl. compressed X-Trans), RW2/RWL (Panasonic v4–v8), ORF/ORI, PEF, SRW, MRW, IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI, headerless and CHDK raws |
-| **Cameras** | 1,980 of the 2,016 raw.pixls.us corpus files decode (98.2%; 1,965 with pinned hashes), 1,600+ entries in the built-in camera database, and DNG from cameras, phones and drones |
-| **Not supported yet** | 36 corpus files are valid files in formats that are not implemented: 28 Nikon High Efficiency NEF (proprietary TicoRAW codec), Light L16, Casio CAM, JPEG-in-DNG and a few rare variants (see [formats](docs/formats.md)). Their metadata and embedded previews still work |
+| **Cameras** | 2,008 of the 2,016 raw.pixls.us corpus files decode (99.6%; 1,993 with pinned hashes), 1,600+ entries in the built-in camera database, and DNG from cameras, phones and drones |
+| **Not supported yet** | 8 corpus files are valid files in formats that are not implemented: Light L16, Casio CAM, JPEG-in-DNG and a few rare variants (see [formats](docs/formats.md)). Their metadata and embedded previews still work |
 | **Outputs** | raw `u16` / `f32`, normalised `f32`, linear RGB `f32`, display RGBA8 (bilinear or half-size demosaic, as-shot white balance, colour matrix, sRGB, orientation), GPU-resident textures |
 | **GPU** | wgpu: Metal, Vulkan and DX12 natively, WebGPU in browsers; `Backend::Auto` uses the GPU only where it measures a win ([GPU](docs/gpu.md)) |
 | **Languages** | Rust, C, C++, Python, JavaScript/TypeScript, plus a LibRaw-compatible C API |
@@ -503,7 +502,7 @@ the sensor image.
 
 ### Undecodable sensor data
 
-Sensor data in a codec FlashRaw cannot decode (Nikon High Efficiency NEF) fails with
+Sensor data in a codec FlashRaw cannot decode fails with
 `Error::UnsupportedCompression`, also for RGB outputs. With
 `DecodeOptions::preview_fallback`, `Rgba8` and `LinearRgbF32` decodes return the embedded
 full-size preview instead, explicitly marked: `frame.source == FrameSource::Preview` and a

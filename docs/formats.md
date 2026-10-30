@@ -1,10 +1,10 @@
 # Supported formats
 
 Support is tracked per **format and mode** (bit depth, compression variant, size/crop
-mode), not per extension. Of the 2,016 files in the raw.pixls.us corpus, 1,980 decode
-(98.2%) and 1,965 of those have pinned output hashes. The other 36 are not corrupt files:
-they are valid files in formats that are not supported yet (28 Nikon High Efficiency NEF,
-Light L16, Casio CAM, JPEG-in-DNG and a few more, listed below).
+mode), not per extension. Of the 2,016 files in the raw.pixls.us corpus, 2,008 decode
+(99.6%) and 1,993 of those have pinned output hashes. The other 8 are not corrupt files:
+they are valid files in formats that are not supported yet (Light L16, Casio CAM,
+JPEG-in-DNG and a few more, listed below).
 
 Status vocabulary (`flashraw supported` prints the same words):
 
@@ -41,7 +41,7 @@ Status vocabulary (`flashraw supported` prints the same words):
 | MEF | 1 | 1 |
 | MOS | 4 | 4 |
 | MRW | 14 | 14 |
-| NEF | 277 | 249 |
+| NEF | 277 | 277 |
 | NRW | 12 | 12 |
 | ORF / ORI | 112 | 112 |
 | PEF | 42 | 42 |
@@ -51,10 +51,9 @@ Status vocabulary (`flashraw supported` prints the same words):
 | SRW | 27 | 27 |
 | X3F | 18 | 18 |
 | other (TIF raws, CAM, LRI, misc) | 25 | 22 |
-| **Total** | **2,016** | **1,980** |
+| **Total** | **2,016** | **2,008** |
 
-Files not decoded (36): 28 Nikon "High Efficiency" NEFs (intoPIX TicoRAW, a
-proprietary JPEG XS-based codec — metadata and previews still work), 2 smartphone
+Files not decoded (8): 2 smartphone
 "DNG"s that are actually JPEGs, 2 Casio `.cam` processed images, a bzip2 archive named
 `.CRW`, Kodak DC120 JPEG raw, Light L16 `.lri` (proprietary multi-module container),
 and a JPEG XL DNG (decodes with the `jpegxl` feature).
@@ -85,7 +84,7 @@ Generated from `docs/support/*.tsv` by `tools/support_matrix.py` (also printed b
 `flashraw supported`).
 
 <!-- BEGIN GENERATED SUPPORT TABLE (tools/support_matrix.py) -->
-Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 19, verified: 111
+Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 18, verified: 112
 
 | Format | Mode | Compression | Status | Notes |
 |---|---|---|---|---|
@@ -169,7 +168,7 @@ Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 19, veri
 | NEF | 14bit-compressed | nikon-huffman (lossy, lossless, split trees, curves) | verified | 84/84 decode (D3..Z 9, Z6III, Z50II, Z5II lossless) |
 | NEF | 14bit-uncompressed | 16-bit words / Z+D6 14-bit LSB padded rows | verified | 22/22 decode |
 | NEF | coolscan | uncompressed RGB 8/16-bit | verified | 3 samples/pixel |
-| NEF | high-efficiency | TicoRAW (JPEG XS based) | nikon-he | verified | parallel slice and wavelet decoding, Star-Tetrix colour reconstruction, transfer curve |
+| NEF | high-efficiency | TicoRAW (JPEG XS based) | verified | parallel slice and wavelet decoding, Star-Tetrix colour reconstruction, transfer curve |
 | NEF | sNEF | YCbCr 4:2:2 → RGB | verified | converted to RGB, 3 samples/pixel |
 | NRW | 12bit-uncompressed | packed Msb32 / 16-bit words | verified | 12/12 decode (Coolpix P/B/A1000) |
 | ORF | 12bit-packed | uncompressed | verified | 12-bit in 32-bit LE words and MSB-first bytes |

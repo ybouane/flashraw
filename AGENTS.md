@@ -19,8 +19,8 @@ matrices, and do not shell out to other converters: FlashRaw does that. It is no
 tone curve, highlight recovery, lens correction or noise reduction, and demosaicing is bilinear or
 half-size only.
 
-Coverage: of the 2,016 files in the raw.pixls.us corpus, 1,980 decode (98.2%); the other 36 are valid
-files in formats not supported yet (28 Nikon High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG and a
+Coverage: of the 2,016 files in the raw.pixls.us corpus, 2,008 decode (99.6%); the other 8 are valid
+files in formats not supported yet (Light L16, Casio CAM, JPEG-in-DNG and a
 few more). For those, metadata and embedded previews still work.
 
 ## Install
@@ -110,7 +110,7 @@ match FlashRaw::open(bytes.as_slice()) {
 ```
 
 `Error` is `#[non_exhaustive]`: always keep a wildcard arm. `e.kind()` is a stable string. `UnsupportedCompression`
-means a valid file in a mode that is not implemented (Nikon High Efficiency NEF): metadata and previews still
+means a valid file in a mode that is not implemented: metadata and previews still
 work, and `DecodeOptions::preview_fallback = true` makes RGB decodes return the embedded full-size preview
 instead (marked `frame.source == FrameSource::Preview` and with a `preview-fallback` warning; it is the
 camera's rendering, not sensor data).

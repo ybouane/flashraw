@@ -28,7 +28,7 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - One package for Vite, webpack 5, Rollup/Rolldown, esbuild, Node.js ≥ 18, Deno.
 
 Formats: DNG, CR2, CR3, CRW, NEF/NRW, ARW/SR2/SRF/ARQ, RAF, RW2/RWL, ORF/ORI, PEF, SRW, MRW,
-IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI and more (1,980 of the 2,016 files of
+IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI and more (2,008 of the 2,016 files of
 the raw.pixls.us corpus decode; the rest are formats not supported yet, see `docs/formats.md`). The JS API is format-agnostic.
 
 ```sh
@@ -317,8 +317,8 @@ strips/tiles (a unit that is truncated or fails to decode is zero-filled with an
 short by the end of the file (the rows decoded before the cut are kept); other compressed
 streams throw under both policies.
 
-**Undecodable sensor data.** Files whose sensor data uses a codec FlashRaw cannot decode (Nikon
-High Efficiency NEF) throw an `UnsupportedCompressionError` by default, even for `rgba8`.
+**Undecodable sensor data.** Files whose sensor data uses a codec FlashRaw cannot
+decode throw an `UnsupportedCompressionError` by default, even for `rgba8`.
 With `previewFallback: true`, RGB outputs (`rgba8`, `linear-rgb`) return the embedded
 full-size preview instead, explicitly marked: `f.source === 'preview'` and a warning of kind
 `preview-fallback` (so `f.incomplete` is true). Such a frame is the camera's rendering (8-bit,

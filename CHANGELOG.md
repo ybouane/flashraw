@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Nikon High Efficiency NEF
+- Nikon High Efficiency and High Efficiency★ NEF (Z 8, Z 9, Z f, Z5 II, Z6 III, Z50 II; TicoRAW, a JPEG XS
+  codestream) decode to 14-bit Bayer samples: `flashraw_codecs::nikon_he`, parallel over slices and wavelet
+  rows. All 28 such files of the raw.pixls.us corpus decode with no warning and their full-buffer hashes are
+  pinned in `tests/regression/nikon.tsv`. 2,008 of the 2,016 corpus files now decode (99.6%); 1,993 have
+  pinned hashes.
+
 ## 0.1.1 — 2026-10-25
 
 Package pages only; no code changes.

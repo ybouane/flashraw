@@ -29,8 +29,8 @@ fn main() -> flashraw::Result<()> {
 }
 ```
 
-Of the 2,016 files in the raw.pixls.us corpus, 1,980 decode (98.2%); the other 36 are valid files in
-formats that are not supported yet (28 Nikon High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG), see
+Of the 2,016 files in the raw.pixls.us corpus, 2,008 decode (99.6%); the other 8 are valid files in
+formats that are not supported yet (Light L16, Casio CAM, JPEG-in-DNG), see
 [docs/formats.md](https://github.com/ybouane/flashraw/blob/main/docs/formats.md).
 
 * API documentation: <https://docs.rs/flashraw> (feature table on the crate page)
