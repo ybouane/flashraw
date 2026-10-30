@@ -169,7 +169,7 @@ Status counts: experimental: 18, partial: 7, supported: 1, unsupported: 19, veri
 | NEF | 14bit-compressed | nikon-huffman (lossy, lossless, split trees, curves) | verified | 84/84 decode (D3..Z 9, Z6III, Z50II, Z5II lossless) |
 | NEF | 14bit-uncompressed | 16-bit words / Z+D6 14-bit LSB padded rows | verified | 22/22 decode |
 | NEF | coolscan | uncompressed RGB 8/16-bit | verified | 3 samples/pixel |
-| NEF | high-efficiency | TicoRAW (JPEG XS based) | unsupported | detected; decode returns UnsupportedCompression (proprietary codec) |
+| NEF | high-efficiency | TicoRAW (JPEG XS based) | nikon-he | verified | parallel slice and wavelet decoding, Star-Tetrix colour reconstruction, transfer curve |
 | NEF | sNEF | YCbCr 4:2:2 → RGB | verified | converted to RGB, 3 samples/pixel |
 | NRW | 12bit-uncompressed | packed Msb32 / 16-bit words | verified | 12/12 decode (Coolpix P/B/A1000) |
 | ORF | 12bit-packed | uncompressed | verified | 12-bit in 32-bit LE words and MSB-first bytes |

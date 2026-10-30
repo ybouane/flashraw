@@ -6,4 +6,4 @@ NEF	14bit-uncompressed	16-bit words / Z+D6 14-bit LSB padded rows	verified	22/22
 NRW	12bit-uncompressed	packed Msb32 / 16-bit words	verified	12/12 decode (Coolpix P/B/A1000)
 NEF	sNEF	YCbCr 4:2:2 → RGB	verified	converted to RGB, 3 samples/pixel
 NEF	coolscan	uncompressed RGB 8/16-bit	verified	3 samples/pixel
-NEF	high-efficiency	TicoRAW (JPEG XS based)	unsupported	detected; decode returns UnsupportedCompression (proprietary codec)
+NEF	high-efficiency	TicoRAW (JPEG XS based)	verified	parallel slice and wavelet decoding, Star-Tetrix colour reconstruction, transfer curve

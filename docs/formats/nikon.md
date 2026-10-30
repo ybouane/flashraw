@@ -26,7 +26,7 @@ still decode correctly.
 | 12-bit LSB packed, rows padded to 16 bytes | Z-series / D6 12-bit uncompressed | | `packed` (SIMD) |
 | small/medium NEF (sNEF) | `w*h*3` bytes | YCbCr 4:2:2, 12-bit, little-endian packed (Y0 Y1 Cb Cr per pixel pair) | YCbCr → RGB, 3 samples/pixel |
 | Coolscan scans | software `Nikon Scan…` or model `COOLSCAN` | 8/16-bit RGB or grey | 16-bit RGB/grey |
-| high efficiency (HE / HE*) | JPEG XS SOC+CAP markers (`FF10 FF50`) at the payload start | TicoRAW (intoPIX) | **unsupported** |
+| high efficiency (HE / HE*) | JPEG XS SOC+CAP markers (`FF10 FF50`) at the payload start | TicoRAW (intoPIX) | `nikon_he` |
 
 ### Huffman
 
@@ -64,12 +64,17 @@ JPEG has pixels (about 8/7 of the M size and 3/2 of the S size in each direction
 maker note's CropArea (`0x0045`) is the area the camera scaled its JPEG from and becomes
 the default crop (odd origins moved to even).
 
-### High efficiency (TicoRAW)
+### High efficiency (TicoRAW / JPEG XS)
 
 Z 8, Z 9, Z f, Z6III, Z50II and Z5II "High Efficiency" / "High Efficiency★" files use
-intoPIX TicoRAW, a JPEG XS-based proprietary codec with no public specification or
-licensed open implementation. FlashRaw recognises the payload and returns
-`UnsupportedCompression` from `decode`; metadata and embedded previews are available.
+intoPIX TicoRAW, a JPEG XS-based codec (ISO/IEC 21122) operating on a quarter-size 4-component
+grid (one per 2x2 Bayer quad position).
+
+FlashRaw decodes the codestream via `flashraw_codecs::nikon_he`:
+1. Slices and precincts are entropy-decoded in parallel with fast 64-bit unaligned bit pumping and single-instruction CLO unary decoding.
+2. Horizontal and vertical 5/3 reversible wavelet lifting.
+3. Inverse Star-Tetrix colour decorrelation (Y, Cr, Δ, Cb) -> (G1, R, G2, B).
+4. Direct companding transfer curve inversion into 14-bit Bayer raster output.
 
 ## Metadata
 
