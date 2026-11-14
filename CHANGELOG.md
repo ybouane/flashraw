@@ -1,11 +1,10 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-11-14)
 
 - The decoders, the codecs and the camera database were rewritten from format descriptions and sample files. The
   camera database holds values measured from sample files or taken from Adobe DNG profiles and the files' own
   metadata. Decoded output is unchanged except where the entries below say otherwise.
-
 - Hasselblad: without a camera-database row, the colour matrix is the maker note's CCD profile of the file (then
   ColorMatrix1). The H4D-40 FFF sample now uses its own profile instead of a "40-Coated-FFF" row of no known
   source (it had a hand-edited 1.0 on the diagonal); that row and the generic "40-Coated" row are removed. No other

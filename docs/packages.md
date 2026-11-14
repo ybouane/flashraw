@@ -2,10 +2,11 @@
 
 Everything FlashRaw distributes, what is in it and who needs it.
 
-**Status: the tree is at version 0.3.0, which is not published yet.** Earlier versions (0.1.0 on 2026-10-25, 0.1.1
-and 0.2.0 on 2026-11-11) are superseded by it: the decoders and the camera database were rewritten from format
-descriptions and sample files. The C library and the LibRaw-compatible shim are built from source. Every version is
-`0.3.0` (the workspace version in [Cargo.toml](../Cargo.toml)). The release procedure is in [releasing.md](releasing.md).
+**Status: version 0.3.0 of the crates, the npm package and the Python package is published**
+(0.1.0 on 2026-10-25; 0.1.1, package pages only, on crates.io on 2026-10-25; 0.2.0 on 2026-11-11; 0.3.0 on 2026-11-14).
+0.3.0 supersedes the earlier versions: the decoders and the camera database were rewritten from format descriptions
+and sample files. The C library and the LibRaw-compatible shim are built from source. Every version is `0.3.0` (the
+workspace version in [Cargo.toml](../Cargo.toml)). The release procedure is in [releasing.md](releasing.md).
 
 If you are not sure what to install:
 
@@ -21,13 +22,13 @@ If you are not sure what to install:
 
 | Package | Registry name | Version | Status | Install | Documentation |
 |---|---|---|---|---|---|
-| Rust library | crates.io `flashraw` | 0.3.0 | not yet published | `cargo add flashraw` | [crate docs](https://docs.rs/flashraw), [README](../README.md#-quick-start) |
-| Command-line tool | crates.io `flashraw-cli` (binary `flashraw`) | 0.3.0 | not yet published | `cargo install flashraw-cli` | [README CLI section](../README.md#-cli) |
-| npm package | npm `flashraw` | 0.3.0 | not yet published | `npm install flashraw` | [npm/README.md](../npm/README.md), [wasm.md](wasm.md) |
-| Python package | PyPI `flashraw` | 0.3.0 | not yet published | `pip install flashraw` | [python.md](python.md), [crate README](../crates/flashraw-python/README.md) |
+| Rust library | crates.io `flashraw` | 0.3.0 | published | `cargo add flashraw` | [crate docs](https://docs.rs/flashraw), [README](../README.md#-quick-start) |
+| Command-line tool | crates.io `flashraw-cli` (binary `flashraw`) | 0.3.0 | published | `cargo install flashraw-cli` | [README CLI section](../README.md#-cli) |
+| npm package | npm `flashraw` | 0.3.0 | published | `npm install flashraw` | [npm/README.md](../npm/README.md), [wasm.md](wasm.md) |
+| Python package | PyPI `flashraw` | 0.3.0 | published | `pip install flashraw` | [python.md](python.md), [crate README](../crates/flashraw-python/README.md) |
 | C library + headers | GitHub release assets (planned), source build | 0.3.0 | source build | `cargo build --release -p flashraw-capi` or CMake | [c-api.md](c-api.md) |
 | LibRaw-compatible shim | none (not published) | 0.3.0 | build from source | `cargo build --release -p flashraw-libraw-compat` | [libraw-compat.md](libraw-compat.md) |
-| Internal crates | crates.io `flashraw-core`, `-codecs`, `-formats`, `-camera-db`, `-gpu` | 0.3.0 | not yet published | pulled in by `flashraw` | below |
+| Internal crates | crates.io `flashraw-core`, `-codecs`, `-formats`, `-camera-db`, `-gpu` | 0.3.0 | published | pulled in by `flashraw` | below |
 | Demo site | not a package | - | deployed separately | open <https://flashraw.ybouane.com> | `demo/README.md` |
 
 All packages are licensed MIT OR Apache-2.0 and ship `LICENSE-MIT` and `LICENSE-APACHE`.
