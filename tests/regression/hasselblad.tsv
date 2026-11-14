@@ -1,0 +1,23 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Hasselblad/CF132/RAW_HASSELBLAD_IXPRESS_CF132.3FR	cdd3197267fb914a	3FR	hasselblad
+Hasselblad/CFV 100CElectronic Shutter/B0003499.3FR	d88fa0e549297493	3FR	uncompressed
+Hasselblad/CFV-50/20170401_CCSG_on_Hasselblad_CFV-50-0002297.fff	dd1509f38a07a502	FFF	hasselblad
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR	14e60b95775930f2	3FR	hasselblad
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.fff	db63ffcd176381ee	FFF	hasselblad
+Hasselblad/CFV-50c/B0002648.fff	0511629a495044ba	FFF	hasselblad
+Hasselblad/CFV/RAW_HASSELBLAD_CFV.3FR	e6b6d804bc23382f	3FR	hasselblad
+Hasselblad/H3D/A9391120.3FR	df9398b2e998d13a	3FR	hasselblad
+Hasselblad/H4D-50/2-9-2017_street_0012.fff	627a295ecf2dc0e9	FFF	hasselblad
+Hasselblad/H5D-40/20151114_CCSG_on_Hasselblad_H5D40-0726.fff	1d34f6f4e45b5eab	FFF	hasselblad
+Hasselblad/H5D-50c/20151114_CCSG_on_Hasselblad_H5D50c-0017.fff	02a189d2a6b78d4e	FFF	hasselblad
+Hasselblad/Hasselblad H4D-40/Job_3583.fff	37f4ada4fc5fc838	FFF	hasselblad
+Hasselblad/Hasselblad H4D/A0000902.3FR	5fc075376908bbf9	3FR	hasselblad
+Hasselblad/Hasselblad H6D-100cMS/h6d400c_1shot_0007.fff	9eb66559a6814be3	FFF	hasselblad
+Hasselblad/X1D II 50C/MKW_20200429_0004569.3FR	3c3a77bf67197196	3FR	uncompressed
+Hasselblad/X1D II 50C/x1d-II-sample-02.fff	c7372897d70da8a8	FFF	hasselblad
+Hasselblad/X1D/B9999910.3FR	0b480efe4d2ed7c2	3FR	uncompressed
+Hasselblad/X2D 100C/B0000079.3FR	c07a267c0bc60a5f	3FR	uncompressed
+Hasselblad/X2D 100C/B0000080.3FR	90c6be3c93d3a6f5	3FR	uncompressed
+Hasselblad/X2D 100C/Job_0079.fff	3ade353834b482ab	FFF	hasselblad
+Hasselblad/X2D 100C/Job_0080.fff	849906d491fba55a	FFF	hasselblad
+Hasselblad/cfv 50C II/B9979382.3FR	4a4826f12d165fa1	3FR	uncompressed

@@ -1,0 +1,52 @@
+# Extended nightly run: full CC0 corpus (cached), regression hashes and the malformed-input
+# suite over every corpus file, and a longer fuzzing campaign.
+name: Nightly corpus
+
+# Manual only: CI runs locally (tools/ci/local.sh, docs/testing.md).
+on:
+  workflow_dispatch:
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache corpus
+        uses: actions/cache@v4
+        with:
+          path: corpus
+          key: rpu-corpus-${{ hashFiles('tools/corpus/manifest.tsv') }}
+      - run: python3 tools/corpus/fetch.py --jobs 16
+      - run: cargo build --release -p flashraw-cli --features jpegxl
+      # Every file must decode or fail with a clean error (a few formats are deliberately
+      # unsupported); correctness is enforced by the regression test below.
+      - name: Decode every corpus file
+        run: find corpus -type f -print0 | xargs -0 -n 50 ./target/release/flashraw verify --json > verify.jsonl || true
+      - run: cargo test --release -p flashraw --test regression --test malformed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: corpus-verify
+          path: verify.jsonl
+
+  fuzz-extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - run: |
+          cd fuzz
+          for t in $(cargo fuzz list); do cargo fuzz run -O $t -- -max_total_time=900 -rss_limit_mb=2048; done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: fuzz-artifacts, path: fuzz/artifacts }

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlashRaw — browser demo</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #f5f5f7; --card: #fff; --muted: #6e6e73; --accent: #0a66d8; --line: #d2d2d7; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --bg: #111113; --card: #1c1c1f; --muted: #a1a1a6; --accent: #4c9bff; --line: #333338; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; }
+  #caps { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px 20px; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+  #drop { border: 2px dashed var(--line); border-radius: 12px; min-height: 360px; display: grid; place-items: center; background: var(--card); position: relative; overflow: hidden; }
+  #drop.over { border-color: var(--accent); }
+  #drop p { color: var(--muted); text-align: center; padding: 24px; }
+  #drop img, #drop canvas { max-width: 100%; max-height: 75vh; display: block; }
+  .stage { display: grid; gap: 8px; justify-items: center; padding: 12px; }
+  .caption { font-size: 12px; color: var(--muted); }
+  #status { font-size: 12px; color: var(--muted); }
+  aside { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; overflow: auto; max-height: 85vh; }
+  aside h2 { font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  aside h2:first-child { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  td { padding: 3px 0; vertical-align: top; border-bottom: 1px solid var(--line); }
+  td:first-child { color: var(--muted); padding-right: 10px; white-space: nowrap; }
+  td:last-child { word-break: break-word; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  select, button, label { font: inherit; }
+  button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FlashRaw</h1>
+  <span id="caps">loading…</span>
+</header>
+<main>
+  <section>
+    <div class="controls" style="margin-bottom:8px">
+      <input type="file" id="pick" accept=".dng,.cr2,.cr3,.nef,.arw,.raf,.rw2,.orf,.pef,.srw,.iiq,.3fr,.x3f,image/*">
+      <label>Demosaic <select id="demosaic"><option value="half-size">half-size (fast)</option><option value="bilinear">bilinear</option></select></label>
+      <label><input type="checkbox" id="useWorker" checked> decode in a Web Worker</label>
+    </div>
+    <div id="drop"><p>Drop a RAW file here (DNG, CR3, NEF, ARW, …)<br>Everything runs locally in WebAssembly.</p></div>
+    <div id="status"></div>
+  </section>
+  <aside id="meta"><h2>Metadata</h2><p style="color:var(--muted)">No file loaded.</p></aside>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

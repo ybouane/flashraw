@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement to the library, the command line or a binding
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The use case first; the solution second.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Rust crate, Command line, Python, npm / WebAssembly, C / C++ API, Decoders and formats, Documentation, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

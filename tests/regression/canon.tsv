@@ -1,0 +1,273 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Canon/Canon EOS M200/_MG_2231.CR3	4edf3f62a6ceb2ba	CR3	canon-crx
+Canon/Canon EOS M200/_MG_2233.CR3	522c9d6707dd9e8e	CR3	canon-crx
+Canon/Canon EOS R10/IMG_6310.CR3	6729f6781ab8aec3	CR3	canon-crx
+Canon/Canon EOS R100/_MG_2195[1].CR3	341c706b37c38bbf	CR3	canon-crx
+Canon/Canon EOS R100/_MG_2205[1].CR3	cbe5299ab9c52630	CR3	canon-crx
+Canon/Canon EOS R50 V/IMG_0034.CR3	d60ff55709288d27	CR3	canon-crx
+Canon/Canon EOS R5m2/APS-C_CRAW.CR3	4721605b20339332	CR3	canon-crx
+Canon/Canon EOS R5m2/APS-C_RAW.CR3	31cf630afe868958	CR3	canon-crx
+Canon/Canon EOS R5m2/CRAW.CR3	af32b45357b534e5	CR3	canon-crx
+Canon/Canon EOS R5m2/RAW.CR3	ff716fb30248496f	CR3	canon-crx
+Canon/Canon EOS R6 Mark III/IMG_4241.CR3	47a4cb401233cc80	CR3	canon-crx
+Canon/Canon EOS R6 Mark III/IMG_4242.CR3	7ebe7e34c1837006	CR3	canon-crx
+Canon/Canon EOS R6 Mark III/IMG_4243.CR3	ca8ecbbbacfd6c99	CR3	canon-crx
+Canon/Canon EOS R6 Mark III/IMG_4244.CR3	ffd4bbb552ed0b47	CR3	canon-crx
+Canon/Canon PowerShot S100V/Canon_PS-S100V_FW1.0.2.0.CR2	39735bf819c57ffd	CR2	lossless-jpeg
+Canon/Canon PowerShot V1/IMG_1225.CR3	bc54037cde0f472a	CR3	canon-crx
+Canon/EOS 1000D/IMG_9406.CR2	7de9a9006ae5ccb6	CR2	lossless-jpeg
+Canon/EOS 100D/IMG_3721.CR2	5b7499baa4e1b9de	CR2	lossless-jpeg
+Canon/EOS 10D/CRW_7673.CRW	b8a67781fa37b1df	CRW	canon-crw
+Canon/EOS 10D/crw_2127.crw	eeea3c682fb562ae	CRW	canon-crw
+Canon/EOS 10D/crw_2455.crw	060dd32055aad79e	CRW	canon-crw
+Canon/EOS 1100D/IMG_0962.CR2	fcd2debbd036fdd6	CR2	lossless-jpeg
+Canon/EOS 1200D/IMG_0008.CR2	88727ef1e62d896c	CR2	lossless-jpeg
+Canon/EOS 1300D/IMG_0778.CR2	8b983dae1fa108bd	CR2	lossless-jpeg
+Canon/EOS 2000D/IMG_0531.CR2	e687d928d4e7821e	CR2	lossless-jpeg
+Canon/EOS 200D Mark II/_MG_3608.CR3	1949dc638ffd8654	CR3	canon-crx
+Canon/EOS 200D/IMG_1813.CR2	f4e0171aededbfce	CR2	lossless-jpeg
+Canon/EOS 20D/IMG_3893.CR2	20bfcfd03ec37915	CR2	lossless-jpeg
+Canon/EOS 250D/Canon250D_RAW-19:9.CR3	8ac02c34d1e684be	CR3	canon-crx
+Canon/EOS 250D/Canon250D_RAW-1:1.CR3	12b5c6a19d68afbd	CR3	canon-crx
+Canon/EOS 250D/Canon250D_RAW-2:3.CR3	0c7301cb1140990f	CR3	canon-crx
+Canon/EOS 250D/Canon250D_RAW-4:3.CR3	89ebfa19331565d6	CR3	canon-crx
+Canon/EOS 250D/Canon250D_cRAW-16:9.CR3	9503538586e26274	CR3	canon-crx
+Canon/EOS 250D/Canon250D_cRAW-1:1.CR3	2a9cd574da243d7a	CR3	canon-crx
+Canon/EOS 250D/Canon250D_cRAW-3:2.CR3	f4c4dbf81c932118	CR3	canon-crx
+Canon/EOS 250D/Canon250D_cRAW-4:3.CR3	aa0ad1c5457ebe8a	CR3	canon-crx
+Canon/EOS 300D/103_0333.crw	a9a05cc0ca1901bd	CRW	canon-crw
+Canon/EOS 300D/CRW_8395.CRW	f0c398e8be7858cc	CRW	canon-crw
+Canon/EOS 30D/IMG_0062.CR2	5f49abf53c512fc9	CR2	lossless-jpeg
+Canon/EOS 350D/IMG_1707.CR2	3de67a619967d7cf	CR2	lossless-jpeg
+Canon/EOS 4000D/IMG_0361.CR2	4f629ac537ce9b8e	CR2	lossless-jpeg
+Canon/EOS 400D/IMG_3397.CR2	3b423e9ae59f3558	CR2	lossless-jpeg
+Canon/EOS 40D/_MG_0153.CR2	d5467de0da70ff47	CR2	lossless-jpeg
+Canon/EOS 40D/_MG_0154.CR2	ec4fb814cfefba5d	CR2	canon-sraw
+Canon/EOS 450D/_MG_7191.CR2	47adc3fe76a6bd06	CR2	lossless-jpeg
+Canon/EOS 500D/IMG_0002.CR2	bb880e017f8b8f36	CR2	lossless-jpeg
+Canon/EOS 50D/IMG_9516.CR2	d4c161bac2f1a492	CR2	lossless-jpeg
+Canon/EOS 50D/IMG_9517.CR2	3808d0ef545ca446	CR2	canon-sraw
+Canon/EOS 50D/IMG_9518.CR2	5e8fe2d18aad7e17	CR2	canon-sraw
+Canon/EOS 550D/IMG_4047.CR2	7f6706f84d7756bd	CR2	lossless-jpeg
+Canon/EOS 5D Mark II/08.canon.raw.cr2	bccdd199f441c4fe	CR2	lossless-jpeg
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2	70b34d6818d17623	CR2	canon-sraw
+Canon/EOS 5D Mark II/10.canon.sraw2.cr2	b70ba067211b764c	CR2	canon-sraw
+Canon/EOS 5D Mark II/IMG_0051.CR2	eaa7bd3df70be4c4	CR2	lossless-jpeg
+Canon/EOS 5D Mark III/5G4A9394.CR2	21cca83cb3ed0815	CR2	lossless-jpeg
+Canon/EOS 5D Mark III/5G4A9395.CR2	55a669ed84de1d3d	CR2	canon-sraw
+Canon/EOS 5D Mark III/5G4A9396.CR2	b2f4eff335cc1382	CR2	canon-sraw
+Canon/EOS 5D Mark IV/B13A0729.CR2	f62ee9b96976b2cf	CR2	lossless-jpeg
+Canon/EOS 5D Mark IV/B13A0732.CR2	6075eed3ee777599	CR2	canon-sraw
+Canon/EOS 5D Mark IV/B13A0733.CR2	30c0f15b6097d9dc	CR2	canon-sraw
+Canon/EOS 5D Mark IV/B13A0734.CR2	a2e7761fff0d4b9a	CR2	lossless-jpeg
+Canon/EOS 5D Mark IV/B13A0800.CR2	0126fb84bc7e44c1	CR2	lossless-jpeg
+Canon/EOS 5D/IMG_1428.CR2	f0b62f3e39717785	CR2	lossless-jpeg
+Canon/EOS 5DS R/_DSR2002.CR2	2681acc872496b6a	CR2	lossless-jpeg
+Canon/EOS 5DS R/_DSR2003.CR2	c32efcdd6d1e04be	CR2	canon-sraw
+Canon/EOS 5DS R/_DSR2004.CR2	1f8bf938e19ac433	CR2	canon-sraw
+Canon/EOS 5DS/2K4A9927.CR2	3e2e5ff44f538920	CR2	lossless-jpeg
+Canon/EOS 5DS/2K4A9928.CR2	fa600a32c9b2256e	CR2	canon-sraw
+Canon/EOS 5DS/2K4A9929.CR2	4ec0eb406e151b5d	CR2	canon-sraw
+Canon/EOS 600D/_MG_2587.CR2	e96286a6f187091e	CR2	lossless-jpeg
+Canon/EOS 60D/IMG_2014.CR2	6b471bd48f4e3aca	CR2	lossless-jpeg
+Canon/EOS 60D/IMG_2015.CR2	98cb6fef729ef174	CR2	canon-sraw
+Canon/EOS 60D/IMG_2016.CR2	fa7231aad5fe3fdf	CR2	canon-sraw
+Canon/EOS 650D/IMG_3517.CR2	7d260b544db74f2b	CR2	lossless-jpeg
+Canon/EOS 6D Mark II/6DII-RAW.CR2	c9f608ad6cf86969	CR2	lossless-jpeg
+Canon/EOS 6D Mark II/6DII-mRAW.CR2	be1aaf13b3451f39	CR2	canon-sraw
+Canon/EOS 6D Mark II/6DII-sRAW.CR2	8c9d8ec8eb0caa1d	CR2	canon-sraw
+Canon/EOS 6D/EOS_6D_RAW.CR2	9044d2242502f883	CR2	lossless-jpeg
+Canon/EOS 6D/EOS_6D_mRAW.CR2	716114862abc27f1	CR2	canon-sraw
+Canon/EOS 6D/EOS_6D_sRAW.CR2	d3e3d7c8f8f7849f	CR2	canon-sraw
+Canon/EOS 6D/IMG_0001.CR2	7222b50ed6f36098	CR2	lossless-jpeg
+Canon/EOS 700D/_MG_1948.CR2	e00a02c4d603b9a1	CR2	lossless-jpeg
+Canon/EOS 70D/RAW_CANON_EOS70D_01.CR2	1dba52ca716c8594	CR2	lossless-jpeg
+Canon/EOS 70D/mRAW_CANON_EOS70D_01.CR2	cd506e4127920c67	CR2	canon-sraw
+Canon/EOS 70D/sRAW_CANON_EOS70D_01.CR2	79ff74daf7936e1f	CR2	canon-sraw
+Canon/EOS 750D/IMG_5474.CR2	a8d287ba7428bfd6	CR2	lossless-jpeg
+Canon/EOS 760D/2015-07-10_18-54-26.cr2	c9d1a2a0455577c8	CR2	lossless-jpeg
+Canon/EOS 77D/IMG_4049.CR2	3bf3dffdd20266e8	CR2	lossless-jpeg
+Canon/EOS 7D Mark II/capture000106.cr2	45446618a1694540	CR2	lossless-jpeg
+Canon/EOS 7D Mark II/capture000107.cr2	bd520f81195785aa	CR2	canon-sraw
+Canon/EOS 7D Mark II/capture000108.cr2	224faf2e7fb3b9fb	CR2	canon-sraw
+Canon/EOS 7D/RAW_CANON_EOS_7D-mraw.CR2	7a382a9ef20213ab	CR2	canon-sraw
+Canon/EOS 7D/RAW_CANON_EOS_7D-raw.CR2	0280bf6085a12f9d	CR2	lossless-jpeg
+Canon/EOS 7D/RAW_CANON_EOS_7D-sraw.CR2	59ef9f26b4ca7341	CR2	canon-sraw
+Canon/EOS 7D/_MG_0001.CR2	9f4e80435526b44a	CR2	lossless-jpeg
+Canon/EOS 800D/IMG_3378.CR2	27f8aba3298f7d90	CR2	lossless-jpeg
+Canon/EOS 80D/IMG_0096.CR2	c6e724abf40dd009	CR2	canon-sraw
+Canon/EOS 80D/IMG_0097.CR2	0b0fd060725a397c	CR2	canon-sraw
+Canon/EOS 80D/IMG_0098.CR2	19eb06df8feca05f	CR2	lossless-jpeg
+Canon/EOS 850D/IMG_1837.CR3	edac1b6a43cf4204	CR3	canon-crx
+Canon/EOS 850D/IMG_1906.CR3	8bbf108c8ae50703	CR3	canon-crx
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3	79523891317a8c57	CR3	canon-crx
+Canon/EOS 90D/Canon-90D-cRAW-ISO-100.CR3	faac50ca858e5563	CR3	canon-crx
+Canon/EOS D2000C/RAW_CANON_D2000.TIF	c59213dcdf5ebeb4	CR2	lossless-jpeg
+Canon/EOS D30/CRW_2444.CRW	1394ca5c1cb8816d	CRW	canon-crw
+Canon/EOS D60/CRW_0099.CRW	63e248973fe41cef	CRW	canon-crw
+Canon/EOS Digital Rebel XS/RAW_CANON_1000D.CR2	432c3d7c48b69e02	CR2	lossless-jpeg
+Canon/EOS Digital Rebel XSi/_MG_1125.CR2	96bd51269f17da26	CR2	lossless-jpeg
+Canon/EOS Digital Rebel XT/IMG_8728.CR2	5f55c21f1b9469ad	CR2	lossless-jpeg
+Canon/EOS Digital Rebel XTi/img_2981.cr2	bbbfeb5e9ce6d167	CR2	lossless-jpeg
+Canon/EOS Digital Rebel/CRW_2390.CRW	0db1b751a769aa32	CRW	canon-crw
+Canon/EOS Kiss Digital N/20170226_0040.CR2	1cc014a64e5df2a6	CR2	lossless-jpeg
+Canon/EOS Kiss F/IMG_7072.CR2	7b75cc388ef09535	CR2	lossless-jpeg
+Canon/EOS Kiss M/IMG_2695.CR3	d22d53b960aa1657	CR3	canon-crx
+Canon/EOS Kiss X3/IMG_2856-2.CR2	aabc409bee8988e3	CR2	lossless-jpeg
+Canon/EOS Kiss X4/20120117-e01.CR2	9addca866647e9d9	CR2	lossless-jpeg
+Canon/EOS Kiss X80/IMG_3688.CR2	7d128887a0bc8544	CR2	lossless-jpeg
+Canon/EOS Kiss X9/IMG_3505.CR2	3a83f9601d45854d	CR2	lossless-jpeg
+Canon/EOS M/IMG_4624.CR2	845dbcda107b1161	CR2	lossless-jpeg
+Canon/EOS M10/IMG_2207.CR2	312a47092c94f887	CR2	lossless-jpeg
+Canon/EOS M100/IMG_1200.CR2	4bde865a2037f121	CR2	lossless-jpeg
+Canon/EOS M2/m2_test_02.cr2	2ed7e8c439d77f15	CR2	lossless-jpeg
+Canon/EOS M3/IMG_4635.CR2	958d834a3e39fc1c	CR2	lossless-jpeg
+Canon/EOS M5/IMG_6968.CR2	39af0b9f4570e9f5	CR2	lossless-jpeg
+Canon/EOS M50 Mark II/IMG_0051.CR3	f36f717a9250ec89	CR3	canon-crx
+Canon/EOS M50/Canon-EOS_M50_-CRAW_(1:1).CR3	9aacbfe66f505e1b	CR3	canon-crx
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3	9bfade480f63376f	CR3	canon-crx
+Canon/EOS M50/Canon_EOS_M50_RAW_ISO_100_nocrop_nodual.CR3	62261f0ba81cfcd2	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_CRAW_16_9.CR3	0acde6a02ea4b724	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_CRAW_1_1.CR3	350926c2fbe42357	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_CRAW_3_2.CR3	6dc04c247f9b6673	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_CRAW_4_3.CR3	27ec01fde5bcb19e	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_RAW_16_9.CR3	d65b1455eb2f4199	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_RAW_1_1.CR3	c98a29dabb5a8ee2	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_RAW_3_2.CR3	d523f073dba036a9	CR3	canon-crx
+Canon/EOS M6 Mark II/IMG_RAW_4_3.CR3	c9690421494529ac	CR3	canon-crx
+Canon/EOS M6/Canon_EOS-M6-IMG_0302.CR2	f4c836b3205769f3	CR2	lossless-jpeg
+Canon/EOS R/Canon_EOS_R_CRAW_ISO_100.CR3	f9cd81a3249fcfc7	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_CRAW_ISO_100_crop_dual.CR3	d9bfbdf4be0dc4e3	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_CRAW_ISO_100_crop_nodual.CR3	1c10e786bc9963b6	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_CRAW_ISO_100_dual_pixel_on.CR3	7316f2cf5ea315d1	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_RAW_ISO_100.CR3	97e0cf6ed78f761d	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_RAW_ISO_100_crop_dual.CR3	ea529916bb314cc7	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_RAW_ISO_100_crop_nodual.CR3	6fc82e9253259d83	CR3	canon-crx
+Canon/EOS R/Canon_EOS_R_RAW_ISO_100_dual_pixel_on.CR3	62881efa1ae0aab4	CR3	canon-crx
+Canon/EOS R10/IMG_4276.CR3	c1402394bf17c2a2	CR3	canon-crx
+Canon/EOS R10/IMG_4279.CR3	ee6f748240896316	CR3	canon-crx
+Canon/EOS R10/IMG_4361.CR3	1a98b4b315031845	CR3	canon-crx
+Canon/EOS R3/_C3A1200.CR3	4728af6f18b1cba1	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_crop_dual.CR3	b66770b8d28d8b02	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_crop_nodual.CR3	95e4f17561fdf027	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_dual.CR3	e19b885c864f97e1	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3	db6405021fd7ba92	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_crop_dual.CR3	391559946f35879a	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_crop_nodual.CR3	dccb990876b040dc	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_nocrop_dual.CR3	1f9a92d870791620	CR3	canon-crx
+Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_nocrop_nodual.CR3	b009f1986c482e28	CR3	canon-crx
+Canon/EOS R50/Canon_R50_ISO100_RAW_electronicShutter.CR3	9c1b283a1cbe2b49	CR3	canon-crx
+Canon/EOS R50/Canon_R50_ISO100_RAW_mechanicShutter.CR3	f18d612aa45960b7	CR3	canon-crx
+Canon/EOS R50/Canon_R50_ISO100_cRAW_electronicShutter.CR3	de7ba40253854e75	CR3	canon-crx
+Canon/EOS R50/Canon_R50_ISO100_cRAW_mechanicShutter.CR3	035400755fe5a2a7	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3	025e97632ec1e75b	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0347-raw-normal-crop.cr3	f219d18964c6c7f4	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0349-raw-dual-crop.cr3	616e40818e82b341	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0351-raw-dual-full.cr3	1ea0c746f3e46947	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0355-craw-dual-full.cr3	2958f186577dc1d1	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0356-craw-dual-crop.cr3	be43d848a46f60f5	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0359-craw-normal-crop.cr3	f491c769d297ec65	CR3	canon-crx
+Canon/EOS R6 Mark II/canon-r6m2-img_0361-craw-normal-full.cr3	5b1d6de8956200d4	CR3	canon-crx
+Canon/EOS R6/Canon_EOS_R6_CRAW_ISO_100_crop_nodual.CR3	b1c4a2eef4788db3	CR3	canon-crx
+Canon/EOS R6/Canon_EOS_R6_CRAW_ISO_100_nocrop_nodual.CR3	d3e0567e1ffb07f4	CR3	canon-crx
+Canon/EOS R6/Canon_EOS_R6_RAW_ISO_100_crop_nodual.CR3	ae48dee76d956c25	CR3	canon-crx
+Canon/EOS R6/Canon_EOS_R6_RAW_ISO_100_nocrop_nodual.CR3	bb6e4c49b9a90021	CR3	canon-crx
+Canon/EOS R7/443A0157.CR3	b725758b4410f4af	CR3	canon-crx
+Canon/EOS R7/443A0159.CR3	e972065c59294bf1	CR3	canon-crx
+Canon/EOS R7/443A0161.CR3	c6e0dd451046c484	CR3	canon-crx
+Canon/EOS R7/443A0163.CR3	54086f59c516aa5b	CR3	canon-crx
+Canon/EOS R8/CRAW_FULL_FRAME.CR3	f836a663a795a375	CR3	canon-crx
+Canon/EOS R8/CRAW_FULL_FRAME_DUAL_PIXEL.CR3	71d22f6fda67a8ae	CR3	canon-crx
+Canon/EOS R8/RAW_FULL_FRAME.CR3	63c1c6d8d1eb2312	CR3	canon-crx
+Canon/EOS R8/RAW_FULL_FRAME_DUAL_PIXEL.CR3	0c478869ee21455d	CR3	canon-crx
+Canon/EOS REBEL T7i/IMG_1322.CR2	55b78ba5eea0c86b	CR2	lossless-jpeg
+Canon/EOS RP/Canon_EOS_RP_CRAW_ISO_100_crop_nodual.CR3	39a60c4efed4e1f4	CR3	canon-crx
+Canon/EOS RP/Canon_EOS_RP_CRAW_ISO_100_nocrop_nodual.CR3	f48df06ca1d67382	CR3	canon-crx
+Canon/EOS RP/Canon_EOS_RP_RAW_ISO_100_crop_nodual.CR3	46808a9de3b3dcc7	CR3	canon-crx
+Canon/EOS RP/Canon_EOS_RP_RAW_ISO_100_nocrop_nodual.CR3	5cb0f46404b8b663	CR3	canon-crx
+Canon/EOS Rebel SL1/IMG_0308.CR2	bcea0c6b0df24b7d	CR2	lossless-jpeg
+Canon/EOS Rebel SL2/Canon_SL2_Len_24-105.CR2	d3db5f1cb383c319	CR2	lossless-jpeg
+Canon/EOS Rebel SL3/Sedona2020_SL3__MG_1061.CR3	53fb1989e2e90dce	CR3	canon-crx
+Canon/EOS Rebel T100/IMG_7229.CR2	d9f5124c84277de3	CR2	lossless-jpeg
+Canon/EOS Rebel T1i/IMG_0493.CR2	74e653f0acd1e3e8	CR2	lossless-jpeg
+Canon/EOS Rebel T2i/IMG_9301.CR2	6d23609e06ade589	CR2	lossless-jpeg
+Canon/EOS Rebel T3/IMG_0294.CR2	b51e0a5b73ce9ac3	CR2	lossless-jpeg
+Canon/EOS Rebel T3i/IMG_0126.CR2	08a0827e1ceee6be	CR2	lossless-jpeg
+Canon/EOS Rebel T4i/IMG_6980.CR2	f3e24be670499fac	CR2	lossless-jpeg
+Canon/EOS Rebel T5/IMG_0764.CR2	bd119ab9f3226e55	CR2	lossless-jpeg
+Canon/EOS Rebel T5i/IMG_5139.CR2	fb93e24fd77a6db6	CR2	lossless-jpeg
+Canon/EOS Rebel T6/IMG_2422.CR2	b226e4aa8bf0aea4	CR2	lossless-jpeg
+Canon/EOS Rebel T6i/IMG_6217.CR2	dab66f5ff234e9af	CR2	lossless-jpeg
+Canon/EOS Rebel T6s/IMG_3661.CR2	a1b1490e70c79670	CR2	lossless-jpeg
+Canon/EOS Rebel T7/IMG_0662.CR2	607d94cf6b0b7d9c	CR2	lossless-jpeg
+Canon/EOS Rebel T7i/20190925-1501-0421.cr2	76577d0a911d9c04	CR2	lossless-jpeg
+Canon/EOS-1D Mark II N/RY5Q8391-20170423-ss250-ap8.0-fl50-iso100.CR2	bfbfbebad32cefdf	CR2	lossless-jpeg
+Canon/EOS-1D Mark II/RAW_CANON_1DM2.CR2	d4a1e37cd10882ea	CR2	lossless-jpeg
+Canon/EOS-1D Mark III/_K5R7350.CR2	c079e57d28850dd4	CR2	lossless-jpeg
+Canon/EOS-1D Mark IV/IMG_5391.CR2	da978f13a35b978f	CR2	lossless-jpeg
+Canon/EOS-1D Mark IV/IMG_5395.CR2	a46159599f3df600	CR2	canon-sraw
+Canon/EOS-1D Mark IV/IMG_5398.CR2	70ec25da7fb8bd9b	CR2	canon-sraw
+Canon/EOS-1D X Mark II/AZ1I2270.CR2	f3cb78658c90f41f	CR2	lossless-jpeg
+Canon/EOS-1D X Mark II/AZ1I2271.CR2	6db75dfbad13f0e0	CR2	canon-sraw
+Canon/EOS-1D X Mark II/AZ1I2272.CR2	2471899a41f837ec	CR2	canon-sraw
+Canon/EOS-1D X Mark III/Canon_EOS-1D_X_Mark_III_CRAW_ISO_100_nocrop_nodual.CR3	3472dbe7a6661a61	CR3	canon-crx
+Canon/EOS-1D X Mark III/Canon_EOS-1D_X_Mark_III_RAW_ISO_100_nocrop_nodual.CR3	2720ebe45be94b90	CR3	canon-crx
+Canon/EOS-1D X/RAW_CANON_EOS_1DX.CR2	e1e12c33a49564b5	CR2	lossless-jpeg
+Canon/EOS-1D/B53A0011-20171118-ss200-ap2.8-fl50-iso200.TIF	5e19221f20458a48	CR2	lossless-jpeg
+Canon/EOS-1Ds Mark II/RAW_CANON_1DSM2.CR2	46ff483cfd6a59fc	CR2	lossless-jpeg
+Canon/EOS-1Ds Mark III/RAW_CANON_1DSM3.CR2	418c855fc3dfea8a	CR2	lossless-jpeg
+Canon/EOS-1Ds/IMG-27780.TIF	940e3226b062aab5	CR2	lossless-jpeg
+Canon/PowerShot G1 X Mark II/IMG_1986.CR2	d4b6ced9a68dd520	CR2	lossless-jpeg
+Canon/PowerShot G1 X Mark III/20180719T101829IMG_0246.CR2	7a65598c7df5ef2a	CR2	lossless-jpeg
+Canon/PowerShot G1 X/IMG_0004.CR2	0d023f27892d67ae	CR2	lossless-jpeg
+Canon/PowerShot G1/crw_1693.crw	29e5400846b7a54b	CRW	canon-crw
+Canon/PowerShot G10/RAW_CANON_G10.CR2	1774d26b9e039535	CR2	lossless-jpeg
+Canon/PowerShot G11/IMG_3310.CR2	785b5b63ad8eb78a	CR2	lossless-jpeg
+Canon/PowerShot G12/2017_09_20_img_1146.cr2	d5e2266bd0665db0	CR2	lossless-jpeg
+Canon/PowerShot G15/2016-04-28_IMG_1712.CR2	f2347cc53ac74a42	CR2	lossless-jpeg
+Canon/PowerShot G16/IMG_0963.CR2	ba01a612ba7cbffe	CR2	lossless-jpeg
+Canon/PowerShot G2/RAW_CANON_G2.CRW	53fda7c42bb0a935	CRW	canon-crw
+Canon/PowerShot G3 X/IMG_5395.CR2	8a1e46e03d781879	CR2	lossless-jpeg
+Canon/PowerShot G3/RAW_CANON_G3.CRW	99f3edc31db8683c	CRW	canon-crw
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(16:9).CR3	3ab57b8a42d65802	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(1:1).CR3	b71d2e24af7573ec	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(3:2).CR3	fed8f701f231442f	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_CRAW_(4:3).CR3	fd2d21929c322e68	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_RAW_(16:9).CR3	129a78fa2bdc56f9	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_RAW_(1:1).CR3	8bbe5847fe718b05	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_RAW_(3:2).CR3	55768d1aeb7cb9c4	CR3	canon-crx
+Canon/PowerShot G5 X Mark II/Canon_-_PowerShot_G5_X_Mark_II_-_RAW_(4:3).CR3	0e94bf6f9199f612	CR3	canon-crx
+Canon/PowerShot G5 X/IMG_2240.CR2	c023524c2998f93d	CR2	lossless-jpeg
+Canon/PowerShot G5/105_0506.CRW	87938c35d6b338c4	CRW	canon-crw
+Canon/PowerShot G6/CRW_2097.CRW	a7fabe9530365b64	CRW	canon-crw
+Canon/PowerShot G7 X Mark II/IMG_0166.CR2	9d719788df4e38d8	CR2	lossless-jpeg
+Canon/PowerShot G7 X Mark III/IMG_0253.CR3	902ebe922fe78046	CR3	canon-crx
+Canon/PowerShot G7 X Mark III/IMG_0254.CR3	8e14883328edb261	CR3	canon-crx
+Canon/PowerShot G7 X/CANON_G7X_IMG_6738.CR2	e47b2d8a25669a60	CR2	lossless-jpeg
+Canon/PowerShot G9 X Mark II/IMG_1066.CR2	fe91af24c438f82a	CR2	lossless-jpeg
+Canon/PowerShot G9 X/IMG_3301.CR2	c91dc1caee963e2a	CR2	lossless-jpeg
+Canon/PowerShot G9/IMG_1188.CR2	ee20d24464ec8952	CR2	lossless-jpeg
+Canon/PowerShot Pro1/RAW_CANON_PRO1_ARGB.CRW	0a424ef0f956f64b	CRW	canon-crw
+Canon/PowerShot Pro70/RAW_CANON_PRO70_SRGB.CRW	c7be7fecfd68339f	CRW	uncompressed
+Canon/PowerShot S100/IMG_1340.CR2	0f169e9592e64275	CR2	lossless-jpeg
+Canon/PowerShot S110/IMG_1218.CR2	8ef0f13b7b6498fb	CR2	lossless-jpeg
+Canon/PowerShot S120/IMG_1995.CR2	48c576b96afb4a60	CR2	lossless-jpeg
+Canon/PowerShot S30/RAW_CANON_S30.CRW	deff2803ddf6a086	CRW	canon-crw
+Canon/PowerShot S40/RAW_CANON_S40.CRW	1ba9603a88e6bbc9	CRW	canon-crw
+Canon/PowerShot S45/RAW_CANON_S45.CRW	ed49b28e8dae3edd	CRW	canon-crw
+Canon/PowerShot S50/RAW_CANON_S50.CRW	fc2b54f374c2227b	CRW	canon-crw
+Canon/PowerShot S60/RAW_CANON_S60_SRGB.CRW	8e5d72e7291bf325	CRW	canon-crw
+Canon/PowerShot S70/RAW_CANON_S70_SRGB.CRW	ea1f13b833feac1f	CRW	canon-crw
+Canon/PowerShot S90/RAW_CANON_S90.CR2	f099a6303d9c073d	CR2	lossless-jpeg
+Canon/PowerShot S95/img_1866.cr2	85a73f8907207856	CR2	lossless-jpeg
+Canon/PowerShot SX1 IS/RAW_CANON_POWERSHOT_SX1_IS.CR2	f06ef1d5964152cc	CR2	lossless-jpeg
+Canon/PowerShot SX50 HS/IMG_4059.CR2	4466491896d50162	CR2	lossless-jpeg
+Canon/PowerShot SX60 HS/Canon-SX60HS-Canon-RAW.CR2	ae5f336d4abcf0a1	CR2	lossless-jpeg
+Canon/PowerShot SX70 HS/IMG_1000.CR3	000c7fe9fbecf4c2	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1001.CR3	389cb4f9e264fbe0	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1002.CR3	8a8bdaa5d550f788	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1003.CR3	01cfe3e7a74a5879	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1004.CR3	b34ead785bf271f0	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1005.CR3	2f2d34f71a9a59ce	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1006.CR3	9860389a26056df3	CR3	canon-crx
+Canon/PowerShot SX70 HS/IMG_1007.CR3	1c6dc1d8713f12bb	CR3	canon-crx

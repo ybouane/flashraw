@@ -1,0 +1,44 @@
+//! # flashraw-core
+//!
+//! Foundation crate of FlashRaw: structured errors, bounds-checked zero-copy byte
+//! access, high-throughput bit pumps, Huffman decoding, TIFF/BMFF container
+//! parsing, sensor-domain value types, and the [`RawDecoder`] contract that every
+//! format implements.
+//!
+//! Most users want the `flashraw` crate instead.
+
+#![deny(unsafe_op_in_unsafe_fn)]
+
+pub mod bits;
+pub mod bmff;
+pub mod bytes;
+pub mod camera_profile;
+pub mod decoder;
+mod error;
+pub mod exif;
+pub mod huffman;
+pub mod image;
+pub mod integrity;
+pub mod metadata;
+pub mod orientation;
+pub mod par;
+pub mod profile;
+pub mod simd;
+pub mod tiff;
+pub mod types;
+
+pub use bytes::{ByteOrder, Cursor, ReadAt};
+pub use camera_profile::{CameraProfile, ProfileTable, TableEncoding};
+pub use decoder::{
+    DecodeContext, DecodeUnit, FrameInfo, PackOrder, PackedPayload, RandomAccess, RawDecoder, SampleFormat,
+};
+pub use error::{Error, Result};
+pub use image::{Limits, PixelData, RawImage, alloc_zeroed, max_nonneg_bits};
+pub use integrity::{CorruptReason, DataUnit, DecodeWarning, RowGeometry, SensorBytes, Truncation};
+pub use metadata::{
+    DngExtras, DngProfileInfo, EXTRA_CROP_SOURCE, EXTRA_IMAGE_SIZE, ExposureInfo, GpsInfo, LensInfo, PreviewEncoding,
+    PreviewInfo, PreviewKind, RawMetadata,
+};
+pub use orientation::{OrientationMetadata, OrientationPolicy, OrientationSource};
+pub use profile::{Profiler, Stage};
+pub use types::*;

@@ -1,0 +1,49 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Leaf/AFi-II 12/L_000859.mos	d32945db7795fc35	MOS	leaf
+Leaf/Aptus 22/L_003172.mos	d9a7586bcc74a89c	MOS	leaf
+Leaf/Aptus 22/L_003173.mos	9075df46af27d5a7	MOS	uncompressed
+Leaf/Aptus 75/RAW_APTUS_75.MOS	9a26b4df350c6128	MOS	leaf
+Leaf/Credo 40/0001_20_32.IIQ	5625d23617c6bd28	IIQ	phaseone
+Leaf/Credo 40/0002_20_32.IIQ	e4e12eec696e2111	IIQ	phaseone-s
+Leaf/Credo 40/0008_20_23.IIQ	20a9c5ca905c679c	IIQ	phaseone
+Leaf/Credo 40/CF003914.IIQ	375d601a6205a651	IIQ	phaseone
+Phase One/H 25/H25_IT8.7-2_Card.TIF	ec5f025a60f1b406	IIQ	uncompressed
+Phase One/H 25/H25_Outdoor_.IIQ	49a3a8dd9f426191	IIQ	phaseone
+Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_004_IIQ_L.TIF	4cfd1ab8c72344fe	IIQ	phaseone
+Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_005_IIQ_S.TIF	a29bb63309dd0d46	IIQ	phaseone-s
+Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_010_Sensor+_IIQ_L.TIF	345a999df8fb01e4	IIQ	phaseone
+Phase One/IQ140/Phase_One_IQ140_sample_files_04_Diciembre_2017_011_Sensor+_IIQ_S.TIF	7fb79fb8203cdc15	IIQ	phaseone-s
+Phase One/IQ150/CF006803.IIQ	bdfeedef6e94fa1e	IIQ	phaseone
+Phase One/IQ180/230214_9561.IIQ	6919fc39049a9b5a	IIQ	phaseone
+Phase One/IQ180/230214_9562.IIQ	dcd48cc023454d57	IIQ	phaseone-s
+Phase One/IQ180/230214_9564.IIQ	c2df540e7de55ede	IIQ	phaseone-s
+Phase One/IQ180/230214_9565.IIQ	f9d9ba5b2c43ef77	IIQ	phaseone
+Phase One/IQ3 100MP Trichr/Trichromatic-2.IIQ	4d1fe498b6eb5207	IIQ	phaseone
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_L.IIQ	d7d4ac3dbfd20faf	IIQ	phaseone
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_L_16bit.IIQ	0d39dd3f5bd524e9	IIQ	phaseone
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ	819e463244343753	IIQ	phaseone-s
+Phase One/IQ4 150MP/IQ4_150MPIIQ_L_16bit.iiq	18dd782764478f6f	IIQ	phaseone
+Phase One/IQ4 150MP/IQ4_150MP_L_14.iiq	7119cc76800dde5f	IIQ	phaseone
+Phase One/IQ4 150MP/IQ4_150MP_L_16_Ex.iiq	1f25a613a810de5f	IIQ	phaseone
+Phase One/P20+/CF051544.IIQ	bd882cc5664fe4ad	IIQ	phaseone
+Phase One/P20+/CF051545.IIQ	dd6a4b1b62e8befd	IIQ	phaseone
+Phase One/P20+/CF051552.TIF	e81338949d939bdf	IIQ	phaseone
+Phase One/P20+/CF051553.TIF	15a97159171459a5	IIQ	phaseone
+Phase One/P25+/CF028662.IIQ	65c1f9589fa34aae	IIQ	phaseone
+Phase One/P25+/CF028663.IIQ	7971198c441481ed	IIQ	phaseone
+Phase One/P25/CF082161.TIF	8ae0f1769ef62b1b	IIQ	phaseone
+Phase One/P25/CF082166.TIF	c110abf382f0a2c6	IIQ	phaseone
+Phase One/P30/CF098736.TIF	ec7a723a081a479e	IIQ	phaseone
+Phase One/P45+/CF125838.IIQ	28db464c7ff0cc3c	IIQ	phaseone
+Phase One/P45+/CF125839.IIQ	4b89e18c7d4bf16d	IIQ	phaseone
+Phase One/P45/230215_3809.TIF	f9f6e6985612a76e	IIQ	phaseone
+Phase One/P45/230215_3810.TIF	8957b7714fe5b5c1	IIQ	phaseone
+Phase One/P65+/CF027310.IIQ	28e6a735376c39be	IIQ	phaseone
+Phase One/P65+/CF027311.IIQ	bec002323eb1ce56	IIQ	phaseone
+Phase One/P65+/CF027312.IIQ	565efa72f121cbbe	IIQ	phaseone
+Phase One/P65+/CF027313.IIQ	f1c2171eebe04a74	IIQ	phaseone
+Phase One/P65+/CF028114.iiq	54b41a85bc4938c3	IIQ	phaseone
+Phase One/iXM-100/_848.IIQ	88039b236cb9d525	IIQ	phaseone
+Phase One/iXM-100/_849.IIQ	22a889f808f35b59	IIQ	phaseone-s
+Phase One/iXM-RS150F/RGB_86_0_4.IIQ	c944097ac3c70494	IIQ	phaseone-s
+Phase One/iXU180/cap_22908.IIQ	7f7fa89e26ed23b1	IIQ	phaseone-s

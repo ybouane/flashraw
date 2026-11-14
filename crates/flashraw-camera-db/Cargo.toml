@@ -1,0 +1,30 @@
+[package]
+name = "flashraw-camera-db"
+description = "Camera database for FlashRaw: aliases, crops, black/white levels, CFA patterns and colour matrices compiled into static tables, with the validation tooling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-camera-db"
+readme = "README.md"
+keywords = ["raw", "camera", "database", "dng", "image"]
+categories = ["multimedia::images", "data-structures"]
+include = ["src/**", "build.rs", "data/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+build = "build.rs"
+
+[features]
+# Validate/compare tooling used by `flashraw camera-db ...` (not needed at runtime).
+tooling = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true, features = ["preserve_order"] }
+
+[build-dependencies]
+serde_json.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true

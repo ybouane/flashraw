@@ -1,0 +1,113 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+OLYMPUS IMAGING CORP./SP550UZ/PA030017.ORF	c4140a089bffd100	ORF	uncompressed
+OLYMPUS/E-M5 Mark III/PB290154.ORF	22f6889d8a3973f7	ORF	olympus
+OLYMPUS/STYLUS1,1s/P4155261.ORF	319b84abc44c727a	ORF	olympus
+OM Digital Solutions/OM-3/P5048182.ORF	dc89c4cc53346e4b	ORF	olympus
+OM Digital Solutions/OM-3/P5048183.ORF	d6528ff7495b5743	ORF	olympus
+OM Digital Solutions/OM-3/P5048183.ORI	b89f611a086df385	ORF	olympus
+OM Digital Solutions/OM-3/P5048184.ORF	da5d16fe8232b9b8	ORF	olympus
+OM Digital Solutions/OM-3/P5048184.ORI	dda24fd15f703add	ORF	olympus
+OM Digital Solutions/OM-3/P5048185.ORF	355237d1b04dff43	ORF	olympus
+OM Digital Solutions/OM-3/P5048185.ORI	330da1c94c253ec5	ORF	olympus
+OM Digital Solutions/OM-3/P5048186.ORF	56c6e2741c29b82f	ORF	olympus
+OM Digital Solutions/OM-3/P5048186.ORI	147621a68dcabbf4	ORF	olympus
+OM Digital Solutions/OM-5MarkII/OM_System_OM-5_2_hires_a.ORF	1bb3667b6be02929	ORF	olympus
+OM Digital Solutions/OM-5MarkII/OM_System_OM-5_2_hires_a.ORI	4498e39b8bd9e4cc	ORF	olympus
+OM Digital Solutions/OM-5MarkII/OM_System_OM-5_2_hires_b.ORF	8d95cc4af0677736	ORF	olympus
+OM Digital Solutions/OM-5MarkII/OM_System_OM-5_2_hires_b.ORI	fd2d4d0b07256a8c	ORF	olympus
+OM Digital Solutions/OM-5MarkII/OM_System_OM-5_2_regular.ORF	83a6a8a58166ea6f	ORF	olympus
+OM System/OM-1 Mark II/20mp-12bit.orf	8e54b859f7c09c89	ORF	olympus
+OM System/OM-1 Mark II/50mp-12bit-handheld.orf	032f4eddc49945a7	ORF	olympus
+OM System/OM-1 Mark II/50mp-12bit-handheld.ori	bbf85fef148024fb	ORF	olympus
+OM System/OM-1 Mark II/50mp-14bit-handheld.orf	769a033f8f6466cc	ORF	olympus
+OM System/OM-1 Mark II/50mp-14bit-handheld.ori	88f6bc7e692d3e7d	ORF	olympus
+OM System/OM-1 Mark II/80mp-12bit-tripod.orf	13a2722cb950a666	ORF	olympus
+OM System/OM-1 Mark II/80mp-12bit-tripod.ori	151ffba6e526de8e	ORF	olympus
+OM System/OM-1 Mark II/80mp-14bit-tripod.orf	72e3e514f9b635b3	ORF	olympus
+OM System/OM-1 Mark II/80mp-14bit-tripod.ori	bcc4b6bd123f4897	ORF	olympus
+OM System/OM-1/OM_Systems_OM1_RAW_Image_20mpx_P1010025.ORF	afd4ad2043a097ca	ORF	olympus
+OM System/OM-1/OM_Systems_OM1_RAW_image_HiRes_50mpx_P1010026.ORF	8bfc1d771870ec5f	ORF	olympus
+OM System/OM-1/OM_Systems_OM1_RAW_image_HiRes_50mpx_P1010026.ORI	fe7cfcd4b68c3c96	ORF	olympus
+OM System/OM-1/OM_Systems_OM1_RAW_image_HiRes_80mpx_P1010027.ORF	5c361c822ab026eb	ORF	olympus
+OM System/OM-1/OM_Systems_OM1_RAW_image_HiRes_80mpx_P1010027.ORI	ee2b13d7a660f7e8	ORF	olympus
+OM System/OM-5/C1291096.ORF	6e0c0ef1129f955a	ORF	olympus
+OM System/OM-5/C1291097.ORF	c2c891abb1657e88	ORF	olympus
+OM System/OM-5/C1291097.ORI	d3ca6a27026f5fff	ORF	olympus
+OM System/OM-5/C1291098.ORF	7a4ac435c774d159	ORF	olympus
+OM System/OM-5/C1291098.ORI	c6518b65740b20d7	ORF	olympus
+OM System/TG-7/UWAG0002.ORF	d602b196c5861d46	ORF	olympus
+Olympus/C5050Z/RAW_OLYMPUS_C5050Z.ORF	b18965ef610e04e4	ORF	uncompressed
+Olympus/C5060WZ/C5060WZ_5_7_22_8mm__27_110mm_equiv__F_2_8_8P4141018_cabo_de_gata.ORF	43f609348a04021e	ORF	uncompressed
+Olympus/C7070WZ/PC270085.ORF	4af0c66928cdb3a2	ORF	uncompressed
+Olympus/C8080WZ/RAW_OLYMPUS_C8080.ORF	0b842bae1b87d2ef	ORF	uncompressed
+Olympus/E-1/E_1__C106743_gredos.ORF	52251c0893b10bc0	ORF	uncompressed
+Olympus/E-10/P7198607.ORF	2f8891a030a95640	ORF	uncompressed
+Olympus/E-20/RAW_OLYMPUS_E20.ORF	908dcfd92720d4bc	ORF	uncompressed
+Olympus/E-3/E_3__3099164_casco_antiguo_petrer.ORF	350975e3bf50156f	ORF	olympus
+Olympus/E-30/RAW_OLYMPUS_E30.ORF	c0c4536d1b6c9b42	ORF	olympus
+Olympus/E-300/P1252148.ORF	a9b4e78303a445c2	ORF	uncompressed
+Olympus/E-330/P3307182.ORF	c93838fa9822c81a	ORF	uncompressed
+Olympus/E-400/_A270187.ORF	e5cddf06ae45e070	ORF	uncompressed
+Olympus/E-410/PC309398.ORF	a88b576beee6307e	ORF	olympus
+Olympus/E-420/P4232993.ORF	50306049112bc5a8	ORF	olympus
+Olympus/E-450/20220605_0011.ORF	e5739ca1838c26b5	ORF	olympus
+Olympus/E-5/_7061961_copy.ORF	52a00cdc9b9f9ca4	ORF	olympus
+Olympus/E-500/_1010010.ORF	5e222ac817ed89d9	ORF	uncompressed
+Olympus/E-510/Olympus_E510-4.ORF	121b7a91434a4156	ORF	olympus
+Olympus/E-520/RAW_OLYMPUS_E520.ORF	d3d947de50903063	ORF	olympus
+Olympus/E-600/RAW_OLYMPUS_E600.ORF	0c0ee921ea1f02be	ORF	olympus
+Olympus/E-620/_1100778.orf	3c959b6c18b94b37	ORF	olympus
+Olympus/E-M1/sc000877.orf	c61b0bb351704735	ORF	olympus
+Olympus/E-M10 Mark II/2022-04-15T17_31_58[P4150904].ORF	ce8ceb26351dad26	ORF	olympus
+Olympus/E-M10 Mark III/PA080192.ORF	edc1ec6d15a8a303	ORF	olympus
+Olympus/E-M10 Mark IIIs/ilhabela_202110_0082.ORF	2a68ad120594ef14	ORF	olympus
+Olympus/E-M10 Mark IV/PA040002.ORF	35086a720cb06e34	ORF	olympus
+Olympus/E-M10 Mark IV/_A180042.ORF	b7aa699f0280d5e2	ORF	olympus
+Olympus/E-M10/P3180165.ORF	11ea2d3225b283c4	ORF	olympus
+Olympus/E-M1MarkII/Olympus_EM1mk2_Standard_20MP.ORF	10fee3df633385ac	ORF	olympus
+Olympus/E-M1MarkII/Olympus_EM1mk2_Standard_20MP_ColorChecker.ORF	f2b867671cc7c7d0	ORF	olympus
+Olympus/E-M1MarkII/Olympus_EM1mk2__HIRES_25MP.ORF	483a020492d2d73e	ORF	olympus
+Olympus/E-M1MarkII/Olympus_EM1mk2__HIRES_25MP.ORI	be862d7ef2eca09f	ORF	olympus
+Olympus/E-M1MarkII/Olympus_EM1mk2__HIRES_50MP.ORF	45466e47f7f11186	ORF	olympus
+Olympus/E-M1MarkII/Olympus_EM1mk2__HIRES_50MP.ORI	1b97400b45e88562	ORF	olympus
+Olympus/E-M1MarkIII/_3160529.ORF	28a5becdffff6905	ORF	olympus
+Olympus/E-M1MarkIII/_3160529.ORI	7b4af30255c9ef9c	ORF	olympus
+Olympus/E-M1MarkIII/_3160530.ORF	164bee51196622a4	ORF	olympus
+Olympus/E-M1MarkIII/_3160530.ORI	ae8e5dc049e6c2f5	ORF	olympus
+Olympus/E-M1MarkIII/_3160531.ORF	d685bbd0bec7ea0b	ORF	olympus
+Olympus/E-M1X/P3240916.ORF	4a6dbe9f1e6c3d2a	ORF	olympus
+Olympus/E-M5 Mark II/CB252215.ORF	a222be38c7677782	ORF	uncompressed
+Olympus/E-M5 Mark II/CB252215.ORI	c042efb684222a11	ORF	olympus
+Olympus/E-M5 Mark III/PB240241.ORF	19e91dbbe24d1288	ORF	olympus
+Olympus/E-M5/P2082705.ORF	4bf659e52fbb9ea2	ORF	olympus
+Olympus/E-P1/P1080385.ORF	ba953795ad97e0c0	ORF	olympus
+Olympus/E-P2/P9084305.ORF	9efe10a9769c2b2e	ORF	olympus
+Olympus/E-P3/RAW_OLYMPUS_EP3.ORF	82eb97396b97b8fe	ORF	olympus
+Olympus/E-P5/OLYMPUS_PEN_E-P5_ISO200_IT8COLOR.ORF	e0d5dcb7670147c2	ORF	olympus
+Olympus/E-P7/P8162689.ORF	3f582302d649c1de	ORF	olympus
+Olympus/E-PL1/PB120976.ORF	75e289e8398fa244	ORF	olympus
+Olympus/E-PL10/P6100030.ORF	52659d5feee21142	ORF	olympus
+Olympus/E-PL2/P9031909.ORF	7733561fbc97b5f3	ORF	olympus
+Olympus/E-PL3/RAW_OLYMPUS_EPL2.ORF	d524ea33828a1887	ORF	olympus
+Olympus/E-PL5/P9230087.ORF	fd3ba5cd14c83516	ORF	olympus
+Olympus/E-PL6/e7169440.orf	88f223931704aa71	ORF	olympus
+Olympus/E-PL7/fb240007.orf	d30ae77f62f64983	ORF	olympus
+Olympus/E-PL8/P9110021.ORF	a96b2f0c36f270c0	ORF	olympus
+Olympus/E-PL9/EB000005.ORF	2c3d161423fadcbf	ORF	olympus
+Olympus/E-PM1/P2083783.ORF	f593bfbf8b0181e5	ORF	olympus
+Olympus/E-PM2/P1010001.ORF	bac9dc04af90b3d2	ORF	olympus
+Olympus/PEN-F/PenFHiRes.orf	415ebf27092e9897	ORF	uncompressed
+Olympus/PEN-F/PenFNormal.orf	914f91061c58fd7c	ORF	olympus
+Olympus/SH-2/PC260009.ORF	b25b8d244ade1f3d	ORF	uncompressed
+Olympus/SP350/RAW_OLYMPUS_SP350.ORF	57b77873a2792a58	ORF	uncompressed
+Olympus/SP500UZ/RAW_OLYMPUS_SP500UZ.ORF	4bc4eac8cded9974	ORF	uncompressed
+Olympus/SP510UZ/PA210583.ORF	13a307e1d122e144	ORF	uncompressed
+Olympus/SP565UZ/2019-09-26--10.03.53001.ORF	d015f95442142a0b	ORF	uncompressed
+Olympus/SP570UZ/P5110102.ORF	fb21c7c8169575d7	ORF	uncompressed
+Olympus/Stylus1/OLYMPUS-STYLUS1.ORF	cdd717d8333eee37	ORF	olympus
+Olympus/TG-4/P1170373.ORF	99bacb47c47213cc	ORF	olympus
+Olympus/TG-5/P9100007.ORF	a0d17a52b1f719c6	ORF	olympus
+Olympus/TG-6/_6100003.ORF	d6501e479dbcfe90	ORF	olympus
+Olympus/XZ-1/p1319978.orf	f6d3edb7303dddc6	ORF	olympus
+Olympus/XZ-10/P1240016.ORF	62741a67cd4240f7	ORF	uncompressed
+Olympus/XZ-2/p7166537.orf	37c8182e1814ee61	ORF	uncompressed

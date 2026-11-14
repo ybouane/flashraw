@@ -1,0 +1,6 @@
+# FORMAT	MODE	COMPRESSION	STATUS	NOTES
+MRW	packed	minolta-packed	verified	9 corpus files (DiMAGE A1/A2/A200, Dynax/Maxxum/Alpha 5D and 7D)
+MRW	unpacked	uncompressed	verified	4 corpus files (DiMAGE 5, 7, 7i, 7Hi)
+MRW	z2-headerless	minolta-packed	verified	DiMAGE Z2 headerless dump (identified by size and tail)
+MDC	rd175	uncompressed	verified	RD-175 three-CCD dump
+MRW	DiMAGE G / Konica KD JPEG-embedded	other	unsupported	not implemented

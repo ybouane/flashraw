@@ -1,0 +1,66 @@
+# Popular and current camera bodies, phones, drones and action cameras, one file each
+# (two where a body has a distinct, widely used compression mode), from the CC0 corpus
+# (tools/corpus/manifest.tsv; fetch with tools/corpus/fetch.py).
+# Columns: corpus-relative path, camera, note (compression mode as the camera names it).
+Canon/EOS R5/Canon_EOS_R5_RAW_ISO_100_nocrop_nodual.CR3	Canon EOS R5	RAW
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3	Canon EOS R5	C-RAW
+Canon/Canon EOS R5m2/RAW.CR3	Canon EOS R5 Mark II	RAW
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3	Canon EOS R6 Mark II	RAW
+Canon/Canon EOS R6 Mark III/IMG_4241.CR3	Canon EOS R6 Mark III	RAW
+Canon/EOS R7/443A0157.CR3	Canon EOS R7	RAW
+Canon/EOS R8/RAW_FULL_FRAME.CR3	Canon EOS R8	RAW
+Canon/EOS R50/Canon_R50_ISO100_RAW_mechanicShutter.CR3	Canon EOS R50	RAW
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3	Canon EOS 90D	RAW
+Canon/EOS 5D Mark IV/B13A0734.CR2	Canon EOS 5D Mark IV	RAW
+Canon/EOS 6D Mark II/6DII-RAW.CR2	Canon EOS 6D Mark II	RAW
+Canon/EOS Rebel T7/IMG_0662.CR2	Canon EOS Rebel T7 / 2000D	RAW
+Nikon/Z 8/Nikon_Z8_raw_14_bit_lossless_compression.NEF	Nikon Z8	14-bit lossless
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF	Nikon Z9	14-bit lossless
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_FX.NEF	Nikon Z6III	lossless
+Nikon/Z f/DSC_0040.NEF	Nikon Zf	lossless
+Nikon/Z 7_2/Z72_0027.NEF	Nikon Z7II	lossless
+Nikon/Z 50/DSC_0450.NEF	Nikon Z50	lossless
+Nikon/D850/Nikon-D850-14bit-lossless-compressed.NEF	Nikon D850	14-bit lossless
+Nikon/D750/lossless_compressed_14_bit.NEF	Nikon D750	14-bit lossless
+Sony/ILCE-7M4/ILCE-7M4_DSC06674_FullFrame-LossLess-Compressed-Large.ARW	Sony A7 IV	lossless
+Sony/ILCE-7M4/ILCE-7M4_DSC06677_FullFrame-Raw-Compressed.ARW	Sony A7 IV	compressed
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW	Sony A7R V	lossless
+Sony/ILCE-1/A1_full_compressed.ARW	Sony A1	compressed
+Sony/ILCE-7M3/_DSC0009.ARW	Sony A7 III	compressed
+Sony/ILCE-7CM2/DSC02435.ARW	Sony A7C II	compressed
+Sony/ILCE-9M3/DSC00111.ARW	Sony A9 III	compressed
+Sony/ILCE-6700/DSC00001.ARW	Sony A6700	lossless
+Sony/ILCE-6400/DSC00087.ARW	Sony A6400	compressed
+Sony/ZV-E10/DSC00002.ARW	Sony ZV-E10	compressed
+Fujifilm/X-T5/DSCF0021.RAF	Fujifilm X-T5	lossless compressed
+Fujifilm/X-H2/Fuji-X-H2-Compressed-Raw.RAF	Fujifilm X-H2	compressed
+Fujifilm/X-S20/DSCF2526.RAF	Fujifilm X-S20	lossless compressed
+Fujifilm/X100VI/DSCF0075.RAF	Fujifilm X100VI	lossless compressed
+Fujifilm/X-T4/DSCF0266.RAF	Fujifilm X-T4	uncompressed
+Fujifilm/GFX100 II/_DSF0267.RAF	Fujifilm GFX100 II	lossless compressed
+Panasonic/DC-S5M2/P1126458_mechanical.RW2	Panasonic Lumix S5II	RW2
+Panasonic/DC-GH6/4-3.RW2	Panasonic Lumix GH6	RW2
+Panasonic/DC-G9M2/P1000019.RW2	Panasonic Lumix G9II	RW2
+Panasonic/DC-S5/P1047510.RW2	Panasonic Lumix S5	RW2
+Panasonic/DC-S1R/P1000077.RW2	Panasonic Lumix S1R	RW2
+Panasonic/DC-GH5/_T012010.RW2	Panasonic Lumix GH5	RW2
+OM System/OM-1 Mark II/20mp-12bit.orf	OM System OM-1 Mark II	ORF
+OM System/OM-5/C1291096.ORF	OM System OM-5	ORF
+Olympus/E-M1MarkIII/_3160531.ORF	Olympus E-M1 Mark III	ORF
+Pentax/K-3 Mark III/_IMG0115.PEF	Pentax K-3 Mark III	PEF
+Pentax/K-1 Mark II/_K1I9780.PEF	Pentax K-1 Mark II	PEF
+Ricoh/GR III/R0000357.DNG	Ricoh GR III	DNG
+Leica/Q2/L1000750.DNG	Leica Q2	DNG
+LEICA CAMERA AG/LEICA SL2/L1020010.DNG	Leica SL2	DNG
+Leica Camera AG/LEICA M10-R/M10R0324.DNG	Leica M10-R	DNG
+Hasselblad/X2D 100C/Job_0079.fff	Hasselblad X2D 100C	compressed
+Phase One/IQ4 150MP/IQ4_150MP_L_14.iiq	Phase One IQ4 150MP	IIQ L
+Sigma/fp L/SDIM0915.DNG	Sigma fp L	DNG
+Apple/iPhone 12 Pro/IMG_1361.DNG	Apple iPhone 12 Pro	ProRAW
+Google/Pixel 8 Pro/PXL_20240415_103400204.RAW-02.ORIGINAL.dng	Google Pixel 8 Pro	DNG
+Google/Pixel 6 Pro/PXL_20220910_093206982.dng	Google Pixel 6 Pro	DNG
+Samsung/Galaxy S23 Ultra/20231214_130645.dng	Samsung Galaxy S23 Ultra	DNG
+samsung/SM-S901E/20250305_173647.dng	Samsung Galaxy S22	JPEG XL
+DJI/FC6310/DJI_0220.DNG	DJI Phantom 4 Pro	DNG
+GoPro/HERO11 Black/GOPR0123.GPR	GoPro HERO11 Black	GPR
+GoPro/HERO10 Black/GOPR0018.GPR	GoPro HERO10 Black	GPR

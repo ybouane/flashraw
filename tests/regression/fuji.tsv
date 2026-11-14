@@ -1,0 +1,152 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+FUJIFILM/GFX100RF/DSCF0075.RAF	5e44893764ad770d	RAF	uncompressed
+FUJIFILM/GFX100RF/DSCF0076.RAF	49110f1b80eefe2e	RAF	fuji-compressed
+FUJIFILM/GFX100RF/DSCF0077.RAF	d825fe3b2488b85f	RAF	fuji-compressed
+FUJIFILM/GFX100RF/DSCF0091.RAF	fc81b91050d0ba1f	RAF	uncompressed
+FUJIFILM/GFX100RF/DSCF0092.RAF	7e87830286d2a75d	RAF	fuji-compressed
+FUJIFILM/GFX100RF/DSCF0093.RAF	d57ebe97c4485584	RAF	fuji-compressed
+FUJIFILM/GFX100S II/_DSF0001.RAF	9bb6d871b4881a2b	RAF	uncompressed
+FUJIFILM/GFX100S II/_DSF0002.RAF	f06dd5e8aeb0beee	RAF	fuji-compressed
+FUJIFILM/GFX100S II/_DSF0003.RAF	25bd7cb405c6e942	RAF	fuji-compressed
+FUJIFILM/GFX100S II/_DSF0004.RAF	6aabf656116ce44a	RAF	uncompressed
+FUJIFILM/GFX100S II/_DSF0005.RAF	331eb99c6dd64d88	RAF	fuji-compressed
+FUJIFILM/GFX100S II/_DSF0006.RAF	de76712d234c473b	RAF	fuji-compressed
+FUJIFILM/X-E5/DSCF0202.RAF	cb26a313716d7bdc	RAF	uncompressed
+FUJIFILM/X-E5/DSCF0203.RAF	1f8ebfe8924c4754	RAF	fuji-compressed
+FUJIFILM/X-E5/DSCF0204.RAF	6a7d5cde2832d4f3	RAF	fuji-compressed
+FUJIFILM/X-M5/DSCF0620_-_uncompressed.RAF	572c158c87ae084f	RAF	uncompressed
+FUJIFILM/X-M5/DSCF0621_-_lossless.RAF	edd17960a117a553	RAF	fuji-compressed
+FUJIFILM/X-M5/DSCF0622_-_compressed.RAF	13534db23f7c45d0	RAF	fuji-compressed
+FUJIFILM/X-M5/DSCF0623_-_crop_1,25.RAF	5ed4a757a2546b45	RAF	fuji-compressed
+FUJIFILM/X-T30 III/DSCF0131.RAF	635b00d68d24d41e	RAF	fuji-compressed
+FUJIFILM/X-T30 III/DSCF0132.RAF	8ceaf8f18237e4b2	RAF	uncompressed
+FUJIFILM/X-T30 III/DSCF0133.RAF	6366c7242534cc5b	RAF	fuji-compressed
+FUJIFILM/X-T50/DSCF0118.RAF	a27d4e70fe531f2c	RAF	uncompressed
+FUJIFILM/X-T50/DSCF0119.RAF	8d06ef475245ca81	RAF	fuji-compressed
+FUJIFILM/X-T50/DSCF0120.RAF	a8e2be9cac387ebc	RAF	fuji-compressed
+Fujifilm/DBP for GX680/DSCF0010.RAF	d1920b6f75399eed	RAF	uncompressed
+Fujifilm/FinePix E550/RAW_FUJI_E550.RAF	a5c4e58679921fb3	RAF	uncompressed
+Fujifilm/FinePix E900/RAW_FUJI_E900.RAF	a3dc3fe62e307970	RAF	uncompressed
+Fujifilm/FinePix F550EXR/DSCF6714.RAF	4247157c9d70b359	RAF	uncompressed
+Fujifilm/FinePix F600EXR/RAW_FUJI_F600XR.RAF	40c09119ec79aa44	RAF	uncompressed
+Fujifilm/FinePix F700/RAW_FUJI_F700.RAF	4702bce6a498c095	RAF	uncompressed
+Fujifilm/FinePix F770EXR/DSCF0686.RAF	6df45810a5811e9b	RAF	uncompressed
+Fujifilm/FinePix F900EXR/RAW_FUJI_FINPIX_F900EXR.RAF	98d35807b5b738fb	RAF	uncompressed
+Fujifilm/FinePix HS10 HS11/RAW_FUJI_FINEPIX_HS10.RAF	f3930f2ca4de0503	RAF	uncompressed
+Fujifilm/FinePix HS20EXR/RAW_FUJIFILM_HS20EXR.RAF	5c5cd6eb61afd9ab	RAF	uncompressed
+Fujifilm/FinePix HS30EXR/DSCF4080.RAF	5d4c290170fa83c3	RAF	uncompressed
+Fujifilm/FinePix HS33EXR/DSCF6464.RAF	7172f98c00340dde	RAF	uncompressed
+Fujifilm/FinePix HS50EXR/DSCF0016.RAF	ad53aa23e4814fcc	RAF	uncompressed
+Fujifilm/FinePix S1/DSCF0001.RAF	de37e14827f24305	RAF	uncompressed
+Fujifilm/FinePix S100FS/DSCF8410.RAF	f23929b97b8c54bf	RAF	uncompressed
+Fujifilm/FinePix S200EXR/DSCF4754.RAF	d0d3f54fe255c144	RAF	uncompressed
+Fujifilm/FinePix S2Pro/DSCF0002.RAF	3defe3118697a131	RAF	uncompressed
+Fujifilm/FinePix S3Pro/DSCF3694.RAF	59c8215dae2c2271	RAF	uncompressed
+Fujifilm/FinePix S5000/2007_0912Image0022.RAF	12c3fbf02cb4581a	RAF	uncompressed
+Fujifilm/FinePix S5200/DSCF1523.RAF	21be8d9991cbe309	RAF	uncompressed
+Fujifilm/FinePix S5500/DSCF6206.RAF	42facc4a669169de	RAF	uncompressed
+Fujifilm/FinePix S5600/RAW_FUJI_S5600S5200.RAF	6d1087619fbfeeee	RAF	uncompressed
+Fujifilm/FinePix S5Pro/2018_06150003.RAF	f2bc32d9bf4fceba	RAF	uncompressed
+Fujifilm/FinePix S6000fd/DSCF1973.RAF	8359cbacf8e8af0c	RAF	uncompressed
+Fujifilm/FinePix S6500fd/DSCF1333.RAF	894aeb5c012e5f48	RAF	uncompressed
+Fujifilm/FinePix S7000/dscf3648.raf	28e63856adc4d645	RAF	uncompressed
+Fujifilm/FinePix S9500/20170430_0041.RAF	3f9f059c171c6668	RAF	uncompressed
+Fujifilm/FinePix S9600/2007-11-10--16-32-45-original.raf	080216bfb656327d	RAF	uncompressed
+Fujifilm/FinePix SL1000/RAW_file_from_Fijifilm_Finepix_SL1000.RAF	cbb1b0f19dcebdbc	RAF	uncompressed
+Fujifilm/FinePix X10/DSCF0514.RAF	b1a013ee088965ef	RAF	uncompressed
+Fujifilm/FinePix X100/DSCF1676.RAF	8c7bbdea47c301bb	RAF	uncompressed
+Fujifilm/GFX 100/_DSF3977.RAF	6418a2486af90aee	RAF	uncompressed
+Fujifilm/GFX 100/_DSF3978.RAF	1195d3ab70da7cb4	RAF	fuji-compressed
+Fujifilm/GFX 100/_DSF3979.RAF	7b5ed7c901d67945	RAF	uncompressed
+Fujifilm/GFX 100/_DSF3980.RAF	b7c7c1a7717ef93c	RAF	fuji-compressed
+Fujifilm/GFX 50R/2019-01-24-14-02-50_DSCF1316_e819634e46ecdb8ea241012ee70ae11e5c220c48.raf	bc839f6ab5770c91	RAF	uncompressed
+Fujifilm/GFX 50R/2019-01-24-14-03-03_DSCF1317_c9ab436f1532b532976eec431f0e4db7e9f2b8e2.raf	2da21f02218801e9	RAF	fuji-compressed
+Fujifilm/GFX 50S/20170525_0036TEST.RAF	ec69127fb42c1e26	RAF	uncompressed
+Fujifilm/GFX 50S/20170525_0037TEST.RAF	b3e570a6c88455f5	RAF	fuji-compressed
+Fujifilm/GFX100 II/_DSF0264.RAF	56779820a59b43d8	RAF	uncompressed
+Fujifilm/GFX100 II/_DSF0265.RAF	12e069857c80eff7	RAF	fuji-compressed
+Fujifilm/GFX100 II/_DSF0266.RAF	2af28dacbc2a7b2e	RAF	fuji-compressed
+Fujifilm/GFX100 II/_DSF0267.RAF	62a8663e5432f96a	RAF	fuji-compressed
+Fujifilm/GFX100 II/_DSF0268.RAF	1a5a421e94262cfa	RAF	fuji-compressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-compress-4_3.RAF	08359c39ccc3dc62	RAF	fuji-compressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-losslescompressed-4_3.RAF	6ef28fd6cac46a86	RAF	fuji-compressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-14bits-uncompress-4_3.RAF	e8f971975eaa46b5	RAF	uncompressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-16bits-compress-4_3.RAF	63debf0afde73e2e	RAF	fuji-compressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-16bits-losslesscompressed-4_3.RAF	84ab46122f72796c	RAF	fuji-compressed
+Fujifilm/GFX100S/Fujifilm-GFX100S-16bits-uncompress-4_3.RAF	1b908fa5929cff82	RAF	uncompressed
+Fujifilm/GFX50S II/Fuji_GFX50S_II_-_Compressed.RAF	37283df4f8213721	RAF	fuji-compressed
+Fujifilm/GFX50S II/Fuji_GFX50S_II_-_Lossless_Compressed.RAF	fa639b8c5617c875	RAF	fuji-compressed
+Fujifilm/GFX50S II/Fuji_GFX50S_II_-_Uncompressed.RAF	06570932cc9b04a9	RAF	uncompressed
+Fujifilm/X-A1/DSCF2482.RAF	bfe55bc3818daff0	RAF	uncompressed
+Fujifilm/X-A10/DSCF8207.RAF	b681517624aeea80	RAF	uncompressed
+Fujifilm/X-A2/DSCF2073.RAF	0bada317a0653e82	RAF	uncompressed
+Fujifilm/X-A3/DSCF7241.RAF	ab8b9cf025dc29dd	RAF	uncompressed
+Fujifilm/X-A5/DSCF0617.RAF	4ccd66493466c414	RAF	uncompressed
+Fujifilm/X-A7/DSCF1595.RAF	3c7595af4bdb5d1e	RAF	uncompressed
+Fujifilm/X-E1/DSCF6490.RAF	905739a3e181a9de	RAF	uncompressed
+Fujifilm/X-E2/DSCF9050.RAF	18b2ac1ba7ece687	RAF	uncompressed
+Fujifilm/X-E2S/_DSF0540.RAF	334a900e4d2e6f7a	RAF	uncompressed
+Fujifilm/X-E3/DSCF2175.RAF	9dae1182a6fff11a	RAF	uncompressed
+Fujifilm/X-E3/DSCF2176.RAF	bd53512d5e130622	RAF	fuji-compressed
+Fujifilm/X-E4/fuji_xe4_32_lossless.RAF	05ea0600153caf50	RAF	fuji-compressed
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF	7ec72eb0eba4acc4	RAF	fuji-compressed
+Fujifilm/X-E4/fuji_xe4_32_uncompressed.RAF	2fcc422e3c03ae93	RAF	uncompressed
+Fujifilm/X-H1/fuji_xh1_compressed.RAF	235fcef51ecef7e0	RAF	fuji-compressed
+Fujifilm/X-H1/fuji_xh1_uncompressed.RAF	7f5487f1fe78db94	RAF	uncompressed
+Fujifilm/X-H2/Fuji-X-H2-Compressed-Raw.RAF	466a5707ea484f9c	RAF	fuji-compressed
+Fujifilm/X-H2/Fuji-X-H2-Lossless-Compressed-Raw.RAF	bbf043676476925a	RAF	fuji-compressed
+Fujifilm/X-H2/Fuji-X-H2-Uncompressed-Raw.RAF	ba7f227838af226d	RAF	uncompressed
+Fujifilm/X-H2S/IMG-20221005-0665.raf	ecc7380e10e1f9b6	RAF	fuji-compressed
+Fujifilm/X-H2S/IMG-20221005-0666.raf	493538aa41c69209	RAF	uncompressed
+Fujifilm/X-H2S/IMG-20221005-0667.raf	0ad6e26890a8cbfb	RAF	fuji-compressed
+Fujifilm/X-M1/DSCF1442.RAF	e6a289ab2a707f59	RAF	uncompressed
+Fujifilm/X-Pro1/DSCF2131.RAF	f5eb1273c2d40d05	RAF	uncompressed
+Fujifilm/X-Pro2/_DSF3050.RAF	f26821e19eac3aaf	RAF	uncompressed
+Fujifilm/X-Pro2/_DSF3051.RAF	226bd218a49df9d7	RAF	fuji-compressed
+Fujifilm/X-Pro3/_DSF2384.RAF	08d96383c9c568da	RAF	uncompressed
+Fujifilm/X-Pro3/_DSF2385.RAF	654249b663f7e014	RAF	fuji-compressed
+Fujifilm/X-S1/DSCF9185.RAF	feb2062d77663ed6	RAF	uncompressed
+Fujifilm/X-S10/Fujifilm-X-S10-compressed.RAF	21b84a08ba6f4d80	RAF	fuji-compressed
+Fujifilm/X-S10/Fujifilm-X-S10-lossless-compressed.RAF	938a1f2b1c922ca5	RAF	fuji-compressed
+Fujifilm/X-S10/Fujifilm-X-S10-uncompressed.RAF	c987263e0cb099ee	RAF	uncompressed
+Fujifilm/X-S20/DSCF2526.RAF	2b15357d7db01e0a	RAF	fuji-compressed
+Fujifilm/X-S20/DSCF2528.RAF	5a02a7df0b05727f	RAF	uncompressed
+Fujifilm/X-S20/DSCF2529.RAF	477037fc7e6d0d15	RAF	fuji-compressed
+Fujifilm/X-T1/20171229_110916.RAF	944d128e65c76375	RAF	uncompressed
+Fujifilm/X-T10/DSCF8146.RAF	84cf2c71714074d0	RAF	uncompressed
+Fujifilm/X-T100/DSCF0627.RAF	fc921c9120751751	RAF	uncompressed
+Fujifilm/X-T2/20170114_173532_TFW04723.RAF	5ca8c44aeee86d15	RAF	uncompressed
+Fujifilm/X-T2/20170114_174341_TFW04727.RAF	e020816ec114436f	RAF	fuji-compressed
+Fujifilm/X-T20/DSCF0526.RAF	bbd743ccd612af4f	RAF	uncompressed
+Fujifilm/X-T20/DSCF0527.RAF	85014025edc2cebd	RAF	fuji-compressed
+Fujifilm/X-T200/DSCF0074.RAF	c235b051f6e08ccc	RAF	uncompressed
+Fujifilm/X-T3/AFXT2720.RAF	1ed7cebce86fdeb2	RAF	uncompressed
+Fujifilm/X-T3/AFXT2721.RAF	8d50a172374fa578	RAF	fuji-compressed
+Fujifilm/X-T30 II/compressed_X-T30II.RAF	88b72d0c92bc4d9b	RAF	fuji-compressed
+Fujifilm/X-T30 II/lossless-compressed_X-T30II.RAF	b82af2bf50edc0b3	RAF	fuji-compressed
+Fujifilm/X-T30 II/lossless_X-T30II.RAF	0f6e38a7f92b5373	RAF	uncompressed
+Fujifilm/X-T30/DSCF0065.RAF	d589f85d366e6e2a	RAF	uncompressed
+Fujifilm/X-T30/DSCF0066.RAF	693f75467932b1c0	RAF	fuji-compressed
+Fujifilm/X-T4/DSCF0266.RAF	a364367e31ffdd5a	RAF	uncompressed
+Fujifilm/X-T4/DSCF0267.RAF	7c98e527dbe01f23	RAF	fuji-compressed
+Fujifilm/X-T4/DSCF0268.RAF	fb4ba0df34c1c904	RAF	fuji-compressed
+Fujifilm/X-T5/DSCF0021.RAF	8f76abd57de79a94	RAF	fuji-compressed
+Fujifilm/X-T5/DSCF0022.RAF	0b2784853c31278d	RAF	fuji-compressed
+Fujifilm/X-T5/DSCF0023.RAF	09b9855188d63e50	RAF	uncompressed
+Fujifilm/X-T5/DSCF4964_70-300.RAF	786b51b2c046f686	RAF	fuji-compressed
+Fujifilm/X100F/DSCF5760_x100f_lossless_compressed_raw_Temple.RAF	44d706fde255f55c	RAF	fuji-compressed
+Fujifilm/X100F/DSCF5761_x100f_uncompressed_raw_Temple.RAF	59709f1e899c5396	RAF	uncompressed
+Fujifilm/X100S/fujifilm-x100s-daylight-DSCF9505.RAF	8bb0be8f8e2f0114	RAF	uncompressed
+Fujifilm/X100T/DSCF0442.RAF	83a0fc55ba4a8a34	RAF	uncompressed
+Fujifilm/X100V/DSCF0733.RAF	008387ed2a04b84c	RAF	uncompressed
+Fujifilm/X100V/DSCF0734.RAF	02eee2eb3f29017e	RAF	fuji-compressed
+Fujifilm/X100VI/DSCF0074.RAF	e0bd5ff9a7913b1e	RAF	uncompressed
+Fujifilm/X100VI/DSCF0075.RAF	526827bfda239f8f	RAF	fuji-compressed
+Fujifilm/X100VI/DSCF0076.RAF	05c8063553bcc0bc	RAF	fuji-compressed
+Fujifilm/X20/DSCF7451.RAF	c13a34e9bedb7b65	RAF	uncompressed
+Fujifilm/X30/20160604_0009.RAF	9d28789eb37ad23a	RAF	uncompressed
+Fujifilm/X70/DSCF8848.RAF	b49d8575ed65191c	RAF	uncompressed
+Fujifilm/XF1/DSCF4005.RAF	9860bc0528ca7b68	RAF	uncompressed
+Fujifilm/XF10/DSCF6466.RAF	c8fbdb433419aee8	RAF	uncompressed
+Fujifilm/XQ1/DSCF2004.RAF	5e6f2478974a775f	RAF	uncompressed
+Fujifilm/XQ2/DSCF4186.RAF	755da621b230a779	RAF	uncompressed

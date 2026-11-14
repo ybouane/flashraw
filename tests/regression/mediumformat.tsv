@@ -1,0 +1,6 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+Epson/R-D1/_EPS0672.ERF	c8c00ec38a87c1b3	ERF	uncompressed
+Epson/R-D1s/EPSN3575.ERF	80f69fa85e45bb5f	ERF	uncompressed
+Epson/R-D1x/_EPS1919.ERF	55c93e78637113be	ERF	uncompressed
+Mamiya/ZD/RAW_MAMIYA_ZD.MEF	615fd79e58ce661f	MEF	uncompressed
+Sinarback/Sinarback eVolution 75, Sinar p3  f3/Tomatio_03.sti	d5346abbe98ad8a1	other	uncompressed

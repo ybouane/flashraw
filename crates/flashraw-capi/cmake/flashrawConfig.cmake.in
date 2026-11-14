@@ -1,0 +1,45 @@
+# CMake package for the FlashRaw C/C++ API.
+#
+#   find_package(flashraw 0.1 REQUIRED)
+#   target_link_libraries(app PRIVATE flashraw::flashraw)          # shared library
+#   target_link_libraries(app PRIVATE flashraw::flashraw_static)   # static library
+#
+# Set FLASHRAW_USE_STATIC_LIBS=ON before find_package() to make flashraw::flashraw the
+# static library.
+
+@PACKAGE_INIT@
+
+set_and_check(FLASHRAW_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(_flashraw_libdir "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+set(_flashraw_bindir "@PACKAGE_CMAKE_INSTALL_BINDIR@")
+
+if(NOT TARGET flashraw::flashraw_shared)
+  add_library(flashraw::flashraw_shared SHARED IMPORTED)
+  if(WIN32)
+    set_target_properties(flashraw::flashraw_shared PROPERTIES
+      IMPORTED_LOCATION "${_flashraw_bindir}/@FLASHRAW_SHARED_NAME@"
+      IMPORTED_IMPLIB "${_flashraw_libdir}/@FLASHRAW_IMPLIB_NAME@")
+  else()
+    set_target_properties(flashraw::flashraw_shared PROPERTIES
+      IMPORTED_LOCATION "${_flashraw_libdir}/@FLASHRAW_SHARED_NAME@")
+  endif()
+  set_target_properties(flashraw::flashraw_shared PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${FLASHRAW_INCLUDE_DIR}")
+
+  add_library(flashraw::flashraw_static STATIC IMPORTED)
+  set_target_properties(flashraw::flashraw_static PROPERTIES
+    IMPORTED_LOCATION "${_flashraw_libdir}/@FLASHRAW_STATIC_NAME@"
+    INTERFACE_INCLUDE_DIRECTORIES "${FLASHRAW_INCLUDE_DIR}"
+    INTERFACE_LINK_LIBRARIES "@FLASHRAW_NATIVE_LIBS@")
+
+  add_library(flashraw::flashraw INTERFACE IMPORTED)
+  if(FLASHRAW_USE_STATIC_LIBS)
+    set_target_properties(flashraw::flashraw PROPERTIES INTERFACE_LINK_LIBRARIES flashraw::flashraw_static)
+  else()
+    set_target_properties(flashraw::flashraw PROPERTIES INTERFACE_LINK_LIBRARIES flashraw::flashraw_shared)
+  endif()
+endif()
+
+set(flashraw_LIBRARIES flashraw::flashraw)
+set(flashraw_INCLUDE_DIRS "${FLASHRAW_INCLUDE_DIR}")
+check_required_components(flashraw)

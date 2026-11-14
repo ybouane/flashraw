@@ -1,0 +1,262 @@
+# path (relative to corpus)	FNV-1a64 of full sensor buffer	format	compression
+NIKON CORPORATION/COOLPIX P1100/DSCN0173.NRW	72621601b15b4bba	NRW	uncompressed
+NIKON CORPORATION/NIKON D200/20071013-10273016-NIKON_D200.nef	83e3cae6efec3d96	NEF	nikon-huffman
+NIKON CORPORATION/NIKON D2X/_ABA4604.NEF	d5b9d3b61efc6cb8	NEF	uncompressed
+NIKON CORPORATION/NIKON D2X/_ABA4605.NEF	5b4abe0fcaa7dbd0	NEF	nikon-huffman
+NIKON CORPORATION/NIKON D2Xs/DSC_0034.NEF	07d0d25e2f25f675	NEF	nikon-huffman
+NIKON CORPORATION/NIKON D5300/DSC_0089-14bit-uncompressed.NEF	f65d4d6ef5879427	NEF	nikon-huffman
+NIKON CORPORATION/NIKON D5300/DSC_0090-12bit-uncompressed.NEF	b141e60b754f0ffc	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_12bit.NEF	1720b0d818054ed2	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_12bit_uncompressed.NEF	b0cfd8d747f722a2	NEF	uncompressed
+NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_14bit.NEF	efd58fe8bd34d61e	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z fc/Nikon_Z_fc_14bit_uncompressed.NEF	67a2e88df1ca2bd0	NEF	uncompressed
+NIKON CORPORATION/NIKON Z50_2/DSC_0060_DX_Lossless.NEF	b8966b21ac27ad07	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z50_2/DSC_0063_1x1_Lossless.NEF	25104e1dd77c010f	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z50_2/DSC_0066_16x9_Lossless.NEF	3a52768a1cab50dd	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z5_2/Lossless_compression_1-1.NEF	ec01146a2b7acfe5	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z5_2/Lossless_compression_DX.NEF	984858a84c0a68ee	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z5_2/Lossless_compression_FX_1.NEF	777225f7e0104027	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_16_9.NEF	901c37c25cdac6c5	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_1_1.NEF	b592c20acc4b86d4	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_DX.NEF	70099d60941a628a	NEF	nikon-huffman
+NIKON CORPORATION/NIKON Z6_3/Nikon_Z6__3_Lossless_compressed_FX.NEF	0ef008e7752064ef	NEF	nikon-huffman
+Nikon/1 AW1/_DSC0521.NEF	5e6819a3f01d88ee	NEF	nikon-huffman
+Nikon/1 J1/_DSC0355.NEF	7ba6b4dced103f09	NEF	nikon-huffman
+Nikon/1 J1/_DSC7434.NEF	29e07678537c7bc8	NEF	nikon-huffman
+Nikon/1 J1/_DSC8140.NEF	7e734aadc3f69e5b	NEF	nikon-huffman
+Nikon/1 J2/DSC_0451.NEF	d7b6ca840c3f1260	NEF	nikon-huffman
+Nikon/1 J3/DSC_0091.NEF	4d7080d26fea887b	NEF	nikon-huffman
+Nikon/1 J4/Copenhagen_Day_10_City_Hall_Sq._Streetworks_DSC_3459_19072016_407.NEF	a859582f033dc86c	NEF	nikon-huffman
+Nikon/1 J5/20151027-10311989-NIKON_1_J5.nef	40712881301d0208	NEF	nikon-huffman
+Nikon/1 J5/20151027-10431071-NIKON_1_J5.nef	7224af5b44aec2de	NEF	nikon-huffman
+Nikon/1 S1/DSC_0076.NEF	e4929643c26bd3a0	NEF	nikon-huffman
+Nikon/1 S2/RAW_NIKON_1S2.NEF	0df2418f962d22d5	NEF	nikon-huffman
+Nikon/1 V1/DSC_4157.NEF	edfdff9870dd9e89	NEF	nikon-huffman
+Nikon/1 V1/DSC_4167.NEF	072f94d83cf6e7c5	NEF	nikon-huffman
+Nikon/1 V2/Nikon_1_V2_ISO-200.NEF	99b1531c702ead25	NEF	nikon-huffman
+Nikon/1 V3/DSC_3313.NEF	02e0ba1b128a6bf9	NEF	nikon-huffman
+Nikon/COOLPIX B700/DSCN2079.NRW	c82269edf57287a8	NRW	uncompressed
+Nikon/COOLPIX P1000/DSCN1113.NRW	b5126adb9e726cae	NRW	uncompressed
+Nikon/COOLPIX P950/DSCN0014.NRW	dc598f4da414edfb	NRW	uncompressed
+Nikon/Coolpix A/_DSC0010.NEF	875aed86a3ad09c6	NEF	nikon-huffman
+Nikon/Coolpix A1000/DSCN0417.NRW	2ab87617000c0a7d	NRW	uncompressed
+Nikon/Coolpix E8800/DSCN6207.NEF	87b50687478e24a3	NEF	uncompressed
+Nikon/Coolpix P330/DSCN0138.NRW	080d303cc0a628a6	NRW	uncompressed
+Nikon/Coolpix P340/RAW_NIKON_COOLPIX_P340.NRW	e105e2e4880286e6	NRW	uncompressed
+Nikon/Coolpix P6000/RAW_NIKON_P6000_GPS.NRW	ea115ba71c4f7ac8	NRW	uncompressed
+Nikon/Coolpix P7000/RAW_NIKON_P7000.NRW	83ab7153c5a0831f	NRW	uncompressed
+Nikon/Coolpix P7100/RAW_NIKON_COOLPIX_P7100.NRW	e290e9dfa4ea0f07	NRW	uncompressed
+Nikon/Coolpix P7700/2021-01-09-112815.NRW	2471d157862e19c4	NRW	uncompressed
+Nikon/Coolpix P7800/DSCN2039.NRW	781db8df9df42a3b	NRW	uncompressed
+Nikon/D1/RAW_NIKON_D1.NEF	a39adc8da4831f7f	NEF	uncompressed
+Nikon/D100/DSC_2376.NEF	b8bea8165563c3b6	NEF	uncompressed
+Nikon/D1H/DSC_3671.NEF	27ce43724d648bc5	NEF	uncompressed
+Nikon/D1X/D1x_20040730_ub20_035.NEF	b448b2d284d3f7ac	NEF	nikon-huffman
+Nikon/D1X/DSC_0494.NEF	b6dce933d2f259f1	NEF	uncompressed
+Nikon/D200/pbs_7117.nef	d33ff00aa90f0f78	NEF	uncompressed
+Nikon/D2H/D2A_0005.NEF	df579062e630ebee	NEF	uncompressed
+Nikon/D2H/D2H_3957.NEF	0ca67d6803aa4ae1	NEF	nikon-huffman
+Nikon/D2Hs/DSC_5858.NEF	9f70b976d7d0a5a8	NEF	uncompressed
+Nikon/D2Xs/DSC_0035.NEF	4f84d44d0d9fc09f	NEF	uncompressed
+Nikon/D3/JD1_8203.NEF	722b6aaa43471793	NEF	nikon-huffman
+Nikon/D3/JD1_8204.NEF	b0c5fa3d43df5aad	NEF	uncompressed
+Nikon/D3/JD1_8205.NEF	e4fa8e45d9b275ad	NEF	nikon-huffman
+Nikon/D3/JD1_8206.NEF	f18b00350ccea6b0	NEF	nikon-huffman
+Nikon/D3/JD1_8207.NEF	8953e70b0b0086fe	NEF	uncompressed
+Nikon/D3/JD1_8208.NEF	827d4c59d2addfac	NEF	nikon-huffman
+Nikon/D300/MMC_2821.NEF	c7f31049d8f817db	NEF	nikon-huffman
+Nikon/D300/MMC_2822.NEF	7f15a97dea220bb5	NEF	nikon-huffman
+Nikon/D300/MMC_2823.NEF	858dfc9cb001016e	NEF	uncompressed
+Nikon/D300/MMC_2824.NEF	3c1efb99e3b20253	NEF	nikon-huffman
+Nikon/D300/MMC_2825.NEF	5a1248507d5cc3a1	NEF	nikon-huffman
+Nikon/D300/MMC_2826.NEF	642f812d2a22148b	NEF	uncompressed
+Nikon/D3000/DSC_0009.NEF	70a6f6015d538b0e	NEF	nikon-huffman
+Nikon/D300S/_DSC4612.NEF	9c8c97bac369e6ea	NEF	nikon-huffman
+Nikon/D300S/_DSC4613.NEF	05246739ab356c65	NEF	nikon-huffman
+Nikon/D300S/_DSC4614.NEF	6b116c4bb02f4667	NEF	uncompressed
+Nikon/D300S/_DSC4615.NEF	eab15396a4dc4a9f	NEF	nikon-huffman
+Nikon/D300S/_DSC4616.NEF	b70bc0b1bb475289	NEF	nikon-huffman
+Nikon/D300S/_DSC4617.NEF	2e1c54603da8ee97	NEF	uncompressed
+Nikon/D3100/DSC_0359.NEF	916d09e701cf0314	NEF	nikon-huffman
+Nikon/D3200/DSC_0059.NEF	d267603b2d716fe0	NEF	nikon-huffman
+Nikon/D3300/DSC_0028.NEF	93eafe7f2bba3f5c	NEF	nikon-huffman
+Nikon/D3400/DSC_0202.NEF	a55c8f4a662ff9af	NEF	nikon-huffman
+Nikon/D3400/DSC_0330_bad.NEF	a805b4e728de7f68	NEF	nikon-huffman
+Nikon/D3500/DSC_0043.NEF	b1eebbd1346a3d92	NEF	nikon-huffman
+Nikon/D3S/_CB32157.NEF	270365d856291ea0	NEF	nikon-huffman
+Nikon/D3S/_CB32158.NEF	45779c692f9ef9bf	NEF	nikon-huffman
+Nikon/D3S/_CB32159.NEF	71a977d9885e048f	NEF	uncompressed
+Nikon/D3S/_CB32160.NEF	75b37517abf78ec3	NEF	nikon-huffman
+Nikon/D3S/_CB32161.NEF	eb43b3bbac6ea641	NEF	nikon-huffman
+Nikon/D3S/_CB32162.NEF	4058a546570913a1	NEF	uncompressed
+Nikon/D3X/RAW_NIKON_D3X.NEF	6086238c1f032d51	NEF	nikon-huffman
+Nikon/D3X/_RLC8083.NEF	52c3e70b7199951e	NEF	uncompressed
+Nikon/D4/_DSC2250[1].NEF	d8c0c164e77e3d65	NEF	uncompressed
+Nikon/D4/_DSC2252[1].NEF	4bd95bcf2e4d27c5	NEF	nikon-huffman
+Nikon/D4/_DSC2254[1].NEF	1bfb85a45e97e216	NEF	nikon-huffman
+Nikon/D4/_DSC2256[1].NEF	43c79b3f9ba20ed1	NEF	uncompressed
+Nikon/D4/_DSC2258[1].NEF	38d6f785bcb9764f	NEF	nikon-huffman
+Nikon/D4/_DSC2260[1].NEF	a288740e1812c305	NEF	nikon-huffman
+Nikon/D40/DSC_1842.NEF	85366f21fbb05eb9	NEF	nikon-huffman
+Nikon/D40X/DSC_4670.NEF	a0759547be310135	NEF	nikon-huffman
+Nikon/D4S/FU9_3802.NEF	6ec79b4f2648a843	NEF	uncompressed
+Nikon/D4S/FU9_3803.NEF	c62c6856c10d3c96	NEF	nikon-huffman
+Nikon/D4S/FU9_3804.NEF	b38f915769b4d540	NEF	nikon-huffman
+Nikon/D4S/FU9_3805.NEF	44bc8fac2cde93e1	NEF	uncompressed
+Nikon/D4S/FU9_3807.NEF	840c3a767907d0c3	NEF	uncompressed
+Nikon/D4S/FU9_3809.NEF	f6f0d89a55a62e6a	NEF	nikon-huffman
+Nikon/D4S/FU9_3810.NEF	fb04e701dab5189e	NEF	nikon-huffman
+Nikon/D5/20170603_CCSG_on_Nikon_D5-DSC3096.NEF	fc01902d7732c5ba	NEF	uncompressed
+Nikon/D5/LV5_4402.NEF	debd007c023c7b63	NEF	nikon-huffman
+Nikon/D50/DSC_5155.NEF	e23b8f5e4b96b285	NEF	nikon-huffman
+Nikon/D500/Nikon_D500_RAWL_12bit_Compressed.NEF	9482f4ef7856ad4e	NEF	nikon-huffman
+Nikon/D500/Nikon_D500_RAWL_12bit_LosslessCompressed.NEF	c33f1ea62872cb72	NEF	nikon-huffman
+Nikon/D500/Nikon_D500_RAWL_12bit_Uncompressed.NEF	7898dd6e554cf530	NEF	uncompressed
+Nikon/D500/Nikon_D500_RAWL_14bit_Compressed.NEF	a9bbe154b78bf84d	NEF	nikon-huffman
+Nikon/D500/Nikon_D500_RAWL_14bit_LosslessCompressed.NEF	b44ce06cc6b5d389	NEF	nikon-huffman
+Nikon/D500/Nikon_D500_RAWL_14bit_Uncompressed.NEF	db13f2125d814f59	NEF	uncompressed
+Nikon/D500/Nikon_D500_RAWM_12bit_LosslessCompressed.NEF	d53095afc90283df	NEF	nikon-huffman
+Nikon/D500/Nikon_D500_RAWS_12bit_LosslessCompressed.NEF	cc1b6d6d3f9b10ad	NEF	nikon-huffman
+Nikon/D5000/2017-03-30T14-24-27+0800_DSC_3614.NEF	79cc4aa92865036f	NEF	nikon-huffman
+Nikon/D5000/DSC_5349.NEF	b8f68efb02546fbc	NEF	nikon-huffman
+Nikon/D5100/00.nikon.12b-lossy-raw.nef	b98f36c5078fef7a	NEF	nikon-huffman
+Nikon/D5100/01.nikonhackers.12b-lossless-raw.nef	710ce320c272493b	NEF	nikon-huffman
+Nikon/D5100/02.nikonhackers.12b-uncompressed-raw.nef	73db15bbf9231c53	NEF	uncompressed
+Nikon/D5200/NIKON_D5200_14_bit_compressed.NEF	d1482f59a727a1e2	NEF	nikon-huffman
+Nikon/D5200/_DSC7535.NEF	4b6105d150a50bc6	NEF	nikon-huffman
+Nikon/D5500/DSC_0258.NEF	83584a6b7fc012e6	NEF	nikon-huffman
+Nikon/D5500/DSC_5097.NEF	2ce00d794dacdb43	NEF	nikon-huffman
+Nikon/D5500/DSC_5098.NEF	86f9590e70db2351	NEF	nikon-huffman
+Nikon/D5600/2018-01-20_01-14_0792.NEF	682455295006a357	NEF	nikon-huffman
+Nikon/D5600/2018-01-20_01-14_0793.NEF	8f8929e1d04ce4ec	NEF	nikon-huffman
+Nikon/D5600/DSC_0027.NEF	2a200cfc45f15db0	NEF	nikon-huffman
+Nikon/D5600/DSC_0028.NEF	a4837975669ab26d	NEF	nikon-huffman
+Nikon/D6/D06_0312.NEF	c39206303679fdd4	NEF	uncompressed
+Nikon/D6/D06_0313.NEF	1d6a9f10a502fb14	NEF	nikon-huffman
+Nikon/D6/D06_0314.NEF	2d6c8af38e4a0ed4	NEF	nikon-huffman
+Nikon/D6/D06_0315.NEF	92115d9835ac8f78	NEF	nikon-huffman
+Nikon/D6/D06_0316.NEF	318cad36c21e82b1	NEF	nikon-huffman
+Nikon/D6/D06_0317.NEF	dd9f097b558d345d	NEF	uncompressed
+Nikon/D6/D06_0318.NEF	f92cd25c4508e100	NEF	nikon-huffman
+Nikon/D6/D06_0319.NEF	272425c271bb0d76	NEF	nikon-huffman
+Nikon/D60/DSC_8294.NEF	2bf6fbcc131c3b85	NEF	nikon-huffman
+Nikon/D600/DSC_3294.NEF	993616eb56f37729	NEF	nikon-huffman
+Nikon/D600/DSC_3295.NEF	06f276ec30e2382b	NEF	nikon-huffman
+Nikon/D600/DSC_3296.NEF	14d21da950ea83da	NEF	nikon-huffman
+Nikon/D600/DSC_3297.NEF	46688eab72f5fb15	NEF	nikon-huffman
+Nikon/D610/ESP_0352.NEF	5948ec20f2c9f1ff	NEF	nikon-huffman
+Nikon/D610/ESP_0353.NEF	4e4eaecf89a75a6a	NEF	nikon-huffman
+Nikon/D610/ESP_0354.NEF	d43987c02235dd2e	NEF	nikon-huffman
+Nikon/D610/ESP_0355.NEF	599cdc14a15f6869	NEF	nikon-huffman
+Nikon/D70/20170902_0047.NEF	b1485e4c0948bcf7	NEF	nikon-huffman
+Nikon/D700/_GDN0443.NEF	507c19fcf74ace38	NEF	nikon-huffman
+Nikon/D700/_GDN0444.NEF	8a3fa0efcb4926b0	NEF	nikon-huffman
+Nikon/D700/_GDN0445.NEF	4eb1638660d84096	NEF	uncompressed
+Nikon/D700/_GDN0446.NEF	e908efbaefa989c7	NEF	nikon-huffman
+Nikon/D700/_GDN0447.NEF	401419165879da9f	NEF	nikon-huffman
+Nikon/D700/_GDN0448.NEF	642674e4fa42f724	NEF	uncompressed
+Nikon/D7000/Compressed 12-bit D7000 NIK_3876.NEF	5500af73e846486e	NEF	nikon-huffman
+Nikon/D7000/Compressed 14-bit D7000 NIK_3875.NEF	2e4ca9f7eaf0e8a0	NEF	nikon-huffman
+Nikon/D7000/DSE61507.nef	fef7b47cedb39108	NEF	nikon-huffman
+Nikon/D7000/Lossless compressed 12-bit D7000 NIK_3877.NEF	788aed90c8d40aa7	NEF	nikon-huffman
+Nikon/D7000/Lossless compressed 14-bit D7000 NIK_3874.NEF	cb0ecaaf34f6af82	NEF	nikon-huffman
+Nikon/D70s/RAW_NIKON_D70S.NEF	cd2e6f871fbe8c5e	NEF	nikon-huffman
+Nikon/D7100/JCR_4305.NEF	0cbd07b1c8d05524	NEF	nikon-huffman
+Nikon/D7100/JCR_4306.NEF	9a1c133242f3b757	NEF	nikon-huffman
+Nikon/D7100/JCR_4308.NEF	b8a2009c9e0304eb	NEF	nikon-huffman
+Nikon/D7100/JCR_4309.NEF	0220a418e0f645a1	NEF	nikon-huffman
+Nikon/D7200/DSC_0977.NEF	e0a02fd95e26c48b	NEF	nikon-huffman
+Nikon/D7200/DSC_0978.NEF	9b83d362dc199680	NEF	nikon-huffman
+Nikon/D7200/DSC_0979.NEF	c8e8e56ee113327e	NEF	nikon-huffman
+Nikon/D7200/DSC_0982.NEF	84826fe5269effcc	NEF	nikon-huffman
+Nikon/D750/compressed_12_bit.NEF	c2293104e9c08a7f	NEF	nikon-huffman
+Nikon/D750/compressed_14_bit.NEF	86d0771145bdfc0d	NEF	nikon-huffman
+Nikon/D750/lossless_compressed_12_bit.NEF	859125d74dda641a	NEF	nikon-huffman
+Nikon/D750/lossless_compressed_14_bit.NEF	ff033e589a9c32c2	NEF	nikon-huffman
+Nikon/D7500/RAW_NIKON_D7500_12BIT_COMPRESSED.NEF	3b374709ca9cb26a	NEF	nikon-huffman
+Nikon/D7500/RAW_NIKON_D7500_12BIT_LOSSLESS_COMPRESSED.NEF	60a5b331db6bd69d	NEF	nikon-huffman
+Nikon/D7500/RAW_NIKON_D7500_14BIT_COMPRESSED.NEF	ead535c6c320d023	NEF	nikon-huffman
+Nikon/D7500/RAW_NIKON_D7500_14BIT_LOSSLESS_COMPRESSED.NEF	dd0166f70fad4ef6	NEF	nikon-huffman
+Nikon/D780/DSC_0334.NEF	9394120566c40394	NEF	nikon-huffman
+Nikon/D780/DSC_0336.NEF	69356abca14010ec	NEF	nikon-huffman
+Nikon/D780/DSC_0338.NEF	357768ad8d8e045a	NEF	nikon-huffman
+Nikon/D780/DSC_0340.NEF	b2c623cd2ec8a9a3	NEF	nikon-huffman
+Nikon/D80/DSC_1114.NEF	1fb40222c74a7856	NEF	nikon-huffman
+Nikon/D800/D800-12b-comp.NEF	f845899f8ce24085	NEF	nikon-huffman
+Nikon/D800/D800-12b-lossless-comp.NEF	d8b839656355459a	NEF	nikon-huffman
+Nikon/D800/D800-12b-no-comp.NEF	8f5c3ac64fadca04	NEF	uncompressed
+Nikon/D800/D800-14b-comp.NEF	dd32b538c4856244	NEF	nikon-huffman
+Nikon/D800/D800-14b-lossless-comp.NEF	205d3756412d9312	NEF	nikon-huffman
+Nikon/D800/D800-14b-no-comp.NEF	0d0b0e3ca0dd8973	NEF	uncompressed
+Nikon/D800E/NikonD800EDyLght0EV.NEF	aee4a5c64fcb4b4a	NEF	nikon-huffman
+Nikon/D800E/_D8E3567.NEF	2ebe8c60c0fd0c98	NEF	uncompressed
+Nikon/D810/DSC_1882.NEF	7065511576ac80d5	NEF	nikon-huffman
+Nikon/D810/DSC_1883.NEF	024b9035a6059df2	NEF	nikon-huffman
+Nikon/D810/DSC_1884.NEF	18310b9ffc3e19cb	NEF	uncompressed
+Nikon/D810/DSC_1885.NEF	b61c6f52b07b54ba	NEF	nikon-huffman
+Nikon/D810/DSC_1886.NEF	81e4fbbde5ab385a	NEF	nikon-huffman
+Nikon/D810/DSC_1887.NEF	17278b01d21fe7fb	NEF	uncompressed
+Nikon/D810/DSC_1888.NEF	df19688f4f331130	NEF	uncompressed
+Nikon/D850/Nikon-D850-12bit-compressed.NEF	92f9555ffec30d67	NEF	nikon-huffman
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF	df0b6d1fc2569846	NEF	nikon-huffman
+Nikon/D850/Nikon-D850-12bit-uncompressed.NEF	84ac5b2237d20037	NEF	uncompressed
+Nikon/D850/Nikon-D850-14bit-compressed.NEF	4c946de0d3f38c8c	NEF	nikon-huffman
+Nikon/D850/Nikon-D850-14bit-lossless-compressed.NEF	f9b5ddb8b093fa60	NEF	nikon-huffman
+Nikon/D850/Nikon-D850-14bit-uncompressed.NEF	de65b1665087afef	NEF	uncompressed
+Nikon/D850/Nikon-D850-medium.NEF	800c6f4176a7a0c9	NEF	nikon-huffman
+Nikon/D850/Nikon-D850-small.NEF	77354e78daec87f0	NEF	nikon-huffman
+Nikon/D90/00001.NEF	648c5bdf72874b88	NEF	nikon-huffman
+Nikon/Df/DSC_6792_Df12compr.NEF	1e6fe0798453e5d9	NEF	nikon-huffman
+Nikon/Df/DSC_6793_Df12uncompr.NEF	563f189796a931df	NEF	uncompressed
+Nikon/Df/DSC_6794_Df12losslesscompr.NEF	4c4d253a3e2e6137	NEF	nikon-huffman
+Nikon/Df/DSC_6795_Df14compr.NEF	bae09a81d54f0f5f	NEF	nikon-huffman
+Nikon/Df/DSC_6796_Df14uncompr.NEF	d3c95e9b4213d6c2	NEF	uncompressed
+Nikon/Df/DSC_6797_Df14losslesscompr.NEF	99089a0b77574cbd	NEF	nikon-huffman
+Nikon/E5400/RAW_NIKON_E5400.NEF	6e312a42eef74d79	NEF	uncompressed
+Nikon/E5700/20080115-DSCN1758.NEF	b48748045e91fbb6	NEF	uncompressed
+Nikon/E8400/DSCN1565.NEF	5caa4771c4ef43c5	NEF	uncompressed
+Nikon/Nikon COOLSCAN IV ED/NEF_from_Nikon_Scan_4.0.3_at_600dpi.nef	c486b2f5bd35d07b	NEF	uncompressed
+Nikon/Nikon COOLSCAN V ED/Image21-600pixels.nef	3dbeb4ddcc66429a	NEF	uncompressed
+Nikon/Z 30/NIKON_Z30_12BIT.NEF	8cbfb938157c5ded	NEF	nikon-huffman
+Nikon/Z 30/NIKON_Z30_14BIT.NEF	3a9c3c1ea40c2631	NEF	nikon-huffman
+Nikon/Z 30/_DSC0028.NEF	949ff3ebd96e2444	NEF	nikon-huffman
+Nikon/Z 30/_DSC0029.NEF	e7e66f6b8651168b	NEF	nikon-huffman
+Nikon/Z 5/DSC_0517.NEF	214bcc7b59547ad2	NEF	nikon-huffman
+Nikon/Z 5/DSC_0518.NEF	d5dd4f90f1da08a8	NEF	nikon-huffman
+Nikon/Z 5/DSC_0519.NEF	c6d3142edec4fa09	NEF	nikon-huffman
+Nikon/Z 5/DSC_0520.NEF	859139c97f5c515d	NEF	nikon-huffman
+Nikon/Z 50/DSC_0441.NEF	afbdfdee9af2549b	NEF	nikon-huffman
+Nikon/Z 50/DSC_0450.NEF	3409816887db9bee	NEF	nikon-huffman
+Nikon/Z 6/DSC_0750.NEF	396c7eb2af9b410f	NEF	uncompressed
+Nikon/Z 6/DSC_0751.NEF	1e23d74a11c01a97	NEF	nikon-huffman
+Nikon/Z 6/DSC_0752.NEF	0a0bc73568e125e0	NEF	nikon-huffman
+Nikon/Z 6/DSC_0753.NEF	7e349d2749e12274	NEF	uncompressed
+Nikon/Z 6/DSC_0754.NEF	a63b22e83bb7c82f	NEF	nikon-huffman
+Nikon/Z 6/DSC_0755.NEF	d928eccad826e1f9	NEF	nikon-huffman
+Nikon/Z 6/DSC_0756.NEF	6a755f1e4953cdaf	NEF	nikon-huffman
+Nikon/Z 6/DSC_0757.NEF	55c24787f8f85bc1	NEF	nikon-huffman
+Nikon/Z 6_2/CZP_0299.NEF	d40bc647373dc2f8	NEF	nikon-huffman
+Nikon/Z 6_2/CZP_0300.NEF	8916731e983ecbbc	NEF	nikon-huffman
+Nikon/Z 6_2/CZP_0301.NEF	72fcce312a68c604	NEF	uncompressed
+Nikon/Z 6_2/CZP_0302.NEF	b5ff1b68543d747f	NEF	nikon-huffman
+Nikon/Z 6_2/CZP_0303.NEF	a542a9b4e9749421	NEF	nikon-huffman
+Nikon/Z 6_2/CZP_0304.NEF	090b5f30dbd10e91	NEF	uncompressed
+Nikon/Z 7/1-Nikon-Z7-RAW-14bit-uncompressed-L.NEF	0fd4b8de53906bcd	NEF	uncompressed
+Nikon/Z 7/2-Nikon-Z7-RAW-14bit-compressed-L.NEF	627867ac6a8dd4ad	NEF	nikon-huffman
+Nikon/Z 7/3-Nikon-Z7-RAW-14bit-lossless-compressed-L.NEF	8a52e6f3d8ff64dd	NEF	nikon-huffman
+Nikon/Z 7/4-Nikon-Z7-RAW-12bit-uncompressed-L.NEF	25c8b0f0320c3a2e	NEF	uncompressed
+Nikon/Z 7/5-Nikon-Z7-RAW-12bit-compressed-L.NEF	c989690cb3e19ef9	NEF	nikon-huffman
+Nikon/Z 7/6-Nikon-Z7-RAW-12bit-lossless-compressed-L.NEF	6e22e76fbd142a39	NEF	nikon-huffman
+Nikon/Z 7/7-Nikon-Z7-RAW-12bit-lossless-compressed-M.NEF	238f532304fc5be2	NEF	nikon-huffman
+Nikon/Z 7/8-Nikon-Z7-RAW-12bit-lossless-compressed-S.NEF	3e7e9fe12b18fab0	NEF	nikon-huffman
+Nikon/Z 7_2/Z72_0027.NEF	de3897ec16ccc71e	NEF	nikon-huffman
+Nikon/Z 7_2/Z72_0028.NEF	32e56f6fe20bc836	NEF	nikon-huffman
+Nikon/Z 7_2/Z72_0029.NEF	8d5a790bddc35dc8	NEF	nikon-huffman
+Nikon/Z 7_2/Z72_0030.NEF	0f22f135022854bd	NEF	nikon-huffman
+Nikon/Z 7_2/Z72_0031.NEF	2abee5e322660431	NEF	uncompressed
+Nikon/Z 7_2/Z72_0032.NEF	4024eb5ca566704b	NEF	uncompressed
+Nikon/Z 8/Nikon_Z8_raw_14_bit_lossless_compression.NEF	716e1158bab28b76	NEF	nikon-huffman
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF	7be180fdf125bc18	NEF	nikon-huffman
+Nikon/Z f/DSC_0040.NEF	af0c0b9b1993c467	NEF	nikon-huffman
+Nikon/Z fc/_DSC0018.nef	a65e5bf469373625	NEF	nikon-huffman
+Nikon/Z fc/_DSC0070.nef	625b9ae15f51a38e	NEF	nikon-huffman

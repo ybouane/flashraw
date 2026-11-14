@@ -1,0 +1,54 @@
+# cargo-deny configuration (https://embarkstudios.github.io/cargo-deny/).
+#
+#   cargo install cargo-deny --locked
+#   cargo deny check          # advisories, bans, licenses, sources
+#
+# The licence allow-list below was computed from `cargo metadata --locked` for the whole
+# workspace (231 packages, every platform, including the wasm and Python crates): each entry
+# is needed by at least one dependency whose licence expression cannot be satisfied without it.
+# Dual-licensed crates are satisfied by MIT or Apache-2.0, so Unlicense, BSD-3-Clause and
+# LGPL-2.1-or-later (which only occur as one alternative of an OR) are deliberately absent.
+# cargo-deny was not installed on the machine where this file was written, so it has not been run.
+
+[graph]
+all-features = true
+
+[advisories]
+# The RustSec advisory database is fetched on `cargo deny check advisories`.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+unmaintained = "workspace"
+# Every ignore needs an advisory id and a reason here. None at present.
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "Apache-2.0",
+    # target-lexicon (pyo3 build dependency) is licensed under this alone.
+    "Apache-2.0 WITH LLVM-exception",
+    # zlib-rs, foldhash, slotmap.
+    "Zlib",
+    # numpy (Python bindings).
+    "BSD-2-Clause",
+    # libloading (loads the GPU driver libraries through wgpu).
+    "ISC",
+    # jpeg-encoder: "(MIT OR Apache-2.0) AND IJG" (the IJG licence is BSD-like, with attribution).
+    "IJG",
+    # unicode-ident: "(MIT OR Apache-2.0) AND Unicode-3.0".
+    "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace crates depend on each other by path and version.
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -1,0 +1,29 @@
+[package]
+name = "flashraw-formats"
+description = "Internal crate of FlashRaw: RAW container parsers and per-vendor format decoders. Use the `flashraw` crate instead."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/flashraw-formats"
+readme = "README.md"
+keywords = ["raw", "camera", "dng", "tiff", "decoder"]
+categories = ["multimedia::images", "parser-implementations"]
+include = ["src/**", "README.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[features]
+default = ["rayon", "simd"]
+rayon = ["flashraw-core/rayon", "flashraw-codecs/rayon", "dep:rayon"]
+simd = ["flashraw-codecs/simd"]
+jpegxl = ["flashraw-codecs/jpegxl"]
+
+[dependencies]
+flashraw-core.workspace = true
+flashraw-codecs.workspace = true
+flashraw-camera-db.workspace = true
+rayon = { workspace = true, optional = true }
+
+[lints]
+workspace = true

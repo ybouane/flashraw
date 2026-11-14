@@ -1,0 +1,34 @@
+# Performance regression CI: compares the PR against main on the representative
+# benchmark set (same runner, interleaved runs) and fails on slowdowns beyond the
+# tolerance. Hosted runners are noisy, so the tolerance is generous; dedicated
+# hardware runs use tighter settings (see docs/benchmarks.md).
+name: Performance
+
+# Manual only: CI runs locally (tools/ci/local.sh, docs/testing.md).
+on:
+  workflow_dispatch:
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: corpus
+          key: bench-corpus-${{ hashFiles('benches/benchmark-set.tsv') }}
+      - run: python3 tools/corpus/fetch.py --filter "$(cut -f1 benches/benchmark-set.tsv | grep -v '^#' | head -40 | paste -sd'|')"
+      - name: Baseline (main)
+        run: |
+          git worktree add ../base origin/main
+          (cd ../base && cargo build --release -p flashraw-cli)
+          python3 tools/bench/run.py benches/benchmark-set.tsv --flashraw ../base/target/release/flashraw --iterations 7 --out baseline.jsonl --markdown baseline.md
+      - name: PR
+        run: |
+          cargo build --release -p flashraw-cli
+          python3 tools/bench/run.py benches/benchmark-set.tsv --iterations 7 --out benches/results/pr.jsonl --markdown benches/results/pr.md --baseline baseline.jsonl --tolerance 15
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: benchmarks, path: "benches/results/" }

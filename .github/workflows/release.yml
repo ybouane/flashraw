@@ -1,0 +1,161 @@
+# Publishes a release to crates.io, PyPI and npm. It runs when a GitHub release is published (a deliberate
+# step of the maintainer, after the local CI: docs/releasing.md), or by hand for a tag that is already
+# released, with a choice of registries (for example npm only, after a failed upload).
+#
+# No tokens are stored: every registry trusts this workflow (trusted publishing, OpenID Connect).
+# Each registry's trusted publisher names the repository ybouane/flashraw, the workflow file release.yml
+# and the environment `release`. The wheels and the npm package are built and tested by python.yml and
+# wasm.yml from the tag. A version that is already on a registry is skipped, so a run can be repeated.
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (for example v0.3.0)
+        required: true
+        type: string
+      crates:
+        description: Publish to crates.io
+        type: boolean
+        default: true
+      pypi:
+        description: Publish to PyPI
+        type: boolean
+        default: true
+      npm:
+        description: Publish to npm
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: check the tag against the versions
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - id: v
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          cargo_v=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          npm_v=$(node -p "require('./npm/package.json').version")
+          echo "tag $TAG, Cargo.toml $cargo_v, npm/package.json $npm_v"
+          if [ "$TAG" != "v$cargo_v" ] || [ "$npm_v" != "$cargo_v" ]; then
+            echo "::error::the tag must be v<version> and both versions must match"; exit 1
+          fi
+          echo "version=$cargo_v" >> "$GITHUB_OUTPUT"
+
+  python:
+    needs: check
+    if: github.event_name == 'release' || inputs.pypi
+    uses: ./.github/workflows/python.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+  wasm:
+    needs: check
+    if: github.event_name == 'release' || inputs.npm
+    uses: ./.github/workflows/wasm.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+  crates:
+    name: publish to crates.io
+    needs: check
+    if: github.event_name == 'release' || inputs.crates
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish the crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          for c in flashraw-camera-db flashraw-core flashraw-codecs flashraw-formats flashraw-gpu flashraw flashraw-cli; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -A 'flashraw-release (github.com/ybouane/flashraw)' \
+              "https://crates.io/api/v1/crates/$c/$VERSION")
+            if [ "$code" = 200 ]; then echo "$c $VERSION is already published"; continue; fi
+            cargo publish -p "$c" --locked
+          done
+
+  pypi:
+    name: publish to PyPI
+    needs: [check, python]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{wheel-*,sdist}"
+          path: dist
+          merge-multiple: true
+      - name: Files to upload
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          ls -l dist
+          test "$(ls dist/*.whl | wc -l)" -eq 5
+          test -f "dist/flashraw-$VERSION.tar.gz"
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  npm:
+    name: publish to npm
+    needs: [check, wasm]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: npm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@latest
+      - uses: actions/download-artifact@v4
+        with:
+          name: flashraw-npm-dist
+          path: npm/dist
+      - name: Publish (provenance is attached by trusted publishing)
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if [ "$(npm view "flashraw@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "flashraw $VERSION is already on npm"; exit 0
+          fi
+          npm pack --dry-run
+          npm publish --access public
