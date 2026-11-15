@@ -13,6 +13,7 @@ pub(crate) mod makernote;
 
 use crate::common::*;
 use crate::orientation;
+use flashraw_codecs::nikon_he;
 use flashraw_codecs::nikon_huffman::{self, NikonMeta};
 use flashraw_codecs::nikon_packed::{self, PackedSpec};
 use flashraw_codecs::packed::{self, PackedLayout};
@@ -59,7 +60,7 @@ enum Payload {
     PaddedLsb { bits: u32, row_stride: usize },
     /// YCbCr 4:2:2, 12 bits (the D4S small NEF).
     SNef,
-    /// JPEG XS based "high efficiency": not decodable.
+    /// JPEG XS based "high efficiency" (HE and HE star) codestream.
     HighEfficiency,
     /// Nikon Huffman with a linearisation curve from the maker note.
     Huffman,
@@ -567,6 +568,7 @@ pub fn open_tiff<'a>(data: &'a [u8], tiff: Tiff<'a>, opts: &OpenOptions) -> Resu
     let mode = match &payload {
         Payload::Huffman => format!("{bps}bit-huffman"),
         Payload::SNef => "small-ycbcr".to_string(),
+        Payload::HighEfficiency => "high-efficiency".to_string(),
         Payload::Coolscan { .. } => "film-scan".to_string(),
         _ => format!("{bps}bit-plain"),
     };
@@ -756,10 +758,10 @@ impl NefRaw<'_> {
         let out = img.u16_mut();
         match &self.payload {
             Payload::HighEfficiency => {
-                return Err(Error::unsupported_compression(
-                    "NEF",
-                    "Nikon high-efficiency (TicoRAW / JPEG XS) is a proprietary codec",
-                ));
+                // No recovery mode: a damaged stream fails the whole decode.
+                ctx.profiler
+                    .time(Stage::EntropyDecode, || nikon_he::decode(self.src, out, w, h, w, &ctx.limits, ctx.parallel))
+                    .map_err(|e| e.or_truncated(self.data.len(), unit, self.offset, self.declared))?;
             }
             Payload::Huffman => {
                 let meta = self.huffman.as_ref().ok_or_else(|| Error::corrupt("missing Nikon linearization table"))?;

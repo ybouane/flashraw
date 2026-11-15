@@ -54,11 +54,11 @@ const WGT: u16 = 0xFF14;
 const SLH: u16 = 0xFF20;
 
 fn unsupported(what: &str) -> Error {
-    Error::unsupported_compression("NEF", format!("high efficiency: {what}"))
+    Error::unsupported_compression("NEF", format!("high-efficiency: {what}"))
 }
 
 fn corrupt(what: &str) -> Error {
-    Error::corrupt(format!("high efficiency: {what}"))
+    Error::corrupt(format!("high-efficiency: {what}"))
 }
 
 // ---------------------------------------------------------------------------------------------

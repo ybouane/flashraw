@@ -89,6 +89,7 @@ hyphenated; the decoder reports the mode it asked for as metadata `extra("mode")
 |---|---|---|
 | `<bits>bit-huffman`, `<bits>bit-plain` | Nikon NEF | Huffman-coded or uncompressed (packed or 16-bit word) payload of `<bits>` bits per sample |
 | `small-ycbcr` | Nikon NEF | small NEF (YCbCr) payload; no entry uses it |
+| `high-efficiency` | Nikon NEF | High Efficiency (HE, HE★) payload; no entry uses it |
 | `film-scan` | Nikon NEF | film scanner (8-bit RGB) payload; no entry uses it |
 | `medium-raw`, `small-raw` | Canon CR2 | medium (4:2:0) and small (4:2:2) YCbCr raw |
 | `golomb-rice` | Fujifilm RAF | compressed RAF payload |

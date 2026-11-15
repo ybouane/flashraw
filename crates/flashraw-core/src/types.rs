@@ -795,7 +795,7 @@ pub enum Compression {
     CanonSraw,
     /// Nikon NEF lossless / lossy Huffman compression.
     NikonHuffman,
-    /// Nikon "high efficiency" (TicoRAW).
+    /// Nikon "high efficiency" (HE and HE star): a JPEG XS family codestream.
     NikonHighEfficiency,
     /// Sony ARW v1 (A100 era) curve/huffman.
     SonyArw1,
