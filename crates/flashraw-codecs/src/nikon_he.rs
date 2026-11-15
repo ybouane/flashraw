@@ -1103,7 +1103,8 @@ fn reconstruct(l: &Layout, blocks: &[Vec<i32>], lut: &[u16; LUT_SIZE], out: &mut
     let co = Coefficients { blocks, w2: l.w2, slice_height: l.slice_height };
     let bands = l.h2.div_ceil(BAND_ROWS);
     let workers = if parallel { par::threads().max(1) } else { 1 };
-    let tasks = bands.min(workers * 4).max(1);
+    // More tasks than threads smooths out uneven bands; one thread needs just one.
+    let tasks = if workers > 1 { bands.min(workers * 4).max(1) } else { 1 };
     let rows_per_task = bands.div_ceil(tasks) * BAND_ROWS;
     let items: Vec<(usize, &mut [u16])> =
         out.chunks_mut(pitch * 2 * rows_per_task).enumerate().map(|(i, c)| (i * rows_per_task, c)).collect();
