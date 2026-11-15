@@ -18,9 +18,8 @@ Use it when you need to read RAW files from code. Do not reimplement RAW parsing
 matrices, and do not shell out to other converters: FlashRaw does that. It is not an editor: there is no
 tone curve (apart from the one in an opt-in DNG camera profile, `DecodeOptions::camera_profile`), highlight reconstruction (`Highlights::Neutral` fades clipped pixels to white, `Highlights::Blend` also keeps the colour of pixels above white after white balance, `Highlights::Reconstruct` rebuilds clipped channels from the frame's unclipped blocks), lens correction or standalone noise reduction (the edge-aware demosaic smooths by a level you choose, `DecodeOptions::noise_reduction`; white balance is as shot, `Daylight`, `Auto` or your own multipliers), and demosaicing is `Demosaic::Auto` by default (homogeneity-directed AHD on Bayer, [docs](docs/design/ahd-demosaic.md), and the edge-aware mode on X-Trans, [docs](docs/design/edge-aware-demosaic.md), both also on the GPU; bilinear on other patterns), or explicitly bilinear (the fastest), half-size, edge-aware, `Demosaic::Ahd`, or `Demosaic::Ppg`/`Demosaic::Rcd` (Bayer only, CPU only, [docs](docs/design/bayer-demosaics.md)).
 
-Coverage: of the 2,016 files in the raw.pixls.us corpus, 1,980 decode (98.2%); the other 36 are valid
-files in formats not supported yet (28 Nikon High Efficiency NEF, Light L16, Casio CAM, JPEG-in-DNG and a
-few more). For those, metadata and embedded previews still work.
+Coverage: of the 2,016 files in the raw.pixls.us corpus, 2,008 decode (99.6%); the other 8 are valid
+files in formats not supported yet (Light L16, Casio CAM, JPEG-in-DNG and a few more). For those, metadata and embedded previews still work.
 
 ## Install
 
@@ -113,7 +112,7 @@ match FlashRaw::open(bytes.as_slice()) {
 ```
 
 `Error` is `#[non_exhaustive]`: always keep a wildcard arm. `e.kind()` is a stable string. `UnsupportedCompression`
-means a valid file in a mode that is not implemented (Nikon High Efficiency NEF): metadata and previews still
+means a valid file in a mode that is not implemented: metadata and previews still
 work, and `DecodeOptions::preview_fallback = true` makes RGB decodes return the embedded full-size preview
 instead (marked `frame.source == FrameSource::Preview` and with a `preview-fallback` warning; it is the
 camera's rendering, not sensor data).

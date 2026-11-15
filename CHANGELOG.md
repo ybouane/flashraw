@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Nikon High Efficiency (HE) and High Efficiency★ (HE★) NEF files now decode (Z 8, Z 9, Z f, Z5 II, Z6 III and
+  Z50 II; the JPEG XS family codestream of ISO/IEC 21122 in the camera's flavour). The decoded sensor buffer is the
+  full 14-bit RGGB mosaic with the usual Z-series levels, crop and white balance. 2,008 of the 2,016 files of the
+  raw.pixls.us corpus now decode (99.6%), 1,993 with pinned output hashes. There is no recovery mode: a damaged
+  stream fails the decode with `CorruptFile` and no partial image; streams in variants that are not implemented
+  return `UnsupportedCompression` (metadata, previews and `preview_fallback` keep working). Entropy decoding, the
+  transforms and the output curve run in parallel over slices and bands of rows; one thread and many give the same
+  bytes. The camera-database mode of these files is `high-efficiency` (it was `14bit-plain`).
+
 ## 0.3.0 (2026-11-14)
 
 - The decoders, the codecs and the camera database were rewritten from format descriptions and sample files. The

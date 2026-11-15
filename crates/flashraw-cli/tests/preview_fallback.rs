@@ -1,5 +1,5 @@
-//! `decode --preview-fallback`: undecodable sensor data (a synthetic Nikon High Efficiency
-//! NEF) fails by default and writes the embedded full-size preview with the flag, reported
+//! `decode --preview-fallback`: undecodable sensor data (a synthetic NEF with an unsupported
+//! codestream) fails by default and writes the embedded full-size preview with the flag, reported
 //! as `"source": "preview"` and a `preview-fallback` warning.
 
 use std::path::PathBuf;

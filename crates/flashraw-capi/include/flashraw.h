@@ -997,7 +997,7 @@ typedef struct flashraw_decode_options {
     float white_point;
     /**
      * Non-zero: when the sensor data cannot be decoded (`FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`,
-     * e.g. Nikon High Efficiency NEF), RGB outputs return the embedded full-size preview
+     * a mode FlashRaw does not implement yet), RGB outputs return the embedded full-size preview
      * instead (`flashraw_frame_source()` is then `FLASHRAW_SOURCE_PREVIEW`). Default 0: the
      * error is returned.
      */

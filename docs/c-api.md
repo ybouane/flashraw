@@ -130,7 +130,7 @@ All functions are prefixed `flashraw_`. Handles are opaque (`flashraw_file`, `fl
 `HALF_SIZE`, `EDGE_AWARE`, `AHD`, `PPG`, `RCD`), `apply_opcodes`, `corruption_policy` (`RECOVER` default, `STRICT`), limits,
 for the RGB outputs `exposure` (EV), `black_point` and `white_point` (linear values mapped to 0
 and 1; defaults 0, 0, 1), and `preview_fallback` (non-zero: RGB outputs of undecodable sensor
-data, e.g. Nikon High Efficiency NEF, return the embedded full-size preview instead of
+data (a mode FlashRaw does not implement yet) return the embedded full-size preview instead of
 `FLASHRAW_ERROR_UNSUPPORTED_COMPRESSION`), `color_space` (`FLASHRAW_COLOR_SPACE_SRGB` default,
 `_DISPLAY_P3`, `_ADOBE_RGB`, `_PROPHOTO`, `_REC2020`) and `output_profile` + `output_profile_len`
 (an ICC profile to convert to instead, with `intent` and `black_point_compensation`; needs

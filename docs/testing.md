@@ -29,12 +29,12 @@ find corpus -type f -print0 | xargs -0 -n 50 target/release/flashraw verify --js
 black/white levels, white balance, colour matrix, orientation, the active-area maximum
 and 99.99th percentile, and an FNV-1a 64 hash of the full sensor buffer. New decoders
 and changes are checked against these records, the format documentation and the
-camera database; all 1,980 decodable files must decode, and the remaining 36 must fail
+camera database; all 2,008 decodable files must decode, and the remaining 8 must fail
 with a clear error (unsupported codecs, mislabelled files).
 
 ## 3. Regression corpus (`cargo test --release -p flashraw --test regression`)
 
-`tests/regression/*.tsv` lists 1,965 corpus files with the hash of their full decoded
+`tests/regression/*.tsv` lists 1,993 corpus files with the hash of their full decoded
 buffer (sensor data as stored, without DNG opcode lists). The test decodes each listed
 file and fails on any change. It also fails when the corpus is absent or a listed file is
 missing (a green run must mean the hashes were checked); `FLASHRAW_ALLOW_NO_CORPUS=1` skips

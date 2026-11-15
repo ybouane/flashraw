@@ -1,4 +1,4 @@
-// Undecodable sensor data (Nikon High Efficiency NEF): UnsupportedCompressionError by
+// Undecodable sensor data (a synthetic Nikon High Efficiency NEF whose codestream is invalid): UnsupportedCompressionError by
 // default; with `previewFallback: true`, RGB outputs return the embedded full-size preview,
 // marked `source: 'preview'` with a `preview-fallback` warning.
 import { test, describe } from 'node:test';

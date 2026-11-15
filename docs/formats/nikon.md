@@ -26,7 +26,7 @@ still decode correctly.
 | 12-bit LSB packed, rows padded to 16 bytes | Z-series / D6 12-bit uncompressed | | `packed` (SIMD) |
 | small/medium NEF (sNEF) | `w*h*3` bytes | YCbCr 4:2:2, 12-bit, little-endian packed (Y0 Y1 Cb Cr per pixel pair) | YCbCr → RGB, 3 samples/pixel |
 | Coolscan scans | software `Nikon Scan…` or model `COOLSCAN` | 8/16-bit RGB or grey | 16-bit RGB/grey |
-| high efficiency (HE / HE*) | JPEG XS SOC+CAP markers (`FF10 FF50`) at the payload start | TicoRAW (intoPIX) | **unsupported** |
+| high efficiency (HE / HE*) | JPEG XS SOC+CAP markers (`FF10 FF50`) at the payload start, no size relation above holds | wavelet codestream (ISO/IEC 21122 family), 14-bit RGGB | `nikon_he` |
 
 ### Huffman
 
@@ -64,12 +64,54 @@ JPEG has pixels (about 8/7 of the M size and 3/2 of the S size in each direction
 maker note's CropArea (`0x0045`) is the area the camera scaled its JPEG from and becomes
 the default crop (odd origins moved to even).
 
-### High efficiency (TicoRAW)
+### High efficiency (HE and HE★)
 
-Z 8, Z 9, Z f, Z6III, Z50II and Z5II "High Efficiency" / "High Efficiency★" files use
-intoPIX TicoRAW, a JPEG XS-based proprietary codec with no public specification or
-licensed open implementation. FlashRaw recognises the payload and returns
-`UnsupportedCompression` from `decode`; metadata and embedded previews are available.
+The Z 8, Z 9, Z f, Z6III, Z50II and Z5II "High Efficiency" and "High Efficiency★" files hold the
+sensor data as a codestream of the JPEG XS family (ISO/IEC 21122) in a camera-specific
+flavour. The two modes use the same syntax and differ in the quantiser the stream carries.
+A file is recognised by compression 34713, none of the size relations above matching, and the
+payload starting `FF 10 FF 50`; the decoder gets the file from the strip offset to its end and
+finds the end of the stream itself (it ignores bytes after the end marker). `nikon_he` decodes
+it as follows.
+
+* **Planes.** The 14-bit RGGB mosaic is four quarter-resolution planes, one per position of the
+  2x2 cell: component 0 is the first green, 1 red, 2 the green difference (the second green after
+  the transform) and 3 blue. A lifting colour transform (five passes over the planes, each
+  reading its neighbours) mixes them.
+* **Wavelet.** Every plane has one vertical level (precinct line 0 low-pass, line 1 high-pass)
+  and a per-component number of horizontal levels (5, 5, 0, 5 in all corpus files; at most 8 is
+  accepted) of the integer 5/3 filter.
+* **Slices and precincts.** A precinct is four sensor rows; a slice is `Hsl` precincts (16 in the
+  files). Slices are independent: the prediction state resets at each slice, so they decode in
+  parallel. The vertical filter reads the neighbouring precincts, so the later stages run on bands
+  of rows after the slices are done.
+* **Packets.** A precinct has eight packets (two lines times four planes), each with three
+  sub-packets: the GCLI (bit-plane count) of every group of four coefficients, predicted from
+  the line above (or, for the shared band, from the other line) and coded as a unary
+  residual with optional significance flags that skip runs of groups at the truncation
+  position; the bit planes, four bits per plane; and one sign bit per non-zero coefficient. A
+  packet header carries the three sub-packet lengths, so an encoder may leave slack bytes
+  that the decoder jumps over, and a `raw` flag for 4-bit GCLIs.
+* **Quantiser.** The truncation position of a band is `Q - gain - (priority < R)` clamped to
+  0..15, from the precinct's `Q` and `R` and the weights table; values are reconstructed as
+  `m + (m >> s) + (m >> 2s) + ...` with `s = gcli - t + 1` and scaled by 16.
+* **Output curve.** After the colour transform the companded plane values go through a
+  65,536-entry curve (parameters in the stream's vendor bytes: black 1008, gain 84429,
+  knee 16255 in all files) to 14-bit samples. The result is the whole sensor buffer
+  (no optical-black border is removed): red at (0, 0).
+
+Black level (1008), white level (16383), CFA (RGGB) and crop come from the container as for the
+other Z files; the codestream's own black value is not used. Arithmetic in the transforms wraps
+(`i32`), so a hostile stream produces garbage and never a panic. There is **no recovery mode**: any
+error in the stream fails the decode with no partially filled image. Unsupported variants
+(not 14-bit, other component layouts, more than 8 horizontal levels, other coding flags)
+return `UnsupportedCompression`, so metadata and embedded previews stay usable and
+`preview_fallback` applies; damaged data returns `CorruptFile`.
+
+Entropy decoding is about 85 to 90 % of the time. The decoder reads bit planes through a 64-bit
+window and allocates no memory per packet. The intermediate coefficients take 4 bytes per
+sensor sample (the output buffer is separate), allocated per slice by the thread that
+decodes it.
 
 ## Metadata
 
@@ -89,5 +131,9 @@ licensed open implementation. FlashRaw recognises the payload and returns
 
 The CC0 corpus holds 289 NEF/NRW files. Every file with plain sensor data decodes and is
 covered by regression hashes in `tests/regression/nikon.tsv` (12/14-bit lossy and
-lossless Huffman across D1X…Z 9, all uncompressed variants, NRW, sNEF, Coolscan);
-High Efficiency files are reported as unsupported.
+lossless Huffman across D1X…Z 9, all uncompressed variants, NRW, sNEF, Coolscan, and the 28
+High Efficiency / High Efficiency★ files of the Z 8, Z 9, Z f, Z5II, Z6III and Z50II).
+Codec tests (`crates/flashraw-codecs/tests/nikon_he_synthetic.rs`, `src/nikon_he_tests.rs`) cover
+what no corpus file uses: raw packets, band modes 0 to 2, significance flags without
+prediction, padding coefficients, slack inside sub-packets, other level layouts and damaged
+streams.

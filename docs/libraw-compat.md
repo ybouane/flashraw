@@ -174,8 +174,8 @@ every camera model in the CC0 corpus (1,034 files; comparison tooling kept outsi
 repository) and compare field by field:
 
 Of the 1,034 files, 1,002 open and unpack with both (FlashRaw opens 22 of the 31 files LibRaw
-rejects — GoPro GPR, ARRI, several CRW/RAF/RAW variants — and LibRaw opens one high-efficiency
-NEF FlashRaw does not decode yet). On those 1,002 files:
+rejects — GoPro GPR, ARRI, several CRW/RAF/RAW variants — and LibRaw opened one high-efficiency
+NEF that FlashRaw did not decode yet when this was measured). On those 1,002 files:
 
 | what the client reads | agreement | where it differs |
 |---|---|---|
