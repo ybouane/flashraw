@@ -8,6 +8,14 @@
 //! entropy coded. A companding curve is undone at the very end. The codec is lossy; the
 //! decoder here reproduces the camera's reference arithmetic exactly.
 //!
+//! # Credit
+//!
+//! Support for these files was first contributed by Ovidiu Ionescu (pull request #2), whose decoder
+//! was based on the MIT-licensed Nikon HE decoder of RAWmakase (Piotr Chmolowski and the RAWmakase
+//! contributors, <https://github.com/pch/rawmakase>). This module is a later, independent
+//! implementation of the same codestream, written from a format description and checked against
+//! the same sample files.
+//!
 //! # Stream layout
 //!
 //! Marker segments (`SOC`, `CAP`, picture header, component table, weights table), then

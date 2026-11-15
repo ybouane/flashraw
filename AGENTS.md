@@ -23,7 +23,7 @@ files in formats not supported yet (Light L16, Casio CAM, JPEG-in-DNG and a few 
 
 ## Install
 
-The packages are `flashraw` and `flashraw-cli` on crates.io, `flashraw` on PyPI and `flashraw` on npm; the tree is at version 0.3.0.
+The packages are `flashraw` and `flashraw-cli` on crates.io, `flashraw` on PyPI and `flashraw` on npm; the tree is at version 0.3.1.
 The C library is built from source (`cargo build --release -p flashraw-capi`, see [docs/building.md](docs/building.md)).
 All packages and their status: [docs/packages.md](docs/packages.md).
 
