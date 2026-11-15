@@ -2,8 +2,9 @@
 //! `UnsupportedCompression` by default; with the option, RGB outputs return the embedded
 //! full-size preview, marked `FrameSource::Preview` with a `PreviewFallback` warning.
 //!
-//! A synthetic Nikon High Efficiency NEF (JPEG XS payload, full-size RGB preview in IFD0)
-//! covers the rules; the corpus High Efficiency files are checked when present.
+//! A synthetic NEF whose payload starts like a Nikon High Efficiency codestream but is not a
+//! valid one (full-size RGB preview in IFD0) covers the rules. The corpus High Efficiency files
+//! decode, so they must never fall back, with the option or without.
 
 use flashraw::{CorruptReason, DecodeOptions, Error, FlashRaw, FrameSource, Orientation, OutputFormat, RawPixelData};
 
@@ -45,8 +46,8 @@ fn long(v: u32) -> Vec<u8> {
     v.to_le_bytes().to_vec()
 }
 
-/// A NEF whose sensor data is Nikon High Efficiency (unsupported) and whose IFD0 holds
-/// a `pw`x`ph` RGB preview (a horizontal ramp in red, constant green 100, blue 200) with
+/// A NEF whose sensor data cannot be decoded (a codestream start followed by noise, which
+/// the High Efficiency decoder rejects as unsupported) and whose IFD0 holds a `pw`x`ph` RGB preview (a horizontal ramp in red, constant green 100, blue 200) with
 /// EXIF orientation `orientation`.
 pub fn high_efficiency_nef(pw: u32, ph: u32, orientation: u16) -> Vec<u8> {
     let preview: Vec<u8> = (0..ph)
@@ -236,10 +237,10 @@ fn nefs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-/// Every corpus High Efficiency NEF: an error by default, the full-size preview with the
-/// option.
+/// Every corpus High Efficiency NEF decodes: the sensor data by default and also with
+/// `preview_fallback`, which only applies to sensor data that cannot be decoded.
 #[test]
-fn corpus_high_efficiency_nefs() {
+fn corpus_high_efficiency_nefs_decode_with_and_without_the_fallback() {
     let Some(corpus) = corpus() else {
         eprintln!("corpus not present; skipping");
         return;
@@ -255,20 +256,29 @@ fn corpus_high_efficiency_nefs() {
             continue;
         }
         let f = path.display();
-        let e = raw.decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() }).unwrap_err();
-        assert!(matches!(e, Error::UnsupportedCompression { .. }), "{f}: {e}");
-        let fr = raw.decode(fallback(OutputFormat::Rgba8)).unwrap_or_else(|e| panic!("{f}: {e}"));
-        assert_eq!(fr.source, FrameSource::Preview, "{f}");
-        let crop = raw.frame_info().crop;
-        let (lo, hi) = (fr.width.min(fr.height) as f64, fr.width.max(fr.height) as f64);
-        let (clo, chi) = (crop.width.min(crop.height) as f64, crop.width.max(crop.height) as f64);
-        assert!(lo >= clo * 0.9 && hi >= chi * 0.9, "{f}: {}x{} vs crop {crop}", fr.width, fr.height);
-        // A real picture, not a blank frame.
-        let px = fr.as_u8().unwrap();
-        let mean = px.iter().step_by(4 * 97).map(|&v| v as f64).sum::<f64>() / (px.len() / (4 * 97)) as f64;
-        assert!(mean > 5.0 && mean < 250.0, "{f}: mean {mean}");
+        let info = raw.frame_info().clone();
+        for output in [OutputFormat::RawU16, OutputFormat::Rgba8] {
+            let half = flashraw::Demosaic::HalfSize;
+            let plain = raw.decode(DecodeOptions { output, threads: Some(2), demosaic: half, ..Default::default() });
+            let plain = plain.unwrap_or_else(|e| panic!("{f}: {output}: {e}"));
+            assert_eq!(plain.source, FrameSource::Sensor, "{f}");
+            assert!(plain.warnings.is_empty() && !plain.is_incomplete(), "{f}");
+            let fb = raw.decode(DecodeOptions { threads: Some(2), demosaic: half, ..fallback(output) }).unwrap();
+            assert_eq!(fb.source, FrameSource::Sensor, "{f}: the fallback must not apply");
+            assert!(fb.warnings.is_empty(), "{f}");
+            assert_eq!((fb.width, fb.height), (plain.width, plain.height), "{f}");
+            if output == OutputFormat::RawU16 {
+                assert_eq!((fb.width, fb.height), (info.width, info.height), "{f}");
+                assert_eq!(fb.as_u16(), plain.as_u16(), "{f}");
+            } else {
+                // A developed image of the sensor, not the camera's preview.
+                let px = fb.as_u8().unwrap();
+                let mean = px.iter().step_by(4 * 97).map(|&v| v as f64).sum::<f64>() / (px.len() / (4 * 97)) as f64;
+                assert!(mean > 5.0 && mean < 250.0, "{f}: mean {mean}");
+            }
+        }
         checked += 1;
     }
     // A partial corpus (e.g. a sample copied to another machine) may have none.
-    eprintln!("high efficiency fallback: {checked} files");
+    eprintln!("high efficiency decode: {checked} files");
 }
