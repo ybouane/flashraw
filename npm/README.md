@@ -16,7 +16,7 @@ Fast, safe camera RAW decoding for browsers and Node.js, powered by the
 - **Instant previews**: embedded JPEG previews/thumbnails as bytes (zero decoding), or as RGBA.
 - **Sensor data**: `raw-u16`, `raw-f32`, `normalized`, `linear-rgb`, or display-ready `rgba8`
   (`ImageData`-compatible), bit-identical to the native FlashRaw decoder.
-- **WASM SIMD128** binary with automatic scalar fallback; ~756 KiB brotli (all decoders, built-in colour spaces and ICC profiles).
+- **WASM SIMD128** binary with automatic scalar fallback; ~892 KiB brotli (all decoders, built-in colour spaces and ICC profiles).
 - **JPEG XL DNGs** (DNG 1.7): the codec lives in separate, larger binaries that are downloaded
   only when a JPEG XL file is decoded; every other file uses the small build.
 - **Multithreaded**: on cross-origin isolated pages and in Node.js a threaded build decodes one
@@ -449,7 +449,7 @@ await loadJpegXlSupport();           // 'auto' mode: preload it now (e.g. when t
 
 | Binary | When | Raw | gzip | brotli |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | default (no cross-origin isolation) | 2897 KiB | 1006 KiB | 756 KiB |
+| `flashraw_simd.wasm` | default (no cross-origin isolation) | 3466 KiB | 1183 KiB | 892 KiB |
 | `flashraw_simd_threads.wasm` | default when threads are available | 2976 KiB | 998 KiB | 745 KiB |
 | `flashraw.wasm` | engines without WebAssembly SIMD | 2847 KiB | 986 KiB | 738 KiB |
 | `flashraw_simd_gpu.wasm` | `init({ gpu: true })` | 3087 KiB | 1082 KiB | 812 KiB |

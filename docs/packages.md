@@ -78,7 +78,7 @@ About 6.2 MB packed.
 
   | File | Use |
   |---|---|
-  | `flashraw_simd.wasm` | default (WASM SIMD128), 756 KiB brotli |
+  | `flashraw_simd.wasm` | default (WASM SIMD128), 892 KiB brotli |
   | `flashraw.wasm` | fallback without SIMD, 738 KiB brotli |
   | `flashraw_simd_threads.wasm` | multithreaded (needs cross-origin isolation, COOP/COEP; always available in Node.js), 745 KiB brotli |
   | `flashraw_simd_gpu.wasm` | WebGPU backend, 812 KiB brotli |

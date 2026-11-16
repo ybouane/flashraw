@@ -203,8 +203,8 @@ each with its own single-threaded instance (pool workers do not start nested thr
 
 ### JPEG XL
 
-JPEG XL DNG support (compression 52546, the `jpegxl` feature: `jxl-oxide`) adds ~1.5 MiB raw /
-~330 KiB brotli (+54 %) to a binary, so the default binaries are built without it and two more
+JPEG XL DNG support (compression 52546, the `jpegxl` feature: `jxl-oxide`) adds ~1.4 MiB raw /
+~334 KiB brotli (+37 %) to a binary, so the default binaries are built without it and two more
 variants carry it: `flashraw_simd_jxl.wasm` and `flashraw_simd_threads_jxl.wasm`.
 
 - **Engines**: `core.js` holds an *engine* per instantiated binary (glue module, exports, thread
@@ -241,7 +241,7 @@ variants carry it: `flashraw_simd_jxl.wasm` and `flashraw_simd_threads_jxl.wasm`
 The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the opt-in
 `flashraw_simd_gpu.wasm`, loaded with `init({ gpu: true })`:
 
-- **Why opt-in**: +185 KiB raw / +55 KiB brotli of WASM and +52 KiB (+9 KiB gzip) of JS glue
+- **Why opt-in**: +248 KiB raw / +68 KiB brotli of WASM and +52 KiB (+8 KiB gzip) of JS glue
   over the SIMD build, and it is single-threaded (below); most pages never need it.
 - **Async all the way**: the browser cannot block on the GPU, so the bindings export
   `gpuInit()` (adapter + device request, once) and `RawFile.decodeGpu(tile, options)` returning a
@@ -282,30 +282,27 @@ The WebGPU backend (`flashraw-gpu` through wgpu's WebGPU backend) ships as the o
 
 ## Sizes
 
-`npm run build` output (wasm-bindgen 0.2.129, wasm-opt -O3, binaryen 132):
+`npm run build` output for version 0.3.1 (wasm-bindgen 0.2.129, wasm-opt -O3, binaryen 132):
 
 | Binary | Raw | gzip -9 | brotli -11 | Its glue JS (raw / gzip) |
 |---|---|---|---|---|
-| `flashraw_simd.wasm` | 2897 KiB | 1006 KiB | 756 KiB | 24 / 4 KiB (shared) |
-| `flashraw.wasm` (fallback) | 2847 KiB | 986 KiB | 738 KiB | 24 / 4 KiB (shared) |
-| `flashraw_simd_threads.wasm` | 2976 KiB | 998 KiB | 745 KiB | 31 / 5 KiB |
-| `flashraw_simd_gpu.wasm` | 3087 KiB | 1082 KiB | 812 KiB | 76 / 13 KiB |
-| `flashraw_simd_jxl.wasm` | 4362 KiB | 1501 KiB | 1088 KiB | 24 / 4 KiB |
-| `flashraw_simd_threads_jxl.wasm` | 4434 KiB | 1488 KiB | 1078 KiB | 31 / 5 KiB |
-| All JS (5 glues + wrappers + workers, unminified) | 280 KiB | — | — | |
+| `flashraw_simd.wasm` | 3466 KiB | 1183 KiB | 892 KiB | 25 / 4 KiB (shared) |
+| `flashraw.wasm` (fallback) | 3391 KiB | 1157 KiB | 869 KiB | 25 / 4 KiB (shared) |
+| `flashraw_simd_threads.wasm` | 3599 KiB | 1174 KiB | 880 KiB | 31 / 5 KiB |
+| `flashraw_simd_gpu.wasm` | 3714 KiB | 1272 KiB | 960 KiB | 77 / 12 KiB |
+| `flashraw_simd_jxl.wasm` | 4933 KiB | 1678 KiB | 1226 KiB | 25 / 4 KiB |
+| `flashraw_simd_threads_jxl.wasm` | 5054 KiB | 1665 KiB | 1213 KiB | 31 / 5 KiB |
+| All JS (5 glues + wrappers + workers, unminified) | 284 KiB | — | — | |
 
 Sizes include every format decoder (measured after all vendor decoders were merged; the
 DNG-only build was 216 KiB brotli). See [benchmarks.md](benchmarks.md#wasm) for the size
 breakdown. Only one binary is downloaded per page (and only its glue: the threads/gpu glues are
-dynamic imports), plus a JPEG XL variant only when a JPEG XL DNG is decoded (+332 KiB brotli
-over the binary it complements: +44 %). The fallback and WebGPU builds have no JPEG XL flavour:
-engines without SIMD predate JPEG XL DNGs, and a WebGPU one would be one more ~1.1 MiB brotli
+dynamic imports), plus a JPEG XL variant only when a JPEG XL DNG is decoded (+334 KiB brotli
+over the binary it complements: +37 %). The fallback and WebGPU builds have no JPEG XL flavour:
+engines without SIMD predate JPEG XL DNGs, and a WebGPU one would be one more ~1.2 MiB brotli
 file for a CPU-bound codec (the WebGPU build uses `flashraw_simd_jxl.wasm` instead). The
-threaded binary costs nothing extra over the SIMD one (+79 KiB raw, −11 KiB
-brotli: rayon is small, and std rebuilt with `build-std` drops some code). Of the SIMD binary,
-416 KiB is code and 364 KiB data (mostly the camera database tables, which compress well).
-`wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 6.2 MB tarball (2.7 MB of it the two JPEG XL
-variants), 27 files.
+threaded binary costs nothing extra over the SIMD one (+133 KiB raw, −12 KiB
+brotli: rayon is small, and std rebuilt with `build-std` drops some code). `wasm-opt -Oz` instead of `-O3` saves < 2 %. `npm pack`: 8.4 MB tarball, 29 files.
 
 ### Colour management in the browser
 

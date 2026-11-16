@@ -111,7 +111,7 @@ display renderer.
 `dist/` is a static site; deploy it anywhere. It needs two things from the host:
 
 - `.wasm` served as `application/wasm` (all common hosts do), and compression (brotli/gzip)
-  for `.wasm`, `.js`, `.css`, `.html`: the decoder is ~750 KiB brotli, ~1 MiB gzip, 2.9 MiB raw.
+  for `.wasm`, `.js`, `.css`, `.html`: the decoder is ~890 KiB brotli, ~1.2 MiB gzip, 3.4 MiB raw.
 - The cross-origin isolation headers below (optional but recommended).
 
 Only one `.wasm` is ever downloaded per visit (plus the JPEG XL variant when a JPEG XL DNG is
