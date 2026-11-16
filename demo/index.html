@@ -18,7 +18,7 @@
 <meta property="og:url" content="https://flashraw.ybouane.com/">
 <meta property="og:title" content="FlashRaw: the fast, safe camera RAW decoder">
 <meta property="og:description" content="Decode camera RAW files (CR3, NEF, ARW, RAF, DNG, ~40 formats) in Rust, C, Python or the browser. SIMD, all cores and the GPU. Try it live in your browser.">
-<meta property="og:image" content="https://flashraw.ybouane.com/og-banner.png?v=5">
+<meta property="og:image" content="https://flashraw.ybouane.com/og-banner.png?v=6">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -28,7 +28,7 @@
 <meta name="twitter:creator" content="@ybouane">
 <meta name="twitter:title" content="FlashRaw: the fast, safe camera RAW decoder">
 <meta name="twitter:description" content="Decode camera RAW files in Rust, C, Python or the browser. SIMD, all cores and the GPU. Try it live.">
-<meta name="twitter:image" content="https://flashraw.ybouane.com/og-banner.png?v=5">
+<meta name="twitter:image" content="https://flashraw.ybouane.com/og-banner.png?v=6">
 <meta name="twitter:image:alt" content="FlashRaw: the fast, safe camera RAW decoder">
 
 <link rel="icon" href="/favicon.ico" sizes="48x48">
@@ -45,12 +45,13 @@
       "@type": "SoftwareApplication",
       "@id": "https://flashraw.ybouane.com/#app",
       "name": "FlashRaw",
+      "softwareVersion": "{{version}}",
       "url": "https://flashraw.ybouane.com/",
       "description": "Fast, memory-safe camera RAW decoder with C, C++, Python and JavaScript bindings, SIMD, multithreading, GPU and WebAssembly support.",
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "Image decoding library",
       "operatingSystem": "Linux, macOS, Web browser",
-      "image": "https://flashraw.ybouane.com/og-banner.png?v=5",
+      "image": "https://flashraw.ybouane.com/og-banner.png?v=6",
       "license": "https://opensource.org/licenses/MIT",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
       "author": { "@id": "https://flashraw.ybouane.com/#author" },
@@ -131,9 +132,9 @@
     <div class="wrap">
       <div class="hero-head">
         <p class="kicker">Open source · Rust · WebAssembly</p>
-        <a class="speed-badge" href="#benchmarks" aria-label="8.8–15× faster than LibRaw RAW → RGB · median"
-          title="Median speedup over LibRaw, all cores, 62 camera files: 8.8× on a Ryzen 7 9700X, 15× on an Apple M1 Ultra. See the benchmarks.">
-          <span class="sb-num">8.8–15×</span>
+        <a class="speed-badge" href="#benchmarks" aria-label="12–22× faster than LibRaw RAW → RGB · median"
+          title="Median speedup over LibRaw, all cores, 62 camera files: 12× on a Ryzen 7 9700X, 22× on an Apple M1 Ultra. See the benchmarks.">
+          <span class="sb-num">12–22×</span>
           <span class="sb-text">faster than LibRaw</span>
           <span class="sb-sub">RAW → RGB · median</span>
         </a>
@@ -155,7 +156,7 @@
             <label for="file-input" class="btn btn-primary btn-lg">Choose a RAW file</label>
             <button type="button" class="btn btn-outline btn-lg" id="sample-btn" data-src="/samples/canon-eos-r5-mark-ii.cr3" data-name="canon-eos-r5-mark-ii.cr3">Try a sample</button>
           </div>
-          <p class="dz-note">Your file never leaves your device. The decoder (≈750 KiB) loads in the background as soon as the page appears. The sample is a 7.6 MB
+          <p class="dz-note">Your file never leaves your device. The decoder (≈890 KiB) loads in the background as soon as the page appears. The sample is a 7.6 MB
             C-RAW CR3 from a Canon EOS R5 Mark II, from <a href="https://raw.pixls.us/">raw.pixls.us</a> (CC0).</p>
         </div>
         <svg class="dz-art" viewBox="0 0 160 160" aria-hidden="true">
@@ -302,9 +303,9 @@
       </div>
 
       <ul class="facts" aria-label="Key facts">
-        <li><strong>~40</strong><span>RAW formats; 1,980 of the 2,016 raw.pixls.us samples decode</span></li>
-        <li><strong>8.8–15×</strong><span>faster than LibRaw from RAW to display RGB</span></li>
-        <li><strong>750<small> KiB</small></strong><span>of WebAssembly (brotli) for all of it, in the browser</span></li>
+        <li><strong>~40</strong><span>RAW formats; 2,008 of the 2,016 raw.pixls.us samples decode</span></li>
+        <li><strong>12–22×</strong><span>faster than LibRaw from RAW to display RGB</span></li>
+        <li><strong>890<small> KiB</small></strong><span>of WebAssembly (brotli) for all of it, in the browser</span></li>
       </ul>
     </div>
   </section>
@@ -340,7 +341,7 @@
           <ul>
             <li><strong>~40 RAW formats</strong>, checked against pinned output hashes. Of the 2,016 files in the raw.pixls.us corpus, 2,008 decode; the other 8 are formats not supported yet or not RAW files</li>
             <li><strong>CR3</strong> incl. C-RAW, <strong>JPEG XL DNG</strong>, lossy and deflate DNG, GoPro GPR, Sigma X3F, Fuji compressed, Panasonic v4–v8, IIQ, 3FR/FFF</li>
-            <li>1,000+ models in the built-in camera database</li>
+            <li>1,600+ models in the built-in camera database</li>
             <li><strong>Colour management</strong>: sRGB, Display P3, Adobe RGB, ProPhoto or Rec. 2020 output with embedded ICC profiles, or any ICC profile you supply</li>
           </ul>
         </article>
@@ -550,7 +551,7 @@ flashraw_file_free(f);</code></pre><button class="copy-btn" type="button" data-c
   <div class="wrap footer-inner">
     <div class="footer-brand">
       <img src="/logo-dark.svg" alt="FlashRaw" width="138" height="32">
-      <p>The fast, safe camera RAW decoder.<br>MIT OR Apache-2.0</p>
+      <p>The fast, safe camera RAW decoder.<br>Version {{version}} · MIT OR Apache-2.0</p>
     </div>
     <nav class="footer-nav" aria-label="Footer">
       <a href="https://github.com/ybouane/flashraw">GitHub</a>

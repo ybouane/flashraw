@@ -159,8 +159,14 @@ function preloadFont(): Plugin {
   };
 }
 
+/** Fills `{{version}}` in index.html with the version of the `flashraw` npm package the page is built with. */
+function pageVersion(): Plugin {
+  const { version } = JSON.parse(readFileSync(join(repo, 'npm', 'package.json'), 'utf8')) as { version: string };
+  return { name: 'flashraw-page-version', transformIndexHtml: (html) => html.replaceAll('{{version}}', version) };
+}
+
 export default defineConfig({
-  plugins: [brandAssets(), dropWebGpuBuild(), chartsData(), preloadFont()],
+  plugins: [pageVersion(), brandAssets(), dropWebGpuBuild(), chartsData(), preloadFont()],
   optimizeDeps: { exclude: ['flashraw'] },
   worker: { format: 'es' },
   server: { headers: isolationHeaders, fs: { allow: [repo] } },
