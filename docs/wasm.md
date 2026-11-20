@@ -201,6 +201,23 @@ each with its own single-threaded instance (pool workers do not start nested thr
 `init: { threads }` is passed). Measured: 8 files (fixtures + 4 corpus DNGs, rgba8) sequential
 4149 ms → 4 workers 1535 ms (2.7×) in Node.
 
+### Cancelling a decode
+
+A WebAssembly call cannot be interrupted from outside, so a running decode stops only if it looks.
+Pool requests that carry an `AbortSignal` share a 4-byte `SharedArrayBuffer` flag with their worker
+(`worker-protocol.js`); the worker publishes it as `globalThis.__flashrawCancelFlag` for the
+duration of the request and passes `cancel: true` in the decode options. With that option the Rust
+side builds a `CancelToken::with_poll` whose poll calls the import `__flashrawCancelPoll`
+(defined in `threads.js`, so every thread that can run a decoder has it) and reads the flag with
+`Atomics.load`. Aborting sets the flag; the decoders check it between chunks, strips, tiles and
+rows exactly as on native builds, the decode returns `Cancelled`, and the pool rejects the request
+with the abort reason while keeping the worker, its WASM memory and the files open in it. The flag
+needs `SharedArrayBuffer`: Node.js always has it, browsers only when cross-origin isolated (the
+same condition as the threaded build). Without it, for requests that are not decodes, for workers on
+the threaded build (their rayon threads would need the flag too) and when a decode has not stopped
+after half a second, the worker is terminated as before. Cost: one JS import call per check when
+`cancel` is set (a decode with no `signal` never calls it).
+
 ### JPEG XL
 
 JPEG XL DNG support (compression 52546, the `jpegxl` feature: `jxl-oxide`) adds ~1.4 MiB raw /

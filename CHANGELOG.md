@@ -11,8 +11,11 @@
   a decode per image and cancel the ones the user has already moved past.
   Python: `flashraw.CancelToken`, `decode(..., cancel=token)` and `flashraw.CancelledError`. C: `flashraw_cancel_token`
   (new, cancel, is_cancelled, free), `flashraw_decode_options.cancel` and `FLASHRAW_ERROR_CANCELLED` (14); C++:
-  `flashraw::cancel_token`, `decode_options::cancel` and `cancelled_error`. The JavaScript package already stops
-  requests with an `AbortSignal` (`signal`, worker pool only); the WebAssembly build has no cooperative token yet.
+  `flashraw::cancel_token`, `decode_options::cancel` and `cancelled_error`. JavaScript: aborting a decode in the
+  worker pool (`signal`) now stops it inside WebAssembly within milliseconds and keeps the worker and the files open
+  in it, instead of terminating the worker (cross-origin-isolated pages and Node.js; other requests, threaded
+  pools and decodes that have not stopped after half a second still terminate the worker); new `CancelledError`
+  (kind `"Cancelled"`).
 
 ## 0.3.1 (2026-11-15)
 

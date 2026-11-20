@@ -171,7 +171,7 @@ decode, or share one between decodes that should stop together. Cancelling is no
 `CorruptionPolicy::Recover` and `preview_fallback`: neither turns it into a partial frame or a preview. A token
 nobody cancels costs nothing. Python: `flashraw.CancelToken()`, `raw.decode(..., cancel=token)`,
 `flashraw.CancelledError`. C: `flashraw_cancel_token_new()`, `flashraw_decode_options.cancel`,
-`FLASHRAW_ERROR_CANCELLED`. JavaScript: stop requests with `signal` (an `AbortSignal`) on the worker pool.
+`FLASHRAW_ERROR_CANCELLED`. JavaScript: stop requests with `signal` (an `AbortSignal`) on the worker pool; a running decode stops in WASM within milliseconds and the worker stays usable.
 
 ## Command line
 

@@ -179,10 +179,16 @@ ac.abort(); // rejects with an AbortError (or the reason given to abort())
 await pool.decode(file, { signal: AbortSignal.timeout(10_000) }); // bound the decode time
 ```
 
-A request that has not started is dropped. A running one cannot be interrupted inside WASM, so
-its worker is terminated (and replaced on demand); remote handles opened in that worker are
-closed (`raw.closed`, later calls reject with `ClosedError`). `FlashRaw` on the calling thread
-has no cancellation: use the pool when a decode must be stoppable.
+A request that has not started is dropped. A running decode (`decode`, `decodeRegion`,
+`decodeTile`, `pool.decode`) is asked to stop through a flag in shared memory that the WASM
+decoders poll between chunks of work: it stops within milliseconds, the promise rejects with the
+abort reason, and the worker, with the files open in it, stays usable. That needs a
+cross-origin-isolated page (Node.js always qualifies; see Threads below) and pool workers on the
+single-threaded build, the default. Any other running request (metadata, previews, a threaded
+pool) cannot be interrupted inside WASM, so its worker is terminated (and replaced on demand);
+remote handles opened in that worker are closed (`raw.closed`, later calls reject with
+`ClosedError`). So is a decode that has not stopped half a second after the abort. `FlashRaw`
+on the calling thread has no cancellation: use the pool when a decode must be stoppable.
 
 In Node.js the same import gives a `worker_threads` pool (paths are opened by the workers).
 Results arrive as transferred buffers (no copy). Each pool worker runs the single-threaded build
