@@ -10,7 +10,7 @@ RAW file right in your browser.
 
 Rust core · C, C++, Python and JavaScript bindings · SIMD, all cores and the GPU · runs in the browser
 
-Version 0.3.1 is published on crates.io, PyPI and npm. See [docs/packages.md](docs/packages.md) for every
+Version 0.4.0 is published on crates.io, PyPI and npm. See [docs/packages.md](docs/packages.md) for every
 package and its install command.
 
 [![crates.io](https://img.shields.io/crates/v/flashraw.svg)](https://crates.io/crates/flashraw)
