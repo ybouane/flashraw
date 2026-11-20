@@ -7,7 +7,7 @@
 //! code could panic there; it is now a no-op), is left out of the digests and checked on its own.
 //!
 //! The lossy DNG in `npm/tests/fixtures` is part of the repository. Parts that need corpus files (`FLASHRAW_CORPUS`,
-//! default /var/projects/flashraw-realworld/corpus) are skipped when the files are absent.
+//! default /var/projects/flashraw-corpus-small/corpus) are skipped when the files are absent.
 
 use flashraw_codecs::{deflate, jpeg};
 use flashraw_core::Limits;
@@ -89,7 +89,7 @@ pub mod digest {
     pub fn corpus_file(rel: &str) -> Option<Vec<u8>> {
         let root: std::path::PathBuf = std::env::var_os("FLASHRAW_CORPUS")
             .map(Into::into)
-            .unwrap_or_else(|| "/var/projects/flashraw-realworld/corpus".into());
+            .unwrap_or_else(|| "/var/projects/flashraw-corpus-small/corpus".into());
         let d = std::fs::read(root.join(rel)).ok();
         if d.is_none() {
             eprintln!("skipped (absent): {rel}");

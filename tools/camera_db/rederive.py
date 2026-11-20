@@ -55,7 +55,7 @@ WORK = os.environ.get("FLASHRAW_REDERIVE_DIR", os.path.join(ROOT, "target/rederi
 BIN = os.environ.get("FLASHRAW_BIN", os.path.join(ROOT, "target/release/flashraw"))
 CARGO = os.environ.get("CARGO", os.path.expanduser("~/.cargo/bin/cargo"))
 PROBES = os.path.join(WORK, "probes.json")
-REALWORLD = os.environ.get("FLASHRAW_REALWORLD", "/var/projects/flashraw-realworld")
+REALWORLD = os.environ.get("FLASHRAW_REALWORLD", "/var/projects/flashraw-corpus-small")
 
 # Field groups of an entry, in report order.
 GROUPS = ["identity", "names", "aliases", "cfa", "crop", "black_areas", "black", "white", "color_matrix",
@@ -91,6 +91,11 @@ def list_files():
     if os.path.exists(manifest):
         for line in open(manifest, encoding="utf-8"):
             c = line.rstrip("\n").split("\t")
+            if c[0] == "path":  # the small corpus: first column is relative to its folder
+                continue
+            if len(c) > 1 and os.path.exists(os.path.join(REALWORLD, c[0])):
+                files.append(os.path.join(REALWORLD, c[0]))
+                continue
             if len(c) > 4 and c[0] != "source" and os.path.exists(c[4]):
                 files.append(c[4])
     return sorted(set(files))

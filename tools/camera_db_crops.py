@@ -53,11 +53,16 @@ def default_files():
     corpus = os.environ.get("FLASHRAW_CORPUS", os.path.join(ROOT, "corpus"))
     for root, _, names in os.walk(corpus):
         files += [os.path.join(root, n) for n in names]
-    rw = os.environ.get("FLASHRAW_REALWORLD", "/var/projects/flashraw-realworld")
+    rw = os.environ.get("FLASHRAW_REALWORLD", "/var/projects/flashraw-corpus-small")
     manifest = os.path.join(rw, "manifest.tsv")
     if os.path.exists(manifest):
         for line in open(manifest, encoding="utf-8"):
             c = line.rstrip("\n").split("\t")
+            if c[0] == "path":  # the small corpus: first column is relative to its folder
+                continue
+            if len(c) > 1 and os.path.exists(os.path.join(rw, c[0])):
+                files.append(os.path.join(rw, c[0]))
+                continue
             if len(c) > 4 and c[0] != "source" and os.path.exists(c[4]):
                 files.append(c[4])
     return sorted(set(files))

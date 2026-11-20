@@ -624,7 +624,7 @@ fn stream_structure_errors() {
 
 // ---------------------------------------------------------------- real files
 
-const CORPUS: &str = "/var/projects/flashraw-realworld/corpus";
+const CORPUS: &str = "/var/projects/flashraw-corpus-small/corpus";
 /// (path, width, height, phase, white level) as reported by `flashraw info` for the pinned rows.
 const FILES: &[(&str, usize, usize, CfaPhase, u32)] = &[
     ("GoPro/FUSION/GPBK1322.GPR", 3104, 3000, CfaPhase::Rggb, 16383),

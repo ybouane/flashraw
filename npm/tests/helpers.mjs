@@ -34,7 +34,7 @@ export function corpusFile(rel) {
 
 /** Real-world samples outside the corpus ($FLASHRAW_REALWORLD), or null when unavailable. */
 export const realworldRoot = (() => {
-  for (const p of [process.env.FLASHRAW_REALWORLD, join(repoRoot, '..', 'flashraw-realworld'), '/var/projects/flashraw-realworld']) {
+  for (const p of [process.env.FLASHRAW_REALWORLD, join(repoRoot, '..', 'flashraw-corpus-small'), '/var/projects/flashraw-corpus-small']) {
     if (p && existsSync(p) && statSync(p).isDirectory()) return p;
   }
   return null;
