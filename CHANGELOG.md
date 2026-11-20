@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-20)
 
 - Decodes can be cancelled. Put a `CancelToken` in `DecodeOptions::cancel` and call `cancel()` on it from any other
   thread: the decode returns the new `Error::Cancelled` (kind `"Cancelled"`) soon after and no partial result. The
