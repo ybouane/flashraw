@@ -34,6 +34,18 @@ function plainFrame(f) {
   return { ...f, data };
 }
 
+/** The request's decode options with `cancel: true`, so the decoders poll the shared flag. */
+function withCancel(op, args) {
+  if (op === 'oneshot' && args?.task === 'decode') return { ...args, options: { ...(args.options ?? {}), cancel: true } };
+  if (op === 'call' && ['decode', 'decodeRegion', 'decodeTile'].includes(args?.method)) {
+    const a = [...(args.args ?? [])];
+    const last = args.method === 'decode' ? 0 : 1;
+    a[last] = { ...(a[last] ?? {}), cancel: true };
+    return { ...args, args: a };
+  }
+  return args;
+}
+
 /**
  * Serve requests in a worker. `api` is the flashraw module of the worker's platform.
  * @param {{ post(msg: any, transfer?: any[]): void, listen(cb: (msg: any) => void): void }} port
@@ -110,11 +122,18 @@ export function serve(api, port) {
     },
   };
   port.listen(async (msg) => {
-    const { id, op, args } = msg ?? {};
+    const { id, op, args, cancelFlag } = msg ?? {};
     try {
       const fn = ops[op];
       if (!fn) throw new InvalidArgumentError(`unknown op ${JSON.stringify(op)}`);
-      const result = await fn(args);
+      // A request that can be cancelled shares a flag the page raises; the decoders poll it.
+      if (cancelFlag) globalThis.__flashrawCancelFlag = new Int32Array(cancelFlag);
+      let result;
+      try {
+        result = await fn(cancelFlag ? withCancel(op, args) : args);
+      } finally {
+        if (cancelFlag) globalThis.__flashrawCancelFlag = undefined;
+      }
       port.post({ id, ok: true, result }, transferablesOf(result));
     } catch (e) {
       const error = { kind: e?.kind ?? 'Internal', message: e?.message ?? String(e), corrupt: e?.corrupt ?? null };
@@ -128,9 +147,20 @@ export function serve(api, port) {
 // Requests are queued on the caller side and each worker runs one at a time: requests that are
 // not tied to a worker go to whichever worker is free first; calls on a remote handle wait for
 // the worker holding it. Queuing here (rather than in the worker's message queue) is what makes
-// cancellation possible: an aborted request that has not started is simply dropped; one that is
-// running is stopped by terminating its worker (WASM cannot be interrupted), which also closes
-// the handles opened in that worker. A replacement worker is spawned on demand.
+// cancellation possible: an aborted request that has not started is simply dropped. A running
+// decode is asked to stop through a flag in shared memory that the decoders poll, so it ends within
+// a few milliseconds and its worker (and the files open in it) stays usable; where that flag cannot
+// be shared (a page that is not cross-origin isolated, a threaded worker) or the decode does not
+// answer within a short grace period, the worker is terminated instead (WASM cannot be
+// interrupted), which also closes the handles opened in that worker. A replacement worker is
+// spawned on demand.
+
+const CANCEL_GRACE_MS = 500;
+const CANCELLABLE = (op, args) =>
+  (op === 'oneshot' && args?.task === 'decode') ||
+  (op === 'call' && ['decode', 'decodeRegion', 'decodeTile'].includes(args?.method));
+const canShareFlag = () =>
+  typeof SharedArrayBuffer === 'function' && typeof Atomics === 'object' && globalThis.crossOriginIsolated !== false;
 
 function inputTransfer(input, transfer) {
   if (!transfer) return [];
@@ -253,6 +283,7 @@ export class WorkerPool {
   #queue = []; // requests any worker may run
   #nextId = 1;
   #terminated = false;
+  #threaded = false; // workers run the threaded build: their decoders cannot see the flag
 
   constructor(spawn, options = {}) {
     if (options && (typeof options !== 'object' || Array.isArray(options))) {
@@ -263,6 +294,8 @@ export class WorkerPool {
     this.#spawn = spawn;
     this.#size = size;
     this.#init = options.init ?? null;
+    const t = this.#init?.threads;
+    this.#threaded = t !== undefined && t !== false && t !== 0;
   }
 
   get size() {
@@ -286,7 +319,9 @@ export class WorkerPool {
       const req = slot.running;
       if (slot.dead || !req || msg?.id !== req.id) return;
       this.#settle(slot, req);
-      if (msg.ok) {
+      if (req.abortReason !== undefined) {
+        req.reject(req.abortReason); // aborted by the caller: its answer, finished or cancelled, is dropped
+      } else if (msg.ok) {
         try {
           req.resolve(req.wrap ? req.wrap(msg.result, slot) : msg.result);
         } catch (e) {
@@ -311,6 +346,10 @@ export class WorkerPool {
 
   #newRequest(slot, op, args, transfer, signal, wrap, resolve, reject) {
     const req = { id: this.#nextId++, slot, op, args, transfer, signal, wrap, resolve, reject, onAbort: null };
+    // A decode that can be stopped from outside shares a flag with its worker (see the header).
+    if (signal && CANCELLABLE(op, args) && canShareFlag() && !this.#threaded) {
+      req.flag = new Int32Array(new SharedArrayBuffer(4));
+    }
     if (signal) {
       req.onAbort = () => this.#abort(req);
       signal.addEventListener('abort', req.onAbort, { once: true });
@@ -321,6 +360,7 @@ export class WorkerPool {
   /** A request finished or was dropped: detach its abort listener, free its worker. */
   #settle(slot, req) {
     if (req.signal) req.signal.removeEventListener('abort', req.onAbort);
+    if (req.graceTimer) clearTimeout(req.graceTimer);
     if (slot && slot.running === req) slot.running = null;
     if (slot && !slot.dead) slot.w.idle?.(!slot.running && slot.queue.length === 0);
   }
@@ -328,8 +368,22 @@ export class WorkerPool {
   #abort(req) {
     const reason = abortReason(req.signal);
     const busy = this.#slots.find((s) => s.running === req);
+    if (busy && req.flag) {
+      // Running a decode that polls the shared flag: ask it to stop and keep the worker. The
+      // request rejects with the abort reason once the worker answers; if it does not answer
+      // soon (it is between two checks of a long stage, or stuck), terminate it as below.
+      req.abortReason = reason;
+      Atomics.store(req.flag, 0, 1);
+      req.graceTimer = setTimeout(() => {
+        if (busy.running === req) {
+          this.#retire(busy, reason, new ClosedError('the worker owning this handle was terminated to cancel a running request'));
+        }
+      }, CANCEL_GRACE_MS);
+      req.graceTimer.unref?.();
+      return;
+    }
     if (busy) {
-      // Running: the only way to stop a WASM call is to terminate its worker.
+      // Running without a shared flag: the only way to stop a WASM call is to terminate its worker.
       this.#retire(busy, reason, new ClosedError('the worker owning this handle was terminated to cancel a running request'));
       return;
     }
@@ -366,7 +420,7 @@ export class WorkerPool {
     slot.running = req;
     slot.w.idle?.(false);
     try {
-      slot.w.post({ id: req.id, op: req.op, args: req.args }, req.transfer);
+      slot.w.post({ id: req.id, op: req.op, args: req.args, cancelFlag: req.flag?.buffer }, req.transfer);
     } catch (e) {
       this.#settle(slot, req);
       req.reject(new InvalidArgumentError(`cannot send input to worker: ${e?.message ?? e}`, { cause: e }));

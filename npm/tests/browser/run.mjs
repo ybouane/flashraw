@@ -146,6 +146,9 @@ for (engine of ENGINES) {
     const h = expected[FILES[0]].hash_full;
     assert.deepEqual([r.worker.a, r.worker.b, r.worker.after], [h, h, h], 'worker pool output');
     assert.equal(r.worker.aborted, 'AbortError');
+    assert.equal(r.worker.abortedHandle, 'AbortError');
+    assert.equal(r.worker.isolated, true);
+    assert.equal(r.worker.handleClosed, false, 'an aborted decode keeps its worker and the open file');
     assert.equal(r.worker.caps.platform, 'worker');
     assert.equal(r.worker.caps.wasm.binary, 'simd', 'pool workers default to the single-threaded build');
   });

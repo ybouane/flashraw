@@ -41,10 +41,15 @@ export interface TransferOption {
 
 export interface CancelOption {
   /**
-   * Cancel the request: a queued request is dropped; a running one terminates its worker (WASM
-   * cannot be interrupted), which also closes the remote handles opened in that worker. The
-   * promise rejects with `signal.reason` (an `AbortError` by default). `AbortSignal.timeout(ms)`
-   * bounds how long a decode may take.
+   * Cancel the request: a queued request is dropped. A running decode (`decode`, `decodeRegion`,
+   * `decodeTile`) is asked to stop through a flag the WASM decoders poll between chunks, so it
+   * ends within a few milliseconds and its worker, with the files open in it, stays usable. That
+   * needs a page that is cross-origin isolated (Node.js always is) and workers on the
+   * single-threaded build, which is what a pool uses unless `init` asks for threads; otherwise, and
+   * for other requests, or if the decode has not stopped after half a second, the worker is
+   * terminated (WASM cannot be interrupted from outside), which also closes the remote handles
+   * opened in that worker. The promise rejects with `signal.reason` (an `AbortError` by default).
+   * `AbortSignal.timeout(ms)` bounds how long a decode may take.
    */
   signal?: AbortSignal;
 }

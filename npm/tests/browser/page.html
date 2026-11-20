@@ -183,6 +183,15 @@
       ac.abort();
       out.worker.aborted = await running.then(() => 'resolved', (e) => e.name);
       out.worker.after = fnv1a64U16((await pool.decode(blob)).data);
+      // On a cross-origin-isolated page a running decode stops through the shared flag and its
+      // worker keeps the open file; otherwise the worker is terminated and the handle closes.
+      const remote = await pool.open(blob);
+      const ac2 = new AbortController();
+      const running2 = remote.decode({ output: 'rgba8', signal: ac2.signal });
+      ac2.abort();
+      out.worker.abortedHandle = await running2.then(() => 'resolved', (e) => e.name);
+      out.worker.handleClosed = remote.closed;
+      out.worker.isolated = self.crossOriginIsolated === true;
       pool.terminate();
     }
     return out;

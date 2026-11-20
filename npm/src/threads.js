@@ -28,6 +28,17 @@ import { InternalError, errorFromKind } from './errors.js';
 
 const STARTUP_TIMEOUT_MS = 30_000;
 
+// The WASM decoders ask the host whether to stop (`CancelToken::with_poll` in flashraw-core):
+// `__flashrawCancelPoll` reads a flag the page shares through a SharedArrayBuffer, set per request
+// by the worker loop (worker-protocol.js) as `__flashrawCancelFlag`. Defined wherever glue loads,
+// including thread workers, where it answers false: a decoder must never find it missing.
+if (typeof globalThis.__flashrawCancelPoll !== 'function') {
+  globalThis.__flashrawCancelPoll = () => {
+    const f = globalThis.__flashrawCancelFlag;
+    return f !== undefined && Atomics.load(f, 0) !== 0;
+  };
+}
+
 function once(worker, what) {
   return new Promise((resolve, reject) => {
     worker.onMessage((m) => {

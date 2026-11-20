@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { createWorkerPool } from 'flashraw/worker';
 import { FlashRawError } from 'flashraw';
-import { fixtures, fixture, fixturesDir, fnv1a64U16 } from './helpers.mjs';
+import { fixtures, fixture, fixturesDir, fnv1a64U16, realworldFile } from './helpers.mjs';
 
 const expected = JSON.parse(readFileSync(`${fixturesDir}/expected.json`, 'utf8'));
 
@@ -91,7 +91,7 @@ describe('worker pool (worker_threads)', () => {
     await assert.rejects(pool.decode(fixture('canon-5d3-mlv.dng')), { kind: 'Closed' });
   });
 
-  test('cancellation: queued requests are dropped, running ones stop their worker', async () => {
+  test('cancellation: queued requests are dropped, running decodes stop and keep their worker', async () => {
     const pool = createWorkerPool({ size: 1 });
     try {
       const file = fixture('canon-5d3-mlv.dng');
@@ -112,22 +112,60 @@ describe('worker pool (worker_threads)', () => {
       await assert.rejects(b, { message: 'not needed' });
       assert.equal(fnv1a64U16((await a).data), ref);
 
-      // Running: its worker is terminated, the request rejects at once, the pool carries on.
+      // Running decode: it is asked to stop, the request rejects with the abort reason, and the
+      // worker, with the file open in it, stays usable (the queued request behind it runs).
       const raw = await pool.open(file);
       const running = new AbortController();
-      const t0 = performance.now();
       const p = raw.decode({ output: 'rgba8', signal: running.signal });
-      const queued = raw.decode(); // waits on the same worker: its handle dies with it
+      const queued = raw.decode();
       running.abort();
       await assert.rejects(p, { name: 'AbortError' });
-      await assert.rejects(queued, { kind: 'Closed' });
+      assert.equal(fnv1a64U16((await queued).data), ref);
+      assert.equal(raw.closed, false);
+      assert.equal(fnv1a64U16((await raw.decode()).data), ref);
+      await raw.close();
+
+      // Running something that cannot poll the flag: its worker is terminated at once, its
+      // handles die with it, and a fresh worker takes over.
+      const raw2 = await pool.open(file);
+      const t0 = performance.now();
+      const other = new AbortController();
+      const m = raw2.exifBytes({ signal: other.signal });
+      const queued2 = raw2.decode(); // waits on the same worker: its handle dies with it
+      other.abort();
+      await assert.rejects(m, { name: 'AbortError' });
+      await assert.rejects(queued2, { kind: 'Closed' });
       assert.ok(performance.now() - t0 < 1000);
-      assert.equal(raw.closed, true);
-      await assert.rejects(raw.decode(), { kind: 'Closed' });
+      assert.equal(raw2.closed, true);
+      await assert.rejects(raw2.decode(), { kind: 'Closed' });
       assert.equal(fnv1a64U16((await pool.decode(file)).data), ref, 'a fresh worker took over');
       // Timeouts are signals too.
       const late = await pool.decode(file, { signal: AbortSignal.timeout(60_000) });
       assert.equal(fnv1a64U16(late.data), ref);
+    } finally {
+      pool.terminate();
+    }
+  });
+
+  test('a decode in progress stops within milliseconds and the worker survives', async (ctx) => {
+    const big = realworldFile('Fujifilm/GFX100ShSLI_ADOBE.RAF') ?? realworldFile('Phase_One/Y-JG-P1-XT-150MP-ACHROMATIC-13826.IIQ');
+    if (!big) return ctx.skip('no large real-world file ($FLASHRAW_REALWORLD)');
+    const pool = createWorkerPool({ size: 1 });
+    try {
+      const raw = await pool.open(big);
+      const full0 = performance.now();
+      await raw.decode({ output: 'rgba8' });
+      const full = performance.now() - full0;
+      const c = new AbortController();
+      const p = raw.decode({ output: 'rgba8', signal: c.signal });
+      await new Promise((r) => setTimeout(r, Math.min(80, full / 4)));
+      const t0 = performance.now();
+      c.abort();
+      await assert.rejects(p, { name: 'AbortError' });
+      const stopped = performance.now() - t0;
+      assert.ok(stopped < 400 && stopped < full / 2, `stopped in ${stopped.toFixed(0)} ms (a full decode takes ${full.toFixed(0)} ms)`);
+      assert.equal(raw.closed, false, 'the worker was not terminated');
+      assert.equal((await raw.decode({ output: 'raw-u16' })).width > 0, true);
     } finally {
       pool.terminate();
     }
@@ -138,7 +176,7 @@ describe('worker pool (worker_threads)', () => {
     try {
       const a = await pool.open(fixture('canon-5d3-mlv.dng'));
       const c = new AbortController();
-      const p = a.decode({ signal: c.signal });
+      const p = a.exifBytes({ signal: c.signal }); // not a decode: stopping it terminates the worker
       c.abort();
       await assert.rejects(p, { name: 'AbortError' });
       // The replacement worker numbers its handles from 1 again.

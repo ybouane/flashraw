@@ -49,6 +49,7 @@ export const NotAvailableError = define('NotAvailable');
 export const InvalidArgumentError = define('InvalidArgument');
 export const IoError = define('Io');
 export const ClosedError = define('Closed');
+export const CancelledError = define('Cancelled');
 export const InternalError = define('Internal');
 
 const BY_KIND = {
@@ -64,6 +65,7 @@ const BY_KIND = {
   InvalidArgument: InvalidArgumentError,
   Io: IoError,
   Closed: ClosedError,
+  Cancelled: CancelledError,
   Internal: InternalError,
 };
 

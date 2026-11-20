@@ -1076,6 +1076,7 @@ export type ErrorKind =
   | 'InvalidArgument'
   | 'Io'
   | 'Closed'
+  | 'Cancelled'
   | 'Internal';
 
 /** Base class of every error thrown by flashraw. */
@@ -1102,6 +1103,8 @@ export declare class NotAvailableError extends KindError<'NotAvailable'> {}
 export declare class InvalidArgumentError extends KindError<'InvalidArgument'> {}
 export declare class IoError extends KindError<'Io'> {}
 export declare class ClosedError extends KindError<'Closed'> {}
+/** A decode stopped because the page asked it to (worker pool `signal`); no frame, the file is fine. */
+export declare class CancelledError extends KindError<'Cancelled'> {}
 /** WASM trap or unexpected failure; the handle that raised it becomes unusable. */
 export declare class InternalError extends KindError<'Internal'> {}
 export const ERROR_KINDS: readonly ErrorKind[];
