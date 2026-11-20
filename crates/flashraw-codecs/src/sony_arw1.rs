@@ -5,7 +5,7 @@
 //! rows. One running sum covers the whole stream. Every difference is a length symbol from a
 //! fixed 18-word prefix code followed by that many magnitude bits (JPEG-style extension).
 //!
-//! Decoding works on *tiles* of [`TILE`] adjacent columns: the differences of a tile are summed
+//! Decoding works on *tiles* of `TILE` adjacent columns: the differences of a tile are summed
 //! straight into a small row-major buffer (so the column-major stream is transposed while it
 //! is decoded) and the buffer's rows are then copied to the image. Large streams are first
 //! entropy-decoded by speculation on all threads; the tiles are then rebuilt in parallel from

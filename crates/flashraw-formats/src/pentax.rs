@@ -4,7 +4,7 @@
 //! point, the as-shot white balance and the position of the Huffman table; the sensor payload is
 //! Pentax-Huffman coded (compression 65535) or, on the first generation of bodies, plain 16-bit
 //! words. The sensor buffer of each body carries dark or blank margins, cut by the per-body rules
-//! of [`AREA_RULES`].
+//! of `AREA_RULES`.
 
 use crate::common::*;
 use crate::nikon::conventions::*;

@@ -15,7 +15,7 @@
 //!   with zero padding past the data and a one-way "dead" state once the stream has been overrun.
 //! * Rows are decoded by a register-resident bit window (rows that provably stay inside the
 //!   data) or by the exact reader (everything near or after the end).
-//! * Large single-table streams may be entropy-decoded in speculative chunks ([`crate::par_entropy`]).
+//! * Large single-table streams may be entropy-decoded in speculative chunks (`crate::par_entropy`).
 
 use crate::par_entropy::{self, EndCheck, SymbolStream};
 use flashraw_core::bytes::ByteOrder;

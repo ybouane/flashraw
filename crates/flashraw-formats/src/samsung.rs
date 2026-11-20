@@ -2,7 +2,7 @@
 //!
 //! The maker note stores the white balance and the black level offset by per-file keys. Five payload
 //! layouts exist (row-table coded V0, Huffman V1, V2, 16-bit words, packed 12-bit rows); the visible
-//! area of each body family is a row of [`READOUTS`].
+//! area of each body family is a row of `READOUTS`.
 
 use crate::common::*;
 use crate::nikon::conventions::*;

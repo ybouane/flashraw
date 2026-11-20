@@ -4,7 +4,7 @@
 //! (tile, plane) pair is coded independently: either as one entropy-coded plane (lossless) or as a
 //! 5/3 integer wavelet whose subbands are entropy coded separately and quantised (C-RAW).
 //!
-//! * [`header`]: the `CMP1` codec header.
+//! * `header`: the `CMP1` codec header.
 //! * `layout`: tile grid, per-sample header records and subband sizes.
 //! * `prim`, `lines`: Golomb-Rice code words, runs and the three line coders; `quant`: dequantisation.
 //! * `synth`: inverse wavelet; `unit`, `emit`: per-unit decoding and CFA interleaving.

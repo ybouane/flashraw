@@ -2,11 +2,11 @@
 //!
 //! Two unrelated container families live here:
 //!
-//! * [`iiq`]: a vendor directory of numbered 16-byte entries (geometry, payload location and
+//! * `iiq`: a vendor directory of numbered 16-byte entries (geometry, payload location and
 //!   format, row index, black references, white balance, colour matrix), either bare or
 //!   embedded after the 8-byte header of a TIFF wrapper;
-//! * [`mos`]: a plain TIFF whose raw image is a lossless-JPEG stream or 16-bit samples, plus a
-//!   tree of binary packets ([`pkts`], TIFF tag 0x8606) with the back type, neutrals, mosaic
+//! * `mos`: a plain TIFF whose raw image is a lossless-JPEG stream or 16-bit samples, plus a
+//!   tree of binary packets (`pkts`, TIFF tag 0x8606) with the back type, neutrals, mosaic
 //!   pattern, rotation and a colour matrix.
 //!
 //! The entropy decoders live in `flashraw_codecs`; this module only locates and parameterises them.

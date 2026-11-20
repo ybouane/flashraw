@@ -3,8 +3,8 @@
 //! The container is TIFF (magics `IIRO`, `IIRS`, `MMOR`, or a plain header). Calibration lives in
 //! the maker note: the black levels and white balance in the root directory (older bodies) or in
 //! the ImageProcessing sub-directory, the coder parameters of the lossless codec and two embedded
-//! JPEGs. Six payload layouts exist, chosen by [`LAYOUT_RULES`]; the readout columns without image
-//! are cut by [`WIDTH_TRIMS`] and [`MODEL_TRIMS`].
+//! JPEGs. Six payload layouts exist, chosen by `LAYOUT_RULES`; the readout columns without image
+//! are cut by `WIDTH_TRIMS` and `MODEL_TRIMS`.
 
 use crate::common::*;
 use crate::nikon::conventions::file_orientation;

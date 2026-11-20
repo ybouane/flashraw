@@ -1,11 +1,11 @@
 //! Nikon NEF / NRW reader (container, metadata, payload selection).
 //!
 //! A Nikon raw file is a TIFF. IFD0 carries the camera, the EXIF IFD carries the maker
-//! note ([`makernote`]), and the raw image is the largest non-preview IFD. How its strip is
+//! note (`makernote`), and the raw image is the largest non-preview IFD. How its strip is
 //! coded is not stated by one tag: TIFF compression 34713 covers Huffman-coded, 12-bit
 //! packed, 16-bit word and sNEF (YCbCr) payloads, which are told apart by the strip size
-//! (see [`choose_payload`]). The visible area, black and white levels and CFA phase of the
-//! sensor buffer are per-camera facts kept in the [`MODEL_RULES`] table.
+//! (see `choose_payload`). The visible area, black and white levels and CFA phase of the
+//! sensor buffer are per-camera facts kept in the `MODEL_RULES` table.
 
 pub(crate) mod conventions;
 pub(crate) mod crypt;

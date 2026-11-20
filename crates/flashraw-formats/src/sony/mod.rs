@@ -1,7 +1,7 @@
 //! Sony ARW / SR2 / ARQ raw files: the container reader.
 //!
 //! This file classifies the raw IFD of a Sony TIFF, derives the frame geometry, levels, white balance and
-//! colour data, and hands a [`payload::Payload`] to the payload decoders in `payload.rs`. The ARW1 DSLR-A100
+//! colour data, and hands a `payload::Payload` to the payload decoders in `payload.rs`. The ARW1 DSLR-A100
 //! layout is handled here too; Cyber-shot SRF files are `srf.rs`.
 
 #[cfg(test)]

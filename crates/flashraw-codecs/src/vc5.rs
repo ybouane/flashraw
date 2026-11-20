@@ -4,7 +4,7 @@
 //! logarithmic domain. Each channel is a three-level 2/6 wavelet pyramid (one lowpass band and
 //! three highpass bands per level, ten subbands). The decoder works in four steps:
 //!
-//! 1. [`Layout::parse`] walks the tag-value pairs and collects the 40 codeblocks;
+//! 1. `Layout::parse` walks the tag-value pairs and collects the 40 codeblocks;
 //! 2. every band is decoded (raw lowpass values, or run-length/variable-length highpass
 //!    coefficients that are inverse companded and dequantised);
 //! 3. each channel runs the inverse wavelet from the coarsest level to the finest;

@@ -4,7 +4,7 @@
 //! position of a minimum coded unit, predictor, restart interval) and then decoded row by
 //! row. Rows of non-subsampled frames that use predictor 1 take a fast path with the
 //! per-component predictors held in registers; the other predictors and the Canon sRAW /
-//! Sony Y/Cb/Cr layouts (extra luma samples per MCU) go through [`reconstruct_row`].
+//! Sony Y/Cb/Cr layouts (extra luma samples per MCU) go through `reconstruct_row`.
 //!
 //! Restart intervals are honoured at row starts only. After each row the amount of data
 //! consumed beyond the end of the interval is checked, so truncated files yield the rows

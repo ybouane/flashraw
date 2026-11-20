@@ -5,11 +5,11 @@
 //!
 //! * `SECi` image sections: raw sensor data (several codings) and thumbnails,
 //! * `SECp` a list of name/value properties (camera, exposure, lens, time),
-//! * `SECc` the CAMF calibration block (see [`camf`]).
+//! * `SECc` the CAMF calibration block (see `camf`).
 //!
 //! The sensor stores three samples per pixel. The entropy decoders live in
 //! `flashraw_codecs::x3f`; Quattro bodies get their autofocus sites repaired and their
-//! half-resolution layers replicated in [`quattro`].
+//! half-resolution layers replicated in `quattro`.
 
 #[allow(dead_code)]
 pub(crate) mod camf;
