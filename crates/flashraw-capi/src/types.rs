@@ -526,6 +526,11 @@ pub struct flashraw_decode_options {
     /// three-colour sensors, CPU only). All zero (the default): not set; otherwise all three must
     /// be positive and finite.
     pub white_balance_multipliers: [f32; 3],
+    /// A `flashraw_cancel_token` (NULL: the decode cannot be stopped). Calling
+    /// `flashraw_cancel_token_cancel()` on it from any thread makes `flashraw_decode()` return
+    /// `FLASHRAW_ERROR_CANCELLED` soon after, without a frame. The token is only read during
+    /// the call; it must stay alive until `flashraw_decode()` has returned.
+    pub cancel: *const crate::cancel::flashraw_cancel_token,
 }
 
 /// Size of the first published layout of each versioned struct. Callers built against an
@@ -813,12 +818,12 @@ mod tests {
         // color_space, intent, black_point_compensation, highlights and the output profile
         // pointer and length (pointer-sized, so the total depends on the platform), then white_balance
         // and a reserved word, then the camera profile pointer and length, camera_profile_embedded
-        // and noise_reduction, then the three white balance multipliers.
+        // and noise_reduction, then the three white balance multipliers, then the cancel token pointer.
         assert_eq!(std::mem::offset_of!(flashraw_decode_options, preview_fallback), 76);
         assert_eq!(std::mem::offset_of!(flashraw_decode_options, color_space), 80);
         assert_eq!(
             size_of::<flashraw_decode_options>(),
-            (112 + 4 * size_of::<usize>() + 12).next_multiple_of(std::mem::align_of::<usize>())
+            (112 + 5 * size_of::<usize>() + 12).next_multiple_of(std::mem::align_of::<usize>())
         );
         assert_eq!(size_of::<flashraw_preview_info>(), flashraw_preview_info::MIN_SIZE);
         assert_eq!(size_of::<flashraw_decode_stats>(), flashraw_decode_stats::MIN_SIZE);

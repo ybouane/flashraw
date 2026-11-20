@@ -174,7 +174,10 @@ fn truncated() -> Error {
 /// Plain prediction: each lane of each row is a running sum from `start`.
 fn decode_lanes(scan: &[u8], table: &HuffTable, out: &mut [u16], width: usize, start: u16) -> Result<()> {
     let mut bits = BitPumpMsb32::new(scan);
-    for row in out.chunks_exact_mut(width) {
+    for (r, row) in out.chunks_exact_mut(width).enumerate() {
+        if r % 32 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         let (mut even, mut odd) = (start, start);
         for px in row.chunks_exact_mut(2) {
             let (d0, d1) = read_pair(&mut bits, table).ok_or_else(truncated)?;
@@ -196,6 +199,9 @@ fn decode_gradient(scan: &[u8], table: &HuffTable, out: &mut [u16], width: usize
     let mut bits = BitPumpMsb32::new(scan);
     let mut hist = vec![0i32; 3 * width];
     for (r, row) in out.chunks_exact_mut(width).enumerate() {
+        if r % 32 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         // Row r-2 shares a slot with row r+1 (mod 3).
         let cur_at = (r % 3) * width;
         let up_at = ((r + 1) % 3) * width;

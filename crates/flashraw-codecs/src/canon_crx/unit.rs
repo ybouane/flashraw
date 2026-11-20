@@ -111,7 +111,10 @@ pub(super) fn decode_unit(
             return Ok(out);
         }
         let mut band = src.reader(0)?;
-        for row in out.chunks_exact_mut(w) {
+        for (i, row) in out.chunks_exact_mut(w).enumerate() {
+            if i % 16 == 0 {
+                flashraw_core::cancel::check()?;
+            }
             convert.row(band.next_unscaled()?, row);
         }
         return Ok(out);
@@ -143,7 +146,10 @@ pub(super) fn decode_unit(
         source_width = lw;
     }
     let mut row = vec![0i32; w];
-    for out_row in out.chunks_exact_mut(w) {
+    for (i, out_row) in out.chunks_exact_mut(w).enumerate() {
+        if i % 16 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         next_row(&mut ll, &mut pyramid, &mut row)?;
         convert.row(&row, out_row);
     }

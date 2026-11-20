@@ -44,6 +44,10 @@ pub enum flashraw_status {
     /// An error kind added to the library after this ABI version; see the message and
     /// `flashraw_last_error_kind()`.
     FLASHRAW_ERROR_OTHER = 13,
+    /// The decode was stopped on request: the `flashraw_cancel_token` in
+    /// `flashraw_decode_options.cancel` was cancelled before it finished. No frame is returned,
+    /// and nothing is wrong with the file.
+    FLASHRAW_ERROR_CANCELLED = 14,
 }
 
 use flashraw_status::*;
@@ -66,6 +70,7 @@ impl flashraw_status {
             FLASHRAW_ERROR_IO => "Io",
             FLASHRAW_ERROR_INTERNAL => "Internal",
             FLASHRAW_ERROR_OTHER => "Other",
+            FLASHRAW_ERROR_CANCELLED => "Cancelled",
         }
     }
 
@@ -82,6 +87,7 @@ impl flashraw_status {
             "NotAvailable" => FLASHRAW_ERROR_NOT_AVAILABLE,
             "InvalidArgument" => FLASHRAW_ERROR_INVALID_ARGUMENT,
             "Io" => FLASHRAW_ERROR_IO,
+            "Cancelled" => FLASHRAW_ERROR_CANCELLED,
             _ => FLASHRAW_ERROR_OTHER,
         }
     }
@@ -103,6 +109,7 @@ impl flashraw_status {
             11 => FLASHRAW_ERROR_IO,
             12 => FLASHRAW_ERROR_INTERNAL,
             13 => FLASHRAW_ERROR_OTHER,
+            14 => FLASHRAW_ERROR_CANCELLED,
             _ => return None,
         })
     }
@@ -288,7 +295,7 @@ pub extern "C" fn flashraw_clear_last_error() {
 /// string; `"Unknown"` for values this library does not know.
 #[unsafe(no_mangle)]
 pub extern "C" fn flashraw_error_kind_name(status: i32) -> *const c_char {
-    static NAMES: [&std::ffi::CStr; 14] = [
+    static NAMES: [&std::ffi::CStr; 15] = [
         c"Ok",
         c"UnsupportedFormat",
         c"UnsupportedCompression",
@@ -303,6 +310,7 @@ pub extern "C" fn flashraw_error_kind_name(status: i32) -> *const c_char {
         c"Io",
         c"Internal",
         c"Other",
+        c"Cancelled",
     ];
     match flashraw_status::from_i32(status) {
         Some(s) => {

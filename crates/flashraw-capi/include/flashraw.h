@@ -104,6 +104,12 @@ enum flashraw_status
      * `flashraw_last_error_kind()`.
      */
     FLASHRAW_ERROR_OTHER = 13,
+    /**
+     * The decode was stopped on request: the `flashraw_cancel_token` in
+     * `flashraw_decode_options.cancel` was cancelled before it finished. No frame is returned,
+     * and nothing is wrong with the file.
+     */
+    FLASHRAW_ERROR_CANCELLED = 14,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -779,6 +785,15 @@ typedef int32_t flashraw_string_key;
 #endif // __cplusplus
 
 /**
+ * A flag that asks a running decode to stop (see `flashraw_decode_options.cancel`).
+ *
+ * Thread safety: `flashraw_cancel_token_cancel()` and `flashraw_cancel_token_is_cancelled()` may
+ * be called from any thread, also while a decode is using the token. The token must not be freed
+ * while another thread may still call into it or while a decode holds it.
+ */
+typedef struct flashraw_cancel_token flashraw_cancel_token;
+
+/**
  * An opened RAW file (opaque). Metadata and previews are available immediately; pixels are
  * decoded with `flashraw_decode()`.
  *
@@ -1068,6 +1083,13 @@ typedef struct flashraw_decode_options {
      * be positive and finite.
      */
     float white_balance_multipliers[3];
+    /**
+     * A `flashraw_cancel_token` (NULL: the decode cannot be stopped). Calling
+     * `flashraw_cancel_token_cancel()` on it from any thread makes `flashraw_decode()` return
+     * `FLASHRAW_ERROR_CANCELLED` soon after, without a frame. The token is only read during
+     * the call; it must stay alive until `flashraw_decode()` has returned.
+     */
+    const struct flashraw_cancel_token *cancel;
 } flashraw_decode_options;
 
 /**
@@ -1172,6 +1194,37 @@ const char *flashraw_output_format_name(int32_t output);
  * `name` must be NULL or a NUL-terminated string; `out` NULL or writable.
  */
 flashraw_status flashraw_output_format_parse(const char *name, int32_t *out);
+
+/**
+ * Create a token that is not cancelled. Free it with `flashraw_cancel_token_free()`.
+ */
+struct flashraw_cancel_token *flashraw_cancel_token_new(void);
+
+/**
+ * Ask every decode that uses the token (now or later) to stop. Does nothing for NULL. Safe to
+ * call from any thread, any number of times; the decode returns `FLASHRAW_ERROR_CANCELLED`.
+ *
+ * # Safety
+ * `t` must be NULL or a live token.
+ */
+void flashraw_cancel_token_cancel(const struct flashraw_cancel_token *t);
+
+/**
+ * Non-zero once the token has been cancelled (0 for NULL).
+ *
+ * # Safety
+ * `t` must be NULL or a live token.
+ */
+int32_t flashraw_cancel_token_is_cancelled(const struct flashraw_cancel_token *t);
+
+/**
+ * Free a token. Does nothing for NULL.
+ *
+ * # Safety
+ * `t` must be NULL or a token from `flashraw_cancel_token_new()` that has not been freed, and no
+ * other thread may be using it.
+ */
+void flashraw_cancel_token_free(struct flashraw_cancel_token *t);
 
 /**
  * Status code of the last failed call on this thread (`FLASHRAW_OK` if none since the

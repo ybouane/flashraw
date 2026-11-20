@@ -825,3 +825,62 @@ fn exif_and_xmp_bytes() {
         flashraw_file_free(none);
     }
 }
+
+#[test]
+fn cancel_tokens_stop_a_decode() {
+    let f = open_path(&fixture("canon-a410-chdk.dng"));
+    let token = flashraw_cancel_token_new();
+    assert!(!token.is_null());
+    // SAFETY: a live token.
+    unsafe { assert_eq!(flashraw_cancel_token_is_cancelled(token), 0) };
+
+    // A token nobody cancels changes nothing.
+    let mut o = options();
+    o.cancel = token;
+    let fr = decode(f, &o).expect("an uncancelled token decodes normally");
+    // SAFETY: a frame from the call above.
+    unsafe { flashraw_frame_free(fr) };
+
+    // Cancelled: the decode fails with its own status and kind, and returns no frame.
+    // SAFETY: a live token.
+    unsafe { flashraw_cancel_token_cancel(token) };
+    // SAFETY: a live token.
+    unsafe { assert_eq!(flashraw_cancel_token_is_cancelled(token), 1) };
+    let s = decode(f, &o).expect_err("a cancelled token stops the decode");
+    assert_eq!(s, flashraw_status::FLASHRAW_ERROR_CANCELLED);
+    assert_eq!(cstr(flashraw_last_error_kind()), Some("Cancelled"));
+    assert_eq!(cstr(flashraw_error_kind_name(s as i32)), Some("Cancelled"));
+    last_error();
+
+    // Without the token the same options decode again.
+    let mut plain = options();
+    plain.cancel = null();
+    let fr = decode(f, &plain).expect("decodes without the token");
+    // SAFETY: a frame from the call above; the token and file are live and unused elsewhere.
+    unsafe {
+        flashraw_frame_free(fr);
+        flashraw_cancel_token_free(token);
+        flashraw_file_free(f);
+    }
+    // NULL is accepted everywhere.
+    // SAFETY: NULL handles are allowed.
+    unsafe {
+        flashraw_cancel_token_cancel(null());
+        assert_eq!(flashraw_cancel_token_is_cancelled(null()), 0);
+        flashraw_cancel_token_free(null_mut());
+    }
+}
+
+#[test]
+fn a_header_without_the_cancel_field_still_works() {
+    // A caller built before `cancel` existed passes a shorter struct: the field takes its default (none).
+    let f = open_path(&fixture("canon-a410-chdk.dng"));
+    let mut old = options();
+    old.size = std::mem::offset_of!(flashraw_decode_options, cancel) as u32;
+    let fr = decode(f, &old).expect("decodes with the older layout");
+    // SAFETY: handles from the calls above.
+    unsafe {
+        flashraw_frame_free(fr);
+        flashraw_file_free(f);
+    }
+}

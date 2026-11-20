@@ -2,7 +2,7 @@
 
 use crate::color::ColorSpace;
 use crate::icc::{OutputProfile, RenderingIntent};
-use flashraw_core::{CameraProfile, Limits, Rect};
+use flashraw_core::{CameraProfile, CancelToken, Limits, Rect};
 
 /// Execution backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
@@ -458,9 +458,23 @@ pub struct DecodeOptions {
     /// to the CPU. Default: none, which leaves the output bit-identical to a decode without
     /// the option.
     pub camera_profile: Option<CameraProfile>,
+    /// Lets another thread stop this decode: call [`CancelToken::cancel`] on a clone of the token
+    /// and the decode returns [`crate::Error::Cancelled`] soon after, without a result. The
+    /// token is checked between the chunks, strips, tiles and bands of the work, so a decode
+    /// stops within a few milliseconds (a few tens on the largest single-stream files) and the
+    /// cores go back to whatever is next. A token that is already cancelled makes the decode
+    /// return at once. Each decode needs its own token, or several decodes can share one to
+    /// stop together. Default: none, which costs nothing.
+    pub cancel: Option<CancelToken>,
 }
 
 impl DecodeOptions {
+    /// Make the decode stoppable with `token` (see [`DecodeOptions::cancel`]).
+    pub fn with_cancel(mut self, token: CancelToken) -> Self {
+        self.cancel = Some(token);
+        self
+    }
+
     /// Set the output colour space.
     pub fn with_color_space(mut self, cs: ColorSpace) -> Self {
         self.color_space = cs;
@@ -498,6 +512,7 @@ impl Default for DecodeOptions {
             color_space: ColorSpace::Srgb,
             output_profile: None,
             camera_profile: None,
+            cancel: None,
         }
     }
 }

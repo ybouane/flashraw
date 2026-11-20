@@ -15,6 +15,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod cancel;
 mod convert;
 mod rawfile;
 
@@ -189,6 +190,7 @@ fn build_info(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
 fn _flashraw(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<RawFile>()?;
+    m.add_class::<cancel::PyCancelToken>()?;
     m.add_function(wrap_pyfunction!(detect_format, m)?)?;
     m.add_function(wrap_pyfunction!(read_metadata, m)?)?;
     m.add_function(wrap_pyfunction!(fnv1a64, m)?)?;

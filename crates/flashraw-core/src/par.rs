@@ -1,8 +1,55 @@
 //! Parallel execution helpers that degrade to sequential execution when the
 //! `rayon` feature is disabled (e.g. single-threaded WASM) or parallelism is off.
 
+use crate::cancel::{self, CancelToken};
+
 /// Minimum number of samples before splitting work across threads pays off.
 pub const PAR_MIN_SAMPLES: usize = 1 << 18;
+
+/// The cancel token of the thread that called a helper, carried to the pool workers the helper
+/// uses (a worker has its own thread-local token, which is empty until this sets it).
+///
+/// A cancelled decode stops handing out work: [`Link::run`] skips a unit once the token is
+/// cancelled, so the units still queued cost nothing. The skipped units leave their output
+/// untouched, which is fine because a cancelled decode returns no output.
+struct Link(Option<CancelToken>);
+
+impl Link {
+    fn new() -> Self {
+        Link(cancel::current())
+    }
+
+    /// True once the decode was cancelled.
+    #[inline]
+    fn cancelled(&self) -> bool {
+        self.0.as_ref().is_some_and(CancelToken::is_cancelled)
+    }
+
+    /// Make the token current on this thread for the life of the guard.
+    #[inline]
+    #[cfg(feature = "rayon")]
+    fn enter(&self) -> Option<cancel::Scope> {
+        self.0.as_ref().map(|t| cancel::enter(Some(t.clone())))
+    }
+
+    /// Run `f` as one unit of work on this thread, unless the decode was cancelled (then `None`).
+    #[inline]
+    #[cfg(feature = "rayon")]
+    fn run_with<R>(&self, f: impl FnOnce() -> R) -> Option<R> {
+        if self.cancelled() {
+            return None;
+        }
+        let _scope = self.enter();
+        Some(f())
+    }
+
+    /// [`Link::run_with`] for units that produce nothing.
+    #[inline]
+    #[cfg(feature = "rayon")]
+    fn run(&self, f: impl FnOnce()) {
+        self.run_with(f);
+    }
+}
 
 /// Run `f(first_row, rows_chunk)` over `data` split into chunks of `rows_per_chunk`
 /// rows of `row_len` elements each.
@@ -15,14 +62,18 @@ where
         return;
     }
     let chunk = row_len * rows_per_chunk.max(1);
+    let link = Link::new();
     #[cfg(feature = "rayon")]
     if parallel && data.len() >= PAR_MIN_SAMPLES && threads() > 1 {
         use rayon::prelude::*;
-        data.par_chunks_mut(chunk).enumerate().for_each(|(i, c)| f(i * rows_per_chunk.max(1), c));
+        data.par_chunks_mut(chunk).enumerate().for_each(|(i, c)| link.run(|| f(i * rows_per_chunk.max(1), c)));
         return;
     }
     let _ = parallel;
     for (i, c) in data.chunks_mut(chunk).enumerate() {
+        if link.cancelled() {
+            break;
+        }
         f(i * rows_per_chunk.max(1), c);
     }
 }
@@ -51,6 +102,9 @@ where
 }
 
 /// Map `f` over `items` in parallel (when enabled), preserving order.
+///
+/// Every item is mapped, cancelled or not (the result has one entry per item), so an item that
+/// can run long checks [`cancel::check`] itself.
 pub fn map<I, O, F>(items: Vec<I>, parallel: bool, f: F) -> Vec<O>
 where
     I: Send,
@@ -60,10 +114,68 @@ where
     #[cfg(feature = "rayon")]
     if parallel && items.len() > 1 && threads() > 1 {
         use rayon::prelude::*;
-        return items.into_par_iter().map(f).collect();
+        let link = Link::new();
+        return items
+            .into_par_iter()
+            .map(|i| {
+                let _scope = link.enter();
+                f(i)
+            })
+            .collect();
     }
     let _ = parallel;
     items.into_iter().map(f).collect()
+}
+
+/// Like [`map`], but stops handing out items once the decode is cancelled and then returns
+/// [`crate::Error::Cancelled`] instead of the results. Use it for items that take long enough
+/// (an entropy-coded strip, a tile) for the rest to be worth skipping.
+pub fn try_map<I, O, F>(items: Vec<I>, parallel: bool, f: F) -> crate::Result<Vec<O>>
+where
+    I: Send,
+    O: Send,
+    F: Fn(I) -> O + Sync + Send,
+{
+    let link = Link::new();
+    #[cfg(feature = "rayon")]
+    if parallel && items.len() > 1 && threads() > 1 {
+        use rayon::prelude::*;
+        let out: Option<Vec<O>> = items.into_par_iter().map(|i| link.run_with(|| f(i))).collect();
+        return out.ok_or(crate::Error::Cancelled);
+    }
+    let _ = parallel;
+    let mut out = Vec::with_capacity(items.len());
+    for i in items {
+        if link.cancelled() {
+            return Err(crate::Error::Cancelled);
+        }
+        out.push(f(i));
+    }
+    // An item that stopped early because of the cancel returned a partial result.
+    if link.cancelled() { Err(crate::Error::Cancelled) } else { Ok(out) }
+}
+
+/// Run `f` on every item (in parallel when enabled), skipping the items not started yet once
+/// the decode is cancelled. The caller checks [`cancel::check`] afterwards.
+pub fn for_each_item<I, F>(items: Vec<I>, parallel: bool, f: F)
+where
+    I: Send,
+    F: Fn(I) + Sync + Send,
+{
+    let link = Link::new();
+    #[cfg(feature = "rayon")]
+    if parallel && items.len() > 1 && threads() > 1 {
+        use rayon::prelude::*;
+        items.into_par_iter().for_each(|i| link.run(|| f(i)));
+        return;
+    }
+    let _ = parallel;
+    for i in items {
+        if link.cancelled() {
+            break;
+        }
+        f(i);
+    }
 }
 
 /// Run `f(i)` for `i in 0..n` in parallel when enabled.
@@ -71,14 +183,20 @@ pub fn for_each_index<F>(n: usize, parallel: bool, f: F)
 where
     F: Fn(usize) + Sync + Send,
 {
+    let link = Link::new();
     #[cfg(feature = "rayon")]
     if parallel && n > 1 && threads() > 1 {
         use rayon::prelude::*;
-        (0..n).into_par_iter().for_each(f);
+        (0..n).into_par_iter().for_each(|i| link.run(|| f(i)));
         return;
     }
     let _ = parallel;
-    (0..n).for_each(f);
+    for i in 0..n {
+        if link.cancelled() {
+            break;
+        }
+        f(i);
+    }
 }
 
 #[cfg(feature = "rayon")]
@@ -185,6 +303,7 @@ where
         nblocks: usize,
         geo: Wavefront,
         halo: usize,
+        link: Link,
         f: F,
     }
 
@@ -200,7 +319,11 @@ where
             };
             {
                 let mut band = self.bands[k].lock().unwrap_or_else(|e| e.into_inner());
-                (self.f)(self.first_rows[k], &mut band, &above, lo, a, b);
+                // Once cancelled the blocks are not processed, but they still release their
+                // dependants so the pass winds down at once.
+                if !self.link.cancelled() {
+                    (self.f)(self.first_rows[k], &mut band, &above, lo, a, b);
+                }
                 if let Some(next) = self.edges.get(k + 1) {
                     let mut e = next.lock().unwrap_or_else(|e| e.into_inner());
                     let n = band.len() / rl;
@@ -229,8 +352,17 @@ where
         .collect();
     let pending =
         (0..nbands * nblocks).map(|i| AtomicU8::new((i / nblocks > 0) as u8 + (i % nblocks > 0) as u8)).collect();
-    let ctx =
-        Ctx { bands: parts.into_iter().map(Mutex::new).collect(), first_rows, edges, pending, nblocks, geo, halo, f };
+    let ctx = Ctx {
+        bands: parts.into_iter().map(Mutex::new).collect(),
+        first_rows,
+        edges,
+        pending,
+        nblocks,
+        geo,
+        halo,
+        link: Link::new(),
+        f,
+    };
 
     #[cfg(feature = "rayon")]
     if nbands > 1 && threads() > 1 {
@@ -239,6 +371,7 @@ where
             T: Copy + Default + Send + Sync,
             F: Fn(usize, &mut [T], &[T], usize, usize, usize) + Sync,
         {
+            let _scope = ctx.link.enter();
             for (k2, j2) in ctx.block(k, j) {
                 s.spawn(move |s| run(s, ctx, k2, j2));
             }

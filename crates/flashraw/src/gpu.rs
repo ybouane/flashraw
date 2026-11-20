@@ -267,6 +267,7 @@ impl FlashRaw<'_> {
         {
             return self.decode(DecodeOptions { backend: Backend::Auto, ..opts });
         }
+        live(&opts)?;
         let t0 = flashraw_core::profile::now_ms();
         let profiler = Profiler::new();
         profiler.record(Stage::ContainerParse, self.parse_ms);
@@ -274,7 +275,18 @@ impl FlashRaw<'_> {
             Some(c) => c,
             None => flashraw_gpu::init().await?,
         };
-        run(self, &opts, t0, &profiler, ctx, None).await
+        let r = run(self, &opts, t0, &profiler, ctx, None).await;
+        live(&opts)?;
+        r
+    }
+}
+
+/// `Err(Error::Cancelled)` once the decode's token is cancelled. The GPU work itself cannot be
+/// recalled once submitted, so the GPU path stops between its stages.
+fn live(opts: &DecodeOptions) -> Result<()> {
+    match &opts.cancel {
+        Some(t) if t.is_cancelled() => Err(Error::Cancelled),
+        _ => Ok(()),
     }
 }
 
@@ -318,7 +330,10 @@ async fn run(
             (GpuFrame::from_packed(p).with_window(win), format!("GPU unpack ({})", ctx.info().name))
         }
         None => {
-            let (decoded, measured) = raw.decode_window(&dctx, win, profiler)?;
+            live(opts)?;
+            let (decoded, measured) =
+                flashraw_core::cancel::scope(opts.cancel.as_ref(), || raw.decode_window(&dctx, win, profiler))?;
+            live(opts)?;
             if let Some(b) = measured {
                 black = b;
             }
@@ -429,7 +444,9 @@ async fn run(
         o => return Err(Error::InvalidArgument(format!("{o:?} is not produced by the GPU backend"))),
     };
     // Frames beyond the adapter's buffer limits are processed in bands (tiled).
+    live(opts)?;
     let r = ctx.run(&frame, &post_info, &op).await?;
+    live(opts)?;
     profiler.record(Stage::GpuUpload, r.timings.upload_ms);
     profiler.record(Stage::GpuCompute, r.timings.compute_ms);
     let (width, height) = (r.image.width(), r.image.height());

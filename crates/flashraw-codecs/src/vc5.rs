@@ -805,11 +805,11 @@ pub fn decode(
             }
         }
     }
-    let decoded = par::map(jobs, parallel, |(c, s, b)| {
+    let decoded = par::try_map(jobs, parallel, |(c, s, b)| {
         let (w, h) = sizes[subband_level(s)];
         let r = if s == 0 { Ok(decode_lowpass(b, w * h)) } else { decode_highpass(b, w * h, codec) };
         (c, s, r)
-    });
+    })?;
     let mut bands: Vec<Vec<Vec<i16>>> = (0..CHANNELS).map(|_| vec![Vec::new(); SUBBANDS]).collect();
     for (c, s, r) in decoded {
         bands[c][s] = r?;

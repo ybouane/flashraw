@@ -408,6 +408,7 @@ impl RawFile {
             white_point: levels.2,
             preview_fallback,
             camera_profile: None,
+            cancel: None,
         };
         Ok(Request { opts, backend: be.name().to_string(), active, tile: None, embedded_profile: false })
     }
@@ -593,7 +594,7 @@ impl RawFile {
         white_point=1.0, preview_fallback=false, color_space="srgb", output_profile=None,
         intent="perceptual", black_point_compensation=false, highlights="clip", white_balance="as-shot",
         camera_profile=None, camera_profile_embedded=false, chromatic_aberration=false,
-        noise_reduction="auto", white_balance_multipliers=None
+        noise_reduction="auto", white_balance_multipliers=None, cancel=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn decode<'py>(
@@ -623,6 +624,7 @@ impl RawFile {
         chromatic_aberration: bool,
         noise_reduction: &str,
         white_balance_multipliers: Option<(f32, f32, f32)>,
+        cancel: Option<PyRef<'py, crate::cancel::PyCancelToken>>,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         if camera_profile.is_some() && camera_profile_embedded {
             return Err(invalid(py, "`camera_profile` is either a profile or \"embedded\", not both"));
@@ -655,6 +657,7 @@ impl RawFile {
         })?;
         req.opts.white_balance_multipliers = white_balance_multipliers.map(|(r, g, b)| [r, g, b]);
         req.embedded_profile = camera_profile_embedded;
+        req.opts.cancel = cancel.map(|c| c.token.clone());
         if let Some(bytes) = camera_profile {
             req.opts.camera_profile = Some(flashraw::CameraProfile::from_dcp(bytes).map_err(|e| to_pyerr(py, e))?);
         }

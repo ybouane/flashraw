@@ -1096,13 +1096,13 @@ pub fn decode(
 
     // Entropy decoding, dequantisation and the horizontal transform, one task per slice.
     let slice_ids: Vec<usize> = (0..l.slices()).collect();
-    let blocks = par::map(slice_ids, parallel, |s| decode_slice(&l, codestream, &offsets, s));
+    let blocks = par::try_map(slice_ids, parallel, |s| decode_slice(&l, codestream, &offsets, s))?;
     let blocks = blocks.into_iter().collect::<Result<Vec<_>>>()?;
 
     // Vertical transform, colour transform and the output curve, band by band.
     let lut = build_curve(hdr.black, hdr.gain, hdr.knee);
     reconstruct(&l, &blocks, &lut, &mut out[..need], pitch, parallel);
-    Ok(())
+    flashraw_core::cancel::check()
 }
 
 /// Turn the horizontally inverse transformed coefficients of all slices into the mosaic.
@@ -1116,11 +1116,14 @@ fn reconstruct(l: &Layout, blocks: &[Vec<i32>], lut: &[u16; LUT_SIZE], out: &mut
     let rows_per_task = bands.div_ceil(tasks) * BAND_ROWS;
     let items: Vec<(usize, &mut [u16])> =
         out.chunks_mut(pitch * 2 * rows_per_task).enumerate().map(|(i, c)| (i * rows_per_task, c)).collect();
-    par::map(items, parallel, |(first, chunk)| {
+    par::for_each_item(items, parallel, |(first, chunk)| {
         let mut bufs = BandBuffers::new(l.w2);
         let end = (first + rows_per_task).min(l.h2);
         let mut r0 = first;
         while r0 < end {
+            if flashraw_core::cancel::is_cancelled() {
+                return;
+            }
             let r1 = (r0 + BAND_ROWS).min(end);
             reconstruct_band(l, &co, lut, &mut bufs, r0..r1, &mut chunk[2 * (r0 - first) * pitch..], pitch);
             r0 = r1;
@@ -1137,6 +1140,7 @@ fn decode_slice(l: &Layout, d: &[u8], offsets: &[usize], s: usize) -> Result<Vec
     let mut st = SliceState::new(l);
     let mut tmp = vec![0i32; l.w2];
     for (i, p) in (p0..p1).enumerate() {
+        flashraw_core::cancel::check()?;
         let blk = &mut block[i * row..(i + 1) * row];
         decode_precinct(l, d, offsets[p], &mut st, blk)?;
         horizontal_inverse(l, blk, &mut tmp);

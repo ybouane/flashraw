@@ -396,6 +396,9 @@ where
     let mut vpred = p.vpred;
     let end_bits = src.len() as u64 * 8;
     for r in 0..p.rows {
+        if r % 32 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         let table = p.tables.iter().rfind(|(start, _)| *start <= r).map_or(p.tables[0].1, |t| t.1);
         let row = &mut out[r * stride..r * stride + width];
         let vp = &mut vpred[r & 1];

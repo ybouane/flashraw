@@ -29,6 +29,7 @@ def test_hierarchy() -> None:
         "Io": flashraw.IoError,
         "Closed": flashraw.ClosedError,
         "Internal": flashraw.InternalError,
+        "Cancelled": flashraw.CancelledError,
     }
     assert set(flashraw.ERROR_KINDS) == set(kinds)
     for kind, cls in kinds.items():

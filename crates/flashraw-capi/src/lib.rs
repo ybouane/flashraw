@@ -19,12 +19,14 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod calib;
+mod cancel;
 mod error;
 mod file;
 mod frame;
 mod json;
 mod types;
 
+pub use cancel::*;
 pub use error::*;
 pub use file::*;
 pub use frame::*;

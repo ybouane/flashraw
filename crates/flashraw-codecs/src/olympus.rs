@@ -231,6 +231,9 @@ mod general {
         let base_rung = Rung { threshold: p.base_threshold, offset: p.base_offset };
         let e = p.extra_bits;
         for row in 0..h {
+            if row % 16 == 0 {
+                flashraw_core::cancel::check()?;
+            }
             for col in 0..w {
                 let c = &mut ch[col & 1];
                 let edge = col < 2;
@@ -547,6 +550,7 @@ mod fast {
         let mut r0 = 0;
         while r0 < h {
             let rows = BAND_ROWS.min(h - r0);
+            flashraw_core::cancel::check()?;
             ent.band(&mut codes, w, rows).map_err(|i| exhausted(r0 + i, h))?;
             predict_band(out, &zero, w, r0, rows, &codes);
             r0 += rows;
@@ -576,6 +580,10 @@ mod fast {
             while r0 < h {
                 let rows = BAND_ROWS.min(h - r0);
                 let Ok(mut codes) = free_rx.recv() else { break };
+                if flashraw_core::cancel::is_cancelled() {
+                    result = Err(Error::Cancelled);
+                    break;
+                }
                 if let Err(i) = ent.band(&mut codes, w, rows) {
                     result = Err(exhausted(r0 + i, h));
                     break;

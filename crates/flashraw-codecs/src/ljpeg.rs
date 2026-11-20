@@ -332,6 +332,9 @@ where
     let mut interval = 0usize;
     let mut bits = BitPumpMsb::new(unstuffed.segment(0));
     for y in 0..hdr.height as usize {
+        if y % 16 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         if y > 0 && restart != 0 && (y as u64 * width) % restart == 0 {
             interval += 1;
             if interval >= unstuffed.segments.len() {

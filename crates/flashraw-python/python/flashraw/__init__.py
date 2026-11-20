@@ -26,6 +26,7 @@ from . import _flashraw
 from ._errors import (
     ERROR_KINDS,
     CameraUnsupportedError,
+    CancelledError,
     ClosedError,
     CorruptFileError,
     FlashRawError,
@@ -71,10 +72,15 @@ if TYPE_CHECKING:
 
 __version__: str = _flashraw.__version__
 
+CancelToken = _flashraw.CancelToken
+"""A flag that stops a running decode: pass it as ``cancel=`` to :meth:`RawFile.decode`, then call
+``cancel()`` from any thread; the decode raises :class:`CancelledError`."""
+
 __all__ = [
     "__version__",
     "open",
     "RawFile",
+    "CancelToken",
     "Frame",
     "Preview",
     "read_metadata",
@@ -127,6 +133,7 @@ __all__ = [
     "IoError",
     "ClosedError",
     "InternalError",
+    "CancelledError",
     "ERROR_KINDS",
 ]
 
@@ -533,6 +540,7 @@ class RawFile:
         camera_profile: Union[bytes, "os.PathLike[str]", str, None] = None,
         noise_reduction: str = "auto",
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
+        cancel: Optional["CancelToken"] = None,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
 
@@ -603,6 +611,10 @@ class RawFile:
                 colour matrices replace the file's and its hue/sat map, look table and tone curve
                 are applied; ``exposure`` and the black and white points come after. Three-colour
                 sensors only; CPU only. ``None`` (default): the file's own colour matrices.
+            cancel: a :class:`CancelToken`. Calling its ``cancel()`` from another thread makes this
+                decode raise :class:`CancelledError` soon after (within a few milliseconds, once the
+                running chunk, strip or band finishes) instead of finishing, and frees its cores.
+                A token that is already cancelled stops the decode at once.
         """
         profile, embedded = _camera_profile(camera_profile)
         t0 = time.perf_counter()
@@ -631,6 +643,7 @@ class RawFile:
             chromatic_aberration,
             noise_reduction,
             white_balance_multipliers,
+            cancel,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 
@@ -661,6 +674,7 @@ class RawFile:
         camera_profile: Union[bytes, "os.PathLike[str]", str, None] = None,
         noise_reduction: str = "auto",
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
+        cancel: Optional["CancelToken"] = None,
     ) -> Frame:
         """Decode one independently decodable tile/strip (see :attr:`tiles`)."""
         profile, embedded = _camera_profile(camera_profile)
@@ -690,6 +704,7 @@ class RawFile:
             chromatic_aberration,
             noise_reduction,
             white_balance_multipliers,
+            cancel,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
 

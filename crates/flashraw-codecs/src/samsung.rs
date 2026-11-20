@@ -130,11 +130,12 @@ pub fn decode_v0_with(
             .enumerate()
             .map(|(i, (o, d))| (flat_rows + i * ROWS_PER_TASK, o, d))
             .collect();
-        par::map(items, parallel, |(first, o, d)| {
+        par::for_each_item(items, parallel, |(first, o, d)| {
             for (i, (row, dr)) in o.chunks_exact_mut(width).zip(d.chunks_exact_mut(nblk)).enumerate() {
                 parse_row(src, row_offsets[first + i] as usize, row, dr);
             }
         });
+        flashraw_core::cancel::check()?;
         // Pass 2: add the predictions (rows r-1 and r-2 are final before row r).
         let geo = par::Wavefront { row_len: width, halo: 2, margin: 0, block: 16 * 32 };
         let dirs = &dirs;
@@ -143,6 +144,7 @@ pub fn decode_v0_with(
             reconstruct(band, above, lo, a, b, width, dirs, nblk, first);
         });
     }
+    flashraw_core::cancel::check()?;
     transpose_pairs(out, width, parallel);
     Ok(())
 }
@@ -554,6 +556,9 @@ pub fn decode_v2(src: &[u8], width: usize, height: usize, out: &mut [u16]) -> Re
     let depth = header.depth_less_1 as i32 + 1;
     let f = V2Frame { w: width, h: height, depth, max: (1 << depth) - 1, opt, init };
     for r in 0..height {
+        if r % 16 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         let start = (bits.p + 15) & !15;
         bits.restart(start);
         v2_row(&mut bits, &f, r, out)?;

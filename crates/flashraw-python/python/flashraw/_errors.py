@@ -28,6 +28,7 @@ __all__ = [
     "IoError",
     "ClosedError",
     "InternalError",
+    "CancelledError",
     "ERROR_KINDS",
 ]
 
@@ -131,6 +132,15 @@ class ClosedError(FlashRawError, ValueError):
     kind = "Closed"
 
 
+class CancelledError(FlashRawError):
+    """The decode was stopped on request: its :class:`~flashraw.CancelToken` was cancelled.
+
+    Nothing is wrong with the file, and no partial result is returned.
+    """
+
+    kind = "Cancelled"
+
+
 class InternalError(FlashRawError):
     """An internal error (a bug in FlashRaw); please report it with the input file."""
 
@@ -153,6 +163,7 @@ _CLASSES: Dict[str, Type[FlashRawError]] = {
         IoError,
         ClosedError,
         InternalError,
+        CancelledError,
     )
 }
 

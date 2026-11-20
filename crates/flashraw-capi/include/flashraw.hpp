@@ -75,6 +75,8 @@ FLASHRAW_HPP_ERROR(not_available_error)
 FLASHRAW_HPP_ERROR(invalid_argument_error)
 FLASHRAW_HPP_ERROR(io_error)
 FLASHRAW_HPP_ERROR(internal_error)
+/// The decode was stopped by `cancel_token::cancel()`; nothing is wrong with the file.
+FLASHRAW_HPP_ERROR(cancelled_error)
 #undef FLASHRAW_HPP_ERROR
 
 namespace detail {
@@ -106,6 +108,7 @@ inline std::optional<std::string> opt_str(const char *p) {
     case FLASHRAW_ERROR_INVALID_ARGUMENT: throw invalid_argument_error(status, kind, msg, detail);
     case FLASHRAW_ERROR_IO: throw io_error(status, kind, msg, detail);
     case FLASHRAW_ERROR_INTERNAL: throw internal_error(status, kind, msg, detail);
+    case FLASHRAW_ERROR_CANCELLED: throw cancelled_error(status, kind, msg, detail);
     default: throw error(status, kind, msg, detail);
     }
 }
@@ -321,6 +324,24 @@ struct open_options {
     }
 };
 
+/// A flag that stops a running decode: put it in `decode_options::cancel`, then call `cancel()` from
+/// any thread. The decode throws `cancelled_error` soon after. Copies share the same flag.
+class cancel_token {
+public:
+    cancel_token() : h_(flashraw_cancel_token_new(), &flashraw_cancel_token_free) {
+        if (!h_) throw error(FLASHRAW_ERROR_OUT_OF_MEMORY, "OutOfMemory", "out of memory", "");
+    }
+
+    /// Ask every decode using this token to stop. Safe to call from any thread, any number of times.
+    void cancel() const noexcept { flashraw_cancel_token_cancel(h_.get()); }
+    /// Whether `cancel()` has been called.
+    bool cancelled() const noexcept { return flashraw_cancel_token_is_cancelled(h_.get()) != 0; }
+    const flashraw_cancel_token *get() const noexcept { return h_.get(); }
+
+private:
+    std::shared_ptr<flashraw_cancel_token> h_;
+};
+
 struct decode_options {
     flashraw::backend backend = flashraw::backend::automatic;
     flashraw::output_format output = flashraw::output_format::raw_u16;
@@ -365,6 +386,8 @@ struct decode_options {
     std::size_t camera_profile_len = 0;
     /// Use the camera profile embedded in the DNG (an error when it has none).
     bool camera_profile_embedded = false;
+    /// Lets another thread stop the decode (see `cancel_token`).
+    std::optional<flashraw::cancel_token> cancel;
 
     flashraw_decode_options to_c() const {
         flashraw_decode_options o;
@@ -399,6 +422,7 @@ struct decode_options {
         o.camera_profile = camera_profile;
         o.camera_profile_len = camera_profile_len;
         o.camera_profile_embedded = camera_profile_embedded ? 1 : 0;
+        o.cancel = cancel ? cancel->get() : nullptr;
         return o;
     }
 };

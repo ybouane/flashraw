@@ -362,7 +362,9 @@ pub(crate) fn decode<S: SymbolStream>(s: &S, symbols: usize, chunk: usize) -> Op
     let limit_of = move |k: usize| if k + 1 < chunks { (k as u64 + 1) * step } else { last_limit };
     let cap = symbols.saturating_add(1);
 
-    let walks: Vec<Vec<Walk>> = par::map((0..chunks).collect(), true, |k| {
+    // A cancelled decode returns `None` like any other fallback; the sequential decode that
+    // follows notices the cancel at once.
+    let walks: Vec<Vec<Walk>> = par::try_map((0..chunks).collect(), true, |k| {
         let start = k as u64 * step;
         let limit = limit_of(k);
         let covered = limit.min(span.max(start)).saturating_sub(start);
@@ -377,7 +379,8 @@ pub(crate) fn decode<S: SymbolStream>(s: &S, symbols: usize, chunk: usize) -> Op
         }
         set.insert(0, primary);
         set
-    });
+    })
+    .ok()?;
 
     stitch(s, symbols, step, cycle, period, &limit_of, walks)
 }

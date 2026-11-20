@@ -69,6 +69,7 @@ pub(crate) fn default_decode_options() -> flashraw_decode_options {
         camera_profile_embedded: 0,
         noise_reduction: 0,
         white_balance_multipliers: [0.0; 3],
+        cancel: std::ptr::null(),
     }
 }
 
@@ -124,6 +125,8 @@ pub(crate) fn to_decode_options(
         color_space: color_space_from(o.color_space)?,
         output_profile: None,
         camera_profile: None,
+        // SAFETY: a non-null `cancel` is a live token for the duration of the call (documented on the field).
+        cancel: unsafe { o.cancel.as_ref() }.map(|t| t.token.clone()),
     };
     if !o.camera_profile.is_null() {
         if o.camera_profile_embedded != 0 {

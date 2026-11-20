@@ -79,6 +79,11 @@ pub enum Error {
     /// I/O failure while reading input.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// The decode was stopped on request: its [`CancelToken`](crate::CancelToken) was cancelled
+    /// before it finished. Nothing is wrong with the file, and no partial result is returned.
+    #[error("cancelled")]
+    Cancelled,
 }
 
 fn fmt_offset(offset: &Option<u64>, reason: &Option<Box<CorruptReason>>) -> String {
@@ -166,6 +171,11 @@ impl Error {
         Error::UnsupportedCompression { format, compression: compression.to_string() }
     }
 
+    /// Whether this is [`Error::Cancelled`] (the decode was stopped on request, not a failure).
+    pub fn is_cancelled(&self) -> bool {
+        matches!(self, Error::Cancelled)
+    }
+
     /// Short machine-friendly classification, used by the CLI's JSON output and the JS bindings.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -180,6 +190,7 @@ impl Error {
             Error::NotAvailable(_) => "NotAvailable",
             Error::InvalidArgument(_) => "InvalidArgument",
             Error::Io(_) => "Io",
+            Error::Cancelled => "Cancelled",
         }
     }
 }

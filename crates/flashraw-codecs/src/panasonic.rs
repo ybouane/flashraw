@@ -924,7 +924,7 @@ impl V8Decoder {
             })
             .collect();
         let speculate = parallel && strips.len() < par::threads();
-        let results = par::map(jobs, parallel, |(s, rows)| self.strip(s, rows, speculate));
+        let results = par::try_map(jobs, parallel, |(s, rows)| self.strip(s, rows, speculate))?;
         results.into_iter().collect()
     }
 
@@ -991,7 +991,10 @@ impl V8Decoder {
         let mut pos = 0u64;
         let mut bad = 0u32;
         let mut start = self.initial;
-        for pair in rows.chunks_exact_mut(2).take(s.height as usize / 2) {
+        for (i, pair) in rows.chunks_exact_mut(2).take(s.height as usize / 2).enumerate() {
+            if i % 32 == 0 {
+                flashraw_core::cancel::check()?;
+            }
             let (top, bottom) = pair.split_at_mut(1);
             start = self.pair::<CURVE>(top[0], bottom[0], start, || {
                 let mut d = [0i32; 4];
@@ -1033,7 +1036,7 @@ impl V8Decoder {
         let per_task = pairs.div_ceil(par::threads() * 4).max(1);
         let tasks: Vec<(usize, &mut [&mut [u16]])> =
             rows.chunks_mut(2 * per_task).enumerate().map(|(i, c)| (i * per_task, c)).collect();
-        par::map(tasks, true, |(q0, rows)| {
+        par::for_each_item(tasks, true, |(q0, rows)| {
             let mut scratch = vec![0u16; bw * 8];
             for (i, pair) in rows.chunks_exact_mut(2).enumerate() {
                 let q = q0 + i;
@@ -1055,7 +1058,7 @@ impl V8Decoder {
                 }
             }
         });
-        Some(Ok(()))
+        Some(flashraw_core::cancel::check())
     }
 }
 

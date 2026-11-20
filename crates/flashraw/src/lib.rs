@@ -125,7 +125,7 @@ pub use color::ColorSpace;
 #[doc(hidden)]
 pub use color::{CurveTables, OutputCurve};
 pub use flashraw_core::{
-    BlackLevel, CameraProfile, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression,
+    BlackLevel, CameraProfile, CancelToken, CfaColor, CfaPattern, ColorMatrices, ColorMatrix, ColorSource, Compression,
     CorruptReason, DataUnit, DecodeUnit, DecodeWarning, DngExtras, DngProfileInfo, EXTRA_CROP_SOURCE, EXTRA_IMAGE_SIZE,
     Error, ExposureInfo, FrameInfo, GpsInfo, Illuminant, LensInfo, Limits, Orientation, OrientationMetadata,
     OrientationPolicy, OrientationSource, PreviewEncoding, PreviewInfo, PreviewKind, ProfileTable, RandomAccess,
@@ -321,9 +321,18 @@ impl<'a> FlashRaw<'a> {
         // One thread: run on the calling thread rather than on a one-worker pool, so the
         // decode keeps the caller's scheduling class (a lone pool worker may be placed on
         // an efficiency core).
-        let decode = || match self.decode_inner(&opts) {
-            Err(e) if fallback::applies(&e, &opts) => fallback::preview_frame(self, &opts, e),
-            r => r,
+        let decode = || {
+            flashraw_core::cancel::scope(opts.cancel.as_ref(), || {
+                flashraw_core::cancel::check()?;
+                let r = match self.decode_inner(&opts) {
+                    Err(e) if fallback::applies(&e, &opts) => fallback::preview_frame(self, &opts, e),
+                    r => r,
+                };
+                // Work skipped after a cancel leaves a half-made result, and may even have
+                // produced an unrelated error: either way the answer is Cancelled.
+                flashraw_core::cancel::check()?;
+                r
+            })
         };
         if opts.threads == Some(1) {
             return flashraw_core::par::sequential(decode);

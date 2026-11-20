@@ -13,6 +13,7 @@ pub mod bits;
 pub mod bmff;
 pub mod bytes;
 pub mod camera_profile;
+pub mod cancel;
 pub mod decoder;
 mod error;
 pub mod exif;
@@ -29,6 +30,7 @@ pub mod types;
 
 pub use bytes::{ByteOrder, Cursor, ReadAt};
 pub use camera_profile::{CameraProfile, ProfileTable, TableEncoding};
+pub use cancel::CancelToken;
 pub use decoder::{
     DecodeContext, DecodeUnit, FrameInfo, PackOrder, PackedPayload, RandomAccess, RawDecoder, SampleFormat,
 };

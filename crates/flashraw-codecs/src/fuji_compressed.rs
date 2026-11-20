@@ -194,6 +194,8 @@ impl<'a> FujiCompressed<'a> {
                 failed.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         });
+        // A stripe that stopped for a cancel looks like a failed one: say which it was.
+        flashraw_core::cancel::check()?;
         if failed.into_inner() { Err(Error::corrupt("truncated Fuji compressed block")) } else { Ok(()) }
     }
 }
@@ -775,6 +777,10 @@ impl Stripe<'_> {
         let mut prev_q = usize::MAX;
         let mut main_ref: &Quant = &flat_q[0];
         for line in 0..need {
+            // A stripe is the full image height: look for a cancel every few lines (6 rows each).
+            if line % 8 == 0 && flashraw_core::cancel::is_cancelled() {
+                return false;
+            }
             if LOSSY {
                 let q = qline(line);
                 if prev_q != q {

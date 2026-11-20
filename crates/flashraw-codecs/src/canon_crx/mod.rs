@@ -56,11 +56,11 @@ pub fn decode(h: &CrxHeader, data: &[u8], out: &mut [u16], parallel: bool) -> Re
 
     let planes = layout.plane_count;
     let jobs: Vec<usize> = (0..layout.tiles.len() * planes).collect();
-    let results = par::map(jobs, parallel, |job| {
+    let results = par::try_map(jobs, parallel, |job| {
         let (t, p) = (job / planes, job % planes);
         let tile = &layout.tiles[t];
         unit::decode_unit(h, data, tile, &tile.planes[p], tables[t].as_deref())
-    });
+    })?;
     let units = results.into_iter().collect::<Result<Vec<_>>>()?;
     emit::interleave(h, &layout, &units, out, parallel);
     Ok(())

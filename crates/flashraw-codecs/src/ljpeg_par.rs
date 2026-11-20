@@ -113,18 +113,23 @@ pub(crate) fn decode_frame_restarts(data: &[u8], hdr: &LjpegHeader, rows: usize,
     let init = initial_prediction(hdr.bits);
     let jobs: Vec<(usize, &[u8], &mut [u16])> =
         parts.into_iter().enumerate().map(|(i, out)| (starts[i], unstuffed.segment(i), out)).collect();
-    let all_ok = par::map(jobs, true, |(first_row, segment, out)| {
+    let all_ok = par::try_map(jobs, true, |(first_row, segment, out)| {
         let mut bits = BitPumpMsb::new(segment);
         let mut vpred = [init; 6];
         // Predictor 1 never reads the row above; give the row decoder something to point at.
         let zeros = if fast { Vec::new() } else { vec![0u16; row_len] };
         for (i, row) in out.chunks_exact_mut(row_len).enumerate() {
+            if i % 16 == 0 && flashraw_core::cancel::is_cancelled() {
+                return false;
+            }
             if ljpeg::decode_row(hdr, fast, &mut bits, row, &zeros, first_row + i, &mut vpred).is_err() {
                 return false;
             }
         }
         true
-    });
+    })?;
+    // An interval that stopped because of a cancel looks like a failed one: say which it was.
+    flashraw_core::cancel::check()?;
     Ok(all_ok.into_iter().all(|ok| ok))
 }
 

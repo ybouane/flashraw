@@ -1007,7 +1007,8 @@ fn decode_tile(s: &[u8], tile: &TileStream, out: &mut [u16], raw_w: usize, raw_h
             }
         }
     }
-    par::map(jobs, parallel, decode_record);
+    par::for_each_item(jobs, parallel, decode_record);
+    flashraw_core::cancel::check()?;
 
     // Wavelet synthesis of the three colour planes.
     let mut planes: Vec<Option<Vec<Plane>>> = coded.into_iter().map(|c| Some(c.planes)).collect();
@@ -1021,7 +1022,7 @@ fn decode_tile(s: &[u8], tile: &TileStream, out: &mut [u16], raw_w: usize, raw_h
         let levels = [level(1)?, level(2)?, level(3)?];
         inputs.push((i, ColourInput { band, levels }));
     }
-    let mut colours = par::map(inputs, parallel, |(i, inp)| build_colour(inp, i, n16, padded, parallel))
+    let mut colours = par::try_map(inputs, parallel, |(i, inp)| build_colour(inp, i, n16, padded, parallel))?
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     let blue = colours.pop().ok_or_else(|| Error::corrupt("ARW6: planes"))?;

@@ -491,6 +491,9 @@ pub fn decode_true_plane(
     let mut bits = BitPumpMsb::new(data);
     let mut start = [[seed; 2]; 2];
     for (r, row) in out[..stored].chunks_exact_mut(out_cols).enumerate() {
+        if r % 16 == 0 {
+            flashraw_core::cancel::check()?;
+        }
         if !code.row(&mut bits, &mut start[r & 1], row, cols) {
             return Err(bad_symbol());
         }
