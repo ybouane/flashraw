@@ -6,8 +6,9 @@
 # The licence allow-list below was computed from `cargo metadata --locked` for the whole
 # workspace (231 packages, every platform, including the wasm and Python crates): each entry
 # is needed by at least one dependency whose licence expression cannot be satisfied without it.
-# Dual-licensed crates are satisfied by MIT or Apache-2.0, so Unlicense, BSD-3-Clause and
+# Dual-licensed crates are satisfied by MIT or Apache-2.0, so Unlicense and
 # LGPL-2.1-or-later (which only occur as one alternative of an OR) are deliberately absent.
+# BSD-3-Clause is allowed because alloc-no-stdlib (brotli) is licensed under it alone.
 # cargo-deny was not installed on the machine where this file was written, so it has not been run.
 
 [graph]
@@ -38,6 +39,8 @@ allow = [
     "IJG",
     # unicode-ident: "(MIT OR Apache-2.0) AND Unicode-3.0".
     "Unicode-3.0",
+    # alloc-no-stdlib (via brotli): BSD-3-Clause only, with no alternative.
+    "BSD-3-Clause",
 ]
 
 [bans]
