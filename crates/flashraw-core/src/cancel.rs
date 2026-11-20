@@ -25,12 +25,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[derive(Clone, Default)]
 pub struct CancelToken {
     flag: Arc<AtomicBool>,
+    /// Asked on every check when the flag is not set: a host that cannot reach the flag itself
+    /// (the WebAssembly build, where the page sets a flag in memory this module cannot see) answers
+    /// for it. A `true` answer sets the flag for good.
+    poll: Option<fn() -> bool>,
 }
 
 impl CancelToken {
     /// A token that is not cancelled.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A token that also asks `poll` on each check and is cancelled once it answers `true`. For
+    /// hosts whose "cancel" lives outside this process's memory (the WebAssembly build). `poll`
+    /// runs on whichever thread checks, often, and must be cheap.
+    pub fn with_poll(poll: fn() -> bool) -> Self {
+        CancelToken { flag: Arc::default(), poll: Some(poll) }
     }
 
     /// Ask every decode running under this token (or started with it later) to stop. Safe to
@@ -42,7 +53,16 @@ impl CancelToken {
     /// Whether [`cancel`](Self::cancel) has been called.
     #[inline]
     pub fn is_cancelled(&self) -> bool {
-        self.flag.load(Ordering::Relaxed)
+        if self.flag.load(Ordering::Relaxed) {
+            return true;
+        }
+        match self.poll {
+            Some(poll) if poll() => {
+                self.flag.store(true, Ordering::Release);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The flag itself, for hosts that share it with another runtime.
@@ -52,7 +72,7 @@ impl CancelToken {
 
     /// A token around an existing flag (the flag is shared, not copied).
     pub fn from_flag(flag: Arc<AtomicBool>) -> Self {
-        CancelToken { flag }
+        CancelToken { flag, poll: None }
     }
 }
 
@@ -144,6 +164,22 @@ mod tests {
         a.cancel();
         assert!(b.is_cancelled());
         assert!(format!("{b:?}").contains("true"));
+    }
+
+    #[test]
+    fn a_poll_cancels_for_good() {
+        use std::sync::atomic::AtomicUsize;
+        static ASKED: AtomicUsize = AtomicUsize::new(0);
+        fn poll() -> bool {
+            ASKED.fetch_add(1, Ordering::Relaxed) >= 2
+        }
+        let t = CancelToken::with_poll(poll);
+        assert!(!t.is_cancelled());
+        assert!(!t.is_cancelled());
+        assert!(t.clone().is_cancelled()); // the third answer
+        let asked = ASKED.load(Ordering::Relaxed);
+        assert!(t.is_cancelled()); // now the flag answers: the poll is not asked again
+        assert_eq!(ASKED.load(Ordering::Relaxed), asked);
     }
 
     #[test]

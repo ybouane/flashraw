@@ -17,6 +17,34 @@ use serde_json::json;
 /// 100 MP three-channel linear DNGs) while keeping a u16 buffer under 800 MB.
 pub const DEFAULT_MAX_SAMPLES: u64 = 400_000_000;
 
+/// Whether the page asked to stop the running decode (WebAssembly only; native builds never poll).
+fn host_poll() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        host::cancel_requested()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+mod host {
+    use wasm_bindgen::prelude::*;
+
+    #[wasm_bindgen]
+    extern "C" {
+        /// Defined by the JS glue in every thread that can run a decoder: reads the shared flag.
+        #[wasm_bindgen(js_namespace = globalThis, js_name = __flashrawCancelPoll)]
+        fn poll() -> bool;
+    }
+
+    pub fn cancel_requested() -> bool {
+        poll()
+    }
+}
+
 /// A structured error for JS: `kind` mirrors [`flashraw::Error::kind`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApiError {
@@ -218,6 +246,11 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
     // uses rayon's global pool, which the JS layer starts in workers (`threads: None`).
     let threads = if cfg!(feature = "threads") { None } else { Some(1) };
     let mut o = DecodeOptions { threads, limits: limits_from(v.get("limits"))?, ..Default::default() };
+    // `cancel: true` lets the page stop this decode: the JS layer sets a flag in shared memory
+    // (`__flashrawCancelFlag`) that the decoders ask for through `host_poll`.
+    if v.get("cancel").and_then(Value::as_bool) == Some(true) {
+        o.cancel = Some(flashraw::CancelToken::with_poll(host_poll));
+    }
     let backend = str_opt(&v, "backend")?.unwrap_or("auto");
     o.backend = Backend::parse(backend).ok_or_else(|| {
         ApiError::invalid(format!("unknown backend {backend:?} (expected auto, cpu, cpu-simd, scalar or gpu)"))
