@@ -137,7 +137,16 @@ data (a mode FlashRaw does not implement yet) return the embedded full-size prev
 `flashraw_icc_supported()`, see [colour management](color-management.md)), `camera_profile` +
 `camera_profile_len` (the bytes of a DNG camera profile, a `.dcp` file, to render the RGB outputs
 with; CPU only) or `camera_profile_embedded` (non-zero: the profile stored in the DNG, an error when
-it has none); `decode(file, &o, &frame)`.
+it has none) and `cancel` (a `flashraw_cancel_token`, see below); `decode(file, &o, &frame)`.
+
+**Cancelling a decode**: `flashraw_cancel_token_new()` makes a token; put it in
+`flashraw_decode_options.cancel` and call `flashraw_cancel_token_cancel(token)` from another thread. The
+running `flashraw_decode()` returns `FLASHRAW_ERROR_CANCELLED` soon after (a few milliseconds on typical files:
+the flag is checked between the chunks, strips and bands of the work) and returns no frame. The token is read
+during the call only and must stay alive until `flashraw_decode()` has returned; free it with
+`flashraw_cancel_token_free()` when nothing uses it any more. A cancelled token stays cancelled
+(`flashraw_cancel_token_is_cancelled()`), and an already cancelled one stops a decode before it starts. C++:
+`flashraw::cancel_token` (copies share the flag), `decode_options::cancel` and `flashraw::cancelled_error`.
 `flashraw_frame_color_space()` and `flashraw_frame_icc_profile()` (bytes owned by the frame, for
 tagging files) describe the result; `flashraw_icc_profile()` copies the standard profile of a
 space. The display outputs
@@ -163,8 +172,9 @@ Fallible functions return a `flashraw_status`: `FLASHRAW_OK` (0) or an error cod
 correspond one-to-one to the Rust library's error kinds (`UnsupportedFormat`,
 `UnsupportedCompression`, `CorruptFile`, `InvalidMetadata`, `CameraUnsupported`,
 `GpuUnavailable`, `OutOfMemory`, `LimitExceeded`, `NotAvailable`, `InvalidArgument`, `Io`);
-`FLASHRAW_ERROR_INTERNAL` (12) reports a caught panic (a bug; the handle is still safe to free)
-and `FLASHRAW_ERROR_OTHER` (13) a kind newer than the header.
+`FLASHRAW_ERROR_INTERNAL` (12) reports a caught panic (a bug; the handle is still safe to free),
+`FLASHRAW_ERROR_OTHER` (13) a kind newer than the header, and `FLASHRAW_ERROR_CANCELLED` (14) a decode that
+was stopped through its cancel token (kind `"Cancelled"`).
 
 Details of the last failure **on the calling thread**:
 

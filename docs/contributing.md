@@ -62,6 +62,13 @@ entries resolve.
   `flashraw_core::par` (`for_each_row_chunk`, `for_each_index`, `GridWriter` for tile
   grids). Respect `ctx.parallel`. Do not fake random access for sequential streams;
   set `random_access`/`units` honestly on `SimpleDecoder`.
+- Stay cancellable (`DecodeOptions::cancel`, `flashraw_core::cancel`). The parallel helpers skip the units
+  not started yet once a decode is cancelled, so loops over strips, tiles and blocks cost nothing after the
+  flag is set. A loop that runs for more than a few milliseconds on one thread (rows of one entropy-coded
+  stream, the lines of a stripe) calls `cancel::check()?` every few rows, or `cancel::is_cancelled()` where it
+  cannot return an error; never per sample, and never catch `Error::Cancelled` as corruption (recovery paths
+  match `CorruptFile` only). Use `par::try_map` or `par::for_each_item` instead of `par::map` for items that
+  take long. Output of a cancelled decode is discarded, so a skipped unit may leave its buffer untouched.
 - Use the core bit pumps / `HuffTable`. Codecs that need new primitives add them to
   `flashraw-codecs` (or `flashraw-core` if format-agnostic), with tests.
 - Keep a simple scalar reference for any optimised kernel and test equality.

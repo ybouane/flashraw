@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Decodes can be cancelled. Put a `CancelToken` in `DecodeOptions::cancel` and call `cancel()` on it from any other
+  thread: the decode returns the new `Error::Cancelled` (kind `"Cancelled"`) soon after and no partial result. The
+  token is checked between the chunks, strips, tiles and bands the work is cut into, in the sensor decoders, the
+  demosaics and the colour pipeline, so the cores are free again within a few milliseconds (tens at most on the
+  largest single-stream formats) instead of after the whole decode. A token nobody cancels changes nothing: the
+  output is bit-identical and the time is the same within measurement noise. Meant for viewers that skip ahead: start
+  a decode per image and cancel the ones the user has already moved past.
+  Python: `flashraw.CancelToken`, `decode(..., cancel=token)` and `flashraw.CancelledError`. C: `flashraw_cancel_token`
+  (new, cancel, is_cancelled, free), `flashraw_decode_options.cancel` and `FLASHRAW_ERROR_CANCELLED` (14); C++:
+  `flashraw::cancel_token`, `decode_options::cancel` and `cancelled_error`. The JavaScript package already stops
+  requests with an `AbortSignal` (`signal`, worker pool only); the WebAssembly build has no cooperative token yet.
+
 ## 0.3.1 (2026-11-15)
 
 - Nikon High Efficiency (HE) and High Efficiency★ (HE★) NEF files now decode (Z 8, Z 9, Z f, Z5 II, Z6 III and

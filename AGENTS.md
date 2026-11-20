@@ -144,6 +144,35 @@ memory-maps, and a file truncated while mapped raises `SIGBUS`. See [SECURITY.md
   lookup tables fall back to the CPU. `Auto` never needs configuration; do not select the GPU "to be fast"
   for small images.
 
+### Cancelling a decode
+
+For a viewer that skips ahead (the user flips through a list and the images they have passed should stop
+costing CPU), give each decode a `CancelToken` and call `cancel()` on it from another thread:
+
+```rust
+use flashraw::{CancelToken, DecodeOptions, Error, OutputFormat};
+
+let token = CancelToken::new();                   // cloning shares the flag
+let opts = DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() }.with_cancel(token.clone());
+let worker = std::thread::spawn(move || raw.decode(opts));   // or run the decode where you like
+token.cancel();                                    // from any thread, any number of times
+match worker.join().unwrap() {
+    Err(Error::Cancelled) => {}                    // stopped on request: no frame, nothing is wrong with the file
+    other => { /* a finished decode or a real error */ }
+}
+```
+
+The decode returns `Error::Cancelled` (`e.is_cancelled()`, kind `"Cancelled"`) soon after: the flag is
+checked between the chunks, strips, tiles and bands of the work, so the cores are free again within a few
+milliseconds on typical files (tens on the largest single-stream ones; with `threads = 1` some formats whose
+work is one unit stop later). A token that is already cancelled stops a decode before it starts; a decode
+that finishes first returns its frame as usual. A cancelled token stays cancelled: make a new one for the next
+decode, or share one between decodes that should stop together. Cancelling is not an error condition for
+`CorruptionPolicy::Recover` and `preview_fallback`: neither turns it into a partial frame or a preview. A token
+nobody cancels costs nothing. Python: `flashraw.CancelToken()`, `raw.decode(..., cancel=token)`,
+`flashraw.CancelledError`. C: `flashraw_cancel_token_new()`, `flashraw_decode_options.cancel`,
+`FLASHRAW_ERROR_CANCELLED`. JavaScript: stop requests with `signal` (an `AbortSignal`) on the worker pool.
+
 ## Command line
 
 `flashraw --help` and `flashraw <command> --help` are authoritative; do not invent options.

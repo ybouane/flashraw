@@ -53,6 +53,7 @@ aarch64, SIMD128 on WebAssembly); the rest of the develop pipeline is the same c
 | DNG opcodes | `apply_opcodes` | `--no-opcodes` | `apply_opcodes` | `applyOpcodes` |
 | EXIF as a standalone TIFF stream, XMP packet | `FlashRaw::exif_bytes()`, `FlashRaw::xmp_bytes()` (`Option<&[u8]>`) | `flashraw exif FILE OUT`, `flashraw xmp FILE OUT` | `raw.exif_bytes`, `raw.xmp_bytes` (`bytes` or `None`) | `await raw.exifBytes()`, `await raw.xmpBytes()` (`Uint8Array` or `null`) |
 | Preview fallback | `preview_fallback` | `--preview-fallback` | `preview_fallback` | `previewFallback` |
+| Cancel a decode | `cancel: Option<CancelToken>`, `Error::Cancelled` | (none) | `cancel=CancelToken()`, `CancelledError` | `signal` (an `AbortSignal`, worker pool only) |
 | Colour space | `color_space: ColorSpace` | `--color-space` | `color_space` | `colorSpace` |
 | ICC profile | `output_profile`, `RenderingIntent`, black point compensation | `--output-profile`, `--intent`, `--bpc` | `output_profile`, `intent`, `black_point_compensation` | `outputProfile`, `intent`, `blackPointCompensation` |
 | Exposure, black and white point | `exposure`, `black_point`, `white_point` | `--exposure`, `--black-point`, `--white-point` | `exposure`, `black_point`, `white_point` | `exposure`, `blackPoint`, `whitePoint` |

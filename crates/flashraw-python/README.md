@@ -81,7 +81,8 @@ preview, `frame.source == "preview"`), `color_space` (`"srgb"`, `"display-p3"`, 
 `"prophoto"`, `"rec2020"`; `frame.icc_profile` is the matching ICC profile), `output_profile` (convert
 to any RGB ICC profile; with `intent` and `black_point_compensation`), `camera_profile` (render with a DNG
 camera profile: the bytes or path of a `.dcp` file, or `"embedded"` for the profile stored in the DNG; CPU
-only). `flashraw.open` takes
+only), `cancel` (a `flashraw.CancelToken`: call its `cancel()` from another thread and the decode raises
+`flashraw.CancelledError` soon after). `flashraw.open` takes
 `max_samples` and `max_dimension` to tighten the limits for untrusted files. Names that differ from
 the other bindings: [docs/api-names.md](https://github.com/ybouane/flashraw/blob/main/docs/api-names.md).
 

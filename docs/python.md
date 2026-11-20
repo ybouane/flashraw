@@ -166,6 +166,7 @@ frame = raw.decode(
     intent="perceptual",         # for output_profile: "perceptual", "relative", "saturation", "absolute"
     black_point_compensation=False,
     camera_profile=None,         # RGB outputs: a DNG camera profile (.dcp bytes or path), or "embedded" for the DNG's own; CPU only
+    cancel=None,                 # a flashraw.CancelToken: cancel() it from another thread to stop this decode (CancelledError)
 )
 raw.decode_region((0, 0, 512, 512))    # same as region=...
 raw.decode_tile(3)                      # one tile/strip of raw.tiles
@@ -289,6 +290,27 @@ On the development machine (Ryzen 7 9700X, 8 cores/16 threads), 16 `raw-u16` dec
 10 MP DNG with `threads=1` each took 969 ms serially, 256 ms on 4 Python threads (3.8x) and
 201 ms on 8 (4.8x). No process pool, pickling or shared memory is needed.
 
+## Cancelling a decode
+
+For a viewer that skips ahead, give each decode a `flashraw.CancelToken` and call `cancel()` on it from
+another thread. The decode raises `flashraw.CancelledError` soon after (it checks between the chunks,
+strips and bands of the work, a few milliseconds on typical files) and its cores are free again:
+
+```python
+token = flashraw.CancelToken()
+future = pool.submit(raw.decode, "rgba8", cancel=token)   # any thread; decodes release the GIL
+...
+token.cancel()                      # the user moved on; safe from any thread, any number of times
+try:
+    frame = future.result()
+except flashraw.CancelledError:
+    pass                            # stopped: no frame, nothing wrong with the file
+```
+
+A cancelled token stays cancelled (`token.cancelled`): use a new one per decode, or share one between
+decodes that should stop together. An already cancelled token stops a decode before it starts. `decode_region`
+and `decode_tile` take `cancel=` too.
+
 ## Errors
 
 All errors derive from `flashraw.FlashRawError` and carry a `kind`:
@@ -305,6 +327,7 @@ All errors derive from `flashraw.FlashRawError` and carry a `kind`:
 | `InvalidArgumentError` | `ValueError` | unknown output/backend, empty region, ... |
 | `IoError` | `OSError` (`errno` set) | reading the input failed |
 | `ClosedError` | `ValueError` | the `RawFile` was closed |
+| `CancelledError` | | the decode was stopped by its `CancelToken` (see below); nothing is wrong with the file |
 | `InternalError` | | a bug in FlashRaw (a Rust panic never crosses into Python) |
 
 Truncated or corrupt sensor data is recovered by default: every complete sample is decoded, the
