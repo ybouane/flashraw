@@ -352,6 +352,9 @@ struct decode_options {
     std::array<float, 3> white_balance_multipliers = {0.0f, 0.0f, 0.0f};
     /// Smoothing of the edge-aware demosaic (CPU only unless automatic).
     flashraw::noise_reduction noise_reduction = flashraw::noise_reduction::automatic;
+    /// Brightness and colour noise reduction of the RGB outputs, 0 (none) to 1 (CPU only).
+    float luma_noise_reduction = 0.0f;
+    float chroma_noise_reduction = 0.0f;
     /// Correct the lateral chromatic aberration of Bayer frames (RGB outputs, CPU only).
     bool chromatic_aberration = false;
     flashraw::corruption_policy corruption = flashraw::corruption_policy::recover;
@@ -400,6 +403,8 @@ struct decode_options {
         o.noise_reduction = static_cast<std::int32_t>(noise_reduction);
         for (int i = 0; i < 3; ++i) o.white_balance_multipliers[i] = white_balance_multipliers[i];
         o.chromatic_aberration = chromatic_aberration ? 1 : 0;
+        o.luma_noise_reduction = luma_noise_reduction;
+        o.chroma_noise_reduction = chroma_noise_reduction;
         o.corruption_policy = static_cast<std::int32_t>(corruption);
         o.threads = threads;
         o.crop = crop ? 1 : 0;

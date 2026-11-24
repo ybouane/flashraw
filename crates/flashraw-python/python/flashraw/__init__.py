@@ -540,6 +540,8 @@ class RawFile:
         camera_profile: Union[bytes, "os.PathLike[str]", str, None] = None,
         noise_reduction: str = "auto",
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
+        luma_noise_reduction: float = 0.0,
+        chroma_noise_reduction: float = 0.0,
         cancel: Optional["CancelToken"] = None,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
@@ -605,6 +607,12 @@ class RawFile:
                 ``white_balance`` (RGB outputs, three-colour sensors; CPU only).
             noise_reduction: smoothing of ``demosaic="edge-aware"``: ``"auto"`` (default, from the
                 frame's noise), ``"off"``, ``"low"``, ``"medium"`` or ``"high"`` (CPU only unless auto).
+            luma_noise_reduction: brightness noise reduction of RGB outputs, ``0.0`` (default, none) to
+                ``1.0``. The noise is measured on the image itself; ``0.5`` is a moderate setting that
+                keeps the finest grain, ``1.0`` removes all the noise it measures. CPU only.
+            chroma_noise_reduction: colour noise reduction of RGB outputs, ``0.0`` (default, none) to
+                ``1.0``; ``0.5`` matches the colour noise reduction raw developers apply by default.
+                CPU only.
             camera_profile: RGB outputs: render with a DNG camera profile: the bytes of a
                 ``.dcp`` file, a path to one, or ``"embedded"`` for the profile stored in the DNG
                 being decoded (:class:`InvalidArgumentError` when it has none). The profile's
@@ -643,6 +651,8 @@ class RawFile:
             chromatic_aberration,
             noise_reduction,
             white_balance_multipliers,
+            luma_noise_reduction,
+            chroma_noise_reduction,
             cancel,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
@@ -674,6 +684,8 @@ class RawFile:
         camera_profile: Union[bytes, "os.PathLike[str]", str, None] = None,
         noise_reduction: str = "auto",
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
+        luma_noise_reduction: float = 0.0,
+        chroma_noise_reduction: float = 0.0,
         cancel: Optional["CancelToken"] = None,
     ) -> Frame:
         """Decode one independently decodable tile/strip (see :attr:`tiles`)."""
@@ -704,6 +716,8 @@ class RawFile:
             chromatic_aberration,
             noise_reduction,
             white_balance_multipliers,
+            luma_noise_reduction,
+            chroma_noise_reduction,
             cancel,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)

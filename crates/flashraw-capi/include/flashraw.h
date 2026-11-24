@@ -1090,6 +1090,18 @@ typedef struct flashraw_decode_options {
      * the call; it must stay alive until `flashraw_decode()` has returned.
      */
     const struct flashraw_cancel_token *cancel;
+    /**
+     * Brightness noise reduction of the RGB outputs, 0 (the default, none) to 1. The noise is
+     * measured on the image itself; 0.5 is a moderate setting that keeps the finest grain, 1
+     * removes all the noise it measures. Values outside [0, 1] are clamped; NaN fails with
+     * `FLASHRAW_ERROR_INVALID_ARGUMENT`. CPU only.
+     */
+    float luma_noise_reduction;
+    /**
+     * Colour noise reduction of the RGB outputs, 0 (the default, none) to 1; 0.5 matches the
+     * colour noise reduction raw developers apply by default. CPU only.
+     */
+    float chroma_noise_reduction;
 } flashraw_decode_options;
 
 /**

@@ -105,6 +105,7 @@ mod bayer_alt;
 mod ca;
 mod camera_profile;
 mod color;
+mod denoise;
 mod edgeaware;
 mod frame;
 mod icc;
@@ -312,6 +313,9 @@ impl<'a> FlashRaw<'a> {
     /// full-size preview instead (see [`FrameSource::Preview`]).
     pub fn decode(&self, mut opts: DecodeOptions) -> Result<RawFrame> {
         opts.demosaic = opts.demosaic.resolve_for(self.decoder.frame_info().cfa.as_ref(), opts.noise_reduction);
+        if opts.luma_noise_reduction.is_nan() || opts.chroma_noise_reduction.is_nan() {
+            return Err(Error::InvalidArgument("noise reduction strengths must be numbers from 0 to 1".into()));
+        }
         if opts.demosaic.requires_bayer() && opts.output.is_rgb() && !process::is_bayer(self.decoder.frame_info()) {
             return Err(Error::InvalidArgument(format!(
                 "the {} demosaic needs a Bayer sensor; this file's pattern is not one (use edge-aware, bilinear or auto)",
@@ -574,7 +578,8 @@ impl<'a> FlashRaw<'a> {
                 // are resampled to square pixels before encoding; so do profiles with lookup
                 // tables, which convert the linear image before quantising.
                 let stagger = stagger::of(self.metadata(), info);
-                let float_pass = stagger.is_some() || lut.is_some() || profile_render.is_some();
+                let denoise = opts.luma_noise_reduction > 0.0 || opts.chroma_noise_reduction > 0.0;
+                let float_pass = stagger.is_some() || lut.is_some() || profile_render.is_some() || denoise;
                 let dev_enc = if float_pass { process::RgbEncoding::LinearF32 } else { enc };
                 let developed = profiler.time(Stage::Postprocess, || match lists.as_mut().filter(|_| staged) {
                     Some(l) => l.develop(&img, &frame_info_for_post, origin, &params, dev_enc, ctx.parallel),
@@ -589,6 +594,16 @@ impl<'a> FlashRaw<'a> {
                         (w, h, c, RawPixelData::F32(d.rgb))
                     }
                     (d, _) => d,
+                };
+                let developed = match developed {
+                    (w, h, c, RawPixelData::F32(rgb)) if denoise => {
+                        let mut d = process::Developed { width: w, height: h, rgb };
+                        profiler.time(Stage::Postprocess, || {
+                            denoise::apply(&mut d, opts.luma_noise_reduction, opts.chroma_noise_reduction, ctx.parallel)
+                        })?;
+                        (w, h, c, RawPixelData::F32(d.rgb))
+                    }
+                    d => d,
                 };
                 let finish = |d: process::Developed| -> Result<(u32, u32, u32, RawPixelData)> {
                     match lut {
@@ -610,7 +625,9 @@ impl<'a> FlashRaw<'a> {
                         let win = Rect::new(crop.x + origin.0, crop.y + origin.1, crop.width, crop.height);
                         finish(st.resample(&d, win, ctx.parallel))
                     })?,
-                    (None, (w, h, _, RawPixelData::F32(rgb))) if lut.is_some() || profile_render.is_some() => {
+                    (None, (w, h, _, RawPixelData::F32(rgb)))
+                        if lut.is_some() || profile_render.is_some() || denoise =>
+                    {
                         profiler.time(Stage::Postprocess, || finish(process::Developed { width: w, height: h, rgb }))?
                     }
                     (_, r) => r,

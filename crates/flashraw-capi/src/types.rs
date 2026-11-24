@@ -531,6 +531,14 @@ pub struct flashraw_decode_options {
     /// `FLASHRAW_ERROR_CANCELLED` soon after, without a frame. The token is only read during
     /// the call; it must stay alive until `flashraw_decode()` has returned.
     pub cancel: *const crate::cancel::flashraw_cancel_token,
+    /// Brightness noise reduction of the RGB outputs, 0 (the default, none) to 1. The noise is
+    /// measured on the image itself; 0.5 is a moderate setting that keeps the finest grain, 1
+    /// removes all the noise it measures. Values outside [0, 1] are clamped; NaN fails with
+    /// `FLASHRAW_ERROR_INVALID_ARGUMENT`. CPU only.
+    pub luma_noise_reduction: f32,
+    /// Colour noise reduction of the RGB outputs, 0 (the default, none) to 1; 0.5 matches the
+    /// colour noise reduction raw developers apply by default. CPU only.
+    pub chroma_noise_reduction: f32,
 }
 
 /// Size of the first published layout of each versioned struct. Callers built against an
@@ -818,12 +826,14 @@ mod tests {
         // color_space, intent, black_point_compensation, highlights and the output profile
         // pointer and length (pointer-sized, so the total depends on the platform), then white_balance
         // and a reserved word, then the camera profile pointer and length, camera_profile_embedded
-        // and noise_reduction, then the three white balance multipliers, then the cancel token pointer.
+        // and noise_reduction, then the three white balance multipliers, then the cancel token pointer,
+        // then the luma and chroma noise reduction strengths.
         assert_eq!(std::mem::offset_of!(flashraw_decode_options, preview_fallback), 76);
         assert_eq!(std::mem::offset_of!(flashraw_decode_options, color_space), 80);
         assert_eq!(
             size_of::<flashraw_decode_options>(),
-            (112 + 5 * size_of::<usize>() + 12).next_multiple_of(std::mem::align_of::<usize>())
+            ((112 + 5 * size_of::<usize>() + 12).next_multiple_of(std::mem::align_of::<usize>()) + 8)
+                .next_multiple_of(std::mem::align_of::<usize>())
         );
         assert_eq!(size_of::<flashraw_preview_info>(), flashraw_preview_info::MIN_SIZE);
         assert_eq!(size_of::<flashraw_decode_stats>(), flashraw_decode_stats::MIN_SIZE);

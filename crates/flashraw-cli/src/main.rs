@@ -53,6 +53,13 @@ struct DecodeArgs {
     /// Smoothing of --demosaic edge-aware: auto (from the frame's noise), off, low, medium, high.
     #[arg(long, default_value = "auto")]
     noise_reduction: String,
+    /// Luma (brightness) noise reduction of RGB outputs, 0 (none) to 1.
+    #[arg(long, default_value_t = 0.0, value_name = "0..1")]
+    luma_noise_reduction: f32,
+    /// Chroma (colour) noise reduction of RGB outputs, 0 (none) to 1; 0.5 is the usual default
+    /// of raw developers.
+    #[arg(long, default_value_t = 0.0, value_name = "0..1")]
+    chroma_noise_reduction: f32,
     /// Correct the lateral chromatic aberration of Bayer frames (RGB outputs).
     #[arg(long)]
     chromatic_aberration: bool,
@@ -264,6 +271,8 @@ fn decode_options(a: &DecodeArgs, raw: Option<&FlashRaw<'_>>) -> Result<DecodeOp
         white_balance_multipliers: a.wb_multipliers,
         noise_reduction: NoiseReduction::parse(&a.noise_reduction)
             .ok_or_else(|| format!("unknown noise reduction {:?}", a.noise_reduction))?,
+        luma_noise_reduction: a.luma_noise_reduction,
+        chroma_noise_reduction: a.chroma_noise_reduction,
         chromatic_aberration: a.chromatic_aberration,
         apply_opcodes: !a.no_opcodes,
         corruption_policy: policy(a.strict),

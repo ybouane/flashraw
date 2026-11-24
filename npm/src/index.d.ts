@@ -553,6 +553,17 @@ export interface DecodeOptions {
    */
   noiseReduction?: 'auto' | 'off' | 'low' | 'medium' | 'high';
   /**
+   * Brightness noise reduction of RGB outputs, `0` (default, none) to `1`. The noise is measured on
+   * the image itself; `0.5` is a moderate setting that keeps the finest grain, `1` removes all the
+   * noise it measures. CPU only (the WebGPU build falls back to the CPU for it).
+   */
+  lumaNoiseReduction?: number;
+  /**
+   * Colour noise reduction of RGB outputs, `0` (default, none) to `1`; `0.5` matches the colour
+   * noise reduction raw developers apply by default. CPU only.
+   */
+  chromaNoiseReduction?: number;
+  /**
    * Correct the lateral chromatic aberration of Bayer frames (RGB outputs): the radial scale of
    * the red and blue planes against green is estimated from the frame and corrected before
    * demosaicing. CPU only (the WebGPU build falls back to the CPU for it). Default `false`.

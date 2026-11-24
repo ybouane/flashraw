@@ -141,6 +141,8 @@ fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuCon
         || opts.white_balance != crate::WhiteBalanceMode::AsShot
         || opts.white_balance_multipliers.is_some()
         || opts.noise_reduction != crate::NoiseReduction::Auto
+        || opts.luma_noise_reduction > 0.0
+        || opts.chroma_noise_reduction > 0.0
         || opts.chromatic_aberration
         || opts.camera_profile.is_some())
         && !matches!(base, OutputFormat::RawU16 | OutputFormat::NormalizedF32)

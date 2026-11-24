@@ -346,6 +346,8 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
         Some(_) => return Err(ApiError::invalid("option `applyOpcodes` must be a boolean")),
     }
     o.exposure = f32_opt(&v, "exposure")?.unwrap_or(0.0);
+    o.luma_noise_reduction = f32_opt(&v, "lumaNoiseReduction")?.unwrap_or(0.0);
+    o.chroma_noise_reduction = f32_opt(&v, "chromaNoiseReduction")?.unwrap_or(0.0);
     o.black_point = f32_opt(&v, "blackPoint")?.unwrap_or(0.0);
     o.white_point = f32_opt(&v, "whitePoint")?.unwrap_or(1.0);
     match v.get("previewFallback") {

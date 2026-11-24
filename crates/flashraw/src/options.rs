@@ -401,6 +401,20 @@ pub struct DecodeOptions {
     pub white_balance_multipliers: Option<[f32; 3]>,
     /// Smoothing of the edge-aware demosaic. Default: [`NoiseReduction::Auto`].
     pub noise_reduction: NoiseReduction,
+    /// Strength of the luma (brightness) noise reduction of RGB outputs, from 0 (none) to 1.
+    /// The filter measures the noise of the image itself (per brightness and frequency, at
+    /// several scales, [design note](https://github.com/ybouane/flashraw/blob/main/docs/design/noise-reduction.md)):
+    /// 1 removes all the noise it measures, lower values keep part of the original grain (0.5 is
+    /// a moderate setting). Runs after demosaicing on every sensor layout; CPU only (the GPU
+    /// backend decodes on the CPU for it); raw outputs are never denoised. Values outside
+    /// `[0, 1]` are clamped; NaN fails with `Error::InvalidArgument`. Default: 0.
+    pub luma_noise_reduction: f32,
+    /// Strength of the chroma (colour) noise reduction of RGB outputs, from 0 (none) to 1: the
+    /// same filter on two colour-difference planes, at more scales, followed by a guided filter
+    /// that keeps colour edges on brightness edges, so blotchy low-frequency colour noise is
+    /// removed too. 0.5 matches the colour noise reduction raw developers apply by default.
+    /// Default: 0.
+    pub chroma_noise_reduction: f32,
     /// Correct the lateral chromatic aberration of Bayer frames (16-bit, three colours) before
     /// demosaicing: radial scale factors of the red and blue planes against green are estimated
     /// from the frame and the red and blue samples resampled. Frames without enough edges, and
@@ -501,6 +515,8 @@ impl Default for DecodeOptions {
             white_balance: WhiteBalanceMode::AsShot,
             white_balance_multipliers: None,
             noise_reduction: NoiseReduction::Auto,
+            luma_noise_reduction: 0.0,
+            chroma_noise_reduction: 0.0,
             chromatic_aberration: false,
             apply_opcodes: true,
             limits: Limits::default(),

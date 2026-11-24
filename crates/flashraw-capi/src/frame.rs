@@ -70,6 +70,8 @@ pub(crate) fn default_decode_options() -> flashraw_decode_options {
         noise_reduction: 0,
         white_balance_multipliers: [0.0; 3],
         cancel: std::ptr::null(),
+        luma_noise_reduction: 0.0,
+        chroma_noise_reduction: 0.0,
     }
 }
 
@@ -112,6 +114,8 @@ pub(crate) fn to_decode_options(
         chromatic_aberration: o.chromatic_aberration != 0,
         noise_reduction: noise_reduction_from(o.noise_reduction)?,
         white_balance_multipliers: wb_multipliers(&o.white_balance_multipliers)?,
+        luma_noise_reduction: o.luma_noise_reduction,
+        chroma_noise_reduction: o.chroma_noise_reduction,
         corruption_policy: policy_from(o.corruption_policy)?,
         threads: (o.threads != 0).then_some(o.threads as usize),
         crop: o.crop != 0,
