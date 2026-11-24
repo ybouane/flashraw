@@ -972,6 +972,60 @@ edge-aware demosaic is still relatively slower on this machine than on x86-64 (5
 one thread): its filter kernels are compiled a second time for AVX2 on x86-64, while aarch64 runs the 4-lane NEON
 baseline (with fused multiply-adds).
 
+## Noise reduction
+
+FlashRaw's opt-in noise reduction (`luma_noise_reduction`, `chroma_noise_reduction`, [design note](design/noise-reduction.md))
+is calibrated so that 0.5 looks like Adobe Lightroom Classic 14.5.1 at its default colour noise reduction (Color 25)
+and at Luminance 25. Lightroom is not open source and not part of the other comparisons on this page; it is used
+here because its defaults are what many photographers expect a raw file to look like.
+
+Method: each file was exported from Lightroom (process version 15.4, Adobe Standard profile, sharpening 0, everything else at the import
+defaults) at Color 0 / Luminance 0 ("off"), Color 25 and Luminance 25 + Color 25, as 16-bit sRGB TIFF, and rendered
+by FlashRaw (`--output rgb16`, default demosaic) without noise reduction, at `--chroma-noise-reduction 0.5` and at
+`--luma-noise-reduction 0.5`. Noise is measured in flat areas in CIELab (the measure is described in the design note:
+L fine / coarse for brightness, C fine / coarse for colour, the coarse figures are the blotches). The two programs
+render differently (tone curve, brightness, demosaic), so the absolute numbers are comparable only roughly; the
+ratios to each program's own "off" rendering are comparable directly. Linux x86-64, FlashRaw at the commit that added
+the option; the studio files are the high-ISO frames of the same scene at several ISOs.
+
+Colour noise, C fine / coarse (absolute, and ratio to off):
+
+| File (sensor, ISO) | Lightroom off | Lightroom Color 25 | FlashRaw off | FlashRaw chroma 0.5 |
+|---|---|---|---|---|
+| Olympus E-PL9 (Bayer, 25600) | 5.75 / 7.04 | 0.58 / 0.38 (0.10 / 0.05) | 4.44 / 5.89 | 0.51 / 0.28 (0.12 / 0.05) |
+| Nikon D610 (Bayer, 25600) | 2.47 / 4.09 | 0.27 / 0.18 (0.11 / 0.04) | 2.80 / 3.93 | 0.23 / 0.11 (0.08 / 0.03) |
+| Canon, real scene (Bayer, 16000) | 5.92 / 8.29 | 2.79 / 1.09 (0.47 / 0.13) | 4.98 / 5.71 | 2.88 / 1.24 (0.58 / 0.22) |
+| Canon EOS R6 (Bayer, 3200) | 0.61 / 1.16 | 0.048 / 0.043 (0.08 / 0.04) | 0.91 / 1.27 | 0.049 / 0.022 (0.05 / 0.02) |
+| Nikon D610 (Bayer, 1600) | 0.68 / 1.10 | 0.069 / 0.065 (0.10 / 0.06) | 0.69 / 0.96 | 0.052 / 0.026 (0.08 / 0.03) |
+| Panasonic, real scene (Bayer, 6400) | 0.62 / 0.76 | 0.53 / 0.17 (0.86 / 0.23) | 0.96 / 0.82 | 0.78 / 0.20 (0.81 / 0.25) |
+| Fujifilm X-H1 (X-Trans, 51200) | 1.05 / 1.60 | 0.15 / 0.08 (0.14 / 0.05) | 2.22 / 3.75 | 0.17 / 0.11 (0.08 / 0.03) |
+| Fujifilm X-H1 (X-Trans, 3200) | 0.31 / 0.32 | 0.028 / 0.021 (0.09 / 0.07) | 0.70 / 1.24 | 0.039 / 0.029 (0.06 / 0.02) |
+| Fujifilm X-T1 (X-Trans, 6400) | 0.43 / 0.64 | 0.060 / 0.047 (0.14 / 0.07) | 0.56 / 1.29 | 0.063 / 0.031 (0.11 / 0.02) |
+
+Brightness noise, L fine / coarse (absolute, and ratio to off):
+
+| File (sensor, ISO) | Lightroom off | Lightroom Luminance 25 + Color 25 | FlashRaw off | FlashRaw luma 0.5 |
+|---|---|---|---|---|
+| Olympus E-PL9 (Bayer, 25600) | 3.08 / 1.75 | 1.42 / 0.81 (0.46 / 0.46) | 2.81 / 1.52 | 1.32 / 0.71 (0.47 / 0.47) |
+| Nikon D610 (Bayer, 25600) | 2.03 / 1.02 | 1.16 / 0.51 (0.57 / 0.50) | 2.22 / 1.06 | 1.15 / 0.50 (0.52 / 0.47) |
+| Canon, real scene (Bayer, 16000) | 4.52 / 2.70 | 2.23 / 1.45 (0.49 / 0.54) | 3.34 / 1.47 | 1.79 / 0.72 (0.54 / 0.49) |
+| Canon EOS R6 (Bayer, 3200) | 0.82 / 0.32 | 0.70 / 0.17 (0.86 / 0.52) | 0.89 / 0.31 | 0.66 / 0.15 (0.74 / 0.48) |
+| Nikon D610 (Bayer, 1600) | 0.84 / 0.29 | 0.69 / 0.15 (0.83 / 0.52) | 0.74 / 0.28 | 0.52 / 0.13 (0.70 / 0.48) |
+| Panasonic, real scene (Bayer, 6400) | 0.56 / 0.38 | 0.31 / 0.23 (0.55 / 0.61) | 0.52 / 0.30 | 0.31 / 0.20 (0.61 / 0.66) |
+| Fujifilm X-H1 (X-Trans, 51200) | 1.80 / 1.18 | 1.02 / 0.69 (0.57 / 0.59) | 1.55 / 1.02 | 0.80 / 0.48 (0.51 / 0.47) |
+| Fujifilm X-H1 (X-Trans, 3200) | 0.77 / 0.33 | 0.66 / 0.20 (0.85 / 0.61) | 0.74 / 0.36 | 0.59 / 0.17 (0.80 / 0.49) |
+| Fujifilm X-T1 (X-Trans, 6400) | 0.74 / 0.53 | 0.49 / 0.31 (0.66 / 0.59) | 0.76 / 0.34 | 0.42 / 0.16 (0.55 / 0.47) |
+
+At these settings the remaining colour noise is about the same: at the fine scale FlashRaw leaves less on three files
+and more on six (at most 1.5 times as much), at the coarse scale (blotches) less on five and more on four. On the two
+real scenes much of what the fine measure counts is colour in the scene, which neither program removes.
+FlashRaw's luma 0.5 removes about as much brightness noise as Luminance 25, slightly more at the coarse scale. (The
+Lightroom Luminance 25 export also has Color 25, which on its own lowers L by up to 20 % at the coarse scale.)
+Without noise reduction on either side, FlashRaw's X-Trans renderings have 2 to 4 times the fine colour noise of
+Lightroom's (Lightroom's X-Trans rendering smooths colour before its noise reduction runs); on Bayer files the two are
+closer (0.8 to 1.6 times). Lightroom's defaults then add Color 25, which is why an unprocessed FlashRaw rendering
+looks noisier than a default Lightroom export; `chroma_noise_reduction` 0.5 closes the gap.
+
 ## Performance regression detection
 
 `tools/bench/run.py ... --baseline <old.jsonl> --tolerance 15` prints per-file

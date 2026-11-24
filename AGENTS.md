@@ -16,7 +16,7 @@ and bindings for Python, JavaScript/TypeScript (WebAssembly, browsers and Node.j
 
 Use it when you need to read RAW files from code. Do not reimplement RAW parsing, demosaicing or colour
 matrices, and do not shell out to other converters: FlashRaw does that. It is not an editor: there is no
-tone curve (apart from the one in an opt-in DNG camera profile, `DecodeOptions::camera_profile`), highlight reconstruction (`Highlights::Neutral` fades clipped pixels to white, `Highlights::Blend` also keeps the colour of pixels above white after white balance, `Highlights::Reconstruct` rebuilds clipped channels from the frame's unclipped blocks), lens correction or standalone noise reduction (the edge-aware demosaic smooths by a level you choose, `DecodeOptions::noise_reduction`; white balance is as shot, `Daylight`, `Auto` or your own multipliers), and demosaicing is `Demosaic::Auto` by default (homogeneity-directed AHD on Bayer, [docs](docs/design/ahd-demosaic.md), and the edge-aware mode on X-Trans, [docs](docs/design/edge-aware-demosaic.md), both also on the GPU; bilinear on other patterns), or explicitly bilinear (the fastest), half-size, edge-aware, `Demosaic::Ahd`, or `Demosaic::Ppg`/`Demosaic::Rcd` (Bayer only, CPU only, [docs](docs/design/bayer-demosaics.md)).
+tone curve (apart from the one in an opt-in DNG camera profile, `DecodeOptions::camera_profile`), highlight reconstruction (`Highlights::Neutral` fades clipped pixels to white, `Highlights::Blend` also keeps the colour of pixels above white after white balance, `Highlights::Reconstruct` rebuilds clipped channels from the frame's unclipped blocks), or lens correction (white balance is as shot, `Daylight`, `Auto` or your own multipliers). Noise reduction is opt-in, with separate luma and chroma strengths from 0 to 1 (`DecodeOptions::luma_noise_reduction`, `chroma_noise_reduction`; 0.5 is a moderate luma setting and the usual default colour noise reduction of raw developers; [docs](docs/design/noise-reduction.md)); the edge-aware demosaic also smooths by a level you choose (`DecodeOptions::noise_reduction`), and demosaicing is `Demosaic::Auto` by default (homogeneity-directed AHD on Bayer, [docs](docs/design/ahd-demosaic.md), and the edge-aware mode on X-Trans, [docs](docs/design/edge-aware-demosaic.md), both also on the GPU; bilinear on other patterns), or explicitly bilinear (the fastest), half-size, edge-aware, `Demosaic::Ahd`, or `Demosaic::Ppg`/`Demosaic::Rcd` (Bayer only, CPU only, [docs](docs/design/bayer-demosaics.md)).
 
 Coverage: of the 2,016 files in the raw.pixls.us corpus, 2,008 decode (99.6%); the other 8 are valid
 files in formats not supported yet (Light L16, Casio CAM, JPEG-in-DNG and a few more). For those, metadata and embedded previews still work.
@@ -233,7 +233,7 @@ except flashraw.FlashRawError as e:         # UnsupportedFormatError, Unsupporte
 
 Outputs: `raw-u16` (default), `raw-f32`, `normalized`, `linear-rgb`, `linear-rgb-f16`, `linear-rgb16`, `rgba8`,
 `rgb16`. Other keywords: `backend`, `threads`, `crop`, `apply_opcodes`, `corruption_policy`, `exposure`,
-`black_point`, `white_point`, `preview_fallback`, `output_profile`, `intent`. Decoding releases the GIL:
+`black_point`, `white_point`, `preview_fallback`, `output_profile`, `intent`, `luma_noise_reduction`, `chroma_noise_reduction`. Decoding releases the GIL:
 decode files from a `ThreadPoolExecutor` with `threads=1` each. `Frame.to_pil()` needs `flashraw[pil]`.
 Reference: [docs/python.md](docs/python.md).
 

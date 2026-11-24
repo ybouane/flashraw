@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Noise reduction for RGB outputs, with separate strengths for brightness and colour noise, each from 0 (off, the
+  default) to 1: `DecodeOptions::luma_noise_reduction` and `chroma_noise_reduction` (CLI `--luma-noise-reduction`,
+  `--chroma-noise-reduction`; Python `luma_noise_reduction=`, `chroma_noise_reduction=`; JavaScript
+  `lumaNoiseReduction`, `chromaNoiseReduction`; C `flashraw_decode_options.luma_noise_reduction` and
+  `chroma_noise_reduction`, appended to the size-versioned struct; C++ `decode_options`). The filter measures the
+  noise of the image itself (per brightness and per frequency, at several scales), so it needs no camera profile
+  and works the same on Bayer, X-Trans and other sensors: multiscale DCT denoising with a Wiener second pass on a
+  luminance plane and two colour-difference planes, and a guided filter that keeps colour edges on brightness edges.
+  0.5 is calibrated against the default colour noise reduction and a moderate luminance setting of a widely used raw
+  developer (comparison in `docs/benchmarks.md`); 1 removes all the noise it measures. CPU only; on 16 threads it adds about
+  0.75 s (luma) and 1 s (chroma) to a 24 MP decode, and needs 1 to 1.3 GB more memory there
+  ([design note](docs/design/noise-reduction.md)). Without it, FlashRaw renderings keep all the colour noise of the
+  file, which is why they looked noisier than the default exports of raw developers, which reduce colour noise by
+  default.
+- `DecodeOptions` has two new public fields: code that builds it with a struct literal without
+  `..Default::default()` must add them.
+
 ## 0.4.0 (2026-11-20)
 
 - Decodes can be cancelled. Put a `CancelToken` in `DecodeOptions::cancel` and call `cancel()` on it from any other
