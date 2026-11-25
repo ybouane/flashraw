@@ -103,8 +103,10 @@ pub struct Workload {
     pub edge_aware: bool,
     /// The AHD demosaic instead of the bilinear one (RGB outputs).
     pub ahd: bool,
-    /// Luma or chroma noise reduction (RGB outputs).
-    pub denoise: bool,
+    /// Luma noise reduction (RGB outputs).
+    pub denoise_luma: bool,
+    /// Chroma noise reduction (RGB outputs).
+    pub denoise_chroma: bool,
 }
 
 impl Workload {
@@ -140,6 +142,19 @@ pub const EDGE_GPU_FACTOR: f64 = 6.0;
 pub const AHD_CPU_FACTOR: f64 = 2.3;
 pub const AHD_GPU_FACTOR: f64 = 5.0;
 
+/// Cost of the luma and of the chroma noise reduction (strength 0.5) per developed pixel,
+/// relative to the bilinear develop step: on the CPU 6.9 and 8.4 (Apple M1 Ultra; 14 and 20 on
+/// x86-64 with AVX2), on the GPU 12 and 13.5 times the develop kernel (Apple M1 Ultra, wall time
+/// of the noise reduction against the calibrated kernel throughput). The CPU figures are the
+/// low end, so the GPU is chosen only where it is measurably faster.
+pub const DENOISE_LUMA_CPU_FACTOR: f64 = 6.9;
+pub const DENOISE_CHROMA_CPU_FACTOR: f64 = 8.4;
+pub const DENOISE_LUMA_GPU_FACTOR: f64 = 12.0;
+pub const DENOISE_CHROMA_GPU_FACTOR: f64 = 13.5;
+/// Fixed cost of the GPU noise reduction: the read-back of the noise estimate and the noise
+/// models computed on the CPU (measured 5 to 6 ms on an Apple M1 Ultra), ms.
+pub const DENOISE_GPU_OVERHEAD_MS: f64 = 8.0;
+
 /// Frames below this size stay on the CPU (fixed GPU overheads dominate).
 pub const MIN_GPU_SAMPLES: u64 = 2_000_000;
 /// The GPU must win by this factor (estimates are noisy; CPU is the safer default).
@@ -173,7 +188,12 @@ pub fn decide(class: AdapterClass, gpu: &GpuCalibration, cpu: &CpuCosts, w: &Wor
             } else {
                 (out_px as f64 / cpu.develop_px_per_ms, w.samples as f64 / gpu.develop_px_per_ms)
             };
-            (c + unpack, g, out_px * bytes_per_px as u64)
+            // The noise reduction works on the developed pixels.
+            let (dc, dg) = denoise_factors(w);
+            let nr_cpu = out_px as f64 / cpu.develop_px_per_ms * dc;
+            let nr_gpu =
+                out_px as f64 / gpu.develop_px_per_ms * dg + if dg > 0.0 { DENOISE_GPU_OVERHEAD_MS } else { 0.0 };
+            (c + unpack + nr_cpu, g + nr_gpu, out_px * bytes_per_px as u64)
         }
     };
     let download_ms = if w.resident { 0.0 } else { out_bytes as f64 / gpu.download_bytes_per_ms };
@@ -202,6 +222,20 @@ pub fn decide(class: AdapterClass, gpu: &GpuCalibration, cpu: &CpuCosts, w: &Wor
     } else {
         mk(false, format!("estimated CPU {cpu_ms:.1} ms <= GPU {gpu_ms:.1} ms"))
     }
+}
+
+/// Factors of the noise reduction of `w` on the CPU and the GPU (0 without it).
+fn denoise_factors(w: &Workload) -> (f64, f64) {
+    let (mut c, mut g) = (0.0, 0.0);
+    if w.denoise_luma {
+        c += DENOISE_LUMA_CPU_FACTOR;
+        g += DENOISE_LUMA_GPU_FACTOR;
+    }
+    if w.denoise_chroma {
+        c += DENOISE_CHROMA_CPU_FACTOR;
+        g += DENOISE_CHROMA_GPU_FACTOR;
+    }
+    (c, g)
 }
 
 fn calibration_disabled() -> bool {
@@ -366,7 +400,8 @@ mod tests {
             bands: 1,
             edge_aware: false,
             ahd: false,
-            denoise: false,
+            denoise_luma: false,
+            denoise_chroma: false,
         }
     }
 
@@ -445,6 +480,22 @@ mod tests {
         let tiled = decide(AdapterClass::Discrete, &g, &cpu(), &Workload { bands: 5, ..w });
         assert!(tiled.use_gpu, "{tiled:?}");
         assert!((tiled.est_gpu_ms - one.est_gpu_ms - 4.0 * g.band_overhead_ms).abs() < 1e-9);
+    }
+
+    #[test]
+    fn noise_reduction_favours_a_gpu_that_develops_faster() {
+        // The calibration of an Apple M1 Ultra (develop kernel 3.8 Mpx/ms, CPU 1.0 Mpx/ms).
+        let g = GpuCalibration { develop_px_per_ms: 3.8e6, ..GpuCalibration::defaults(AdapterClass::Integrated) };
+        let c = CpuCosts { develop_px_per_ms: 1.0e6, ..cpu() };
+        let w = work(WorkOutput::Rgb { bytes_per_px: 8, half_size: false }, false, 24.0);
+        let plain = decide(AdapterClass::Integrated, &g, &c, &w);
+        let nr = decide(AdapterClass::Integrated, &g, &c, &Workload { denoise_luma: true, denoise_chroma: true, ..w });
+        assert!(nr.use_gpu, "{nr:?}");
+        assert!(nr.est_cpu_ms - plain.est_cpu_ms > 300.0, "{nr:?} {plain:?}");
+        // A GPU that develops no faster than the CPU leaves it there.
+        let slow = GpuCalibration { develop_px_per_ms: 1.0e6, ..g };
+        let nr = decide(AdapterClass::Integrated, &slow, &c, &Workload { denoise_luma: true, ..w });
+        assert!(!nr.use_gpu, "{nr:?}");
     }
 
     #[test]

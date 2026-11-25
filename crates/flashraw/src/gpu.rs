@@ -97,7 +97,8 @@ fn workload(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Workload> {
         edge_aware: opts.demosaic == crate::Demosaic::EdgeAware
             || (opts.demosaic == crate::Demosaic::Ahd && !info.cfa.is_some_and(|c| c.is_bayer())),
         ahd: opts.demosaic == crate::Demosaic::Ahd && info.cfa.is_some_and(|c| c.is_bayer()),
-        denoise: denoises(opts),
+        denoise_luma: opts.luma_noise_reduction > 0.0,
+        denoise_chroma: opts.chroma_noise_reduction > 0.0,
     })
 }
 
