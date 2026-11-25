@@ -81,6 +81,7 @@ no adapter exists.
 | edge-aware demosaic, Bayer and X-Trans ([edge-aware-demosaic](design/edge-aware-demosaic.md), [section below](#edge-aware-demosaic)) | `process::develop` with `Demosaic::EdgeAware` | max 1.3e-6, mean 5e-8 (linear f32, synthetic, bound 5e-4 / 1e-6); real files: 1 code of 65535 on < 0.1 % of the samples |
 | DNG camera profiles (`camera_profile`: forward matrices, hue/sat map, look table, tone curve) | not implemented on the GPU (CPU only, see [colour management](color-management.md)) | same: CPU fallback, `NotAvailable` for GPU-resident outputs |
 | standard tone (`tone: Tone::Standard`, the default; [design note](design/tone.md)) | `process::ToneMap` (the same table and arithmetic in the develop kernel) | RGBA8 within 3 codes, more than 1 on at most 0.1 % of samples; 16-bit within 64 codes (the curve is steep in the shadows) |
+| luma and chroma noise reduction (`luma_noise_reduction`, `chroma_noise_reduction`; [section below](#noise-reduction), [design note](design/noise-reduction.md)) | `flashraw::denoise::apply` | linear f32: mean ≤ 2e-6, 99.9th percentile ≤ 1e-4 (measured 2e-7 and 6e-6 on Metal and Vulkan); RGBA8 within 3 codes, more than 1 on at most 0.1 % (measured: none); chunked runs bit-identical to one chunk |
 
 The GPU path reproduces the CPU semantics exactly:
 * **Bilinear demosaic:** a site's own colour is the centre sample. Each other colour is
@@ -121,6 +122,27 @@ stages its 18x18 neighbourhood of *normalised* samples in workgroup memory, then
 demosaics. The steps run in one dispatch with no full-size intermediates:
 unpack → linearise → normalise → demosaic → WB → clip → matrix → sRGB → orientation →
 store.
+
+## Noise reduction
+
+With `luma_noise_reduction` or `chroma_noise_reduction` set, the develop kernel delivers linear RGB and
+`GpuContext::denoise` runs the CPU method of [the design note](design/noise-reduction.md) on it, then encodes it with
+the develop kernels' tone, curves and orientation (`shaders/denoise_encode.wgsl`), so GPU-resident outputs take it
+too. The kernels are in `shaders/denoise.wgsl`:
+
+* the split into luminance and two colour differences, the pyramids of 2x2 averages, the Laplacian recomposition and
+  the guided filter, one kernel per step;
+* the noise estimate: the DCT of the measured blocks on the GPU, then one read-back of their luma means and squared
+  coefficients for the sorting and medians, which run on the CPU (the CPU code, all levels in parallel);
+* the DCT passes: a workgroup transforms the blocks that cover 48 output columns of one block row in workgroup
+  memory and sums them per column before one vertical inverse transform per column; a second kernel sums the block
+  rows per sample. Every sum runs in a fixed order (no floating-point atomics in WGSL).
+
+Planes that exceed one storage binding are stored in row chunks with a 16-row halo copied between neighbours after
+every kernel that writes them, and the block rows of a pass run in bands whose buffers fit 128 MB; this keeps every
+binding within the adapter's limit (128 MiB by default in WebGPU). The noise reduction holds about 8 (luma) to 12.5
+(both) floats per pixel on the device besides its input and output. Timings (Apple M1 Ultra: 0.13 s for both
+strengths on a 24 MP frame, against 0.35 s for the CPU path on the same machine) are in the design note.
 
 ## Edge-aware demosaic
 
@@ -343,10 +365,17 @@ Otherwise a cost model compares estimated end-to-end times:
 
 ```
 cpu = [samples / cpu_unpack if packed] + pixels / cpu_develop        (or normalize / half rates)
+      [+ pixels / cpu_develop * (6.9 luma + 8.4 chroma)]             (noise reduction)
 gpu = overhead + (bands - 1) * band_overhead
       + upload_bytes / upload_bw + samples / gpu_develop + out_bytes / download_bw
+      [+ pixels / gpu_develop * (12 luma + 13.5 chroma) + 8 ms]      (noise reduction)
 use GPU if gpu < 0.85 * cpu
 ```
+
+The noise reduction factors are its measured cost at strength 0.5 relative to the develop step on an Apple M1
+Ultra (CPU: 6.9 and 8.4; on x86-64 with AVX2 the CPU factors are 14 and 20, so the lower ones favour the CPU). On
+the M1 Ultra the estimates for a 24 MP frame with both strengths are 210 ms on the GPU and 386 ms on the CPU
+(measured 160 and 391 ms), and Auto takes the GPU.
 
 There is no size cut-off: frames beyond the adapter's limits run tiled.
 * `bands` comes from `GpuContext::estimate_bands` (input and output size against the
@@ -512,9 +541,9 @@ Reading the numbers:
 
 ## Limitations
 
-* **Rendering scope:** only bilinear / 3x3 same-colour / superpixel demosaic and a
-  3x3 matrix are implemented, matching the CPU `process` module. There is no highlight
-  recovery, noise reduction or lens correction.
+* **Rendering scope:** the highlight modes, the PPG and RCD demosaics, the white
+  balance modes, the chromatic aberration correction and DNG camera profiles run on the
+  CPU only. There is no lens correction.
 * **Interop requires a shared device:** outputs live on the device of the context that
   produced them. Use `GpuContext::from_device` for zero-copy interop with your own
   device.

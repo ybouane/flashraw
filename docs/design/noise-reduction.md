@@ -1,8 +1,8 @@
 # Noise reduction (`luma_noise_reduction`, `chroma_noise_reduction`)
 
 RGB outputs can be denoised after the develop pass, with one strength for brightness noise and one for colour
-noise, each from 0 (off, the default) to 1. The module is `crates/flashraw/src/denoise.rs`; it is written from
-the published descriptions of the methods named below.
+noise, each from 0 (off, the default) to 1. The module is `crates/flashraw/src/denoise/` (on the GPU:
+`crates/flashraw-gpu/src/denoise.rs`); it is written from the published descriptions of the methods named below.
 
 | | Rust | CLI | Python | JavaScript | C |
 |---|---|---|---|---|---|
@@ -14,7 +14,8 @@ that keeps the finest grain of brightness noise and removes colour noise about a
 colour noise reduction of common raw developers (the comparison with one is in
 [benchmarks](../benchmarks.md#noise-reduction)). Values outside `[0, 1]` are clamped, NaN is an
 `InvalidArgument` error. The raw outputs (`raw-u16`, `raw-f32`, `normalized`) are never denoised. It runs on the
-CPU; the GPU backend decodes on the CPU when a strength is set.
+CPU and on the GPU backend ([below](#implementation); tested on Metal and on software Vulkan, the same kernels
+serve Direct3D 12 and WebGPU), which agree within rounding.
 
 This is separate from `DecodeOptions::noise_reduction`, the light 3x3 smoothing inside the edge-aware demosaic
 ([edge-aware demosaic](edge-aware-demosaic.md)).
@@ -56,16 +57,18 @@ the filter measures the noise of the image it is given, per brightness and per f
    mean variance of the 15 lowest AC frequencies, which is exact for white noise and larger for correlated noise):
    that brought the change on the ISO 100 frame to a median of 0.09 to 0.31 Delta E (95th percentile below 0.9),
    and changed the result on noisy frames by under 0.01 in the noise measures below.
-4. **DCT denoising.** On each level, overlapping 8x8 blocks every 2 pixels (every 4 on the full-resolution
-   colour planes, where the guided filter of step 5 decides the detail; the denoised noise is the same within
-   0.01 and chroma costs a quarter less) are transformed. A first pass zeroes the coefficients below 2.7 deviations
-   of their frequency at the block's brightness (hard thresholding, DCT denoising of Yu and Sapiro, IPOL 2011) and
-   averages the overlapping blocks with weights `1 / (1 + kept coefficients)`. A second pass transforms the same
-   blocks of the image and of that first estimate and multiplies each coefficient by the empirical Wiener factor
-   `p^2 / (p^2 + sigma^2)` (`p` the pilot's coefficient), weighting the blocks by the inverse of their residual
-   variance. These are the two stages of BM3D (Dabov et al., 2007) without the block matching: the matching is
-   what makes BM3D several times slower, and the multiscale step recovers much of what it adds on correlated
-   camera noise. The DC coefficient is kept, so the mean of every block is kept.
+4. **DCT denoising.** On each level, overlapping 8x8 blocks every 2 pixels (every 4 on the two finest levels of
+   the colour planes, where the guided filter of step 5 decides the detail) are transformed. A first pass zeroes
+   the coefficients below 2.7 deviations of their frequency at the block's brightness (hard thresholding, DCT
+   denoising of Yu and Sapiro, IPOL 2011) and averages the overlapping blocks with weights
+   `1 / (1 + kept coefficients)`. A second pass transforms the same blocks of the image and of that first estimate
+   and multiplies each coefficient by the empirical Wiener factor `p^2 / (p^2 + sigma^2)` (`p` the pilot's
+   coefficient), weighting the blocks by the inverse of their residual variance. These are the two stages of BM3D
+   (Dabov et al., 2007) without the block matching: the matching is what makes BM3D several times slower, and the
+   multiscale step recovers much of what it adds on correlated camera noise. The full-resolution colour planes get
+   the first pass only, and so does the full-resolution luma plane at luma strengths up to 0.25, where most of the
+   original noise is put back ([what these shortcuts cost](#speed)). The DC coefficient is kept, so the mean of
+   every block is kept.
 5. **Colour edges.** The denoised colour planes go through a guided filter (He, Sun and Tang, 2010) with the
    (denoised) luma plane as the guide and a window of radius 6 at strength 0.5: within a window, colour is a linear
    function of brightness, so colour edges that are also brightness edges stay sharp and colour elsewhere is
@@ -83,7 +86,66 @@ the filter measures the noise of the image it is given, per brightness and per f
 All steps are mean-preserving except where values are clipped at display: on the noisy frames below, the mean of
 each channel moves by less than 1 % (integration test), and edges keep their contrast within 8 % at strength 1
 (`crates/flashraw/tests/noise_reduction.rs`). Cancelling a decode (`DecodeOptions::cancel`) is checked between
-block rows, levels and stages.
+block rows, levels and stages on the CPU, and before and after the GPU work.
+
+## Implementation
+
+**CPU.** The DCT passes run on eight-lane vectors (`crates/flashraw/src/denoise/lanes.rs`): AVX2 chosen at run time
+on x86-64, NEON on aarch64, SIMD128 in WebAssembly builds that enable it, plain arrays elsewhere. Every operation is
+one IEEE single-precision operation per lane (no fused multiply-add), so every implementation gives the same result
+bit for bit (unit test), and so does every thread count (the work is cut into fixed groups of block rows). The 1-D
+transforms use the even/odd symmetries of the DCT matrix (50 vector operations instead of 72). The vertical transform
+of every column is shared by the blocks of a row; the blocks of a row are then summed per column in the frequency
+domain and inverse-transformed vertically once per column, so a block costs one horizontal forward and one
+horizontal inverse transform. The plane steps are fused (one pass for the split into Y, B - Y, R - Y; the Laplacian
+recomposition as one upsampled difference; the guided filter's box means without intermediate planes and its
+output without upsampled coefficient planes), the luma pyramid serves as the luma plane's own pyramid, the luma
+noise model of the full-resolution level is measured once for the luma passes and the guided filter, and the noise
+estimate sorts block indices instead of blocks.
+
+**GPU.** `crates/flashraw-gpu/src/denoise.rs` and `shaders/denoise.wgsl`, after the develop kernel has delivered
+linear RGB; a last kernel (`shaders/denoise_encode.wgsl`) converts back to RGB and applies the tone, encoding and
+orientation of the develop kernels. The steps and their order are the CPU's:
+
+* **Noise model:** the DCT of the measured blocks (up to 50,000 per level) runs on the GPU; their luma means and
+  squared coefficients are read back once (all planes and levels together, 256 bytes per block) and the sorting and
+  medians run on the CPU, with the CPU code, all levels in parallel.
+* **DCT passes:** a workgroup takes 48 output columns of one block row: it loads the 8 rows it needs into workgroup
+  memory, transforms every column vertically, then each of the blocks that cover the 48 columns horizontally (eight
+  threads per block, one per vertical frequency), thresholds or filters the coefficients, transforms back
+  horizontally, sums the blocks per column (in block order, like the CPU) and transforms each column back
+  vertically. A second kernel sums, per sample, the block rows that cover it. WGSL has no floating-point atomics:
+  every sum runs in a fixed order, so the result does not depend on scheduling.
+* **Memory limits:** a plane that does not fit one storage binding (`maxStorageBufferBindingSize`, 128 MiB by default
+  in WebGPU) is stored in row chunks; each chunk keeps a halo of 16 rows that the host copies from its neighbours
+  after every kernel that writes the plane, and chunk boundaries are multiples of 32 rows so that the chunks of all
+  pyramid levels line up. The block rows of a pass run in bands whose buffers fit 128 MB. A chunked run gives the
+  same result bit for bit as one chunk (test with 2 and 6 chunks).
+* **Equivalence** with the CPU (`crates/flashraw-gpu/tests/equivalence.rs`, `tests/pipeline.rs`): on linear RGB a
+  mean difference of at most 2e-7 and a 99.9th percentile of at most 6e-6 (Metal and Vulkan; the noise reduction
+  itself moves samples by about 1e-2), test bounds 2e-6 and 1e-4; on RGBA8 no sample more than 1 code off (bound:
+  3 codes, at most 0.1 % more than 1). They are not bit-identical: the GPU may fuse multiply-adds and its sums run in
+  another order, and a coefficient that sits on the hard threshold can then flip.
+
+## Speed
+
+Measured shortcuts. Version 0.5.0 transformed and filtered every level of every plane twice. Three steps now
+do less, each kept because the output stays close on the high ISO studio frames below (Nikon D610 ISO 25600,
+Olympus E-PL9 ISO 25600, Fujifilm X-H1 ISO 51200) and on a clean one (E-PL9 ISO 100). Tolerance: the noise ratios of
+the table below within 0.01 of the previous output, the contrast of the strongest 2 % of brightness edges and of the
+strongest 1 % of colour edges within 0.01, and a mean Delta E against the previous output of at most 0.11. Measured
+(the noise measure of the next section, ratios to the frame without noise reduction):
+
+| Shortcut | Strengths | Change of the noise ratios | Edge contrast | Mean Delta E to the previous output |
+|---|---|---|---|---|
+| colour planes: one pass at full resolution, block step 4 on the second level | chroma 0.25 to 1 | C -0.003 to +0.001, L within 0.001 | within 0.003 | 0.008 to 0.093 |
+| luma: one pass at full resolution | luma up to 0.25 | L fine +0.003 to +0.008, the rest within 0.003 | within 0.004 | 0.021 to 0.101 |
+
+Measured and rejected: no Wiener pass on any luma level (luma 0.5: L fine +0.017, edge contrast -0.012, mean
+Delta E 0.22), a block step of 3 or 4 at full resolution for luma (Delta E 0.13 to 0.49), a pilot at step 4 for the
+Wiener pass at step 2 (luma 1: L fine +0.012), no denoising of the full-resolution colour planes (chroma 0.5: C fine
+0.137 to 0.196), a single pass on the second colour level as well (Delta E 0.12) or a block step of 4 on the third
+(0.17), and a single pass on every colour level (0.39 to 0.61).
 
 ## Measurements
 
@@ -110,18 +172,41 @@ Against the ISO 100 frame of the same studio scene (Olympus E-PL9; 16x16 block m
 matches the exposures), chroma 0.5 brings the ISO 25600 frame closer at every brightness: median Delta E 7.66 to
 6.58 for L 10 to 25, 4.87 to 3.44 for L 25 to 50, 3.38 to 2.02 above 50.
 
-Time on an AMD Ryzen 7 9700X (8 cores, 16 threads), RGB16 output, best of three; the develop without noise
-reduction is in the first column:
+Time of a whole decode (`flashraw benchmark`, RGB16 output, bilinear demosaic, best of three or five), before
+these changes (0.5.0) and now; the decode without noise reduction is in the first column. The noise reduction itself
+is the difference to it.
 
-| File | off | luma 0.5 | chroma 0.5 | both |
-|---|---|---|---|---|
-| Nikon D610 NEF, 24 MP | 0.08 s | 0.75 s | 1.05 s | 1.54 s |
-| Canon CR3, 45 MP | 0.17 s | 1.37 s | 1.91 s | 2.86 s |
+AMD Ryzen 7 9700X (8 cores, 16 threads), Linux, CPU:
 
-Peak memory (resident set of the command-line tool) grows by about 10 floats per pixel with luma alone and 14 with
-chroma (the planes, their pyramids and the accumulation buffers of a pass): 0.28 GB without noise reduction, 1.2 GB
-with luma 0.5 and 1.6 GB with chroma or both on the 24 MP file; 0.48, 2.2 and 3.0 GB on the 45 MP file. In
-WebAssembly, whose memory is limited to 4 GB, files above about 50 MP may not fit with chroma noise reduction.
+| File | off | luma 0.25 | luma 0.5 | chroma 0.5 | both 0.5 |
+|---|---|---|---|---|---|
+| Nikon D610 NEF, 24 MP, 0.5.0 | 0.06 s | 0.69 s | 0.70 s | 1.00 s | 1.53 s |
+| Nikon D610 NEF, 24 MP, now | 0.05 s | 0.27 s | 0.34 s | 0.46 s | 0.68 s |
+| Canon EOS R5 Mark II CR3, 45 MP, 0.5.0 | 0.12 s | 1.28 s | 1.28 s | 1.84 s | 2.80 s |
+| Canon EOS R5 Mark II CR3, 45 MP, now | 0.12 s | 0.52 s | 0.67 s | 0.88 s | 1.27 s |
+
+Apple M1 Ultra (20 CPU cores, 64-core GPU), macOS, CPU (NEON) and GPU (Metal):
+
+| File | off | luma 0.25 | luma 0.5 | chroma 0.5 | both 0.5 |
+|---|---|---|---|---|---|
+| Nikon D610 NEF, CPU, 0.5.0 | 0.04 s | 0.39 s | 0.41 s | 0.53 s | 0.83 s |
+| Nikon D610 NEF, CPU, now | 0.04 s | 0.15 s | 0.20 s | 0.24 s | 0.39 s |
+| Nikon D610 NEF, GPU | 0.03 s | 0.09 s | 0.11 s | 0.11 s | 0.16 s |
+| Canon R5 Mark II CR3, CPU, 0.5.0 | 0.13 s | 0.75 s | 0.74 s | 1.18 s | 1.88 s |
+| Canon R5 Mark II CR3, CPU, now | 0.13 s | 0.32 s | 0.40 s | 0.59 s | 0.78 s |
+| Canon R5 Mark II CR3, GPU | 0.11 s | 0.23 s | 0.27 s | 0.28 s | 0.37 s |
+
+On the GPU most of the time is the DCT passes (about 80 of the 130 ms of both strengths on the 24 MP file, GPU
+timestamps); the medians of the noise estimate on the CPU take about 6 ms. Strengths above 0.5 cost the
+same as 0.5. `Backend::Auto` weighs the noise reduction against each side's calibrated develop speed
+([GPU backend](../gpu.md#backend-selection-backendauto)) and takes the GPU on the M1 Ultra.
+
+Peak memory (resident set of the command-line tool, Linux): 0.33 GB without noise reduction, 1.17 GB with luma 0.5,
+1.34 GB with chroma 0.5 and 1.43 GB with both on the 24 MP file (0.5.0: 1.21, 1.63 and 1.61 GB); 0.51, 2.02, 2.36
+and 2.56 GB on the 45 MP file (0.5.0: 2.19, 2.95 and 3.01 GB): 8 to 9 floats per pixel with luma alone and 10 to
+11 with chroma or both. On the GPU the noise reduction holds about 8 (luma) to 12.5 (both) floats per pixel besides its linear RGB
+input and its output (1.2 GB for both strengths on the 24 MP file, 1.9 GB on the 45 MP file). In WebAssembly, whose
+memory is limited to 4 GB, files above about 60 MP may not fit with chroma noise reduction on the CPU.
 
 ## Limits
 

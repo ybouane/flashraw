@@ -12,6 +12,19 @@
   (the offset a file gets, also in `flashraw info`), `flashraw camera-db exposure` and `tools/camera_db/exposure.py`
   (the measurement), `flashraw_camera_db::exposure` ([tone](docs/design/tone.md#offsets-for-other-formats),
   [camera database](docs/camera-db.md#exposure-offsets)).
+- The luma and chroma noise reduction runs on the GPU backend (also in the WebGPU build): a strength no longer makes
+  `Backend::Gpu` decode on the CPU, GPU-resident outputs take it, and `Backend::Auto` weighs it in its choice. The
+  result matches the CPU within rounding (mean difference 2e-7 on linear RGB, Metal and software Vulkan). On an
+  Apple M1 Ultra both strengths add 0.13 s to a 24 MP decode on the GPU, against 0.35 s on its CPU. Planes that
+  exceed one storage binding are processed in row chunks (tested with bindings capped at 150 KB), so every binding
+  stays within the adapter's limit ([design note](docs/design/noise-reduction.md),
+  [GPU backend](docs/gpu.md#noise-reduction)).
+- The noise reduction is 2.2 to 2.9 times faster on the CPU: on 16 threads (AMD Ryzen 7 9700X) both strengths at 0.5 add
+  0.63 s to a 24 MP decode instead of 1.47 s, luma 0.5 alone 0.29 s instead of 0.64 s, chroma 0.5 alone 0.41 s instead
+  of 0.94 s. Explicit vector code for the DCT passes (AVX2, NEON, SIMD128), shared transforms and fused plane passes;
+  the full-resolution colour planes get one pass instead of two and the second colour level a sparser grid, and luma
+  strengths up to 0.25 one pass at full resolution: measured to move the noise measures by under 0.01 and the
+  rendering by a mean Delta E of about 0.1 at most. Peak memory is up to 20 % lower.
 
 ## 0.5.0 (2026-11-25)
 
