@@ -101,6 +101,10 @@ const ui = {
   whiteBalance: $<HTMLSelectElement>('opt-wb'),
   highlights: $<HTMLSelectElement>('opt-highlights'),
   backend: $<HTMLSelectElement>('opt-backend'),
+  lumaNr: $<HTMLInputElement>('opt-luma-nr'),
+  lumaNrOut: $<HTMLOutputElement>('opt-luma-nr-out'),
+  chromaNr: $<HTMLInputElement>('opt-chroma-nr'),
+  chromaNrOut: $<HTMLOutputElement>('opt-chroma-nr-out'),
   redecode: $<HTMLButtonElement>('redecode'),
   compare: $<HTMLButtonElement>('compare'),
   perfTiles: $('perf-tiles'),
@@ -204,6 +208,12 @@ function setupViewer() {
   ui.redecode.addEventListener('click', () => {
     if (raw && currentFile) void decodeAndShow(token);
   });
+  for (const [input, out] of [
+    [ui.lumaNr, ui.lumaNrOut],
+    [ui.chromaNr, ui.chromaNrOut],
+  ] as const) {
+    input.addEventListener('input', () => (out.value = Number(input.value).toFixed(2).replace(/\.?0+$/, '') || '0'));
+  }
   ui.copyJson.addEventListener('click', async () => {
     if (!meta) return;
     try {
@@ -650,8 +660,19 @@ async function decodeAndShow(my: number, t0 = now()) {
     const zeroCopy = renderer instanceof GlRenderer;
     const whiteBalance = ui.whiteBalance.value as 'as-shot' | 'auto';
     const highlights = ui.highlights.value as 'clip' | 'neutral' | 'blend';
+    const lumaNoiseReduction = Number(ui.lumaNr.value);
+    const chromaNoiseReduction = Number(ui.chromaNr.value);
     const run = (d: 'bilinear' | 'half-size' | 'edge-aware') =>
-      raw!.decode({ output: 'linear-rgb-f16', demosaic: d, whiteBalance, highlights, backend, zeroCopy });
+      raw!.decode({
+        output: 'linear-rgb-f16',
+        demosaic: d,
+        whiteBalance,
+        highlights,
+        backend,
+        zeroCopy,
+        lumaNoiseReduction,
+        chromaNoiseReduction,
+      });
     let frame: DecodedFrame<'linear-rgb-f16'>;
     const td = now();
     try {

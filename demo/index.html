@@ -268,6 +268,17 @@
                 <option value="blend">Fade to white, keep colour above white</option>
               </select>
             </div>
+            <div class="slider nr-slider">
+              <label for="opt-luma-nr">Luma noise reduction</label>
+              <output id="opt-luma-nr-out" for="opt-luma-nr">0</output>
+              <input type="range" id="opt-luma-nr" min="0" max="1" step="0.05" value="0" />
+            </div>
+            <div class="slider nr-slider">
+              <label for="opt-chroma-nr">Chroma noise reduction</label>
+              <output id="opt-chroma-nr-out" for="opt-chroma-nr">0</output>
+              <input type="range" id="opt-chroma-nr" min="0" max="1" step="0.05" value="0" />
+            </div>
+            <p class="muted small nr-note">0.5 is a moderate brightness setting and the usual default colour noise reduction of raw developers. Takes effect on the next decode, and makes it several times slower.</p>
             <div class="field-row">
               <label for="opt-backend">Backend</label>
               <select id="opt-backend">

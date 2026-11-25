@@ -25,6 +25,9 @@ sample". What the demo does with a file (the file never leaves your device):
    tone-curve selector's "Linear" gives FlashRaw's neutral output; "Auto" sets Exposure so the
    mean brightness matches the embedded preview. Without WebGL2 the same pipeline runs in JavaScript
    (`src/renderer-cpu.ts`; force it with `?renderer=cpu`).
+   The "Decoder options" panel sets what the decode itself does: demosaic, white balance, clipped
+   highlights, backend, and FlashRaw's luma and chroma noise reduction (0 to 1, off by default;
+   they slow the decode several times), applied with "Decode again".
 5. Downloads: the adjusted image as PNG or JPEG at the size of the decode (rendered in 2048 px
    tiles; the buttons say "half-size" with the real size when the decode fell back to half-size),
    and every embedded preview as stored.
