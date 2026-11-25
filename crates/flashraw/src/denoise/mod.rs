@@ -37,6 +37,9 @@
 use crate::process::Developed;
 use flashraw_core::{Result, cancel, par};
 
+mod lanes;
+use lanes::{Lanes, Scalar, arr};
+
 /// Block size of the DCT.
 const N: usize = 8;
 const NN: usize = N * N;
@@ -76,43 +79,49 @@ pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -
     let c = Dct::new();
     // The RGB buffer is released while the planes are processed and rebuilt at the end.
     let [y, u, v] = split(&std::mem::take(&mut d.rgb), w, h, parallel);
-    // The luma plane gives the brightness every noise model is indexed by, at every level.
+    // The luma pyramid gives the brightness every noise model is indexed by, at every level,
+    // and is the pyramid of the luma plane itself.
     let levels = level_count(w, h, if chroma > 0.0 { 6 } else { 4 });
-    let mut guides = vec![y.clone()];
-    for l in 1..levels {
-        let g = down(&guides[l - 1], parallel);
-        guides.push(g);
-    }
+    let coarse = pyramid(&y, levels, parallel);
+    let guides: Vec<&Plane> = std::iter::once(&y).chain(&coarse).collect();
     cancel::check()?;
+    // The luma model of the full-resolution level serves the luma passes and the guided filter.
+    let y_model = estimate(&y, &y, &c, parallel);
     let y2 = if luma > 0.0 {
         let n = level_count(w, h, 4);
-        let full = denoise_plane(&y, &guides[..n], 1.0, STEP, &c, parallel)?;
+        let full = denoise_plane(&guides[..n], &guides[..n], y_model.clone(), 1.0, STEP, &c, parallel)?;
         // Strength below 1 keeps part of the original grain.
         let keep = (1.0 - luma).powf(LUMA_KEEP_EXP);
-        blend(full, &y, keep, parallel)
+        Some(blend(full, &y, keep, parallel))
     } else {
-        y.clone()
+        None
     };
+    let y2 = y2.as_ref().unwrap_or(&y);
     let (u2, v2) = if chroma > 0.0 {
         let gain = 1.0 + 2.0 * (chroma - 0.5).max(0.0);
-        let ud = denoise_plane(&u, &guides, gain, CHROMA_STEP0, &c, parallel)?;
-        let vd = denoise_plane(&v, &guides, gain, CHROMA_STEP0, &c, parallel)?;
+        let plane = |p: &Plane| -> Result<Plane> {
+            let coarse = pyramid(p, levels, parallel);
+            let pyr: Vec<&Plane> = std::iter::once(p).chain(&coarse).collect();
+            denoise_plane(&pyr, &guides, None, gain, CHROMA_STEP0, &c, parallel)
+        };
+        let ud = plane(&u)?;
+        let vd = plane(&v)?;
         cancel::check()?;
         // Colour detail finer than the guided filter's window follows the luma plane.
         // The regularisation is the luma noise variance at the window's brightness: windows
         // whose luma varies no more than its noise get the plain mean of the colour.
         let r = (CHROMA_RADIUS * (0.5 + chroma)).round().max(1.0) as usize;
-        let noise = estimate(&y, &y, &c, parallel).map(|m| m.pixel_variance());
-        let gf = Guide::new(&y2, r, parallel);
+        let noise = y_model.map(|m| m.pixel_variance());
+        let gf = Guide::new(y2, r, parallel);
         let eps = |m: f32| noise.as_ref().map_or(1e-6, |n| n.at(m)).max(1e-9);
-        let (uq, vq) = (gf.filter(&ud, &eps, parallel), gf.filter(&vd, &eps, parallel));
+        let (uq, vq) = gf.filter(&ud, &vd, &eps, parallel);
         let keep = (1.0 - 2.0 * chroma).max(0.0);
         (blend(uq, &u, keep, parallel), blend(vq, &v, keep, parallel))
     } else {
         (u, v)
     };
     d.rgb = vec![0.0; w * h * 3];
-    merge(&mut d.rgb, [&y2, &u2, &v2], parallel);
+    merge(&mut d.rgb, [y2, &u2, &v2], parallel);
     Ok(())
 }
 
@@ -141,6 +150,27 @@ fn update(p: &mut Plane, parallel: bool, f: impl Fn(usize, &mut f32) + Sync) {
     });
 }
 
+/// Rows `first..` of several planes of the same size, for one pass that writes all of them.
+fn for_each_rows<const K: usize>(
+    planes: [&mut Plane; K],
+    rows_per_chunk: usize,
+    parallel: bool,
+    f: impl Fn(usize, [&mut [f32]; K]) + Sync + Send,
+) {
+    let w = planes[0].w;
+    let chunk = w * rows_per_chunk;
+    let mut iters = planes.map(|p| p.v.chunks_mut(chunk));
+    let mut items = Vec::new();
+    for i in 0.. {
+        let next: [Option<&mut [f32]>; K] = std::array::from_fn(|k| iters[k].next());
+        if next.iter().any(|n| n.is_none()) {
+            break;
+        }
+        items.push((i * rows_per_chunk, next.map(|n| n.unwrap())));
+    }
+    par::for_each_item(items, parallel, |(first, rows)| f(first, rows));
+}
+
 /// Per-pixel noise variance as a function of the luma mean (from a [`Model`]).
 struct Variance {
     m: Vec<f32>,
@@ -162,20 +192,35 @@ impl Variance {
     }
 }
 
-/// Mean over a `(2r + 1)^2` window (edges repeated).
-fn box_mean(p: &Plane, r: usize, parallel: bool) -> Plane {
-    let (w, h) = (p.w, p.h);
+/// Mean over a `(2r + 1)^2` window (edges repeated), of `f(k)` for sample `k` (row-major) of a
+/// `w` x `h` plane.
+fn box_mean(w: usize, h: usize, r: usize, parallel: bool, f: impl Fn(usize) -> f32 + Sync) -> Plane {
     let n = (2 * r + 1) as f32;
+    // Horizontal sums, four rows at a time (independent running sums).
     let mut tmp = Plane::new(w, h);
     par::for_each_row_chunk(&mut tmp.v, w, 32, parallel, |first, rows| {
-        for (i, row) in rows.chunks_exact_mut(w).enumerate() {
-            let src = &p.v[(first + i) * w..][..w];
-            let at = |x: isize| src[x.clamp(0, w as isize - 1) as usize];
-            let mut s: f32 = (-(r as isize)..=r as isize).map(at).sum();
-            for (x, o) in row.iter_mut().enumerate() {
-                *o = s / n;
-                s += at(x as isize + r as isize + 1) - at(x as isize - r as isize);
+        let mut src = vec![0f32; 4 * w];
+        let mut dst = vec![0f32; 4 * w];
+        for (q, quad) in rows.chunks_mut(4 * w).enumerate() {
+            let nr = quad.len() / w;
+            for i in 0..nr {
+                let k0 = (first + 4 * q + i) * w;
+                for (x, s) in src[i * w..(i + 1) * w].iter_mut().enumerate() {
+                    *s = f(k0 + x);
+                }
             }
+            let at = |i: usize, x: isize| src[i * w + x.clamp(0, w as isize - 1) as usize];
+            let mut s = [0f32; 4];
+            for (i, s) in s.iter_mut().enumerate() {
+                *s = (-(r as isize)..=r as isize).map(|x| at(i, x)).sum();
+            }
+            for x in 0..w {
+                for i in 0..4 {
+                    dst[i * w + x] = s[i] / n;
+                    s[i] += at(i, x as isize + r as isize + 1) - at(i, x as isize - r as isize);
+                }
+            }
+            quad.copy_from_slice(&dst[..nr * w]);
         }
     });
     let mut out = Plane::new(w, h);
@@ -219,27 +264,28 @@ impl<'a> Guide<'a> {
     fn new(full: &'a Plane, r: usize, parallel: bool) -> Self {
         let i = down(full, parallel);
         let r = r.div_ceil(2).max(1);
-        let mean = box_mean(&i, r, parallel);
-        let sq = generate(i.w, i.h, parallel, |k| i.v[k] * i.v[k]);
-        let mut var = box_mean(&sq, r, parallel);
+        let mean = box_mean(i.w, i.h, r, parallel, |k| i.v[k]);
+        let mut var = box_mean(i.w, i.h, r, parallel, |k| i.v[k] * i.v[k]);
         update(&mut var, parallel, |k, v| *v = (*v - mean.v[k] * mean.v[k]).max(0.0));
         Guide { full, i, r, mean, var }
     }
 
-    fn filter(&self, p: &Plane, eps: &(dyn Fn(f32) -> f32 + Sync), parallel: bool) -> Plane {
-        let ps = down(p, parallel);
-        let (w, h, i) = (ps.w, ps.h, &self.i);
-        let mp = box_mean(&ps, self.r, parallel);
-        let cov = box_mean(&generate(w, h, parallel, |k| i.v[k] * ps.v[k]), self.r, parallel);
-        let a = generate(w, h, parallel, |k| {
-            let mi = self.mean.v[k];
-            (cov.v[k] - mi * mp.v[k]) / (self.var.v[k] + eps(mi))
-        });
-        let b = generate(w, h, parallel, |k| mp.v[k] - a.v[k] * self.mean.v[k]);
-        let (fw, fh) = (self.full.w, self.full.h);
-        let ma = up(&box_mean(&a, self.r, parallel), fw, fh, parallel);
-        let mb = up(&box_mean(&b, self.r, parallel), fw, fh, parallel);
-        generate(fw, fh, parallel, |k| ma.v[k] * self.full.v[k] + mb.v[k])
+    /// Filter the two colour planes.
+    fn filter(&self, u: &Plane, v: &Plane, eps: &(dyn Fn(f32) -> f32 + Sync), parallel: bool) -> (Plane, Plane) {
+        let (w, h, r, i) = (self.i.w, self.i.h, self.r, &self.i);
+        // The denominator of the slopes, shared by both planes.
+        let den = generate(w, h, parallel, |k| self.var.v[k] + eps(self.mean.v[k]));
+        let one = |p: &Plane| -> Plane {
+            let ps = down(p, parallel);
+            let mp = box_mean(w, h, r, parallel, |k| ps.v[k]);
+            let cov = box_mean(w, h, r, parallel, |k| i.v[k] * ps.v[k]);
+            let mut a = cov;
+            update(&mut a, parallel, |k, a| *a = (*a - self.mean.v[k] * mp.v[k]) / den.v[k]);
+            let mb = box_mean(w, h, r, parallel, |k| mp.v[k] - a.v[k] * self.mean.v[k]);
+            let ma = box_mean(w, h, r, parallel, |k| a.v[k]);
+            up_affine(&ma, &mb, self.full, parallel)
+        };
+        (one(u), one(v))
     }
 }
 
@@ -253,6 +299,16 @@ fn level_count(w: usize, h: usize, max: usize) -> usize {
         n += 1;
     }
     n
+}
+
+/// Levels `1..levels` of the pyramid of 2x2 averages of `p`.
+fn pyramid(p: &Plane, levels: usize, parallel: bool) -> Vec<Plane> {
+    let mut v: Vec<Plane> = Vec::with_capacity(levels.saturating_sub(1));
+    for _ in 1..levels {
+        let d = down(v.last().unwrap_or(p), parallel);
+        v.push(d);
+    }
+    v
 }
 
 #[derive(Clone)]
@@ -284,22 +340,13 @@ const KB: f32 = 0.0722;
 fn split(rgb: &[f32], w: usize, h: usize, parallel: bool) -> [Plane; 3] {
     let mut out = [Plane::new(w, h), Plane::new(w, h), Plane::new(w, h)];
     let [y, u, v] = &mut out;
-    par::for_each_row_chunk(&mut y.v, w, 64, parallel, |first, rows| {
-        for (i, o) in rows.iter_mut().enumerate() {
-            let p = &rgb[(first * w + i) * 3..][..3];
-            *o = KR * p[0] + KG * p[1] + KB * p[2];
-        }
-    });
-    par::for_each_row_chunk(&mut u.v, w, 64, parallel, |first, rows| {
-        for (i, o) in rows.iter_mut().enumerate() {
-            let p = &rgb[(first * w + i) * 3..][..3];
-            *o = p[2] - (KR * p[0] + KG * p[1] + KB * p[2]);
-        }
-    });
-    par::for_each_row_chunk(&mut v.v, w, 64, parallel, |first, rows| {
-        for (i, o) in rows.iter_mut().enumerate() {
-            let p = &rgb[(first * w + i) * 3..][..3];
-            *o = p[0] - (KR * p[0] + KG * p[1] + KB * p[2]);
+    for_each_rows([y, u, v], 32, parallel, |first, [y, u, v]| {
+        let px = &rgb[first * w * 3..][..y.len() * 3];
+        for (((p, y), u), v) in px.chunks_exact(3).zip(y.iter_mut()).zip(u.iter_mut()).zip(v.iter_mut()) {
+            let l = KR * p[0] + KG * p[1] + KB * p[2];
+            *y = l;
+            *u = p[2] - l;
+            *v = p[0] - l;
         }
     });
     out
@@ -326,51 +373,98 @@ fn down(p: &Plane, parallel: bool) -> Plane {
         for (i, row) in rows.chunks_exact_mut(w).enumerate() {
             let y = first + i;
             let (y0, y1) = (2 * y, (2 * y + 1).min(p.h - 1));
-            for (x, o) in row.iter_mut().enumerate() {
-                let (x0, x1) = (2 * x, (2 * x + 1).min(p.w - 1));
-                *o = 0.25 * (p.at(x0, y0) + p.at(x1, y0) + p.at(x0, y1) + p.at(x1, y1));
-            }
-        }
-    });
-    o
-}
-
-/// Bilinear upsampling of a [`down`] level to `w` x `h` (pixel centres aligned).
-fn up(p: &Plane, w: usize, h: usize, parallel: bool) -> Plane {
-    let mut o = Plane::new(w, h);
-    let tap = |i: usize, n: usize| -> (usize, usize, f32) {
-        let s = ((i as f32 + 0.5) * 0.5 - 0.5).max(0.0);
-        let a = (s as usize).min(n - 1);
-        (a, (a + 1).min(n - 1), s - a as f32)
-    };
-    let xs: Vec<(usize, usize, f32)> = (0..w).map(|x| tap(x, p.w)).collect();
-    par::for_each_row_chunk(&mut o.v, w, 32, parallel, |first, rows| {
-        for (i, row) in rows.chunks_exact_mut(w).enumerate() {
-            let (y0, y1, fy) = tap(first + i, p.h);
             let (r0, r1) = (&p.v[y0 * p.w..][..p.w], &p.v[y1 * p.w..][..p.w]);
-            for (o, &(x0, x1, fx)) in row.iter_mut().zip(&xs) {
-                let a = r0[x0] + (r0[x1] - r0[x0]) * fx;
-                let b = r1[x0] + (r1[x1] - r1[x0]) * fx;
-                *o = a + (b - a) * fy;
+            let pairs = p.w / 2;
+            for ((o, a), b) in row.iter_mut().zip(r0.chunks_exact(2)).zip(r1.chunks_exact(2)) {
+                *o = 0.25 * (a[0] + a[1] + b[0] + b[1]);
+            }
+            if pairs < w {
+                let x = p.w - 1;
+                row[w - 1] = 0.25 * (r0[x] + r0[x] + r1[x] + r1[x]);
             }
         }
     });
     o
 }
 
-/// Denoise one opponent plane over all levels of `guides` (the luma pyramid).
-/// `step0` is the distance between blocks on the full-resolution level (2 on the others).
-fn denoise_plane(p: &Plane, guides: &[Plane], gain: f32, step0: usize, c: &Dct, parallel: bool) -> Result<Plane> {
-    let mut pyr = vec![p.clone()];
-    for l in 1..guides.len() {
-        let d = down(&pyr[l - 1], parallel);
-        pyr.push(d);
+/// The two taps and the weight of the second one of bilinear upsampling of a [`down`] level of
+/// side `n` at position `i` (pixel centres aligned).
+#[inline]
+fn tap(i: usize, n: usize) -> (usize, usize, f32) {
+    let s = ((i as f32 + 0.5) * 0.5 - 0.5).max(0.0);
+    let a = (s as usize).min(n - 1);
+    (a, (a + 1).min(n - 1), s - a as f32)
+}
+
+/// Bilinear upsampling of row `y` of the [`down`] level `p` into `out` (`xs`: the column taps).
+#[inline]
+fn up_row(p: &Plane, xs: &[(usize, usize, f32)], y: usize, h: usize, out: &mut [f32]) {
+    let _ = h;
+    let (y0, y1, fy) = tap(y, p.h);
+    let (r0, r1) = (&p.v[y0 * p.w..][..p.w], &p.v[y1 * p.w..][..p.w]);
+    for (o, &(x0, x1, fx)) in out.iter_mut().zip(xs) {
+        let a = r0[x0] + (r0[x1] - r0[x0]) * fx;
+        let b = r1[x0] + (r1[x1] - r1[x0]) * fx;
+        *o = a + (b - a) * fy;
     }
+}
+
+/// `d += up(p)`, `p` the [`down`] level of `d`'s size.
+fn add_up(d: &mut Plane, p: &Plane, parallel: bool) {
+    let (w, h) = (d.w, d.h);
+    let xs: Vec<(usize, usize, f32)> = (0..w).map(|x| tap(x, p.w)).collect();
+    par::for_each_row_chunk(&mut d.v, w, 32, parallel, |first, rows| {
+        let mut u = vec![0f32; w];
+        for (i, row) in rows.chunks_exact_mut(w).enumerate() {
+            up_row(p, &xs, first + i, h, &mut u);
+            for (o, u) in row.iter_mut().zip(&u) {
+                *o += u;
+            }
+        }
+    });
+}
+
+/// `up(a) * g + up(b)`: the guided filter's linear functions, upsampled, applied to the guide.
+fn up_affine(a: &Plane, b: &Plane, g: &Plane, parallel: bool) -> Plane {
+    let (w, h) = (g.w, g.h);
+    let xs: Vec<(usize, usize, f32)> = (0..w).map(|x| tap(x, a.w)).collect();
+    let mut o = Plane::new(w, h);
+    par::for_each_row_chunk(&mut o.v, w, 32, parallel, |first, rows| {
+        let mut ua = vec![0f32; w];
+        for (i, row) in rows.chunks_exact_mut(w).enumerate() {
+            let y = first + i;
+            up_row(a, &xs, y, h, &mut ua);
+            up_row(b, &xs, y, h, row);
+            for ((o, a), g) in row.iter_mut().zip(&ua).zip(&g.v[y * w..][..w]) {
+                *o += a * g;
+            }
+        }
+    });
+    o
+}
+
+/// Denoise one opponent plane over its pyramid `levels` (`levels[0]` the plane), the noise of
+/// every level binned by the brightness of the same level of `guides` (the luma pyramid).
+/// `first` is the noise model of the full-resolution level when the caller already measured it;
+/// `step0` is the distance between blocks on that level (2 on the others).
+#[allow(clippy::too_many_arguments)]
+fn denoise_plane(
+    levels: &[&Plane],
+    guides: &[&Plane],
+    first: Option<Model>,
+    gain: f32,
+    step0: usize,
+    c: &Dct,
+    parallel: bool,
+) -> Result<Plane> {
     // Noise models, finest first. A coarse level has few flat blocks, so texture can pass for
     // noise there: its estimate is capped by what the finer level's noise predicts for it.
-    let mut models: Vec<Option<Model>> = Vec::with_capacity(pyr.len());
-    for l in 0..pyr.len() {
-        let mut m = estimate(&pyr[l], &guides[l], c, parallel);
+    let mut models: Vec<Option<Model>> = Vec::with_capacity(levels.len());
+    for l in 0..levels.len() {
+        let mut m = match (l, &first) {
+            (0, Some(m)) => Some(m.clone()),
+            _ => estimate(levels[l], guides[l], c, parallel),
+        };
         if l > 0 {
             match (&mut m, &models[l - 1]) {
                 (Some(m), Some(prev)) => m.cap(&prev.next_level(), LEVEL_CAP),
@@ -380,10 +474,9 @@ fn denoise_plane(p: &Plane, guides: &[Plane], gain: f32, step0: usize, c: &Dct, 
         models.push(m);
     }
     let mut result: Option<Plane> = None;
-    for l in (0..pyr.len()).rev() {
-        let (src, guide) = (&pyr[l], &guides[l]);
-        let est = models[l].take();
-        let d = match est {
+    for l in (0..levels.len()).rev() {
+        let (src, guide) = (levels[l], guides[l]);
+        let d = match models[l].take() {
             Some(model) => {
                 let step = if l == 0 { step0 } else { STEP };
                 let pilot = dct_pass(src, guide, None, &model, gain, step, c, parallel);
@@ -396,11 +489,12 @@ fn denoise_plane(p: &Plane, guides: &[Plane], gain: f32, step0: usize, c: &Dct, 
         result = Some(match result {
             None => d,
             Some(coarse) => {
-                // The detail of this level over the denoised coarser level.
-                let low = up(&down(&d, parallel), d.w, d.h, parallel);
-                let base = up(&coarse, d.w, d.h, parallel);
+                // The detail of this level over the denoised coarser level: `d` with its low
+                // frequencies (its 2x2 average) replaced by `coarse`, both upsampled.
                 let mut d = d;
-                update(&mut d, parallel, |k, o| *o += base.v[k] - low.v[k]);
+                let mut diff = down(&d, parallel);
+                update(&mut diff, parallel, |k, o| *o = coarse.v[k] - *o);
+                add_up(&mut d, &diff, parallel);
                 d
             }
         });
@@ -408,12 +502,12 @@ fn denoise_plane(p: &Plane, guides: &[Plane], gain: f32, step0: usize, c: &Dct, 
     Ok(result.expect("at least one level"))
 }
 
-/// Eight lanes of samples or coefficients.
+/// Eight samples or coefficients.
 type V = [f32; N];
 
 /// The orthonormal 8-point DCT-II matrix, `m[k][i]`, and its transforms. The 1-D transforms
-/// work on eight vectors at once, lane by lane (the even/odd split halves the multiplications),
-/// so they vectorise.
+/// work on eight vectors at once, lane by lane ([`Lanes`]), with the even/odd symmetries of the
+/// matrix rows.
 struct Dct {
     m: [[f32; N]; N],
 }
@@ -432,81 +526,73 @@ impl Dct {
 
     /// `out[k] = sum_i m[k][i] x[i]`, lane by lane.
     #[inline(always)]
-    fn fwd1(&self, x: &[V; N]) -> [V; N] {
-        let mut s = [[0f32; N]; 4];
-        let mut d = [[0f32; N]; 4];
-        for i in 0..4 {
-            for t in 0..N {
-                s[i][t] = x[i][t] + x[7 - i][t];
-                d[i][t] = x[i][t] - x[7 - i][t];
-            }
-        }
-        let mut out = [[0f32; N]; N];
-        for r in 0..4 {
-            for i in 0..4 {
-                let (ce, co) = (self.m[2 * r][i], self.m[2 * r + 1][i]);
-                for t in 0..N {
-                    out[2 * r][t] += ce * s[i][t];
-                    out[2 * r + 1][t] += co * d[i][t];
-                }
-            }
-        }
-        out
+    fn fwd1<L: Lanes>(&self, x: &[L; N]) -> [L; N] {
+        let m = &self.m;
+        let s = arr!(4, |i| x[i].add(x[7 - i]));
+        let d = arr!(4, |i| x[i].sub(x[7 - i]));
+        // Even part: a 4-point transform of `s`.
+        let (e0, e1) = (s[0].add(s[3]), s[1].add(s[2]));
+        let (e2, e3) = (s[0].sub(s[3]), s[1].sub(s[2]));
+        [
+            L::splat(m[0][0]).mul(e0.add(e1)),
+            dot4(&m[1], &d),
+            L::splat(m[2][0]).mul(e2).add(L::splat(m[2][1]).mul(e3)),
+            dot4(&m[3], &d),
+            L::splat(m[4][0]).mul(e0.sub(e1)),
+            dot4(&m[5], &d),
+            L::splat(m[6][0]).mul(e2).add(L::splat(m[6][1]).mul(e3)),
+            dot4(&m[7], &d),
+        ]
     }
 
     /// `out[i] = sum_k m[k][i] x[k]`, lane by lane (the inverse of [`Dct::fwd1`]).
     #[inline(always)]
-    fn inv1(&self, x: &[V; N]) -> [V; N] {
-        let mut e = [[0f32; N]; 4];
-        let mut o = [[0f32; N]; 4];
-        for i in 0..4 {
-            for r in 0..4 {
-                let (ce, co) = (self.m[2 * r][i], self.m[2 * r + 1][i]);
-                for t in 0..N {
-                    e[i][t] += ce * x[2 * r][t];
-                    o[i][t] += co * x[2 * r + 1][t];
-                }
-            }
-        }
-        let mut out = [[0f32; N]; N];
-        for i in 0..4 {
-            for t in 0..N {
-                out[i][t] = e[i][t] + o[i][t];
-                out[7 - i][t] = e[i][t] - o[i][t];
-            }
-        }
-        out
+    fn inv1<L: Lanes>(&self, x: &[L; N]) -> [L; N] {
+        let m = &self.m;
+        let p = L::splat(m[0][0]).mul(x[0].add(x[4]));
+        let q = L::splat(m[0][0]).mul(x[0].sub(x[4]));
+        let u = L::splat(m[2][0]).mul(x[2]).add(L::splat(m[6][0]).mul(x[6]));
+        let v = L::splat(m[2][1]).mul(x[2]).add(L::splat(m[6][1]).mul(x[6]));
+        let e = [p.add(u), q.add(v), q.sub(v), p.sub(u)];
+        let o = arr!(4, |i| dot4(&[m[1][i], m[3][i], m[5][i], m[7][i]], &[x[1], x[3], x[5], x[7]]));
+        arr!(8, |i| if i < 4 { e[i].add(o[i]) } else { e[7 - i].sub(o[7 - i]) })
     }
 
-    /// 2-D transform of a block given its columns already transformed vertically
-    /// (`cols[j][k]`): `out[l][k]` is the coefficient of horizontal frequency `l` and vertical
-    /// frequency `k`.
-    #[inline(always)]
-    fn horizontal(&self, cols: &[V; N]) -> [V; N] {
-        self.fwd1(cols)
-    }
-
-    /// Inverse 2-D transform: `out[i][j]` is the sample of row `i`, column `j`.
-    #[inline(always)]
-    fn inverse(&self, x: &[V; N]) -> [V; N] {
-        let t = self.inv1(x); // t[j][k]
-        self.inv1(&transpose(&t)) // over k, lanes j
-    }
-
-    /// Full 2-D transform of the block at `(x0, y0)` of `p` (for the noise estimate).
+    /// Full 2-D transform of the block at `(x0, y0)` of `p` (for the noise estimate): `out[l][k]`
+    /// is the coefficient of horizontal frequency `l` and vertical frequency `k`.
     fn block(&self, p: &Plane, x0: usize, y0: usize) -> [V; N] {
-        let rows: [V; N] = std::array::from_fn(|i| std::array::from_fn(|j| p.at(x0 + j, y0 + i)));
-        let v = self.fwd1(&rows); // v[k][j]
-        self.horizontal(&transpose(&v))
+        let rows: [Scalar; N] = std::array::from_fn(|i| Scalar::load(&p.v[(y0 + i) * p.w + x0..]));
+        let v = self.fwd1(&rows); // v[k] lane j
+        let c = self.fwd1(&Scalar::transpose(&v));
+        std::array::from_fn(|l| {
+            let mut o = [0f32; N];
+            c[l].store(&mut o);
+            o
+        })
+    }
+
+    /// Inverse of [`Dct::block`]: `out[i][j]` is the sample of row `i`, column `j`.
+    #[cfg(test)]
+    fn inverse(&self, x: &[V; N]) -> [V; N] {
+        let x: [Scalar; N] = std::array::from_fn(|l| Scalar::load(&x[l]));
+        let t = self.inv1(&x); // t[j] lane k
+        let px = self.inv1(&Scalar::transpose(&t));
+        std::array::from_fn(|i| {
+            let mut o = [0f32; N];
+            px[i].store(&mut o);
+            o
+        })
     }
 }
 
+/// `(c0 x0 + c1 x1) + (c2 x2 + c3 x3)`.
 #[inline(always)]
-fn transpose(x: &[V; N]) -> [V; N] {
-    std::array::from_fn(|a| std::array::from_fn(|b| x[b][a]))
+fn dot4<L: Lanes>(c: &[f32], x: &[L; 4]) -> L {
+    (L::splat(c[0]).mul(x[0]).add(L::splat(c[1]).mul(x[1]))).add(L::splat(c[2]).mul(x[2]).add(L::splat(c[3]).mul(x[3])))
 }
 
 /// Noise deviation of each DCT frequency as a function of the luma mean of the block.
+#[derive(Clone)]
 struct Model {
     /// Luma means of the bins, increasing.
     m: Vec<f32>,
@@ -551,43 +637,30 @@ impl Model {
         Variance { m: self.m.clone(), v }
     }
 
-    /// Deviations at luma mean `m` (linear between the bins, constant beyond them).
-    #[inline]
-    fn sigmas(&self, m: f32, out: &mut [f32; NN]) {
+    /// The deviations at luma mean `m` are `a + (b - a) t` (linear between the bins, constant
+    /// beyond them); entry `l * 8 + k` is horizontal frequency `l`, vertical frequency `k`.
+    #[inline(always)]
+    fn sigmas(&self, m: f32) -> (&[f32; NN], &[f32; NN], f32) {
         let n = self.m.len();
         let i = self.m.partition_point(|&b| b < m);
         if i == 0 || n == 1 {
-            *out = self.s[0];
-            return;
+            return (&self.s[0], &self.s[0], 0.0);
         }
         if i >= n {
-            *out = self.s[n - 1];
-            return;
+            return (&self.s[n - 1], &self.s[n - 1], 0.0);
         }
         let (a, b) = (self.m[i - 1], self.m[i]);
-        let t = if b > a { (m - a) / (b - a) } else { 0.0 };
-        let (sa, sb) = (&self.s[i - 1], &self.s[i]);
-        for k in 0..NN {
-            out[k] = sa[k] + (sb[k] - sa[k]) * t;
-        }
+        (&self.s[i - 1], &self.s[i], if b > a { (m - a) / (b - a) } else { 0.0 })
     }
 }
 
 /// Measure the noise model of `p`, binned by the luma mean of `guide` (same size).
 fn estimate(p: &Plane, guide: &Plane, c: &Dct, parallel: bool) -> Option<Model> {
     let (bx, by) = (p.w / N, p.h / N);
-    if bx * by < 32 {
-        return None;
-    }
-    let step = (((bx * by) as f64 / MAX_BLOCKS as f64).sqrt().ceil() as usize).max(1);
+    let step = estimate_step(p.w, p.h)?;
     let rows: Vec<usize> = (0..by).step_by(step).collect();
-    struct Block {
-        mean: f32,
-        activity: f32,
-        sq: [f32; NN],
-    }
-    let blocks: Vec<Block> = par::map(rows, parallel, |r| {
-        let mut out = Vec::new();
+    let stats: Vec<[f32; NN]> = par::map(rows, parallel, |r| {
+        let mut out = Vec::with_capacity(bx.div_ceil(step));
         for b in (0..bx).step_by(step) {
             let (x0, y0) = (b * N, r * N);
             let mut mean = 0.0;
@@ -597,58 +670,79 @@ fn estimate(p: &Plane, guide: &Plane, c: &Dct, parallel: bool) -> Option<Model> 
                 }
             }
             let coef = c.block(p, x0, y0);
-            let coef = coef.as_flattened();
-            let mut sq = [0f32; NN];
-            let mut activity = 0.0;
-            for k in 1..NN {
-                sq[k] = coef[k] * coef[k];
-                activity += sq[k];
+            let mut st = [0f32; NN];
+            for (s, v) in st.iter_mut().zip(coef.as_flattened()) {
+                *s = v * v;
             }
-            out.push(Block { mean: mean / NN as f32, activity, sq });
+            st[0] = mean / NN as f32;
+            out.push(st);
         }
         out
     })
     .into_iter()
     .flatten()
     .collect();
-    let mut blocks = blocks;
-    blocks.retain(|b| b.mean.is_finite() && b.activity.is_finite());
-    if blocks.len() < 32 {
+    Model::from_stats(&stats)
+}
+
+/// Distance in blocks between the blocks of the noise estimate of a `w` x `h` level (`None`:
+/// too small to measure). Blocks `(bx, by)` with both multiples of it are measured, in rows.
+pub(crate) fn estimate_step(w: usize, h: usize) -> Option<usize> {
+    let (bx, by) = (w / N, h / N);
+    if bx * by < 32 {
         return None;
     }
-    blocks.sort_by(|a, b| a.mean.total_cmp(&b.mean));
-    let bins = (blocks.len() / 96).clamp(1, 12);
-    let per = blocks.len().div_ceil(bins);
-    let mut m = Vec::with_capacity(bins);
-    let mut s: Vec<[f32; NN]> = Vec::with_capacity(bins);
-    let mut vals = Vec::new();
-    for bin in blocks.chunks(per) {
-        let mut act: Vec<f32> = bin.iter().map(|b| b.activity).collect();
-        let half = act.len() / 2;
-        let cut = *act.select_nth_unstable_by(half, f32::total_cmp).1;
-        let flat: Vec<&Block> = bin.iter().filter(|b| b.activity <= cut).collect();
-        let mut sig = [0f32; NN];
-        for (k, out) in sig.iter_mut().enumerate().skip(1) {
-            vals.clear();
-            vals.extend(flat.iter().map(|b| b.sq[k]));
-            let mid = vals.len() / 2;
-            let med = *vals.select_nth_unstable_by(mid, f32::total_cmp).1;
-            *out = (med / CHI2_MEDIAN * SELECTION_BIAS).sqrt();
+    Some((((bx * by) as f64 / MAX_BLOCKS as f64).sqrt().ceil() as usize).max(1))
+}
+
+impl Model {
+    /// The model from the measured blocks: per block the luma mean (entry 0) and the squared DCT
+    /// coefficients (entry `l * 8 + k`: horizontal frequency `l`, vertical frequency `k`).
+    pub(crate) fn from_stats(stats: &[[f32; NN]]) -> Option<Model> {
+        // Blocks by luma mean (stable: equal means keep their order), with their AC energy.
+        let mut order: Vec<(f32, f32, u32)> = stats
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s[0], s[1..].iter().fold(0.0f32, |a, v| a + v), i as u32))
+            .filter(|(m, a, _)| m.is_finite() && a.is_finite())
+            .collect();
+        if order.len() < 32 {
+            return None;
         }
-        m.push(bin[bin.len() / 2].mean);
-        s.push(sig);
-    }
-    // Light smoothing across bins: each estimate is a median of a few hundred blocks.
-    if s.len() > 2 {
-        let orig = s.clone();
-        for i in 0..s.len() {
-            let (a, b) = (i.saturating_sub(1), (i + 1).min(s.len() - 1));
-            for k in 0..NN {
-                s[i][k] = 0.25 * orig[a][k] + 0.5 * orig[i][k] + 0.25 * orig[b][k];
+        order.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let bins = (order.len() / 96).clamp(1, 12);
+        let per = order.len().div_ceil(bins);
+        let mut m = Vec::with_capacity(bins);
+        let mut s: Vec<[f32; NN]> = Vec::with_capacity(bins);
+        let mut vals = Vec::new();
+        for bin in order.chunks(per) {
+            let mut act: Vec<f32> = bin.iter().map(|b| b.1).collect();
+            let half = act.len() / 2;
+            let cut = *act.select_nth_unstable_by(half, f32::total_cmp).1;
+            let flat: Vec<&[f32; NN]> = bin.iter().filter(|b| b.1 <= cut).map(|b| &stats[b.2 as usize]).collect();
+            let mut sig = [0f32; NN];
+            for (k, out) in sig.iter_mut().enumerate().skip(1) {
+                vals.clear();
+                vals.extend(flat.iter().map(|b| b[k]));
+                let mid = vals.len() / 2;
+                let med = *vals.select_nth_unstable_by(mid, f32::total_cmp).1;
+                *out = (med / CHI2_MEDIAN * SELECTION_BIAS).sqrt();
+            }
+            m.push(bin[bin.len() / 2].0);
+            s.push(sig);
+        }
+        // Light smoothing across bins: each estimate is a median of a few hundred blocks.
+        if s.len() > 2 {
+            let orig = s.clone();
+            for i in 0..s.len() {
+                let (a, b) = (i.saturating_sub(1), (i + 1).min(s.len() - 1));
+                for k in 0..NN {
+                    s[i][k] = 0.25 * orig[a][k] + 0.5 * orig[i][k] + 0.25 * orig[b][k];
+                }
             }
         }
+        Some(Model { m, s })
     }
-    Some(Model { m, s })
 }
 
 /// Source index of each position of a side of `n` samples padded symmetrically by `pad` on both
@@ -771,30 +865,55 @@ fn dct_pass(
 
 fn run_group(p: &Pass<'_>, g: &[usize]) -> Part {
     #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-    if std::arch::is_x86_feature_detected!("avx2") && std::arch::is_x86_feature_detected!("fma") {
-        // SAFETY: the CPU supports AVX2 and FMA (checked above).
+    if std::arch::is_x86_feature_detected!("avx2") {
+        // SAFETY: the CPU supports AVX2 (checked above).
         return unsafe { run_group_avx2(p, g) };
     }
-    run_group_impl(p, g)
+    #[cfg(all(feature = "simd", target_arch = "aarch64"))]
+    return run_group_impl::<lanes::Neon>(p, g);
+    #[cfg(all(feature = "simd", target_arch = "wasm32", target_feature = "simd128"))]
+    return run_group_impl::<lanes::Wasm>(p, g);
+    #[allow(unreachable_code)]
+    run_group_impl::<Scalar>(p, g)
 }
 
 #[cfg(all(feature = "simd", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2,fma")]
+#[target_feature(enable = "avx2")]
 unsafe fn run_group_avx2(p: &Pass<'_>, g: &[usize]) -> Part {
-    run_group_impl(p, g)
+    run_group_impl::<lanes::Avx>(p, g)
+}
+
+/// Vertical transform of the eight rows of `plane` (`fw` wide) from `row` for every column,
+/// eight columns at a time: `out[x][k]` is frequency `k` of column `x`.
+#[inline(always)]
+fn vertical<L: Lanes>(c: &Dct, plane: &[f32], fw: usize, row: usize, out: &mut [V]) {
+    for (x, o) in (0..fw).step_by(N).zip(out.chunks_exact_mut(N)) {
+        let rows = arr!(8, |i| L::load(&plane[(row + i) * fw + x..]));
+        let v = L::transpose(&c.fwd1(&rows)); // v[t] lane k: column x + t
+        for (o, v) in o.iter_mut().zip(v) {
+            v.store(o);
+        }
+    }
 }
 
 #[inline(always)]
-fn run_group_impl(p: &Pass<'_>, g: &[usize]) -> Part {
+fn run_group_impl<L: Lanes>(p: &Pass<'_>, g: &[usize]) -> Part {
     let fw = p.xmap.len(); // a multiple of N
     let first = g[0];
     let rows = g[g.len() - 1] + N - first;
     // The padded rows this group reads.
     let slab = |plane: &Plane| -> Vec<f32> {
-        let mut v = Vec::with_capacity(rows * fw);
-        for &sy in &p.ymap[first..first + rows] {
-            let row = &plane.v[sy * plane.w..][..plane.w];
-            v.extend(p.xmap.iter().map(|&x| row[x]));
+        let w = plane.w;
+        let mut v = vec![0f32; rows * fw];
+        for (&sy, o) in p.ymap[first..first + rows].iter().zip(v.chunks_exact_mut(fw)) {
+            let row = &plane.v[sy * w..][..w];
+            o[PAD..PAD + w].copy_from_slice(row);
+            for (o, &x) in o[..PAD].iter_mut().zip(&p.xmap[..PAD]) {
+                *o = row[x];
+            }
+            for (o, &x) in o[PAD + w..].iter_mut().zip(&p.xmap[PAD + w..]) {
+                *o = row[x];
+            }
         }
         v
     };
@@ -805,76 +924,95 @@ fn run_group_impl(p: &Pass<'_>, g: &[usize]) -> Part {
     let mut wsum = vec![0f32; rows * fw];
     let mut vert = vec![[0f32; N]; fw];
     let mut vpil = vec![[0f32; N]; if pp.is_some() { fw } else { 0 }];
+    // The blocks of one block row, summed per column before the vertical inverse transform:
+    // `racc[x][k]` is vertical frequency `k` of column `x`, `rw[x]` the sum of the weights.
+    let mut racc = vec![[0f32; N]; fw];
+    let mut rw = vec![0f32; fw];
     let mut gcol = vec![0f32; fw];
-    let mut sig = [0f32; NN];
-    let thr_scale = HARD * p.gain;
-    let n2scale = p.gain * p.gain;
-    // Vertical transform of 8 rows from y0 for every column, eight columns at a time.
-    let vertical = |plane: &[f32], y0: usize, out: &mut [V]| {
-        for (x, o) in (0..fw).step_by(N).zip(out.chunks_exact_mut(N)) {
-            let rows: [V; N] = std::array::from_fn(|i| {
-                let r = &plane[(y0 - first + i) * fw + x..][..N];
-                std::array::from_fn(|t| r[t])
-            });
-            let v = p.c.fwd1(&rows); // v[k][t], column x + t
-            for (t, col) in o.iter_mut().enumerate() {
-                for k in 0..N {
-                    col[k] = v[k][t];
-                }
-            }
-        }
-    };
+    let thr = L::splat(HARD * p.gain);
+    let n2scale = L::splat(p.gain * p.gain);
+    let tiny = L::splat(1e-30);
     for &y0 in g {
         if cancel::is_cancelled() {
             break;
         }
-        vertical(&sp, y0, &mut vert);
+        let r0 = y0 - first;
+        vertical::<L>(p.c, &sp, fw, r0, &mut vert);
         if let Some(pp) = &pp {
-            vertical(pp, y0, &mut vpil);
+            vertical::<L>(p.c, pp, fw, r0, &mut vpil);
         }
         gcol.iter_mut().for_each(|v| *v = 0.0);
         for i in 0..N {
-            for (gs, &gv) in gcol.iter_mut().zip(&gp[(y0 - first + i) * fw..][..fw]) {
+            for (gs, &gv) in gcol.iter_mut().zip(&gp[(r0 + i) * fw..][..fw]) {
                 *gs += gv;
             }
         }
+        racc.iter_mut().for_each(|v| *v = [0.0; N]);
+        rw.iter_mut().for_each(|v| *v = 0.0);
         for &x0 in p.xs {
-            let cols: &[V; N] = vert[x0..x0 + N].try_into().unwrap();
-            let mut coef = p.c.horizontal(cols);
+            let cols = arr!(8, |j| L::load(&vert[x0 + j]));
+            let mut coef = p.c.fwd1(&cols); // coef[l] lane k
             let mean = gcol[x0..x0 + N].iter().sum::<f32>() / NN as f32;
-            p.model.sigmas(mean, &mut sig);
-            let cf = coef.as_flattened_mut();
-            let weight = if pp.is_some() {
-                let pcols: &[V; N] = vpil[x0..x0 + N].try_into().unwrap();
-                let pcoef = p.c.horizontal(pcols);
-                let pf = pcoef.as_flattened();
-                let mut e = 0.0f32;
-                for k in 1..NN {
-                    let n2 = sig[k] * sig[k] * n2scale;
-                    let p2 = pf[k] * pf[k];
-                    let s = p2 / (p2 + n2 + 1e-30);
-                    cf[k] *= s;
-                    e += s * s * n2;
-                }
-                // Blocks whose estimate is more certain count more (inverse variance).
-                1.0 / (e + 1e-20)
-            } else {
-                let mut kept = 1.0f32;
-                for k in 1..NN {
-                    let keep = cf[k].abs() >= thr_scale * sig[k];
-                    cf[k] = if keep { cf[k] } else { 0.0 };
-                    kept += keep as u32 as f32;
-                }
-                1.0 / kept
+            let (sa, sb, t) = p.model.sigmas(mean);
+            let t = L::splat(t);
+            let sigma = |l: usize| {
+                let (a, b) = (L::load(&sa[l * N..]), L::load(&sb[l * N..]));
+                a.add(b.sub(a).mul(t))
             };
-            let px = p.c.inverse(&coef);
-            for (i, prow) in px.iter().enumerate() {
-                let o = (y0 - first + i) * fw + x0;
-                let (a, ws) = (&mut acc[o..o + N], &mut wsum[o..o + N]);
-                for j in 0..N {
-                    a[j] += weight * prow[j];
-                    ws[j] += weight;
+            // The DC deviation is 0: the hard threshold keeps it, the Wiener factor is
+            // restored below.
+            let weight = if pp.is_some() {
+                let pcols = arr!(8, |j| L::load(&vpil[x0 + j]));
+                let pcoef = p.c.fwd1(&pcols);
+                let mut c0 = [0f32; N];
+                coef[0].store(&mut c0);
+                let dc = c0[0];
+                let mut e = L::splat(0.0);
+                for (l, (c, pc)) in coef.iter_mut().zip(&pcoef).enumerate() {
+                    let sg = sigma(l);
+                    let n2 = sg.mul(sg).mul(n2scale);
+                    let p2 = pc.mul(*pc);
+                    let s = p2.div(p2.add(n2).add(tiny));
+                    *c = c.mul(s);
+                    e = e.add(s.mul(s).mul(n2));
                 }
+                coef[0].store(&mut c0);
+                c0[0] = dc;
+                coef[0] = L::load(&c0);
+                // Blocks whose estimate is more certain count more (inverse variance).
+                1.0 / (e.sum() + 1e-20)
+            } else {
+                let mut kept = 0;
+                for (l, c) in coef.iter_mut().enumerate() {
+                    let (k, n) = c.keep_ge(sigma(l).mul(thr));
+                    *c = k;
+                    kept += n;
+                }
+                1.0 / kept as f32
+            };
+            let wv = L::splat(weight);
+            for c in coef.iter_mut() {
+                *c = c.mul(wv);
+            }
+            // Horizontal inverse: `t[j]` lane `k` is column `x0 + j`, vertical frequency `k`.
+            let t = p.c.inv1(&coef);
+            for (a, c) in racc[x0..x0 + N].iter_mut().zip(t) {
+                L::load(a).add(c).store(a);
+            }
+            let ws = &mut rw[x0..x0 + N];
+            L::load(ws).add(wv).store(ws);
+        }
+        // Vertical inverse of the summed blocks, eight columns at a time.
+        for x in (0..fw).step_by(N) {
+            let cols = arr!(8, |j| L::load(&racc[x + j]));
+            let px = p.c.inv1(&L::transpose(&cols)); // px[i] lane t: row r0 + i, column x + t
+            let w = L::load(&rw[x..]);
+            for (i, prow) in px.iter().enumerate() {
+                let o = (r0 + i) * fw + x;
+                let a = &mut acc[o..o + N];
+                L::load(a).add(*prow).store(a);
+                let ws = &mut wsum[o..o + N];
+                L::load(ws).add(w).store(ws);
             }
         }
     }
@@ -968,5 +1106,36 @@ mod tests {
         let col = |x: usize| (0..h).map(|y| d.rgb[(y * w + x) * 3 + 1]).sum::<f32>() / h as f32;
         assert!((col(w / 2 - 1) - 0.1).abs() < 0.02, "{}", col(w / 2 - 1));
         assert!((col(w / 2) - 0.8).abs() < 0.02, "{}", col(w / 2));
+    }
+
+    #[test]
+    fn the_vector_units_give_the_portable_result() {
+        let c = Dct::new();
+        let (w, h) = (203, 77);
+        let mut rng = Rng(9);
+        let p = Plane { w, h, v: (0..w * h).map(|i| 0.2 + 0.001 * (i % w) as f32 + 0.02 * rng.normal()).collect() };
+        let m = estimate(&p, &p, &c, false).unwrap();
+        let pilot = dct_pass(&p, &p, None, &m, 1.0, STEP, &c, false);
+        for (pil, step) in [(None, 2), (Some(&pilot), 2), (None, 4), (Some(&pilot), 3)] {
+            let pw = w + 2 * PAD;
+            let extra = pw.next_multiple_of(N) - pw;
+            let xs = positions(pw, step);
+            let pass = Pass {
+                src: &p,
+                guide: &p,
+                pilot: pil,
+                xmap: pad_map(w, PAD, extra),
+                ymap: pad_map(h, PAD, 0),
+                xs: &xs,
+                model: &m,
+                gain: 1.3,
+                c: &c,
+            };
+            let ys = positions(h + 2 * PAD, step);
+            for g in ys.chunks(GROUP) {
+                let (a, b) = (run_group(&pass, g), run_group_impl::<Scalar>(&pass, g));
+                assert!(a.acc == b.acc && a.wsum == b.wsum, "step {step}");
+            }
+        }
     }
 }
