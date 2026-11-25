@@ -610,10 +610,10 @@ class RawFile:
                 frame's noise), ``"off"``, ``"low"``, ``"medium"`` or ``"high"`` (CPU only unless auto).
             luma_noise_reduction: brightness noise reduction of RGB outputs, ``0.0`` (default, none) to
                 ``1.0``. The noise is measured on the image itself; ``0.5`` is a moderate setting that
-                keeps the finest grain, ``1.0`` removes all the noise it measures. CPU only.
+                keeps the finest grain, ``1.0`` removes all the noise it measures (CPU and GPU).
             chroma_noise_reduction: colour noise reduction of RGB outputs, ``0.0`` (default, none) to
-                ``1.0``; ``0.5`` matches the colour noise reduction raw developers apply by default.
-                CPU only.
+                ``1.0``; ``0.5`` matches the colour noise reduction raw developers apply by default
+                (CPU and GPU).
             tone: tone of the display outputs (``"rgba8"``, ``"rgb16"``): ``"standard"`` (default: the
                 camera's brightness offset, from the DNG baseline exposure or the camera database,
                 then an S-curve that lifts the mid-tones and rolls the

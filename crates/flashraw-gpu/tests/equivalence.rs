@@ -878,3 +878,164 @@ fn gpu_color_spaces_match_cpu() {
         assert!(max_abs_diff(&got, &dev.rgb) <= 1e-4, "{what}: toned linear");
     }
 }
+
+/// A noisy Bayer scene with edges and flat patches: a gradient, a bright disc, a dark bar and
+/// coloured patches, with pseudo-random noise of about 2 % of white.
+fn noisy_scene(w: u32, h: u32, seed: u64) -> RawImage {
+    let mut img = RawImage::new_u16(w, h, 1, &Limits::default()).unwrap();
+    let mut s = seed | 1;
+    let mut noise = || {
+        // Sum of four uniforms: roughly normal.
+        let mut t = 0.0f32;
+        for _ in 0..4 {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            t += (s >> 40) as f32 / (1u64 << 24) as f32 - 0.5;
+        }
+        t
+    };
+    for y in 0..h {
+        for x in 0..w {
+            let (fx, fy) = (x as f32 / w as f32, y as f32 / h as f32);
+            let mut v = 0.15 + 0.4 * fx;
+            if (fx - 0.6).powi(2) + (fy - 0.4).powi(2) < 0.04 {
+                v = 0.75;
+            }
+            if (0.2..0.3).contains(&fx) {
+                v = 0.05;
+            }
+            // Colour patches: one channel of the mosaic brighter.
+            let c = (x % 2) + 2 * (y % 2);
+            if fy > 0.7 && ((fx * 5.0) as u32 & 1 == 0) && c == 0 {
+                v *= 1.6;
+            }
+            let n = 0.02 * noise() * 2.0 * (0.3 + v).sqrt();
+            let raw = 512.0 + (v + n).clamp(0.0, 1.0) * (16000.0 - 512.0);
+            img.u16_mut()[(y * w + x) as usize] = raw as u16;
+        }
+    }
+    img
+}
+
+/// The develop of `noisy_scene` on the CPU and on `ctx` (linear RGB).
+fn noisy_develop(
+    ctx: &Arc<flashraw_gpu::GpuContext>,
+    w: u32,
+    h: u32,
+) -> (process::Developed, flashraw_gpu::GpuRun, FrameInfo, DevelopParams) {
+    let mut info = FrameInfo::new(w, h, 14);
+    info.cfa = Some(CfaPattern::RGGB);
+    info.black_level = BlackLevel::uniform(512.0);
+    info.white_level = WhiteLevel { values: vec![16000] };
+    info.white_balance = WhiteBalance::from_multipliers(1.9, 1.0, 1.5, 1.0);
+    let img = noisy_scene(w, h, 7);
+    let params = DevelopParams::new(&info, flashraw::Demosaic::Bilinear, Rect::full(w, h));
+    let frame = GpuFrame::from_u16(img.u16(), w, h, 1);
+    let spec = DevelopSpec {
+        crop: Rect::full(w, h),
+        half_size: false,
+        wb: params.wb,
+        cam_to_rgb: params.cam_to_rgb,
+        curve: None,
+        tone: None,
+        orientation: Orientation::Normal,
+        output: DevelopOutput::LinearRgbF32,
+        levels: None,
+        edge: None,
+    };
+    let lin = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec)).unwrap();
+    let dev = process::develop(&img, &info, (0, 0), &params, false).unwrap();
+    (dev, lin, info, params)
+}
+
+/// Mean, 99.9th percentile and largest of `|a - b|`.
+fn diff_stats(a: &[f32], b: &[f32]) -> (f64, f32, f32) {
+    assert_eq!(a.len(), b.len());
+    let mut d: Vec<f32> = a.iter().zip(b).map(|(x, y)| (x - y).abs()).collect();
+    let mean = d.iter().map(|&v| v as f64).sum::<f64>() / d.len() as f64;
+    d.sort_by(f32::total_cmp);
+    (mean, d[d.len() * 999 / 1000], d[d.len() - 1])
+}
+
+/// The noise reduction on the GPU against the CPU (`flashraw::denoise`), on linear RGB and on a
+/// display output. Not bit-identical: a coefficient that sits on the hard threshold can flip
+/// with the rounding of the DCT (the GPU may fuse multiply-adds), which moves the samples of
+/// the blocks around it, and the sums run in another order. Thresholds: on linear RGB a mean
+/// difference of at most 2e-6 and a 99.9th percentile of at most 1e-4 (measured: 2e-7 and 6e-6 on
+/// Metal and Vulkan; the noise reduction moves samples by about 1e-2); on RGBA8 every sample within
+/// 3 codes and at most 0.1 % more than 1 code off (measured: none).
+#[test]
+fn gpu_noise_reduction_matches_cpu() {
+    let _serial = serial();
+    let Some(ctx) = gpu() else { return };
+    let (w, h) = (347u32, 229u32);
+    let (dev, lin, _, _) = noisy_develop(&ctx, w, h);
+    let HostPixels::F32(gl) = lin.image.download().unwrap().0 else { panic!() };
+    assert!(max_abs_diff(&gl, &dev.rgb) <= 1e-4);
+    for (luma, chroma) in [(0.5f32, 0.0f32), (0.0, 0.5), (0.2, 0.0), (1.0, 1.0), (0.5, 0.3)] {
+        let mut want = process::Developed { width: dev.width, height: dev.height, rgb: dev.rgb.clone() };
+        flashraw::denoise::apply(&mut want, luma, chroma, false).unwrap();
+        let s = flashraw::denoise::gpu_spec(w, h, luma, chroma, DevelopOutput::LinearRgbF32);
+        let run = ctx.denoise_blocking(&lin.image, &s).unwrap();
+        let HostPixels::F32(got) = run.image.download().unwrap().0 else { panic!() };
+        let (mean, p999, max) = diff_stats(&got, &want.rgb);
+        let (change, _, _) = diff_stats(&want.rgb, &dev.rgb);
+        eprintln!(
+            "luma {luma} chroma {chroma}: mean |Δ| {mean:.2e}, 99.9 % {p999:.2e}, max {max:.2e} \
+             (the noise reduction moves samples by {change:.2e})"
+        );
+        assert!(mean <= 2e-6 && p999 <= 1e-4, "luma {luma} chroma {chroma}: mean {mean}, 99.9 % {p999}");
+    }
+    // A display output: the standard tone, rotated.
+    let (luma, chroma) = (0.5, 0.5);
+    let mut want = process::Developed { width: dev.width, height: dev.height, rgb: dev.rgb.clone() };
+    flashraw::denoise::apply(&mut want, luma, chroma, false).unwrap();
+    let tone = process::ToneMap::new(0.0, &[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    tone.apply_image(&mut want, false);
+    let (ow, oh, want8) = process::to_rgba8(&want, Orientation::Rotate90, false);
+    let s = flashraw_gpu::DenoiseSpec {
+        orientation: Orientation::Rotate90,
+        tone: Some(tone.gpu()),
+        ..flashraw::denoise::gpu_spec(w, h, luma, chroma, DevelopOutput::Rgba8)
+    };
+    let run = ctx.denoise_blocking(&lin.image, &s).unwrap();
+    assert_eq!((run.image.width(), run.image.height()), (ow, oh));
+    let HostPixels::U8(got) = run.image.download().unwrap().0 else { panic!() };
+    let over = got.iter().zip(&want8).filter(|(a, b)| a.abs_diff(**b) > 1).count();
+    let worst = got.iter().zip(&want8).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+    eprintln!("rgba8: {over} of {} samples more than 1 code off, at most {worst}", got.len());
+    assert!(worst <= 3 && over * 1000 <= got.len(), "rgba8: {over} samples off by more than 1, at most {worst}");
+}
+
+/// Frames beyond one storage binding: the planes in row chunks with halos, the DCT passes in
+/// bands of block rows, tiled input and output. The result is the same bit for bit as in one
+/// chunk (the same operations in the same order).
+#[test]
+fn gpu_noise_reduction_in_chunks_matches_one_chunk() {
+    let _serial = serial();
+    let Some(ctx) = gpu() else { return };
+    let Some(tiny) = tiny_context() else { return };
+    let (w, h) = (203u32, 700u32);
+    let (_, lin, _, _) = noisy_develop(&ctx, w, h);
+    let outputs = [(DevelopOutput::LinearRgbF32, Orientation::Normal), (DevelopOutput::Rgba8, Orientation::Rotate270)];
+    let mut whole = Vec::new();
+    for &(output, orientation) in &outputs {
+        let s = flashraw_gpu::DenoiseSpec { orientation, ..flashraw::denoise::gpu_spec(w, h, 0.6, 0.7, output) };
+        whole.push(ctx.denoise_blocking(&lin.image, &s).unwrap().image.download().unwrap().0);
+    }
+    // 400 KB: two chunks of the planes; 150 KB: six chunks, halos spanning several chunks on
+    // the coarse levels, and bands of a few block rows.
+    for binding in [400u64 << 10, 150 << 10] {
+        tiny.override_limits(Some(binding), None);
+        let (_, lin_t, _, _) = noisy_develop(&tiny, w, h);
+        assert!(lin_t.image.byte_len() as u64 > binding);
+        for (&(output, orientation), want) in outputs.iter().zip(&whole) {
+            let s = flashraw_gpu::DenoiseSpec { orientation, ..flashraw::denoise::gpu_spec(w, h, 0.6, 0.7, output) };
+            let run = tiny.denoise_blocking(&lin_t.image, &s).unwrap();
+            assert!(run.timings.bands > 1, "{binding}: one chunk");
+            assert_eq!(&run.image.download().unwrap().0, want, "{binding} {output:?}");
+        }
+    }
+    tiny.override_limits(None, None);
+}

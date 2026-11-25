@@ -71,8 +71,9 @@ const CHROMA_RADIUS: f32 = 6.0;
 /// A coarse level's noise deviations may exceed the prediction from the finer level by this factor.
 const LEVEL_CAP: f32 = 1.5;
 
-/// Denoise `d` in place. Strengths are clamped to `[0, 1]`; 0 skips that part.
-pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -> Result<()> {
+/// Denoise `d` (linear RGB after the colour conversion) in place. Strengths are clamped to
+/// `[0, 1]`; 0 skips that part.
+pub fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -> Result<()> {
     let (luma, chroma) = (luma.clamp(0.0, 1.0), chroma.clamp(0.0, 1.0));
     if luma <= 0.0 && chroma <= 0.0 {
         return Ok(());
@@ -96,15 +97,13 @@ pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -
         let n = level_count(w, h, 4);
         let plan = Plan { gain: 1.0, steps: &[], hard_only0: luma <= LUMA_LIGHT };
         let full = denoise_plane(&guides[..n], &guides[..n], y_model.clone(), &plan, &c, parallel)?;
-        // Strength below 1 keeps part of the original grain.
-        let keep = (1.0 - luma).powf(LUMA_KEEP_EXP);
-        Some(blend(full, &y, keep, parallel))
+        Some(blend(full, &y, luma_keep(luma), parallel))
     } else {
         None
     };
     let y2 = y2.as_ref().unwrap_or(&y);
     let (u2, v2) = if chroma > 0.0 {
-        let gain = 1.0 + 2.0 * (chroma - 0.5).max(0.0);
+        let gain = chroma_gain(chroma);
         let plane = |p: &Plane| -> Result<Plane> {
             let coarse = pyramid(p, levels, parallel);
             let pyr: Vec<&Plane> = std::iter::once(p).chain(&coarse).collect();
@@ -117,12 +116,12 @@ pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -
         // Colour detail finer than the guided filter's window follows the luma plane.
         // The regularisation is the luma noise variance at the window's brightness: windows
         // whose luma varies no more than its noise get the plain mean of the colour.
-        let r = (CHROMA_RADIUS * (0.5 + chroma)).round().max(1.0) as usize;
+        let r = chroma_radius(chroma);
         let noise = y_model.map(|m| m.pixel_variance());
         let gf = Guide::new(y2, r, parallel);
         let eps = |m: f32| noise.as_ref().map_or(1e-6, |n| n.at(m)).max(1e-9);
         let (uq, vq) = gf.filter(&ud, &vd, &eps, parallel);
-        let keep = (1.0 - 2.0 * chroma).max(0.0);
+        let keep = chroma_keep(chroma);
         (blend(uq, &u, keep, parallel), blend(vq, &v, keep, parallel))
     } else {
         (u, v)
@@ -130,6 +129,99 @@ pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -
     d.rgb = vec![0.0; w * h * 3];
     merge(&mut d.rgb, [y2, &u2, &v2], parallel);
     Ok(())
+}
+
+/// Fraction of the original luma noise kept at strength `s`.
+fn luma_keep(s: f32) -> f32 {
+    (1.0 - s).powf(LUMA_KEEP_EXP)
+}
+
+/// Fraction of the original colour noise kept at strength `s`.
+fn chroma_keep(s: f32) -> f32 {
+    (1.0 - 2.0 * s).max(0.0)
+}
+
+/// Multiplier of the colour noise deviations at strength `s`.
+fn chroma_gain(s: f32) -> f32 {
+    1.0 + 2.0 * (s - 0.5).max(0.0)
+}
+
+/// Radius of the guided filter's window at full resolution at strength `s`.
+fn chroma_radius(s: f32) -> usize {
+    (CHROMA_RADIUS * (0.5 + s)).round().max(1.0) as usize
+}
+
+/// The settings of [`apply`] for the GPU noise reduction (`flashraw_gpu::GpuContext::denoise`)
+/// of a `w` x `h` image: the levels, steps, passes and strength factors of each plane; the
+/// output fields are the caller's.
+#[cfg(feature = "gpu")]
+pub fn gpu_spec(
+    w: u32,
+    h: u32,
+    luma: f32,
+    chroma: f32,
+    output: flashraw_gpu::DevelopOutput,
+) -> flashraw_gpu::DenoiseSpec<'static> {
+    let (luma, chroma) = (luma.clamp(0.0, 1.0), chroma.clamp(0.0, 1.0));
+    let (w, h) = (w as usize, h as usize);
+    flashraw_gpu::DenoiseSpec {
+        luma: (luma > 0.0).then(|| flashraw_gpu::PlaneSpec {
+            levels: level_count(w, h, 4) as u32,
+            gain: 1.0,
+            steps: [STEP as u32; 2],
+            hard_only0: luma <= LUMA_LIGHT,
+            keep: luma_keep(luma),
+        }),
+        chroma: (chroma > 0.0).then(|| flashraw_gpu::PlaneSpec {
+            levels: level_count(w, h, 6) as u32,
+            gain: chroma_gain(chroma),
+            steps: CHROMA_STEPS.map(|s| s as u32),
+            hard_only0: true,
+            keep: chroma_keep(chroma),
+        }),
+        // The window radius at half resolution (`Guide::new`).
+        chroma_radius: chroma_radius(chroma).div_ceil(2).max(1) as u32,
+        hard: HARD,
+        max_blocks: MAX_BLOCKS as u32,
+        models: &gpu_models,
+        output,
+        orientation: flashraw_core::Orientation::Normal,
+        tone: None,
+        curve: None,
+    }
+}
+
+/// The noise models of every level of each plane from the blocks the GPU measured (the levels
+/// in parallel), each coarse level capped by the finer one like [`apply`]'s.
+#[cfg(feature = "gpu")]
+pub fn gpu_models(planes: &[Vec<Option<&[[f32; NN]]>>]) -> Vec<Vec<Option<flashraw_gpu::NoiseModel>>> {
+    let jobs: Vec<(usize, usize)> =
+        planes.iter().enumerate().flat_map(|(p, ls)| (0..ls.len()).map(move |l| (p, l))).collect();
+    let mut raw = par::map(jobs, true, |(p, l)| planes[p][l].and_then(Model::from_stats)).into_iter();
+    planes
+        .iter()
+        .map(|ls| {
+            let mut out: Vec<Option<Model>> = Vec::with_capacity(ls.len());
+            for l in 0..ls.len() {
+                let mut m = raw.next().flatten();
+                if l > 0 {
+                    match (&mut m, &out[l - 1]) {
+                        (Some(m), Some(prev)) => m.cap(&prev.next_level(), LEVEL_CAP),
+                        _ => m = None,
+                    }
+                }
+                out.push(m);
+            }
+            out.into_iter()
+                .map(|m| {
+                    m.map(|m| {
+                        let pixel_var = m.pixel_variance().v;
+                        flashraw_gpu::NoiseModel { means: m.m, sigmas: m.s, pixel_var }
+                    })
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// `d + keep * (orig - d)`.

@@ -219,3 +219,39 @@ fn gpu_color_spaces_and_profile_fallback() {
     let res = DecodeOptions { output: OutputFormat::GpuRgba8, ..o };
     assert!(matches!(raw.decode(res), Err(flashraw::Error::InvalidArgument(_))));
 }
+
+/// Noise reduction end to end on the bundled fixture: the GPU backend runs it (no CPU fallback)
+/// and matches the CPU on the display outputs (thresholds of `tests/equivalence.rs`); GPU-resident
+/// outputs take it too.
+#[test]
+fn gpu_noise_reduction_end_to_end() {
+    if !flashraw::gpu_available() {
+        eprintln!("skipped: no GPU adapter");
+        return;
+    }
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../npm/tests/fixtures/canon-5d3-mlv.dng");
+    let raw = FlashRaw::open_path(path).unwrap();
+    let nr = |backend, output| DecodeOptions {
+        luma_noise_reduction: 0.5,
+        chroma_noise_reduction: 0.5,
+        ..opts(backend, output)
+    };
+    let cpu = raw.decode(nr(Backend::Cpu, OutputFormat::Rgba8)).unwrap();
+    let gpu = raw.decode(nr(Backend::Gpu, OutputFormat::Rgba8)).unwrap();
+    let post = gpu.stats.backend.postprocess.clone().unwrap_or_default();
+    assert!(post.starts_with("GPU"), "{post}");
+    let (a, b) = (cpu.as_u8().unwrap(), gpu.as_u8().unwrap());
+    let over = a.iter().zip(b).filter(|(x, y)| x.abs_diff(**y) > 1).count();
+    let worst = a.iter().zip(b).map(|(x, y)| x.abs_diff(*y)).max().unwrap();
+    eprintln!("  rgba8: {over} of {} samples more than 1 code off, at most {worst}", a.len());
+    assert!(worst <= 3 && over * 1000 <= a.len());
+    let cpu = raw.decode(nr(Backend::Cpu, OutputFormat::Rgb16)).unwrap();
+    let gpu = raw.decode(nr(Backend::Gpu, OutputFormat::Rgb16)).unwrap();
+    let (a, b) = (cpu.as_u16().unwrap(), gpu.as_u16().unwrap());
+    let mean = a.iter().zip(b).map(|(x, y)| x.abs_diff(*y) as f64).sum::<f64>() / a.len() as f64;
+    eprintln!("  rgb16: mean |Δ| {mean:.3} codes");
+    assert!(mean <= 1.0, "rgb16: mean {mean}");
+    let resident = raw.decode(nr(Backend::Gpu, OutputFormat::GpuRgba8)).unwrap();
+    let direct = raw.decode(nr(Backend::Gpu, OutputFormat::Rgba8)).unwrap();
+    assert_eq!(resident.download().unwrap().as_u8(), direct.as_u8());
+}

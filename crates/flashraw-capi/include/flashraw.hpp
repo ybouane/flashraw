@@ -358,7 +358,7 @@ struct decode_options {
     std::array<float, 3> white_balance_multipliers = {0.0f, 0.0f, 0.0f};
     /// Smoothing of the edge-aware demosaic (CPU only unless automatic).
     flashraw::noise_reduction noise_reduction = flashraw::noise_reduction::automatic;
-    /// Brightness and colour noise reduction of the RGB outputs, 0 (none) to 1 (CPU only).
+    /// Brightness and colour noise reduction of the RGB outputs, 0 (none) to 1 (CPU and GPU).
     float luma_noise_reduction = 0.0f;
     float chroma_noise_reduction = 0.0f;
     /// Tone of the display outputs (rgba8, rgb16): standard (the default: the camera's

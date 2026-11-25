@@ -105,7 +105,10 @@ mod bayer_alt;
 mod ca;
 mod camera_profile;
 mod color;
-mod denoise;
+// Noise reduction (`DecodeOptions::luma_noise_reduction`, `chroma_noise_reduction`); public for
+// the GPU crate's equivalence tests, not part of the stable API.
+#[doc(hidden)]
+pub mod denoise;
 mod edgeaware;
 mod frame;
 mod icc;

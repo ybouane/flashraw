@@ -1124,12 +1124,13 @@ typedef struct flashraw_decode_options {
      * Brightness noise reduction of the RGB outputs, 0 (the default, none) to 1. The noise is
      * measured on the image itself; 0.5 is a moderate setting that keeps the finest grain, 1
      * removes all the noise it measures. Values outside [0, 1] are clamped; NaN fails with
-     * `FLASHRAW_ERROR_INVALID_ARGUMENT`. CPU only.
+     * `FLASHRAW_ERROR_INVALID_ARGUMENT`. Runs on the CPU and on the GPU backend.
      */
     float luma_noise_reduction;
     /**
      * Colour noise reduction of the RGB outputs, 0 (the default, none) to 1; 0.5 matches the
-     * colour noise reduction raw developers apply by default. CPU only.
+     * colour noise reduction raw developers apply by default. Runs on the CPU and on the GPU
+     * backend.
      */
     float chroma_noise_reduction;
     /**

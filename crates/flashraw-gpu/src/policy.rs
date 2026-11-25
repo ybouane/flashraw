@@ -103,6 +103,8 @@ pub struct Workload {
     pub edge_aware: bool,
     /// The AHD demosaic instead of the bilinear one (RGB outputs).
     pub ahd: bool,
+    /// Luma or chroma noise reduction (RGB outputs).
+    pub denoise: bool,
 }
 
 impl Workload {
@@ -364,6 +366,7 @@ mod tests {
             bands: 1,
             edge_aware: false,
             ahd: false,
+            denoise: false,
         }
     }
 

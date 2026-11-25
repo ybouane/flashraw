@@ -431,9 +431,9 @@ pub struct DecodeOptions {
     /// The filter measures the noise of the image itself (per brightness and frequency, at
     /// several scales, [design note](https://github.com/ybouane/flashraw/blob/main/docs/design/noise-reduction.md)):
     /// 1 removes all the noise it measures, lower values keep part of the original grain (0.5 is
-    /// a moderate setting). Runs after demosaicing on every sensor layout; CPU only (the GPU
-    /// backend decodes on the CPU for it); raw outputs are never denoised. Values outside
-    /// `[0, 1]` are clamped; NaN fails with `Error::InvalidArgument`. Default: 0.
+    /// a moderate setting). Runs after demosaicing on every sensor layout, on the CPU and on the
+    /// GPU backend; raw outputs are never denoised. Values outside `[0, 1]` are clamped; NaN
+    /// fails with `Error::InvalidArgument`. Default: 0.
     pub luma_noise_reduction: f32,
     /// Strength of the chroma (colour) noise reduction of RGB outputs, from 0 (none) to 1: the
     /// same filter on two colour-difference planes, at more scales, followed by a guided filter

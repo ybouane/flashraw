@@ -101,6 +101,15 @@ fn finish_balanced(rgb_bal: vec3<f32>, dx: u32, dy: u32) {
         g = g * P.levels.x - P.levels.y;
         b = b * P.levels.x - P.levels.y;
     }
+    store_rgb(r, g, b, dx, dy);
+}
+
+// Store linear output RGB of developed pixel (dx, dy): the standard tone (display outputs), the
+// output encoding and the EXIF orientation (the noise reduction's output kernel uses it too).
+fn store_rgb(r_in: f32, g_in: f32, b_in: f32, dx: u32, dy: u32) {
+    var r = r_in;
+    var g = g_in;
+    var b = b_in;
     if (P.tone != 0u && (OUT_MODE == 0u || OUT_MODE == 2u)) {
         let t = tone_px(vec3<f32>(r, g, b));
         r = t.x;

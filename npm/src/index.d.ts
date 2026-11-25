@@ -564,12 +564,12 @@ export interface DecodeOptions {
   /**
    * Brightness noise reduction of RGB outputs, `0` (default, none) to `1`. The noise is measured on
    * the image itself; `0.5` is a moderate setting that keeps the finest grain, `1` removes all the
-   * noise it measures. CPU only (the WebGPU build falls back to the CPU for it).
+   * noise it measures. Runs on the CPU and in the WebGPU build.
    */
   lumaNoiseReduction?: number;
   /**
    * Colour noise reduction of RGB outputs, `0` (default, none) to `1`; `0.5` matches the colour
-   * noise reduction raw developers apply by default. CPU only.
+   * noise reduction raw developers apply by default. Runs on the CPU and in the WebGPU build.
    */
   chromaNoiseReduction?: number;
   /**

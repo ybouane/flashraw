@@ -277,8 +277,8 @@ const f = await raw.decode({
   demosaic: 'auto',         // RGB outputs: 'auto' (best validated for the sensor: AHD on Bayer, edge-aware on X-Trans) | 'bilinear' (fastest) | 'half-size' | 'edge-aware' | 'ahd' (Bayer) | 'ppg' | 'rcd' (Bayer, CPU only)
   whiteBalanceMultipliers: [2.1, 1, 1.6], // replaces whiteBalance (CPU only); whiteBalance also takes 'daylight'
   noiseReduction: 'auto',   // edge-aware smoothing: 'off' | 'low' | 'medium' | 'high' (not auto: CPU only)
-  lumaNoiseReduction: 0,    // RGB outputs: brightness noise reduction, 0 (none) to 1 (CPU only)
-  chromaNoiseReduction: 0,  // RGB outputs: colour noise reduction, 0 (none) to 1; 0.5 = raw developers' default (CPU only)
+  lumaNoiseReduction: 0,    // RGB outputs: brightness noise reduction, 0 (none) to 1
+  chromaNoiseReduction: 0,  // RGB outputs: colour noise reduction, 0 (none) to 1; 0.5 = raw developers' default
   tone: 'standard',         // rgba8/rgb16: camera brightness offset and an S-curve, a natural photographic look; 'linear' = no curve
   chromaticAberration: false, // RGB outputs: correct lateral chromatic aberration of Bayer frames (CPU only)
   whiteBalance: 'as-shot',  // RGB outputs: 'as-shot' | 'auto' (refine the camera's over the near-neutral areas; CPU only)

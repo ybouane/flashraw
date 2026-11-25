@@ -152,8 +152,8 @@ frame = raw.decode(
     demosaic="auto",             # best validated for the sensor (AHD on Bayer, edge-aware on X-Trans), or "bilinear" (fastest), "half-size" (2x2 binning), "edge-aware", "ahd" (Bayer, homogeneity-directed), "ppg" / "rcd" (Bayer, CPU only)
     white_balance_multipliers=None,  # (r, g, b): replaces white_balance (RGB outputs, CPU only)
     noise_reduction="auto",      # edge-aware smoothing: "off", "low", "medium", "high" (not auto: CPU only)
-    luma_noise_reduction=0.0,    # RGB outputs: brightness noise reduction, 0 (none) to 1; 0.5 moderate (CPU only)
-    chroma_noise_reduction=0.0,  # RGB outputs: colour noise reduction, 0 (none) to 1; 0.5 = raw developers' default (CPU only)
+    luma_noise_reduction=0.0,    # RGB outputs: brightness noise reduction, 0 (none) to 1; 0.5 moderate
+    chroma_noise_reduction=0.0,  # RGB outputs: colour noise reduction, 0 (none) to 1; 0.5 = raw developers' default
     tone="standard",             # rgba8/rgb16: camera brightness offset and an S-curve, a natural photographic look; "linear" = no curve
     chromatic_aberration=False,  # True: correct the lateral chromatic aberration of Bayer frames (RGB outputs, CPU only)
     white_balance="as-shot",     # or "daylight" (D65 from the colour matrix), or "auto": refine the camera's balance over the near-neutral areas (RGB outputs, CPU only)

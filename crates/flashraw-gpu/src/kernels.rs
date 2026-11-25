@@ -24,16 +24,29 @@ pub(crate) const EDGE_WGSL: &str = concat!(
     include_str!("../shaders/edge.wgsl")
 );
 pub(crate) const TO_TEXTURE_WGSL: &str = include_str!("../shaders/to_texture.wgsl");
+/// The noise reduction's plane kernels (standalone, bind group 0 of [`DnParams`]).
+pub(crate) const DENOISE_WGSL: &str = include_str!("../shaders/denoise.wgsl");
+/// The noise reduction's output kernel: `common.wgsl` + `develop.wgsl` (the encoders) +
+/// `denoise_encode.wgsl` (bind group 1: the planes).
+pub(crate) const DENOISE_ENCODE_WGSL: &str = concat!(
+    include_str!("../shaders/common.wgsl"),
+    "\n",
+    include_str!("../shaders/develop.wgsl"),
+    "\n",
+    include_str!("../shaders/denoise_encode.wgsl")
+);
 
 /// WGSL sources of every kernel module, for embedding in other runtimes (e.g. a
 /// hand-written WebGPU pipeline in JavaScript). Each entry is `(name, source)`.
-pub fn wgsl_sources() -> [(&'static str, &'static str); 5] {
+pub fn wgsl_sources() -> [(&'static str, &'static str); 7] {
     [
         ("unpack", UNPACK_WGSL),
         ("normalize", NORMALIZE_WGSL),
         ("develop", DEVELOP_WGSL),
         ("edge", EDGE_WGSL),
         ("to_texture", TO_TEXTURE_WGSL),
+        ("denoise", DENOISE_WGSL),
+        ("denoise_encode", DENOISE_ENCODE_WGSL),
     ]
 }
 
@@ -119,6 +132,54 @@ pub(crate) struct EdgeParams {
     pub beta: f32,
     pub pad: [f32; 3],
     pub wb: [f32; 4],
+}
+
+/// Mirrors `struct DnParams` in `shaders/denoise.wgsl` (28 u32, 4 f32: 128 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, Default)]
+pub(crate) struct DnParams {
+    pub w: u32,
+    pub h: u32,
+    pub rows0: u32,
+    pub rows1: u32,
+    pub a_first: u32,
+    pub b_first: u32,
+    pub c_first: u32,
+    pub d_first: u32,
+    pub o_first: u32,
+    pub o2_first: u32,
+    pub cw: u32,
+    pub ch: u32,
+    pub step: u32,
+    pub nbx: u32,
+    pub nreg_x: u32,
+    pub last_x: u32,
+    pub nreg_y: u32,
+    pub last_y: u32,
+    pub i0: u32,
+    pub i1: u32,
+    pub mode: u32,
+    pub r: u32,
+    pub off_model: u32,
+    pub off_var: u32,
+    pub scols: u32,
+    pub sg0: u32,
+    pub a_off: u32,
+    pub sh: u32,
+    pub kf0: f32,
+    pub kf1: f32,
+    pub kf2: f32,
+    pub kf3: f32,
+}
+
+/// Mirrors `struct EncParams` in `shaders/denoise_encode.wgsl`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, Default)]
+pub(crate) struct EncParams {
+    pub y_first: u32,
+    pub u_first: u32,
+    pub v_first: u32,
+    pub w: u32,
 }
 
 pub(crate) fn order_index(o: PackOrder) -> u32 {
@@ -382,6 +443,61 @@ mod tests {
             "tk",
         ];
         assert_eq!(names, expected);
+    }
+
+    /// The field names of `struct name` in `src`, in order.
+    fn wgsl_fields<'a>(src: &'a str, name: &str) -> Vec<&'a str> {
+        let start = src.find(&format!("struct {name} {{")).unwrap();
+        let body = &src[start..start + src[start..].find('}').unwrap()];
+        body.lines()
+            .skip(1)
+            .filter_map(|l| l.trim().split(':').next())
+            .filter(|n| !n.is_empty() && !n.starts_with("//"))
+            .collect()
+    }
+
+    #[test]
+    fn denoise_params_layout_matches_wgsl() {
+        assert_eq!(std::mem::size_of::<DnParams>(), 128);
+        assert_eq!(std::mem::offset_of!(DnParams, kf0), 112);
+        let expected = [
+            "w",
+            "h",
+            "rows0",
+            "rows1",
+            "a_first",
+            "b_first",
+            "c_first",
+            "d_first",
+            "o_first",
+            "o2_first",
+            "cw",
+            "ch",
+            "step",
+            "nbx",
+            "nreg_x",
+            "last_x",
+            "nreg_y",
+            "last_y",
+            "i0",
+            "i1",
+            "mode",
+            "r",
+            "off_model",
+            "off_var",
+            "scols",
+            "sg0",
+            "a_off",
+            "sh",
+            "kf0",
+            "kf1",
+            "kf2",
+            "kf3",
+        ];
+        assert_eq!(wgsl_fields(DENOISE_WGSL, "DnParams"), expected);
+        assert_eq!(std::mem::size_of::<EncParams>(), 16);
+        let src = include_str!("../shaders/denoise_encode.wgsl");
+        assert_eq!(wgsl_fields(src, "EncParams"), ["y_first", "u_first", "v_first", "w"]);
     }
 
     #[test]

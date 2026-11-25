@@ -73,6 +73,8 @@ pub(crate) enum Kernel {
     AhdHom,
     AhdBlend,
     EdgeDevelop,
+    /// The output of the noise reduction (`shaders/denoise_encode.wgsl`, bind group 1 of planes).
+    DenoiseEncode,
 }
 
 impl Kernel {
@@ -125,6 +127,14 @@ pub struct GpuContext {
     edge_tables: Mutex<HashMap<u32, Arc<wgpu::Buffer>>>,
     pub(crate) tex_layout: wgpu::BindGroupLayout,
     tex_pipeline: OnceLock<wgpu::ComputePipeline>,
+    /// The noise reduction's plane kernels (`shaders/denoise.wgsl`): parameters and seven planes.
+    pub(crate) dn_layout: wgpu::BindGroupLayout,
+    dn_pipeline_layout: wgpu::PipelineLayout,
+    dn_module: OnceLock<wgpu::ShaderModule>,
+    dn_pipelines: Mutex<HashMap<&'static str, wgpu::ComputePipeline>>,
+    /// Bind group 1 of the noise reduction's output kernel: parameters and the three planes.
+    pub(crate) enc_layout: wgpu::BindGroupLayout,
+    enc_pipeline_layout: wgpu::PipelineLayout,
     modules: Mutex<HashMap<Kernel, wgpu::ShaderModule>>,
     pipelines: Mutex<HashMap<PipelineKey, wgpu::ComputePipeline>>,
     pub(crate) srgb: Vec<u32>,
@@ -295,6 +305,33 @@ impl GpuContext {
             bind_group_layouts: &[Some(&layout), Some(&edge_layout)],
             immediate_size: 0,
         });
+        let dn_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("flashraw.denoise"),
+            entries: &[
+                uniform_entry(0),
+                storage_entry(1, true),
+                storage_entry(2, true),
+                storage_entry(3, true),
+                storage_entry(4, true),
+                storage_entry(5, true),
+                storage_entry(6, false),
+                storage_entry(7, false),
+            ],
+        });
+        let dn_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("flashraw.denoise"),
+            bind_group_layouts: &[Some(&dn_layout)],
+            immediate_size: 0,
+        });
+        let enc_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("flashraw.denoise_encode"),
+            entries: &[uniform_entry(0), storage_entry(1, true), storage_entry(2, true), storage_entry(3, true)],
+        });
+        let enc_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("flashraw.denoise_encode"),
+            bind_group_layouts: &[Some(&layout), Some(&enc_layout)],
+            immediate_size: 0,
+        });
         let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("flashraw.to_texture"),
             entries: &[
@@ -324,6 +361,12 @@ impl GpuContext {
             edge_tables: Mutex::default(),
             tex_layout,
             tex_pipeline: OnceLock::new(),
+            dn_layout,
+            dn_pipeline_layout,
+            dn_module: OnceLock::new(),
+            dn_pipelines: Mutex::default(),
+            enc_layout,
+            enc_pipeline_layout,
             modules: Mutex::default(),
             pipelines: Mutex::default(),
             srgb: kernels::srgb_table(),
@@ -414,6 +457,7 @@ impl GpuContext {
                     Kernel::Normalize => ("flashraw.normalize", kernels::NORMALIZE_WGSL),
                     Kernel::Develop | Kernel::DevelopHalf => ("flashraw.develop", kernels::DEVELOP_WGSL),
                     k if k.is_edge() => ("flashraw.edge", kernels::EDGE_WGSL),
+                    Kernel::DenoiseEncode => ("flashraw.denoise_encode", kernels::DENOISE_ENCODE_WGSL),
                     _ => unreachable!("every kernel has a module"),
                 };
                 self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -447,19 +491,24 @@ impl GpuContext {
             Kernel::AhdHom => "ahd_hom",
             Kernel::AhdBlend => "ahd_blend",
             Kernel::EdgeDevelop => "develop_edge",
+            Kernel::DenoiseEncode => "denoise_encode",
         };
         let mut constants: Vec<(&str, f64)> = vec![
             ("INPUT_MODE", key.input_mode as f64),
             ("ORDER", key.order as f64),
             ("USE_LUT", if key.use_lut { 1.0 } else { 0.0 }),
         ];
-        if matches!(key.kernel, Kernel::Develop | Kernel::DevelopHalf) || key.kernel.is_edge() {
+        if matches!(key.kernel, Kernel::Develop | Kernel::DevelopHalf | Kernel::DenoiseEncode) || key.kernel.is_edge() {
             constants.push(("LAYOUT", key.layout as f64));
             constants.push(("OUT_MODE", key.out_mode as f64));
         }
         let p = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some(entry),
-            layout: Some(if key.kernel.is_edge() { &self.edge_pipeline_layout } else { &self.pipeline_layout }),
+            layout: Some(match key.kernel {
+                k if k.is_edge() => &self.edge_pipeline_layout,
+                Kernel::DenoiseEncode => &self.enc_pipeline_layout,
+                _ => &self.pipeline_layout,
+            }),
             module: &module,
             entry_point: Some(entry),
             compilation_options: wgpu::PipelineCompilationOptions {
@@ -470,6 +519,33 @@ impl GpuContext {
             cache: None,
         });
         self.pipelines.lock().unwrap_or_else(|e| e.into_inner()).insert(key, p.clone());
+        p
+    }
+
+    /// A kernel of the noise reduction's plane module (`shaders/denoise.wgsl`), compiled once.
+    pub(crate) fn dn_pipeline(&self, entry: &'static str) -> wgpu::ComputePipeline {
+        if let Some(p) = self.dn_pipelines.lock().unwrap_or_else(|e| e.into_inner()).get(entry) {
+            return p.clone();
+        }
+        let module = self.dn_module.get_or_init(|| {
+            self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("flashraw.denoise"),
+                source: wgpu::ShaderSource::Wgsl(kernels::DENOISE_WGSL.into()),
+            })
+        });
+        let p = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(entry),
+            layout: Some(&self.dn_pipeline_layout),
+            module,
+            entry_point: Some(entry),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                // Every workgroup-memory element is written before it is read.
+                zero_initialize_workgroup_memory: false,
+                ..Default::default()
+            },
+            cache: None,
+        });
+        self.dn_pipelines.lock().unwrap_or_else(|e| e.into_inner()).insert(entry, p.clone());
         p
     }
 

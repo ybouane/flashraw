@@ -97,7 +97,13 @@ fn workload(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Option<Workload> {
         edge_aware: opts.demosaic == crate::Demosaic::EdgeAware
             || (opts.demosaic == crate::Demosaic::Ahd && !info.cfa.is_some_and(|c| c.is_bayer())),
         ahd: opts.demosaic == crate::Demosaic::Ahd && info.cfa.is_some_and(|c| c.is_bayer()),
+        denoise: denoises(opts),
     })
+}
+
+/// Luma or chroma noise reduction is set (it applies to the RGB outputs).
+fn denoises(opts: &DecodeOptions) -> bool {
+    opts.luma_noise_reduction > 0.0 || opts.chroma_noise_reduction > 0.0
 }
 
 /// The edge-aware demosaic of a frame for the GPU kernels: the CPU plan (tables, CFA phase at
@@ -134,15 +140,14 @@ pub fn ahd_spec(info: &FrameInfo, origin: (u32, u32)) -> Option<flashraw_gpu::Ed
 fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuContext>, Option<String>)>> {
     let resident = opts.output.is_gpu_resident();
     let base = opts.output.host_equivalent();
-    // The PPG and RCD demosaics, the highlight modes, the white balance modes, the noise levels, the
-    // chromatic aberration correction and camera profiles run on the CPU only.
+    // The PPG and RCD demosaics, the highlight modes, the white balance modes, the edge-aware
+    // demosaic's smoothing levels, the chromatic aberration correction and camera profiles run on
+    // the CPU only.
     if (opts.highlights != crate::Highlights::Clip
         || matches!(opts.demosaic, crate::Demosaic::Ppg | crate::Demosaic::Rcd)
         || opts.white_balance != crate::WhiteBalanceMode::AsShot
         || opts.white_balance_multipliers.is_some()
         || opts.noise_reduction != crate::NoiseReduction::Auto
-        || opts.luma_noise_reduction > 0.0
-        || opts.chroma_noise_reduction > 0.0
         || opts.chromatic_aberration
         || opts.camera_profile.is_some())
         && !matches!(base, OutputFormat::RawU16 | OutputFormat::NormalizedF32)
@@ -422,6 +427,13 @@ async fn run(
             } else {
                 None
             };
+            let dev_output = match base {
+                OutputFormat::Rgba8 => DevelopOutput::Rgba8,
+                OutputFormat::Rgb16 => DevelopOutput::Rgb16,
+                OutputFormat::LinearRgb16 => DevelopOutput::LinearRgb16,
+                OutputFormat::LinearRgbF16 => DevelopOutput::LinearRgbF16,
+                _ => DevelopOutput::LinearRgbF32,
+            };
             GpuOp::Develop(DevelopSpec {
                 edge,
                 crop,
@@ -429,13 +441,7 @@ async fn run(
                 wb: params.wb,
                 cam_to_rgb: params.cam_to_rgb,
                 orientation: params.orientation,
-                output: match base {
-                    OutputFormat::Rgba8 => DevelopOutput::Rgba8,
-                    OutputFormat::Rgb16 => DevelopOutput::Rgb16,
-                    OutputFormat::LinearRgb16 => DevelopOutput::LinearRgb16,
-                    OutputFormat::LinearRgbF16 => DevelopOutput::LinearRgbF16,
-                    _ => DevelopOutput::LinearRgbF32,
-                },
+                output: dev_output,
                 levels: levels.map(|l| [l.scale, l.offset]),
                 tone: (opts.tone == crate::Tone::Standard && matches!(base, OutputFormat::Rgba8 | OutputFormat::Rgb16))
                     .then(|| {
@@ -453,10 +459,42 @@ async fn run(
     };
     // Frames beyond the adapter's buffer limits are processed in bands (tiled).
     live(opts)?;
-    let r = ctx.run(&frame, &post_info, &op).await?;
+    // With noise reduction the develop pass delivers linear RGB; the noise reduction encodes it.
+    let denoise = match op {
+        GpuOp::Develop(d) if denoises(opts) => Some(d),
+        _ => None,
+    };
+    let op = match op {
+        GpuOp::Develop(d) if denoise.is_some() => {
+            GpuOp::Develop(DevelopSpec { output: DevelopOutput::LinearRgbF32, tone: None, ..d })
+        }
+        op => op,
+    };
+    let mut r = ctx.run(&frame, &post_info, &op).await?;
     live(opts)?;
     profiler.record(Stage::GpuUpload, r.timings.upload_ms);
     profiler.record(Stage::GpuCompute, r.timings.compute_ms);
+    if let Some(d) = denoise {
+        let spec = flashraw_gpu::DenoiseSpec {
+            orientation: d.orientation,
+            tone: d.tone,
+            curve: d.curve,
+            ..crate::denoise::gpu_spec(
+                r.image.width(),
+                r.image.height(),
+                opts.luma_noise_reduction,
+                opts.chroma_noise_reduction,
+                d.output,
+            )
+        };
+        let n = ctx.denoise(&r.image, &spec).await?;
+        live(opts)?;
+        profiler.record(Stage::Postprocess, n.timings.compute_ms);
+        r = flashraw_gpu::GpuRun {
+            image: n.image,
+            timings: flashraw_gpu::GpuTimings { compute_ms: r.timings.compute_ms + n.timings.compute_ms, ..r.timings },
+        };
+    }
     let (width, height) = (r.image.width(), r.image.height());
     // 16-bit RGB outputs are computed as 4-sample pixels and downloaded as 3.
     let rgb16 = matches!(base, OutputFormat::Rgb16 | OutputFormat::LinearRgb16 | OutputFormat::LinearRgbF16);
