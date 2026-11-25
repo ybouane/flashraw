@@ -31,11 +31,11 @@ from the tag, then publishes to crates.io (in dependency order: `flashraw-camera
 stored: each registry has a trusted publisher for the repository `ybouane/flashraw`, the workflow `release.yml`
 and the environment `release`. Versions already on a registry are skipped, so a run can be repeated.
 
-1. **Tag**: `git tag -a v0.4.0 -m "FlashRaw 0.4.0" && git push origin main v0.4.0`.
+1. **Tag**: `git tag -a v0.5.0 -m "FlashRaw 0.5.0" && git push origin main v0.5.0`.
 2. **GitHub release**: create it from the tag with the CHANGELOG entry as notes
-   (`gh release create v0.4.0 --title "FlashRaw 0.4.0" --notes-file notes.md --verify-tag`) and attach the C library
+   (`gh release create v0.5.0 --title "FlashRaw 0.5.0" --notes-file notes.md --verify-tag`) and attach the C library
    archives if built. Publishing the release starts `release.yml`; follow it with `gh run watch`.
-3. **Repeat or one registry only**: `gh workflow run release.yml -f tag=v0.4.0 -f crates=false -f pypi=false`
+3. **Repeat or one registry only**: `gh workflow run release.yml -f tag=v0.5.0 -f crates=false -f pypi=false`
    (here npm only). A published version cannot be replaced, only yanked (crates.io), deleted (PyPI) or deprecated (npm).
 4. **C library**: for each platform `cargo build --release -p flashraw-capi --features gpu,jpegxl` (or the CMake
    install); archive the shared and static library, `flashraw.h`, `flashraw.hpp`, `LICENSE-MIT`, `LICENSE-APACHE`.

@@ -71,7 +71,7 @@ checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "flashraw"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "flashraw-camera-db",
  "flashraw-codecs",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-camera-db"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-codecs"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "flashraw-core",
  "rayon",
@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "libc",
  "rayon",
@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "flashraw-formats"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "flashraw-camera-db",
  "flashraw-codecs",
