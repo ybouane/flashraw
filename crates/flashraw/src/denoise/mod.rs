@@ -58,9 +58,14 @@ const MAX_BLOCKS: usize = 50_000;
 
 /// Luma strength below 1 keeps `(1 - s)^LUMA_KEEP_EXP` of the original noise.
 const LUMA_KEEP_EXP: f32 = 1.2;
-/// Block step of the colour planes at full resolution (2 elsewhere): the guided filter decides
-/// the colour detail there, and a sparser grid halves the cost of chroma.
-const CHROMA_STEP0: usize = 4;
+/// Block step of the colour planes on the two finest levels (2 elsewhere), and whether the
+/// full-resolution colour planes get the Wiener pass: the guided filter decides the colour
+/// detail at full resolution, so the sparser grid and the single pass there change the colour
+/// noise by under 0.005 in the measures of the design document.
+const CHROMA_STEPS: [usize; 2] = [4, 4];
+/// Luma strengths up to this skip the Wiener pass on the full-resolution level: most of the
+/// original noise is put back, and the result moves by under 0.01 in the noise measures.
+const LUMA_LIGHT: f32 = 0.25;
 /// Guided filter radius at chroma strength 0.5 (it grows with the strength).
 const CHROMA_RADIUS: f32 = 6.0;
 /// A coarse level's noise deviations may exceed the prediction from the finer level by this factor.
@@ -89,7 +94,8 @@ pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -
     let y_model = estimate(&y, &y, &c, parallel);
     let y2 = if luma > 0.0 {
         let n = level_count(w, h, 4);
-        let full = denoise_plane(&guides[..n], &guides[..n], y_model.clone(), 1.0, STEP, &c, parallel)?;
+        let plan = Plan { gain: 1.0, steps: &[], hard_only0: luma <= LUMA_LIGHT };
+        let full = denoise_plane(&guides[..n], &guides[..n], y_model.clone(), &plan, &c, parallel)?;
         // Strength below 1 keeps part of the original grain.
         let keep = (1.0 - luma).powf(LUMA_KEEP_EXP);
         Some(blend(full, &y, keep, parallel))
@@ -102,7 +108,8 @@ pub(crate) fn apply(d: &mut Developed, luma: f32, chroma: f32, parallel: bool) -
         let plane = |p: &Plane| -> Result<Plane> {
             let coarse = pyramid(p, levels, parallel);
             let pyr: Vec<&Plane> = std::iter::once(p).chain(&coarse).collect();
-            denoise_plane(&pyr, &guides, None, gain, CHROMA_STEP0, &c, parallel)
+            let plan = Plan { gain, steps: &CHROMA_STEPS, hard_only0: true };
+            denoise_plane(&pyr, &guides, None, &plan, &c, parallel)
         };
         let ud = plane(&u)?;
         let vd = plane(&v)?;
@@ -193,57 +200,56 @@ impl Variance {
 }
 
 /// Mean over a `(2r + 1)^2` window (edges repeated), of `f(k)` for sample `k` (row-major) of a
-/// `w` x `h` plane.
+/// `w` x `h` plane: vertical sums kept per column and slid down the rows, then a horizontal
+/// running sum per row.
 fn box_mean(w: usize, h: usize, r: usize, parallel: bool, f: impl Fn(usize) -> f32 + Sync) -> Plane {
-    let n = (2 * r + 1) as f32;
-    // Horizontal sums, four rows at a time (independent running sums).
-    let mut tmp = Plane::new(w, h);
-    par::for_each_row_chunk(&mut tmp.v, w, 32, parallel, |first, rows| {
-        let mut src = vec![0f32; 4 * w];
-        let mut dst = vec![0f32; 4 * w];
-        for (q, quad) in rows.chunks_mut(4 * w).enumerate() {
-            let nr = quad.len() / w;
-            for i in 0..nr {
-                let k0 = (first + 4 * q + i) * w;
-                for (x, s) in src[i * w..(i + 1) * w].iter_mut().enumerate() {
-                    *s = f(k0 + x);
-                }
-            }
-            let at = |i: usize, x: isize| src[i * w + x.clamp(0, w as isize - 1) as usize];
-            let mut s = [0f32; 4];
-            for (i, s) in s.iter_mut().enumerate() {
-                *s = (-(r as isize)..=r as isize).map(|x| at(i, x)).sum();
-            }
-            for x in 0..w {
-                for i in 0..4 {
-                    dst[i * w + x] = s[i] / n;
-                    s[i] += at(i, x as isize + r as isize + 1) - at(i, x as isize - r as isize);
-                }
-            }
-            quad.copy_from_slice(&dst[..nr * w]);
-        }
-    });
+    let n = ((2 * r + 1) * (2 * r + 1)) as f32;
     let mut out = Plane::new(w, h);
     par::for_each_row_chunk(&mut out.v, w, 32, parallel, |first, rows| {
-        let row_at = |y: isize| &tmp.v[y.clamp(0, h as isize - 1) as usize * w..][..w];
-        let mut acc = vec![0f32; w];
+        let row = |y: isize, o: &mut [f32]| {
+            let k0 = y.clamp(0, h as isize - 1) as usize * w;
+            for (x, o) in o.iter_mut().enumerate() {
+                *o = f(k0 + x);
+            }
+        };
+        let (mut acc, mut add, mut sub) = (vec![0f32; w], vec![0f32; w], vec![0f32; w]);
         for dy in -(r as isize)..=r as isize {
-            for (a, v) in acc.iter_mut().zip(row_at(first as isize + dy)) {
+            row(first as isize + dy, &mut add);
+            for (a, v) in acc.iter_mut().zip(&add) {
                 *a += v;
             }
         }
-        for (i, row) in rows.chunks_exact_mut(w).enumerate() {
+        for (i, o) in rows.chunks_exact_mut(w).enumerate() {
             let y = (first + i) as isize;
-            for (o, a) in row.iter_mut().zip(&acc) {
-                *o = a / n;
-            }
-            let (add, sub) = (row_at(y + r as isize + 1), row_at(y - r as isize));
-            for ((a, p), m) in acc.iter_mut().zip(add).zip(sub) {
+            box_row(&acc, r, n, o);
+            row(y + r as isize + 1, &mut add);
+            row(y - r as isize, &mut sub);
+            for ((a, p), m) in acc.iter_mut().zip(&add).zip(&sub) {
                 *a += p - m;
             }
         }
     });
     out
+}
+
+/// `out[x]` = the sum of `a` over `x - r ..= x + r` (edges repeated), divided by `n`. The row is
+/// cut in four parts with their own running sums, which run interleaved.
+fn box_row(a: &[f32], r: usize, n: f32, out: &mut [f32]) {
+    let w = a.len();
+    let at = |x: isize| a[x.clamp(0, w as isize - 1) as usize];
+    let seg = w.div_ceil(4);
+    let start = [0, seg, 2 * seg, 3 * seg].map(|s| s.min(w));
+    let end = [start[1], start[2], start[3], w];
+    let mut s = start.map(|x0| (-(r as isize)..=r as isize).map(|d| at(x0 as isize + d)).sum::<f32>());
+    for i in 0..seg {
+        for j in 0..4 {
+            let x = start[j] + i;
+            if x < end[j] {
+                out[x] = s[j] / n;
+                s[j] += at(x as isize + r as isize + 1) - at(x as isize - r as isize);
+            }
+        }
+    }
 }
 
 /// A guided filter (He, Sun and Tang) with the luma plane as the guide: within each window the
@@ -443,20 +449,28 @@ fn up_affine(a: &Plane, b: &Plane, g: &Plane, parallel: bool) -> Plane {
     o
 }
 
+/// How one plane is denoised.
+struct Plan<'a> {
+    /// Multiplier of the noise deviations (thresholds and Wiener noise).
+    gain: f32,
+    /// Block step per level from the finest ([`STEP`] beyond).
+    steps: &'a [usize],
+    /// The full-resolution level gets the hard-threshold pass only.
+    hard_only0: bool,
+}
+
 /// Denoise one opponent plane over its pyramid `levels` (`levels[0]` the plane), the noise of
 /// every level binned by the brightness of the same level of `guides` (the luma pyramid).
-/// `first` is the noise model of the full-resolution level when the caller already measured it;
-/// `step0` is the distance between blocks on that level (2 on the others).
-#[allow(clippy::too_many_arguments)]
+/// `first` is the noise model of the full-resolution level when the caller already measured it.
 fn denoise_plane(
     levels: &[&Plane],
     guides: &[&Plane],
     first: Option<Model>,
-    gain: f32,
-    step0: usize,
+    plan: &Plan,
     c: &Dct,
     parallel: bool,
 ) -> Result<Plane> {
+    let gain = plan.gain;
     // Noise models, finest first. A coarse level has few flat blocks, so texture can pass for
     // noise there: its estimate is capped by what the finer level's noise predicts for it.
     let mut models: Vec<Option<Model>> = Vec::with_capacity(levels.len());
@@ -478,10 +492,14 @@ fn denoise_plane(
         let (src, guide) = (levels[l], guides[l]);
         let d = match models[l].take() {
             Some(model) => {
-                let step = if l == 0 { step0 } else { STEP };
+                let step = plan.steps.get(l).copied().unwrap_or(STEP);
                 let pilot = dct_pass(src, guide, None, &model, gain, step, c, parallel);
-                cancel::check()?;
-                dct_pass(src, guide, Some(&pilot), &model, gain, step, c, parallel)
+                if l == 0 && plan.hard_only0 {
+                    pilot
+                } else {
+                    cancel::check()?;
+                    dct_pass(src, guide, Some(&pilot), &model, gain, step, c, parallel)
+                }
             }
             None => src.clone(),
         };
