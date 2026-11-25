@@ -16,8 +16,21 @@
   ([design note](docs/design/noise-reduction.md)). Without it, FlashRaw renderings keep all the colour noise of the
   file, which is why they looked noisier than the default exports of raw developers, which reduce colour noise by
   default.
-- `DecodeOptions` has two new public fields: code that builds it with a struct literal without
-  `..Default::default()` must add them.
+- **The display outputs (`rgba8`, `rgb16`) now have a standard tone by default**, so they look like the default
+  renderings of raw developers instead of darker and flatter: `DecodeOptions::tone`, `Tone::Standard` by default
+  (CLI `--tone`; Python `tone=`; JavaScript `tone`; C `flashraw_decode_options.tone`, appended to the size-versioned
+  struct, `FLASHRAW_TONE_STANDARD` from `flashraw_decode_options_init` and for callers built against an older header;
+  C++ `decode_options::tone`). It applies the DNG `BaselineExposure` of the file (DNG only), then one S-curve shared
+  by every camera that lifts mid grey by about 1.1 stops, deepens the darkest shadows and rolls the highlights off to
+  white, without shifting hues (the largest and smallest channel go through the curve in linear ProPhoto, the middle
+  one keeps its place between them). The curve was measured on the default renderings of a widely used raw
+  developer: over 26 files from 12 makers, the brightness of FlashRaw's rendering is within a median 0.9 L* of them,
+  against 10.6 L* without the tone. `Tone::Linear` (`--tone linear`, `tone="linear"`, `tone: 'linear'`,
+  `FLASHRAW_TONE_LINEAR`) gives the output of earlier versions. The linear and raw outputs are unchanged. CPU and GPU
+  (the develop kernel applies the same table); about 6 ms more on a 24 MP decode on 16 threads
+  ([design note](docs/design/tone.md)).
+- `DecodeOptions` has three new public fields (`luma_noise_reduction`, `chroma_noise_reduction`, `tone`): code that
+  builds it with a struct literal without `..Default::default()` must add them.
 
 ## 0.4.0 (2026-11-20)
 

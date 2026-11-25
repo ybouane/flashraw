@@ -264,7 +264,7 @@ is built for that.
 | **Formats** | DNG (uncompressed, lossless JPEG, deflate int/float, lossy JPEG, **JPEG XL**, GoPro VC-5, Blackmagic), CR2 (incl. sRAW/mRAW), **CR3** (CRX and C-RAW), CRW, NEF/NRW, ARW/SR2/SRF/ARQ, RAF (incl. compressed X-Trans), RW2/RWL (Panasonic v4–v8), ORF/ORI, PEF, SRW, MRW, IIQ, MOS, 3FR/FFF, KDC/DCR/DCS, ERF, MEF, X3F, ARI, headerless and CHDK raws |
 | **Cameras** | 2,008 of the 2,016 raw.pixls.us corpus files decode (99.6%; 1,993 with pinned hashes), 1,600+ entries in the built-in camera database, and DNG from cameras, phones and drones |
 | **Not supported yet** | 8 corpus files are valid files in formats that are not implemented: Light L16, Casio CAM, JPEG-in-DNG and a few rare variants (see [formats](docs/formats.md)). Their metadata and embedded previews still work |
-| **Outputs** | raw `u16` / `f32`, normalised `f32`, linear RGB `f32`, display RGBA8 (bilinear, edge-aware, homogeneity-directed, PPG or RCD (Bayer) or half-size demosaic, as-shot white balance, colour matrix, sRGB, orientation), GPU-resident textures |
+| **Outputs** | raw `u16` / `f32`, normalised `f32`, linear RGB `f32`, display RGBA8 (bilinear, edge-aware, homogeneity-directed, PPG or RCD (Bayer) or half-size demosaic, as-shot white balance, colour matrix, standard tone, sRGB, orientation), GPU-resident textures |
 | **GPU** | wgpu: Metal, Vulkan and DX12 natively, WebGPU in browsers; `Backend::Auto` uses the GPU only where it measures a win ([GPU](docs/gpu.md)) |
 | **Languages** | Rust, C, C++, Python, JavaScript/TypeScript, plus a LibRaw-compatible C API |
 | **Platforms** | tested on Linux x86-64 and macOS arm64; WebAssembly in browsers (Chromium, Firefox and WebKit are in the browser test suite), Web Workers and Node.js, multithreaded where the page is cross-origin isolated. Windows and Linux ARM64 are [not regularly tested](#platforms) |
@@ -340,8 +340,8 @@ Other entry points: `decode_region(rect, opts)`, `decode_tile(index, opts)`,
 Output formats: `RawU16` (default), `RawF32`, `NormalizedF32` (black-subtracted,
 white-scaled), linear sRGB-primaries RGB as `LinearRgbF32`, `LinearRgbF16` (half floats,
 half the memory) or `LinearRgb16`, and display-ready sRGB as `Rgba8` or `Rgb16` (16-bit,
-orientation applied). RGB outputs take `exposure` (EV) and `black_point` / `white_point`
-convenience controls. Statistics (`frame.stats()`) report per-stage timings and the
+orientation applied; with a standard tone by default, `Tone::Linear` for none). RGB outputs take
+`exposure` (EV) and `black_point` / `white_point` convenience controls. Statistics (`frame.stats()`) report per-stage timings and the
 backend that ran.
 
 ### 🐍 Python
@@ -453,7 +453,7 @@ Options of `decode` and `benchmark` (`flashraw decode --help` is authoritative):
 `--format`, `--backend auto|cpu|simd|gpu`,
 `--output raw-u16|raw-f32|normalized|linear-rgb|linear-rgb16|linear-rgb-f16|rgba8|rgb16`,
 `--region x,y,w,h`, `--tile N`, `--threads N`, `--demosaic bilinear|half`, `--no-opcodes`,
-`--exposure EV`, `--black-point V`, `--white-point V`, `--strict`, `--preview-fallback`,
+`--exposure EV`, `--black-point V`, `--white-point V`, `--tone standard|linear`, `--strict`, `--preview-fallback`,
 `--color-space srgb|display-p3|adobe-rgb|prophoto|rec2020`, `--output-profile FILE.icc`,
 `--intent perceptual|relative|saturation|absolute`, `--bpc`, `--profile`, `--json`. Names differ
 slightly between bindings: [docs/api-names.md](docs/api-names.md).

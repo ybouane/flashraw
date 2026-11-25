@@ -279,6 +279,7 @@ const f = await raw.decode({
   noiseReduction: 'auto',   // edge-aware smoothing: 'off' | 'low' | 'medium' | 'high' (not auto: CPU only)
   lumaNoiseReduction: 0,    // RGB outputs: brightness noise reduction, 0 (none) to 1 (CPU only)
   chromaNoiseReduction: 0,  // RGB outputs: colour noise reduction, 0 (none) to 1; 0.5 = raw developers' default (CPU only)
+  tone: 'standard',         // rgba8/rgb16: DNG baseline exposure and an S-curve, the look of a raw developer's default; 'linear' = no curve
   chromaticAberration: false, // RGB outputs: correct lateral chromatic aberration of Bayer frames (CPU only)
   whiteBalance: 'as-shot',  // RGB outputs: 'as-shot' | 'auto' (refine the camera's over the near-neutral areas; CPU only)
   highlights: 'clip',       // RGB outputs: 'clip' | 'neutral' (fade clipped pixels to white) | 'blend' (also keep the colour of pixels above white after white balance) | 'reconstruct' (rebuild clipped channels from the frame's unclipped blocks); CPU only

@@ -80,6 +80,7 @@ no adapter exists.
 | neutral and blend highlight modes (`Highlights::Neutral`, `Highlights::Blend`) | not implemented on the GPU | same: CPU fallback, `NotAvailable` for GPU-resident outputs |
 | edge-aware demosaic, Bayer and X-Trans ([edge-aware-demosaic](design/edge-aware-demosaic.md), [section below](#edge-aware-demosaic)) | `process::develop` with `Demosaic::EdgeAware` | max 1.3e-6, mean 5e-8 (linear f32, synthetic, bound 5e-4 / 1e-6); real files: 1 code of 65535 on < 0.1 % of the samples |
 | DNG camera profiles (`camera_profile`: forward matrices, hue/sat map, look table, tone curve) | not implemented on the GPU (CPU only, see [colour management](color-management.md)) | same: CPU fallback, `NotAvailable` for GPU-resident outputs |
+| standard tone (`tone: Tone::Standard`, the default; [design note](design/tone.md)) | `process::ToneMap` (the same table and arithmetic in the develop kernel) | RGBA8 within 3 codes, more than 1 on at most 0.1 % of samples; 16-bit within 64 codes (the curve is steep in the shadows) |
 
 The GPU path reproduces the CPU semantics exactly:
 * **Bilinear demosaic:** a site's own colour is the centre sample. Each other colour is
