@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.5.0 (2026-11-25)
 
 - Noise reduction for RGB outputs, with separate strengths for brightness and colour noise, each from 0 (off, the
