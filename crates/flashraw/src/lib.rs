@@ -121,6 +121,7 @@ mod fallback;
 pub mod process;
 mod source;
 mod stagger;
+mod tone;
 
 pub use color::ColorSpace;
 #[doc(hidden)]
@@ -137,7 +138,7 @@ pub use frame::{BackendReport, DecodeStatistics, FrameSource, RawFrame, RawPixel
 pub use icc::{OutputProfile, RenderingIntent, icc_supported};
 pub use options::{
     Backend, CorruptionPolicy, DecodeOptions, Demosaic, Highlights, NoiseReduction, OutputFormat, ParseOptionError,
-    WhiteBalanceMode,
+    Tone, WhiteBalanceMode,
 };
 pub use source::Source;
 
@@ -572,6 +573,14 @@ impl<'a> FlashRaw<'a> {
                     }
                     None => None,
                 };
+                // The tone of the display outputs, unless the camera profile brings its own curve.
+                if opts.tone == Tone::Standard
+                    && enc.oriented()
+                    && !profile_render.as_ref().is_some_and(|r| r.has_tone_curve())
+                {
+                    let ev = self.metadata().dng.as_ref().and_then(|d| d.baseline_exposure).unwrap_or(0.0);
+                    params.tone = Some(std::sync::Arc::new(tone::ToneMap::new(ev, &setup.matrix_from_srgb())));
+                }
                 let staged =
                     opts.apply_opcodes && lists.as_ref().is_some_and(|l| l.has_pixel_ops(1) || l.has_pixel_ops(2));
                 // Staggered lattices (SuperCCD) develop to linear RGB in the stored grid, then
@@ -610,12 +619,22 @@ impl<'a> FlashRaw<'a> {
                         #[cfg(feature = "icc")]
                         Some(l) => {
                             let mut d = d;
+                            if let Some(t) = params.tone.as_deref() {
+                                t.apply_image(&mut d, ctx.parallel);
+                            }
                             l.apply(&mut d, ctx.parallel)?;
                             Ok(process::encode_device(d, enc, info.orientation, ctx.parallel))
                         }
                         #[cfg(not(feature = "icc"))]
                         Some(_) => unreachable!("profiles with lookup tables need the `icc` feature"),
-                        None => Ok(process::encode_image(d, enc, &params.curve, info.orientation, ctx.parallel)),
+                        None => Ok(process::encode_image(
+                            d,
+                            enc,
+                            &params.curve,
+                            params.tone.as_deref(),
+                            info.orientation,
+                            ctx.parallel,
+                        )),
                     }
                 };
                 match (stagger, developed) {

@@ -158,6 +158,7 @@ fn compare(
         wb: params.wb,
         cam_to_rgb: params.cam_to_rgb,
         curve: None,
+        tone: None,
         orientation: Orientation::Normal,
         output,
         levels: None,

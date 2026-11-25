@@ -290,6 +290,7 @@ fn gpu_develop_matches_cpu() {
                     wb: params.wb,
                     cam_to_rgb: params.cam_to_rgb,
                     curve: None,
+                    tone: None,
                     orientation,
                     output,
                     levels: None,
@@ -348,6 +349,7 @@ fn gpu_develop_from_packed_and_f32() {
             wb: params.wb,
             cam_to_rgb: params.cam_to_rgb,
             curve: None,
+            tone: None,
             orientation: Orientation::Normal,
             output: DevelopOutput::LinearRgbF32,
             levels: None,
@@ -377,6 +379,7 @@ fn gpu_develop_from_packed_and_f32() {
         wb: params.wb,
         cam_to_rgb: params.cam_to_rgb,
         curve: None,
+        tone: None,
         orientation: Orientation::Normal,
         output: DevelopOutput::LinearRgbF32,
         levels: None,
@@ -403,6 +406,7 @@ fn gpu_image_to_texture() {
         wb: [1.0; 4],
         cam_to_rgb: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         curve: None,
+        tone: None,
         orientation: Orientation::Rotate90,
         output: DevelopOutput::Rgba8,
         levels: None,
@@ -518,6 +522,7 @@ fn gpu_tiled_develop_matches_untiled_and_cpu() {
                         wb: params.wb,
                         cam_to_rgb: params.cam_to_rgb,
                         curve: None,
+                        tone: None,
                         orientation,
                         output,
                         levels: None,
@@ -633,6 +638,7 @@ fn gpu_tiled_packed_develop_and_texture() {
                 wb: [2.0, 1.0, 1.5, 1.0],
                 cam_to_rgb: [[1.6, -0.4, -0.2], [-0.2, 1.4, -0.2], [0.0, -0.5, 1.5]],
                 curve: None,
+                tone: None,
                 orientation,
                 output: DevelopOutput::Rgba8,
                 levels: None,
@@ -761,6 +767,7 @@ fn gpu_develop_16bit_outputs_match_cpu() {
                             wb: params.wb,
                             cam_to_rgb: params.cam_to_rgb,
                             curve: None,
+                            tone: None,
                             orientation,
                             output,
                             levels: lv.map(|l| [l.scale, l.offset]),
@@ -821,6 +828,7 @@ fn gpu_color_spaces_match_cpu() {
             wb: params.wb,
             cam_to_rgb: params.cam_to_rgb,
             curve,
+            tone: None,
             orientation: params.orientation,
             output,
             levels: None,
@@ -841,5 +849,32 @@ fn gpu_color_spaces_match_cpu() {
         let HostPixels::U16(got) = run.image.download_rgb().unwrap().0 else { panic!() };
         let flashraw::RawPixelData::U16(want) = want else { panic!() };
         cmp_u16(&got, &want, false, &format!("{what} rgb16"));
+        // The standard tone (with a DNG baseline exposure): the same table and arithmetic on both
+        // sides. The curve is steep in the shadows, so float rounding there can move a code more.
+        let tone = std::sync::Arc::new(process::ToneMap::new(0.3, &cs.matrix_from_srgb()));
+        let toned = DevelopParams { tone: Some(tone.clone()), ..params.clone() };
+        let spec_t = |output| DevelopSpec { tone: Some(tone.gpu()), ..spec(output) };
+        let (_, _, want) = process::develop_rgba8(&img, &info, origin, &toned, false).unwrap();
+        let (_, _, plain) = process::develop_rgba8(&img, &info, origin, &params, false).unwrap();
+        assert_ne!(want, plain, "{what}: the tone changed nothing");
+        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec_t(DevelopOutput::Rgba8))).unwrap();
+        let HostPixels::U8(got) = run.image.download().unwrap().0 else { panic!() };
+        let off: Vec<u8> = got.iter().zip(&want).map(|(a, b)| a.abs_diff(*b)).collect();
+        let over = off.iter().filter(|&&d| d > 1).count();
+        assert!(
+            off.iter().all(|&d| d <= 3) && over * 1000 <= off.len(),
+            "{what} toned rgba8: {over} samples off by more than 1"
+        );
+        let (_, _, _, want) =
+            process::develop_encoded(&img, &info, origin, &toned, process::RgbEncoding::Srgb16, false).unwrap();
+        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec_t(DevelopOutput::Rgb16))).unwrap();
+        let HostPixels::U16(got) = run.image.download_rgb().unwrap().0 else { panic!() };
+        let flashraw::RawPixelData::U16(want) = want else { panic!() };
+        let worst = got.iter().zip(&want).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+        assert!(worst <= 64, "{what} toned rgb16: {worst} codes");
+        // The linear outputs ignore it.
+        let run = ctx.run_blocking(&frame, &info, &GpuOp::Develop(spec_t(DevelopOutput::LinearRgbF32))).unwrap();
+        let HostPixels::F32(got) = run.image.download().unwrap().0 else { panic!() };
+        assert!(max_abs_diff(&got, &dev.rgb) <= 1e-4, "{what}: toned linear");
     }
 }

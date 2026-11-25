@@ -396,6 +396,7 @@ impl RawFile {
             crop: crop_rgb,
             demosaic: dm,
             highlights: hl,
+            tone: flashraw::Tone::Standard,
             white_balance: wbm,
             white_balance_multipliers: None,
             noise_reduction: flashraw::NoiseReduction::Auto,
@@ -597,7 +598,7 @@ impl RawFile {
         intent="perceptual", black_point_compensation=false, highlights="clip", white_balance="as-shot",
         camera_profile=None, camera_profile_embedded=false, chromatic_aberration=false,
         noise_reduction="auto", white_balance_multipliers=None, luma_noise_reduction=0.0,
-        chroma_noise_reduction=0.0, cancel=None
+        chroma_noise_reduction=0.0, tone="standard", cancel=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn decode<'py>(
@@ -629,6 +630,7 @@ impl RawFile {
         white_balance_multipliers: Option<(f32, f32, f32)>,
         luma_noise_reduction: f32,
         chroma_noise_reduction: f32,
+        tone: &str,
         cancel: Option<PyRef<'py, crate::cancel::PyCancelToken>>,
     ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
         if camera_profile.is_some() && camera_profile_embedded {
@@ -663,6 +665,8 @@ impl RawFile {
         req.opts.white_balance_multipliers = white_balance_multipliers.map(|(r, g, b)| [r, g, b]);
         req.opts.luma_noise_reduction = luma_noise_reduction;
         req.opts.chroma_noise_reduction = chroma_noise_reduction;
+        req.opts.tone = flashraw::Tone::parse(tone)
+            .ok_or_else(|| invalid(py, format!("unknown tone {tone:?} (expected linear or standard)")))?;
         req.embedded_profile = camera_profile_embedded;
         req.opts.cancel = cancel.map(|c| c.token.clone());
         if let Some(bytes) = camera_profile {

@@ -7,7 +7,7 @@ mod probe;
 use clap::{Args, Parser, Subcommand};
 use flashraw::{
     Backend, CameraProfile, ColorSpace, CorruptionPolicy, DecodeOptions, Demosaic, FlashRaw, Highlights,
-    NoiseReduction, OutputFormat, OutputProfile, Rect, RenderingIntent, WhiteBalanceMode,
+    NoiseReduction, OutputFormat, OutputProfile, Rect, RenderingIntent, Tone, WhiteBalanceMode,
 };
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -43,6 +43,10 @@ struct DecodeArgs {
     /// Clipped highlights of RGB outputs: clip, neutral, blend, reconstruct.
     #[arg(long, default_value = "clip")]
     highlights: String,
+    /// Tone of the display outputs (rgba8, rgb16): standard (the default: the DNG baseline exposure
+    /// and an S-curve, the look of a raw developer's default rendering), linear (no tone curve).
+    #[arg(long, default_value = "standard")]
+    tone: String,
     /// White balance of RGB outputs: as-shot, daylight (D65 from the colour matrix), auto (refine the
     /// camera's over near-neutral areas).
     #[arg(long, default_value = "as-shot")]
@@ -266,6 +270,7 @@ fn decode_options(a: &DecodeArgs, raw: Option<&FlashRaw<'_>>) -> Result<DecodeOp
         region: a.region,
         demosaic: Demosaic::parse(&a.demosaic).ok_or_else(|| format!("unknown demosaic {:?}", a.demosaic))?,
         highlights: Highlights::parse(&a.highlights).ok_or_else(|| format!("unknown highlights {:?}", a.highlights))?,
+        tone: Tone::parse(&a.tone).ok_or_else(|| format!("unknown tone {:?}", a.tone))?,
         white_balance: WhiteBalanceMode::parse(&a.white_balance)
             .ok_or_else(|| format!("unknown white balance {:?}", a.white_balance))?,
         white_balance_multipliers: a.wb_multipliers,

@@ -536,6 +536,14 @@ export interface DecodeOptions {
    */
   highlights?: 'clip' | 'neutral' | 'blend' | 'reconstruct';
   /**
+   * Tone of the display outputs (`rgba8`, `rgb16`). `standard` (default) applies the DNG baseline
+   * exposure (DNG only), then an S-curve that lifts the mid-tones and rolls the highlights off to
+   * white, without shifting hues: the look of a raw developer's default rendering (skipped with a
+   * camera profile that has its own tone curve). `linear` applies no tone curve (the output before
+   * 0.5.0).
+   */
+  tone?: 'linear' | 'standard';
+  /**
    * White balance of RGB outputs. `as-shot` (default) uses the camera's balance; `daylight` is D65
    * from the file's colour matrix; `auto` refines
    * the camera's balance over the near-neutral areas of the frame (CPU only: the WebGPU build falls back to

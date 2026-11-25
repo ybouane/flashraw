@@ -284,6 +284,27 @@ pub enum Highlights {
     Reconstruct,
 }
 
+/// Tone of the display outputs ([`OutputFormat::Rgba8`], [`OutputFormat::Rgb16`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum Tone {
+    /// No tone curve: the linear values, as exposed, go through the transfer curve of the output
+    /// colour space only (a colourimetric rendering; it looks darker and flatter than the
+    /// renderings of cameras and raw developers). The output of FlashRaw before 0.5.0.
+    Linear,
+    /// The look of a raw developer's default rendering: the DNG `BaselineExposure` of the file
+    /// (DNG only, 0 for other formats), then one S-curve shared by every camera that lifts the
+    /// mid-tones by about 1.1 stops, deepens the darkest shadows and rolls the highlights off
+    /// to white. The curve is applied without shifting hues (the largest and smallest channel
+    /// go through the curve, the middle one keeps its place between them, in linear ProPhoto
+    /// RGB). Not applied with a [`DecodeOptions::camera_profile`] that has its own tone curve.
+    /// Runs on the CPU and the GPU.
+    /// [Design note](https://github.com/ybouane/flashraw/blob/main/docs/design/tone.md). The default.
+    #[default]
+    Standard,
+}
+
 /// Where the white balance of RGB outputs comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -392,6 +413,9 @@ pub struct DecodeOptions {
     pub demosaic: Demosaic,
     /// Clipped highlights of RGB outputs. Default: [`Highlights::Clip`].
     pub highlights: Highlights,
+    /// Tone of the display outputs ([`OutputFormat::Rgba8`], [`OutputFormat::Rgb16`]; the
+    /// linear outputs ignore it). Default: [`Tone::Standard`].
+    pub tone: Tone,
     /// White balance of RGB outputs. Default: [`WhiteBalanceMode::AsShot`].
     pub white_balance: WhiteBalanceMode,
     /// Explicit red, green and blue multipliers of the camera RGB (green is normalised to 1),
@@ -432,8 +456,8 @@ pub struct DecodeOptions {
     pub corruption_policy: CorruptionPolicy,
     /// Exposure of RGB outputs in EV (stops): linear values are multiplied by
     /// `2^exposure` after the colour conversion, before the black/white points and the
-    /// output encoding. A convenience control; tone curves and highlight recovery are
-    /// left to editors. Range `[-32, 32]`. Default: 0.
+    /// output encoding (and before the curve of [`Tone::Standard`]). Range `[-32, 32]`.
+    /// Default: 0.
     pub exposure: f32,
     /// Black point of RGB outputs in normalised linear units (after exposure): this value
     /// maps to 0. Integer outputs clip below it; float outputs keep the (negative) values.
@@ -512,6 +536,7 @@ impl Default for DecodeOptions {
             crop: true,
             demosaic: Demosaic::Bilinear,
             highlights: Highlights::Clip,
+            tone: Tone::Standard,
             white_balance: WhiteBalanceMode::AsShot,
             white_balance_multipliers: None,
             noise_reduction: NoiseReduction::Auto,
@@ -609,6 +634,25 @@ impl Highlights {
             Highlights::Neutral => "neutral",
             Highlights::Blend => "blend",
             Highlights::Reconstruct => "reconstruct",
+        }
+    }
+}
+
+impl Tone {
+    /// Parse a tone name (`linear`, `standard`; case-insensitive).
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.to_ascii_lowercase().as_str() {
+            "linear" => Tone::Linear,
+            "standard" => Tone::Standard,
+            _ => return None,
+        })
+    }
+
+    /// Canonical name, accepted by [`Tone::parse`].
+    pub fn name(self) -> &'static str {
+        match self {
+            Tone::Linear => "linear",
+            Tone::Standard => "standard",
         }
     }
 }

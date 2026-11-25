@@ -37,7 +37,7 @@ pub fn wgsl_sources() -> [(&'static str, &'static str); 5] {
     ]
 }
 
-/// Mirrors `struct Params` in `shaders/common.wgsl` (std140-compatible: 40 u32 then 5 vec4).
+/// Mirrors `struct Params` in `shaders/common.wgsl` (std140-compatible: 44 u32 then 10 vec4).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable, Default)]
 pub(crate) struct Params {
@@ -82,11 +82,22 @@ pub(crate) struct Params {
     pub off_srgb16: u32,
     /// Segments of the 8-bit output table at `off_srgb` (4096 for sRGB).
     pub srgb_n: u32,
+    /// Tone table (`[value, step]` pairs) in `tab`, whether the tone is on, and its steps.
+    pub off_tone: u32,
+    pub tone: u32,
+    pub tone_n: u32,
+    pub tone_pad: u32,
     pub wb: [f32; 4],
     pub m0: [f32; 4],
     pub m1: [f32; 4],
     pub m2: [f32; 4],
     pub levels: [f32; 4],
+    /// Tone: linear output RGB to ProPhoto rows, ProPhoto white in the output space, `[xmax, scale]`.
+    pub tm0: [f32; 4],
+    pub tm1: [f32; 4],
+    pub tm2: [f32; 4],
+    pub tw: [f32; 4],
+    pub tk: [f32; 4],
 }
 
 /// Mirrors `struct EdgeParams` in `shaders/edge.wgsl` (12 u32, 4 f32, one vec4: 80 bytes).
@@ -301,9 +312,9 @@ mod tests {
 
     #[test]
     fn params_layout_matches_wgsl() {
-        // 40 scalars + 5 vec4<f32>: 240 bytes, 16-byte multiple (uniform buffer rules).
-        assert_eq!(std::mem::size_of::<Params>(), 240);
-        assert_eq!(std::mem::offset_of!(Params, wb), 160);
+        // 44 scalars + 10 vec4<f32>: 336 bytes, 16-byte multiple (uniform buffer rules).
+        assert_eq!(std::mem::size_of::<Params>(), 336);
+        assert_eq!(std::mem::offset_of!(Params, wb), 176);
         // Every WGSL field name appears in the host struct in the same order.
         let src = include_str!("../shaders/common.wgsl");
         let start = src.find("struct Params {").unwrap();
@@ -355,11 +366,20 @@ mod tests {
             "dst_off",
             "off_srgb16",
             "srgb_n",
+            "off_tone",
+            "tone",
+            "tone_n",
+            "tone_pad",
             "wb",
             "m0",
             "m1",
             "m2",
             "levels",
+            "tm0",
+            "tm1",
+            "tm2",
+            "tw",
+            "tk",
         ];
         assert_eq!(names, expected);
     }

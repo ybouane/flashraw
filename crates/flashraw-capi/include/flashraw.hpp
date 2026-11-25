@@ -206,6 +206,12 @@ enum class highlights : std::int32_t {
     reconstruct = FLASHRAW_HIGHLIGHTS_RECONSTRUCT,
 };
 
+/// Tone of the display outputs (`flashraw_tone`).
+enum class tone : std::int32_t {
+    linear = FLASHRAW_TONE_LINEAR,
+    standard = FLASHRAW_TONE_STANDARD,
+};
+
 enum class corruption_policy : std::int32_t {
     recover = FLASHRAW_CORRUPTION_RECOVER,
     strict = FLASHRAW_CORRUPTION_STRICT,
@@ -355,6 +361,9 @@ struct decode_options {
     /// Brightness and colour noise reduction of the RGB outputs, 0 (none) to 1 (CPU only).
     float luma_noise_reduction = 0.0f;
     float chroma_noise_reduction = 0.0f;
+    /// Tone of the display outputs (rgba8, rgb16): standard (the default: baseline exposure and an
+    /// S-curve) or linear (none).
+    flashraw::tone tone = flashraw::tone::standard;
     /// Correct the lateral chromatic aberration of Bayer frames (RGB outputs, CPU only).
     bool chromatic_aberration = false;
     flashraw::corruption_policy corruption = flashraw::corruption_policy::recover;
@@ -405,6 +414,7 @@ struct decode_options {
         o.chromatic_aberration = chromatic_aberration ? 1 : 0;
         o.luma_noise_reduction = luma_noise_reduction;
         o.chroma_noise_reduction = chroma_noise_reduction;
+        o.tone = static_cast<std::int32_t>(tone);
         o.corruption_policy = static_cast<std::int32_t>(corruption);
         o.threads = threads;
         o.crop = crop ? 1 : 0;

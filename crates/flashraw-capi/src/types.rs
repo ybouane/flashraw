@@ -117,6 +117,20 @@ pub enum flashraw_highlights {
     FLASHRAW_HIGHLIGHTS_RECONSTRUCT = 3,
 }
 
+/// Tone of the display outputs (`flashraw_decode_options.tone`).
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum flashraw_tone {
+    /// No tone curve: the linear values go through the transfer curve of the output colour space
+    /// only (the output before 0.5.0).
+    FLASHRAW_TONE_LINEAR = 0,
+    /// The DNG baseline exposure (DNG only), then an S-curve that lifts the mid-tones and rolls
+    /// the highlights off to white, without shifting hues: the look of a raw developer's default
+    /// rendering. Applies to `FLASHRAW_OUTPUT_RGBA8` and `FLASHRAW_OUTPUT_RGB16`; skipped with a
+    /// camera profile that has its own tone curve. The default (`flashraw_decode_options_init`).
+    FLASHRAW_TONE_STANDARD = 1,
+}
+
 /// Behaviour on truncated or corrupt sensor data (`flashraw_decode_options.corruption_policy`).
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -539,6 +553,9 @@ pub struct flashraw_decode_options {
     /// Colour noise reduction of the RGB outputs, 0 (the default, none) to 1; 0.5 matches the
     /// colour noise reduction raw developers apply by default. CPU only.
     pub chroma_noise_reduction: f32,
+    /// `flashraw_tone` of the display outputs. Default `FLASHRAW_TONE_STANDARD` (1), also for callers
+    /// built against a header without this field.
+    pub tone: i32,
 }
 
 /// Size of the first published layout of each versioned struct. Callers built against an
@@ -715,6 +732,14 @@ pub(crate) fn noise_reduction_from(v: i32) -> FfiResult<flashraw::NoiseReduction
     })
 }
 
+pub(crate) fn tone_from(v: i32) -> FfiResult<flashraw::Tone> {
+    Ok(match v {
+        0 => flashraw::Tone::Linear,
+        1 => flashraw::Tone::Standard,
+        _ => return Err(FfiError::invalid(format!("unknown tone {v}"))),
+    })
+}
+
 pub(crate) fn highlights_from(v: i32) -> FfiResult<flashraw::Highlights> {
     Ok(match v {
         0 => flashraw::Highlights::Clip,
@@ -827,12 +852,12 @@ mod tests {
         // pointer and length (pointer-sized, so the total depends on the platform), then white_balance
         // and a reserved word, then the camera profile pointer and length, camera_profile_embedded
         // and noise_reduction, then the three white balance multipliers, then the cancel token pointer,
-        // then the luma and chroma noise reduction strengths.
+        // then the luma and chroma noise reduction strengths and the tone.
         assert_eq!(std::mem::offset_of!(flashraw_decode_options, preview_fallback), 76);
         assert_eq!(std::mem::offset_of!(flashraw_decode_options, color_space), 80);
         assert_eq!(
             size_of::<flashraw_decode_options>(),
-            ((112 + 5 * size_of::<usize>() + 12).next_multiple_of(std::mem::align_of::<usize>()) + 8)
+            ((112 + 5 * size_of::<usize>() + 12).next_multiple_of(std::mem::align_of::<usize>()) + 12)
                 .next_multiple_of(std::mem::align_of::<usize>())
         );
         assert_eq!(size_of::<flashraw_preview_info>(), flashraw_preview_info::MIN_SIZE);

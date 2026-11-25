@@ -98,14 +98,14 @@ pub(crate) fn neutral_temperature(color: &[ColorMatrix], n: [f64; 3]) -> Option<
 }
 
 /// A monotone cubic interpolation (Fritsch and Carlson) through ascending points.
-struct Curve {
+pub(crate) struct Curve {
     x: Vec<f32>,
     y: Vec<f32>,
     m: Vec<f32>,
 }
 
 impl Curve {
-    fn new(points: &[[f32; 2]]) -> Self {
+    pub(crate) fn new(points: &[[f32; 2]]) -> Self {
         let n = points.len();
         let x: Vec<f32> = points.iter().map(|p| p[0]).collect();
         let y: Vec<f32> = points.iter().map(|p| p[1]).collect();
@@ -133,7 +133,7 @@ impl Curve {
         Curve { x, y, m }
     }
 
-    fn eval(&self, v: f32) -> f32 {
+    pub(crate) fn eval(&self, v: f32) -> f32 {
         let n = self.x.len();
         if v <= self.x[0] {
             return self.y[0];
@@ -344,6 +344,11 @@ impl ProfileRender {
         let clamp = !tables.is_empty() || tone.is_some();
         let f32m = |m: Mat| -> [[f32; 3]; 3] { m.map(|r| r.map(|v| v as f32)) };
         Ok(ProfileRender { cam_to_pp: f32m(cam_to_pp), pp_to_out: f32m(pp_to_out), tables, tone, clamp })
+    }
+
+    /// Whether the profile has its own tone curve.
+    pub fn has_tone_curve(&self) -> bool {
+        self.tone.is_some()
     }
 
     /// One pixel: white balanced camera RGB to linear RGB of the output colour space.

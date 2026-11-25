@@ -12,6 +12,11 @@ fn longs(v: &[u32]) -> Vec<u8> {
 /// pattern of 0 R / 1 G / 2 B), holding a coloured scene with an edge and uniform noise of
 /// amplitude `128 * noise` around it.
 pub fn dng(w: u32, h: u32, dim: u16, pattern: &[u8], noise: f32) -> Vec<u8> {
+    dng_with(w, h, dim, pattern, noise, &[])
+}
+
+/// [`dng`] with more IFD entries `(tag, type, count, value bytes)`.
+pub fn dng_with(w: u32, h: u32, dim: u16, pattern: &[u8], noise: f32, more: &[(u16, u16, u32, Vec<u8>)]) -> Vec<u8> {
     let mut s = 12345u32;
     let data: Vec<u8> = (0..w * h)
         .flat_map(|i| {
@@ -46,6 +51,7 @@ pub fn dng(w: u32, h: u32, dim: u16, pattern: &[u8], noise: f32) -> Vec<u8> {
         (0xC61A, 4, 1, longs(&[0])),
         (0xC61D, 4, 1, longs(&[65535])),
     ];
+    e.extend(more.iter().cloned());
     e.sort_by_key(|x| x.0);
     let ifd_end = 8 + 2 + e.len() * 12 + 4;
     let extra: usize = e.iter().filter(|x| x.3.len() > 4).map(|x| x.3.len() + (x.3.len() & 1)).sum();

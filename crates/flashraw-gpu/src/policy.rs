@@ -263,6 +263,7 @@ impl GpuContext {
             wb: [2.0, 1.0, 1.5, 1.0],
             cam_to_rgb: [[1.6, -0.4, -0.2], [-0.2, 1.4, -0.2], [0.0, -0.5, 1.5]],
             curve: None,
+            tone: None,
             orientation: Orientation::Normal,
             output: DevelopOutput::Rgba8,
             levels: None,

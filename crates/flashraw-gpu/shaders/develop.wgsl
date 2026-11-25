@@ -60,6 +60,30 @@ fn f16_bits(x: f32) -> u32 {
     return sign | h;
 }
 
+// The tone curve at linear `x >= 0` (the CPU `ToneMap` table read).
+fn tone_curve(x: f32) -> f32 {
+    let t = sqrt(min(x, P.tk.x)) * P.tk.y;
+    let i = u32(min(t, f32(P.tone_n - 1u)));
+    let a = tab[P.off_tone + 2u * i];
+    let d = tab[P.off_tone + 2u * i + 1u];
+    return a + d * (t - f32(i));
+}
+
+// The standard tone of one pixel of linear output RGB (the CPU `ToneMap::apply`).
+fn tone_px(p: vec3<f32>) -> vec3<f32> {
+    let c = max(vec3<f32>(dot(P.tm0.xyz, p), dot(P.tm1.xyz, p), dot(P.tm2.xyz, p)), vec3<f32>(0.0));
+    let hi = max(max(c.x, c.y), c.z);
+    let lo = min(min(c.x, c.y), c.z);
+    let fh = tone_curve(hi);
+    let fl = tone_curve(lo);
+    let d = hi - lo;
+    var k = 0.0;
+    if (d > 0.0) {
+        k = (fh - fl) / d;
+    }
+    return (fl - k * lo) * P.tw.xyz + k * p;
+}
+
 // White balance, clip at sensor saturation, convert to linear sRGB, levels, store.
 fn finish(rgb_in: vec3<f32>, dx: u32, dy: u32) {
     finish_balanced(rgb_in * P.wb.xyz, dx, dy);
@@ -76,6 +100,12 @@ fn finish_balanced(rgb_bal: vec3<f32>, dx: u32, dy: u32) {
         r = r * P.levels.x - P.levels.y;
         g = g * P.levels.x - P.levels.y;
         b = b * P.levels.x - P.levels.y;
+    }
+    if (P.tone != 0u && (OUT_MODE == 0u || OUT_MODE == 2u)) {
+        let t = tone_px(vec3<f32>(r, g, b));
+        r = t.x;
+        g = t.y;
+        b = t.z;
     }
     if (OUT_MODE == 1u) {
         let o = ((dy - P.dst_y) * P.dst_stride + dx - P.dst_x) * 3u + P.dst_off;

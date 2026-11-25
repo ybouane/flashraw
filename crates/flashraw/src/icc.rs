@@ -612,4 +612,34 @@ mod tests {
             .unwrap_err();
         assert!(matches!(e, Error::InvalidArgument(_)), "{e}");
     }
+
+    #[test]
+    fn the_tone_is_the_same_through_the_second_pass() {
+        // The standard tone works in ProPhoto whatever the output space: before the lookup tables
+        // of the second pass it gives what the folded pass gives.
+        let bytes = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../npm/tests/fixtures/canon-5d3-mlv.dng"),
+        )
+        .unwrap();
+        let raw = crate::FlashRaw::open(&bytes[..]).unwrap();
+        for cs in [ColorSpace::DisplayP3, ColorSpace::ProPhoto] {
+            let folded = DecodeOptions {
+                output: OutputFormat::Rgba8,
+                demosaic: crate::Demosaic::HalfSize,
+                tone: crate::Tone::Standard,
+                ..Default::default()
+            }
+            .with_output_profile(OutputProfile::new(cs.icc_profile()));
+            let mut forced = folded.clone();
+            if let Some(p) = forced.output_profile.as_mut() {
+                p.force_lut = true;
+            }
+            let linear = DecodeOptions { tone: crate::Tone::Linear, ..folded.clone() };
+            let (a, b, c) = (raw.decode(folded).unwrap(), raw.decode(forced).unwrap(), raw.decode(linear).unwrap());
+            let (x, y, z) = (a.as_u8().unwrap(), b.as_u8().unwrap(), c.as_u8().unwrap());
+            let worst = x.iter().zip(y).map(|(p, q)| p.abs_diff(*q)).max().unwrap();
+            assert!(worst <= 4, "{cs:?}: {worst}");
+            assert_ne!(x, z, "{cs:?}: the tone changed nothing");
+        }
+    }
 }

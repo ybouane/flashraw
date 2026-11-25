@@ -4,6 +4,7 @@
 
 use flashraw::{
     Backend, ColorSpace, DecodeOptions, Demosaic, Error, FlashRaw, OutputFormat, OutputProfile, RawPixelData, Rect,
+    Tone,
 };
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -11,7 +12,8 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 fn opts(output: OutputFormat, cs: ColorSpace) -> DecodeOptions {
-    DecodeOptions { output, color_space: cs, demosaic: Demosaic::HalfSize, ..Default::default() }
+    // Without the tone, so the display outputs are the linear ones through the space's curve.
+    DecodeOptions { output, color_space: cs, demosaic: Demosaic::HalfSize, tone: Tone::Linear, ..Default::default() }
 }
 
 const RGB_OUTPUTS: [OutputFormat; 5] = [

@@ -134,8 +134,8 @@ pub fn ahd_spec(info: &FrameInfo, origin: (u32, u32)) -> Option<flashraw_gpu::Ed
 fn select(raw: &FlashRaw<'_>, opts: &DecodeOptions) -> Result<Option<(Arc<GpuContext>, Option<String>)>> {
     let resident = opts.output.is_gpu_resident();
     let base = opts.output.host_equivalent();
-    // The PPG and RCD demosaics, the highlight modes, the white balance modes, the noise levels, the chromatic aberration
-    // correction and camera profiles run on the CPU only.
+    // The PPG and RCD demosaics, the highlight modes, the white balance modes, the noise levels, the
+    // chromatic aberration correction and camera profiles run on the CPU only.
     if (opts.highlights != crate::Highlights::Clip
         || matches!(opts.demosaic, crate::Demosaic::Ppg | crate::Demosaic::Rcd)
         || opts.white_balance != crate::WhiteBalanceMode::AsShot
@@ -437,6 +437,12 @@ async fn run(
                     _ => DevelopOutput::LinearRgbF32,
                 },
                 levels: levels.map(|l| [l.scale, l.offset]),
+                tone: (opts.tone == crate::Tone::Standard && matches!(base, OutputFormat::Rgba8 | OutputFormat::Rgb16))
+                    .then(|| {
+                        let ev = raw.metadata().dng.as_ref().and_then(|d| d.baseline_exposure).unwrap_or(0.0);
+                        let setup = output.as_ref().expect("RGB output resolved");
+                        crate::tone::ToneMap::new(ev, &setup.matrix_from_srgb()).gpu()
+                    }),
                 curve: match &params.curve {
                     crate::OutputCurve::Shared(t) => Some(flashraw_gpu::GpuCurve { lut8: &t.lut8, lut16: &t.lut16 }),
                     _ => None,

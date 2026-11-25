@@ -355,6 +355,35 @@ typedef int32_t flashraw_highlights;
 #endif // __cplusplus
 
 /**
+ * Tone of the display outputs (`flashraw_decode_options.tone`).
+ */
+enum flashraw_tone
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : int32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+    /**
+     * No tone curve: the linear values go through the transfer curve of the output colour space
+     * only (the output before 0.5.0).
+     */
+    FLASHRAW_TONE_LINEAR = 0,
+    /**
+     * The DNG baseline exposure (DNG only), then an S-curve that lifts the mid-tones and rolls
+     * the highlights off to white, without shifting hues: the look of a raw developer's default
+     * rendering. Applies to `FLASHRAW_OUTPUT_RGBA8` and `FLASHRAW_OUTPUT_RGB16`; skipped with a
+     * camera profile that has its own tone curve. The default (`flashraw_decode_options_init`).
+     */
+    FLASHRAW_TONE_STANDARD = 1,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum flashraw_tone flashraw_tone;
+#else
+typedef int32_t flashraw_tone;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+/**
  * Behaviour on truncated or corrupt sensor data (`flashraw_decode_options.corruption_policy`).
  */
 enum flashraw_corruption_policy
@@ -1102,6 +1131,11 @@ typedef struct flashraw_decode_options {
      * colour noise reduction raw developers apply by default. CPU only.
      */
     float chroma_noise_reduction;
+    /**
+     * `flashraw_tone` of the display outputs. Default `FLASHRAW_TONE_STANDARD` (1), also for callers
+     * built against a header without this field.
+     */
+    int32_t tone;
 } flashraw_decode_options;
 
 /**

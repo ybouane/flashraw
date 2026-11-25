@@ -314,6 +314,10 @@ pub fn parse_decode_request(s: &str) -> ApiResult<(DecodeOptions, String, ApiExt
             ApiError::invalid(format!("unknown `highlights` {h:?} (expected clip, neutral, blend or reconstruct)"))
         })?;
     }
+    if let Some(t) = str_opt(&v, "tone")? {
+        o.tone = flashraw::Tone::parse(t)
+            .ok_or_else(|| ApiError::invalid(format!("unknown `tone` {t:?} (expected linear or standard)")))?;
+    }
     if let Some(Value::Bool(b)) = v.get("chromaticAberration") {
         o.chromatic_aberration = *b;
     }

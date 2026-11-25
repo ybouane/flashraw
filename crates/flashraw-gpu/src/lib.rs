@@ -46,7 +46,7 @@ pub use context::{
 };
 pub use image::{GpuImage, GpuPixelFormat, GpuTile, HostPixels};
 pub use kernels::{reference, srgb16_table, wgsl_sources};
-pub use run::{DevelopOutput, DevelopSpec, EdgeSpec, GpuCurve, GpuFrame, GpuInput, GpuOp, GpuRun, GpuTimings};
+pub use run::{DevelopOutput, DevelopSpec, EdgeSpec, GpuCurve, GpuFrame, GpuInput, GpuOp, GpuRun, GpuTimings, GpuTone};
 /// Re-export of the wgpu version used, for interop.
 pub use wgpu;
 

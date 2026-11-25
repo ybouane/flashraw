@@ -53,11 +53,20 @@ struct Params {
     dst_off: u32,     // word offset of the band's first element inside the `dst` binding
     off_srgb16: u32,  // 16385-entry linear -> output-curve 16-bit table in `tab` (OUT_MODE 2)
     srgb_n: u32,      // segments of the 8-bit output table (4096 for sRGB)
+    off_tone: u32,    // tone table in `tab`: `tone_n` pairs [value, step]
+    tone: u32,        // 1: the standard tone before the display encoding (OUT_MODE 0 and 2)
+    tone_n: u32,
+    tone_pad: u32,
     wb: vec4<f32>,
     m0: vec4<f32>,    // camera -> linear sRGB matrix rows
     m1: vec4<f32>,
     m2: vec4<f32>,
     levels: vec4<f32>, // exposure/black/white: v * x - y when z != 0
+    tm0: vec4<f32>,   // tone: linear output RGB -> linear ProPhoto rows
+    tm1: vec4<f32>,
+    tm2: vec4<f32>,
+    tw: vec4<f32>,    // tone: ProPhoto white in the output space
+    tk: vec4<f32>,    // tone: x = input at which the curve reaches 1, y = table scale
 }
 
 @group(0) @binding(0) var<uniform> P: Params;

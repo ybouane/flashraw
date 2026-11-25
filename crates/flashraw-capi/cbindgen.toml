@@ -50,6 +50,7 @@ include = [
     "flashraw_white_balance",
     "flashraw_noise_reduction",
     "flashraw_highlights",
+    "flashraw_tone",
     "flashraw_corruption_policy",
     "flashraw_sample_type",
     "flashraw_pixel_source",

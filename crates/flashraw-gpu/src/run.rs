@@ -127,6 +127,8 @@ pub struct DevelopSpec {
     pub levels: Option<[f32; 2]>,
     /// Transfer-curve tables of the display outputs; `None`: sRGB.
     pub curve: Option<GpuCurve>,
+    /// Tone of the display outputs (`Rgba8`, `Rgb16`; the linear outputs ignore it); `None`: none.
+    pub tone: Option<GpuTone>,
     /// Edge-aware demosaic (Bayer and X-Trans mosaics) instead of the bilinear one; ignored
     /// with `half_size` and for frames that are not a single-component mosaic.
     pub edge: Option<EdgeSpec>,
@@ -192,7 +194,27 @@ pub struct GpuCurve {
     pub lut16: &'static [f32],
 }
 
+/// The standard tone of the display outputs (the CPU `flashraw::process::ToneMap`): in linear
+/// ProPhoto, the largest and smallest channel of a pixel go through the curve and the middle one
+/// keeps its place between them; the result is `(fl - k lo) white + k p` in the output space.
+#[derive(Debug, Clone, Copy)]
+pub struct GpuTone {
+    /// `[value, step]` of the curve at evenly spaced `sqrt(x / xmax)`: the curve at linear `x` is
+    /// `table[i][0] + table[i][1] * (t - i)` with `t = sqrt(min(x, xmax)) * scale`, `i = min(t, len - 1)`.
+    pub table: &'static [[f32; 2]],
+    /// Input at which the curve reaches 1.
+    pub xmax: f32,
+    /// `table.len() / sqrt(xmax)`.
+    pub scale: f32,
+    /// Linear output RGB to linear ProPhoto.
+    pub to_prophoto: [[f32; 3]; 3],
+    /// ProPhoto white in the output space.
+    pub white: [f32; 3],
+}
+
 /// What to compute.
+// One per decode and `Copy`: the size of the develop variant does not matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Copy)]
 pub enum GpuOp {
     /// u16 samples (packed unpack and/or linearisation).
@@ -423,6 +445,7 @@ impl GpuContext {
             )));
         }
         let mut curve: Option<GpuCurve> = None;
+        let mut tone: Option<GpuTone> = None;
         let mut edge: Option<EdgeSpec> = None;
         let mut p = Params {
             srgb_n: 4096,
@@ -518,6 +541,7 @@ impl GpuContext {
                 p.dev_h = dh;
                 p.wb = d.wb;
                 curve = d.curve;
+                tone = d.tone;
                 let m = d.cam_to_rgb;
                 p.m0 = [m[0][0], m[0][1], m[0][2], 0.0];
                 p.m1 = [m[1][0], m[1][1], m[1][2], 0.0];
@@ -599,6 +623,18 @@ impl GpuContext {
                 (key, ow, oh, ch, fmt)
             }
         };
+        if let Some(t) = tone.filter(|t| matches!(key.out_mode, 0 | 2) && !t.table.is_empty()) {
+            p.off_tone = calib.tab.len() as u32;
+            p.tone = 1;
+            p.tone_n = t.table.len() as u32;
+            calib.tab.extend(t.table.iter().flatten());
+            let m = t.to_prophoto;
+            p.tm0 = [m[0][0], m[0][1], m[0][2], 0.0];
+            p.tm1 = [m[1][0], m[1][1], m[1][2], 0.0];
+            p.tm2 = [m[2][0], m[2][1], m[2][2], 0.0];
+            p.tw = [t.white[0], t.white[1], t.white[2], 0.0];
+            p.tk = [t.xmax, t.scale, 0.0, 0.0];
+        }
         if key.out_mode == 2 {
             p.off_srgb16 = calib.tab.len() as u32;
             match curve {

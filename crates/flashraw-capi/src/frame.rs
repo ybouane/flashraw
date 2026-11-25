@@ -72,6 +72,7 @@ pub(crate) fn default_decode_options() -> flashraw_decode_options {
         cancel: std::ptr::null(),
         luma_noise_reduction: 0.0,
         chroma_noise_reduction: 0.0,
+        tone: flashraw_tone::FLASHRAW_TONE_STANDARD as i32,
     }
 }
 
@@ -110,6 +111,7 @@ pub(crate) fn to_decode_options(
         output: output_from(o.output)?,
         demosaic: demosaic_from(o.demosaic)?,
         highlights: highlights_from(o.highlights)?,
+        tone: tone_from(o.tone)?,
         white_balance: white_balance_from(o.white_balance)?,
         chromatic_aberration: o.chromatic_aberration != 0,
         noise_reduction: noise_reduction_from(o.noise_reduction)?,

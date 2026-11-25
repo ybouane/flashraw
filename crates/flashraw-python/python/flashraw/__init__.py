@@ -542,6 +542,7 @@ class RawFile:
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
         luma_noise_reduction: float = 0.0,
         chroma_noise_reduction: float = 0.0,
+        tone: str = "standard",
         cancel: Optional["CancelToken"] = None,
     ) -> Frame:
         """Decode the sensor data. The GIL is released while decoding.
@@ -613,6 +614,11 @@ class RawFile:
             chroma_noise_reduction: colour noise reduction of RGB outputs, ``0.0`` (default, none) to
                 ``1.0``; ``0.5`` matches the colour noise reduction raw developers apply by default.
                 CPU only.
+            tone: tone of the display outputs (``"rgba8"``, ``"rgb16"``): ``"standard"`` (default: the
+                DNG baseline exposure, then an S-curve that lifts the mid-tones and rolls the
+                highlights off, the look of a raw developer's default rendering; skipped with a
+                camera profile that has its own tone curve) or ``"linear"`` (no tone curve, the output
+                before 0.5.0).
             camera_profile: RGB outputs: render with a DNG camera profile: the bytes of a
                 ``.dcp`` file, a path to one, or ``"embedded"`` for the profile stored in the DNG
                 being decoded (:class:`InvalidArgumentError` when it has none). The profile's
@@ -653,6 +659,7 @@ class RawFile:
             white_balance_multipliers,
             luma_noise_reduction,
             chroma_noise_reduction,
+            tone,
             cancel,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)
@@ -686,6 +693,7 @@ class RawFile:
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
         luma_noise_reduction: float = 0.0,
         chroma_noise_reduction: float = 0.0,
+        tone: str = "standard",
         cancel: Optional["CancelToken"] = None,
     ) -> Frame:
         """Decode one independently decodable tile/strip (see :attr:`tiles`)."""
@@ -718,6 +726,7 @@ class RawFile:
             white_balance_multipliers,
             luma_noise_reduction,
             chroma_noise_reduction,
+            tone,
             cancel,
         )
         return Frame(array, info, self.metadata, (time.perf_counter() - t0) * 1e3)

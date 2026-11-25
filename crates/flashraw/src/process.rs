@@ -13,6 +13,8 @@ use crate::bayer_alt;
 use crate::color::{ColorSpace, OutputCurve};
 use crate::edgeaware;
 use crate::options::{Demosaic, Highlights};
+pub use crate::tone::ToneMap;
+use crate::tone::Toned;
 use flashraw_core::*;
 
 /// sRGB (D65) → XYZ.
@@ -373,6 +375,9 @@ pub struct DevelopParams {
     /// Transfer curve of the display encoders (sRGB unless an output colour space or
     /// profile is set; the matching primaries are already folded into the matrices).
     pub curve: OutputCurve,
+    /// Tone of the display encoders ([`crate::Tone::Standard`]), applied to the linear output
+    /// values just before the transfer curve.
+    pub tone: Option<std::sync::Arc<ToneMap>>,
 }
 
 impl DevelopParams {
@@ -403,6 +408,7 @@ impl DevelopParams {
             recon: ReconModel::default(),
             noise: crate::NoiseReduction::Auto,
             curve: OutputCurve::Srgb,
+            tone: None,
         }
     }
 
@@ -1499,15 +1505,11 @@ pub fn develop_rgba8(
 ) -> Result<(u32, u32, Vec<u8>)> {
     let (crop, w, h) = output_dims(img, params)?;
     let k = kernel(img, info, origin, params, crop);
-    with_encoder8!(&params.curve, |enc| run_oriented(
-        &k,
-        w as usize,
-        h as usize,
-        params.orientation,
-        parallel,
-        None,
-        enc
-    ))
+    let (w, h, o) = (w as usize, h as usize, params.orientation);
+    with_encoder8!(&params.curve, |enc| match params.tone.as_deref() {
+        Some(tone) => run_oriented(&k, w, h, o, parallel, None, Toned { tone, enc }),
+        None => run_oriented(&k, w, h, o, parallel, None, enc),
+    })
 }
 
 /// Fused develop to any [`RgbEncoding`] (no intermediate RGB image; display encodings
@@ -1560,11 +1562,17 @@ pub(crate) fn develop_staged(
     let ch = enc.channels();
     Ok(match enc {
         RgbEncoding::Rgba8 => {
-            let (dw, dh, px) = with_encoder8!(&params.curve, |enc| run_oriented(&k, w, h, o, parallel, band, enc))?;
+            let (dw, dh, px) = with_encoder8!(&params.curve, |enc| match params.tone.as_deref() {
+                Some(tone) => run_oriented(&k, w, h, o, parallel, band, Toned { tone, enc }),
+                None => run_oriented(&k, w, h, o, parallel, band, enc),
+            })?;
             (dw, dh, ch, RawPixelData::U8(px))
         }
         RgbEncoding::Srgb16 => {
-            let (dw, dh, px) = with_encoder16!(&params.curve, |enc| run_oriented(&k, w, h, o, parallel, band, enc))?;
+            let (dw, dh, px) = with_encoder16!(&params.curve, |enc| match params.tone.as_deref() {
+                Some(tone) => run_oriented(&k, w, h, o, parallel, band, Toned { tone, enc }),
+                None => run_oriented(&k, w, h, o, parallel, band, enc),
+            })?;
             (dw, dh, ch, RawPixelData::U16(px))
         }
         RgbEncoding::Linear16 => {
@@ -1604,6 +1612,18 @@ pub(crate) trait Encode<T: Copy, const N: usize>: Sync {
         for (o, p) in dst.chunks_exact_mut(N).zip(src) {
             o.copy_from_slice(&self.px(*p));
         }
+    }
+    /// Before the pixels of `src` are encoded one at a time, out of order, with
+    /// [`Encode::px_prepared`] (mirrored and rotated outputs): an encoder whose runs transform
+    /// the pixels first ([`crate::tone::Toned`]) does that here in one run, into `buf`.
+    #[inline(always)]
+    fn prepare<'s>(&self, src: &'s [[f32; 3]], _buf: &'s mut Vec<[f32; 3]>) -> &'s [[f32; 3]] {
+        src
+    }
+    /// One pixel returned by [`Encode::prepare`].
+    #[inline(always)]
+    fn px_prepared(&self, p: [f32; 3]) -> [T; N] {
+        self.px(p)
     }
 }
 
@@ -1807,20 +1827,22 @@ where
             let d = t * strip + i;
             if rev_y { h - 1 - d } else { d }
         };
+        let mut prep = Vec::new();
         let mut put = |i: usize, rgb: &[[f32; 3]]| {
+            if !swap && !rev_x {
+                enc.run(&rgb[..w], &mut tile.row(i)[..w * N]);
+                return;
+            }
+            let rgb = enc.prepare(&rgb[..w], &mut prep);
             if !swap {
                 let row = tile.row(i);
-                if rev_x {
-                    for (px, p) in row.chunks_exact_mut(N).zip(rgb[..w].iter().rev()) {
-                        px.copy_from_slice(&enc.px(*p));
-                    }
-                } else {
-                    enc.run(&rgb[..w], &mut row[..w * N]);
+                for (px, p) in row.chunks_exact_mut(N).zip(rgb.iter().rev()) {
+                    px.copy_from_slice(&enc.px_prepared(*p));
                 }
             } else {
                 for oy in 0..th_ {
                     let sx = if rev_x { w - 1 - oy } else { oy };
-                    tile.row(oy)[i * N..i * N + N].copy_from_slice(&enc.px(rgb[sx]));
+                    tile.row(oy)[i * N..i * N + N].copy_from_slice(&enc.px_prepared(rgb[sx]));
                 }
             }
         };
@@ -1835,24 +1857,26 @@ where
             None => {
                 // Finished pixels go straight to the destination, chunk by chunk.
                 let first = if rev_y { src_row(count - 1) } else { src_row(0) };
+                let mut prep = Vec::new();
                 k.strip_to(&mut cache, first, count, w, &mut |n, x0, px| {
                     // Destination index of developed row `first + n` within this tile.
                     let i = if rev_y { h - 1 - t * strip - (first + n) } else { n };
+                    if !swap && !rev_x {
+                        enc.run(px, &mut tile.row(i)[x0 * N..(x0 + px.len()) * N]);
+                        return;
+                    }
+                    let px = enc.prepare(px, &mut prep);
                     if !swap {
                         let row = tile.row(i);
-                        if rev_x {
-                            for (j, p) in px.iter().enumerate() {
-                                let d = w - 1 - (x0 + j);
-                                row[d * N..d * N + N].copy_from_slice(&enc.px(*p));
-                            }
-                        } else {
-                            enc.run(px, &mut row[x0 * N..(x0 + px.len()) * N]);
+                        for (j, p) in px.iter().enumerate() {
+                            let d = w - 1 - (x0 + j);
+                            row[d * N..d * N + N].copy_from_slice(&enc.px_prepared(*p));
                         }
                     } else {
                         for (j, p) in px.iter().enumerate() {
                             let x = x0 + j;
                             let oy = if rev_x { w - 1 - x } else { x };
-                            tile.row(oy)[i * N..i * N + N].copy_from_slice(&enc.px(*p));
+                            tile.row(oy)[i * N..i * N + N].copy_from_slice(&enc.px_prepared(*p));
                         }
                     }
                 });
@@ -2026,16 +2050,23 @@ where
     (ow as u32, oh as u32, out)
 }
 
-/// Encode a developed image (`d`: linear RGB after colour conversion) to `enc`.
+/// Encode a developed image (`d`: linear RGB after colour conversion) to `enc`; the display
+/// encodings go through `tone` first when it is set.
 pub(crate) fn encode_image(
     d: Developed,
     enc: RgbEncoding,
     curve: &OutputCurve,
+    tone: Option<&crate::tone::ToneMap>,
     orientation: Orientation,
     parallel: bool,
 ) -> (u32, u32, u32, RawPixelData) {
     let o = if enc.oriented() { orientation } else { Orientation::Normal };
     let ch = enc.channels();
+    let mut d = d;
+    if let Some(t) = tone.filter(|_| enc.oriented()) {
+        // In place, in runs, before the per-pixel encoding below.
+        t.apply_image(&mut d, parallel);
+    }
     match enc {
         RgbEncoding::Rgba8 => {
             let (w, h, px) = with_encoder8!(curve, |enc| encode_developed(&d, enc, o, parallel));
@@ -2315,6 +2346,16 @@ mod tests {
                     let a = to_rgba8(&d, info.orientation, false);
                     let b = develop_rgba8(&img, &info, (3, 1), &p, true).unwrap();
                     assert_eq!(a, b, "orientation {o} {demosaic:?}");
+                    // With the standard tone: the fused pass tones in runs (row by row, or ahead
+                    // of the per-pixel stores of mirrored and rotated outputs), the two-pass
+                    // develop tones the image in place.
+                    let tone =
+                        std::sync::Arc::new(crate::tone::ToneMap::new(0.3, &ColorSpace::Srgb.matrix_from_srgb()));
+                    let p = DevelopParams { tone: Some(tone.clone()), ..p };
+                    let a = encode_image(d, RgbEncoding::Rgba8, &p.curve, Some(&tone), info.orientation, false);
+                    let b = develop_rgba8(&img, &info, (3, 1), &p, true).unwrap();
+                    assert_eq!((a.0, a.1), (b.0, b.1));
+                    assert!(matches!(&a.3, RawPixelData::U8(v) if *v == b.2), "toned, orientation {o} {demosaic:?}");
                 }
             }
         }
@@ -2350,6 +2391,12 @@ mod tests {
                     let a = to_rgba8(&d, info.orientation, false);
                     let b = develop_rgba8(&img, &info, (1, 0), &p, true).unwrap();
                     assert!(a == b, "orientation {o} {demosaic:?}");
+                    let tone =
+                        std::sync::Arc::new(crate::tone::ToneMap::new(0.0, &ColorSpace::Srgb.matrix_from_srgb()));
+                    let p = DevelopParams { tone: Some(tone.clone()), ..p };
+                    let a = encode_image(d, RgbEncoding::Rgba8, &p.curve, Some(&tone), info.orientation, false);
+                    let b = develop_rgba8(&img, &info, (1, 0), &p, true).unwrap();
+                    assert!(matches!(&a.3, RawPixelData::U8(v) if *v == b.2), "toned, orientation {o} {demosaic:?}");
                 }
             }
         }

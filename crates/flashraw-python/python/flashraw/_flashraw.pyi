@@ -55,6 +55,7 @@ class _RawFile:
         white_balance_multipliers: Optional[Tuple[float, float, float]] = None,
         luma_noise_reduction: float = 0.0,
         chroma_noise_reduction: float = 0.0,
+        tone: str = "standard",
         cancel: Optional[CancelToken] = None,
     ) -> Tuple[npt.NDArray[Any], Dict[str, Any]]: ...
     def exif_bytes(self) -> Optional[bytes]: ...
