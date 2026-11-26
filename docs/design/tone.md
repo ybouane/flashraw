@@ -1,7 +1,8 @@
 # Tone of the display outputs (`tone`)
 
-The display outputs (`rgba8`, `rgb16`) are rendered with a standard tone by default (since 0.5.0): the DNG
-`BaselineExposure` of the file, then one S-curve shared by every camera. The module is `crates/flashraw/src/tone.rs`;
+The display outputs (`rgba8`, `rgb16`) are rendered with a standard tone by default (since 0.5.0): a brightness
+offset per camera (the DNG `BaselineExposure` of the file, or for other formats the offset the camera database
+measured for the model), then one S-curve shared by every camera. The module is `crates/flashraw/src/tone.rs`;
 the GPU develop kernel does the same (`shaders/develop.wgsl`).
 
 | Rust | CLI | Python | JavaScript | C |
@@ -23,9 +24,12 @@ table with the same arithmetic: RGBA8 within 3 codes of the CPU (more than 1 on 
 
 ## Method
 
-1. **Exposure.** Linear values are multiplied by `2^BaselineExposure` of the file. Only DNG files carry the tag;
-   other formats get no offset. `DecodeOptions::exposure` and the black and white points come before the tone, so
-   they move values along the curve.
+1. **Exposure.** Linear values are multiplied by `2^offset`. For a DNG file the offset is its `BaselineExposure`
+   (0 without the tag). Other formats do not carry one: they take the offset of their camera model from the
+   camera database (`exposures`, [camera database](../camera-db.md#exposure-offsets)), else their make's default,
+   else 0 (see "Offsets for other formats" below). `FlashRaw::tone_exposure()` and `flashraw info` report the
+   offset a file gets. `DecodeOptions::exposure` and the black and white points come before the tone, so they move
+   values along the curve.
 2. **Curve.** One curve for every camera, defined by 15 control points in gamma 2.2 encoded values with monotone
    cubic interpolation (Fritsch and Carlson) between them. In linear values:
 
@@ -143,13 +147,33 @@ and much brighter in the shadows, than its `BaselineExposure` of -0.5 and the cu
 the same offset fits to 0.2 L*. The cause is not known. The file is one of 26 in the medians the curve is made of,
 so it does not move them.
 
+## Offsets for other formats
+
+DNG files carry their offset; for the other formats the camera database stores one per model, measured from the
+cameras' own files (`flashraw camera-db exposure`, `tools/camera_db/exposure.py`,
+[camera database](../camera-db.md#exposure-offsets)):
+
+1. **Per file:** the offset that makes the luminance of the standard rendering match the camera's embedded JPEG over
+   the mid-tones (the 30th to 70th percentiles, compared as percentiles so that lens corrections and crops do not
+   matter). The camera's JPEG is the maker's rendering of the same exposure.
+2. **Per model:** the median over the model's files.
+3. **Per make:** camera JPEG engines are brighter or darker than the standard rendering by an amount that depends on
+   the make, so a manual correction per make accounts for each maker's particularities: -0.14 stops for Canon, -0.12
+   Pentax, -0.07 Nikon, 0 Sony, between -0.08 and +0.35 for the others, -0.06 for the makes not listed. A make's
+   default (for models without files) is the median over its models.
+4. **Few files:** a model's value is pulled towards its make's default with the weight of half a file, since one
+   scene can be off by half a stop.
+
+The database holds 712 entries (698 models and 14 make defaults) from 1,532 files of the CC0 corpus with an
+embedded JPEG at least 320 pixels wide; film scanners are not measured. Formats whose files carry no JPEG preview
+(Phase One and Leaf IIQ/MOS, most early digital backs and some compacts) have no entry.
+
 ## Limits
 
-- **No offset for formats other than DNG.** Raw developers apply a brightness offset per camera model; DNG files
-  carry it, other formats do not. Over the 769 Adobe DNG conversions in the reference set its median is 0 stops
-  (quartiles -0.5 and +0.32), so the shared curve fits most cameras without it. It is +0.35 for Sony, so ARW files
-  render about a third of a stop darker than the reference. Measured offsets per camera, backed by sample files,
-  would close that gap; the camera database has none yet.
+- **The offsets of other formats are estimates.** They follow the camera's own JPEG, corrected per make, so a
+  model whose JPEG engine departs from its make's usual rendering keeps that difference. Makes with fewer than three
+  measured models have no default. In-camera modes that lower the raw exposure to keep highlights (highlight tone
+  priority, extended dynamic range) are not detected: the database holds one value per model.
 - **Colour is not part of the tone.** The colour matrices are the file's. The reference renders colour with its own
   camera profiles, which have hue and saturation tables, so saturated colours still differ. The tone matches
   brightness, and colours keep their hue.

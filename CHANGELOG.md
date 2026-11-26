@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The standard tone now applies a brightness offset per camera model to every format**, not only to DNG files:
+  `rgba8` and `rgb16` output of non-DNG files changes brightness (the make defaults are +0.30 stops for Sony and -0.50
+  for Pentax; 86 % of the model offsets lie between -0.5 and +0.5). The offsets are in a new `exposures` table of the
+  camera database (712 entries: 698 models and 14 make defaults), measured from 1,532 sample files: per file, the
+  offset that matches the standard rendering's mid-tones to the camera's embedded JPEG, the median per model, a manual
+  correction per make for each maker's particularities, and a pull of models with few files towards the make's
+  default. DNG files still use their `BaselineExposure`; `Tone::Linear` is unchanged. New: `FlashRaw::tone_exposure()`
+  (the offset a file gets, also in `flashraw info`), `flashraw camera-db exposure` and `tools/camera_db/exposure.py`
+  (the measurement), `flashraw_camera_db::exposure` ([tone](docs/design/tone.md#offsets-for-other-formats),
+  [camera database](docs/camera-db.md#exposure-offsets)).
+
 ## 0.5.0 (2026-11-25)
 
 - Noise reduction for RGB outputs, with separate strengths for brightness and colour noise, each from 0 (off, the

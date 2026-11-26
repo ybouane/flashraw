@@ -361,8 +361,8 @@ struct decode_options {
     /// Brightness and colour noise reduction of the RGB outputs, 0 (none) to 1 (CPU only).
     float luma_noise_reduction = 0.0f;
     float chroma_noise_reduction = 0.0f;
-    /// Tone of the display outputs (rgba8, rgb16): standard (the default: baseline exposure and an
-    /// S-curve) or linear (none).
+    /// Tone of the display outputs (rgba8, rgb16): standard (the default: the camera's
+    /// brightness offset and an S-curve) or linear (none).
     flashraw::tone tone = flashraw::tone::standard;
     /// Correct the lateral chromatic aberration of Bayer frames (RGB outputs, CPU only).
     bool chromatic_aberration = false;

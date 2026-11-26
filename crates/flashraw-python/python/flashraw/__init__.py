@@ -615,8 +615,9 @@ class RawFile:
                 ``1.0``; ``0.5`` matches the colour noise reduction raw developers apply by default.
                 CPU only.
             tone: tone of the display outputs (``"rgba8"``, ``"rgb16"``): ``"standard"`` (default: the
-                DNG baseline exposure, then an S-curve that lifts the mid-tones and rolls the
-                highlights off, the look of a raw developer's default rendering; skipped with a
+                camera's brightness offset, from the DNG baseline exposure or the camera database,
+                then an S-curve that lifts the mid-tones and rolls the
+                highlights off, a natural photographic look; skipped with a
                 camera profile that has its own tone curve) or ``"linear"`` (no tone curve, the output
                 before 0.5.0).
             camera_profile: RGB outputs: render with a DNG camera profile: the bytes of a

@@ -154,7 +154,7 @@ frame = raw.decode(
     noise_reduction="auto",      # edge-aware smoothing: "off", "low", "medium", "high" (not auto: CPU only)
     luma_noise_reduction=0.0,    # RGB outputs: brightness noise reduction, 0 (none) to 1; 0.5 moderate (CPU only)
     chroma_noise_reduction=0.0,  # RGB outputs: colour noise reduction, 0 (none) to 1; 0.5 = raw developers' default (CPU only)
-    tone="standard",             # rgba8/rgb16: DNG baseline exposure and an S-curve, the look of a raw developer's default; "linear" = no curve
+    tone="standard",             # rgba8/rgb16: camera brightness offset and an S-curve, a natural photographic look; "linear" = no curve
     chromatic_aberration=False,  # True: correct the lateral chromatic aberration of Bayer frames (RGB outputs, CPU only)
     white_balance="as-shot",     # or "daylight" (D65 from the colour matrix), or "auto": refine the camera's balance over the near-neutral areas (RGB outputs, CPU only)
     highlights="clip",           # or "neutral" (fade clipped pixels to white) "blend" (also keep the colour of pixels above white) or "reconstruct" (rebuild clipped channels from the frame's unclipped blocks); RGB outputs, CPU only
@@ -189,8 +189,8 @@ raw.decode_tile(3)                      # one tile/strip of raw.tiles
 `exposure`, `black_point` and `white_point` are convenience controls for the RGB outputs:
 `v' = (v * 2**exposure - black_point) / (white_point - black_point)` on linear values after
 the colour conversion. Integer outputs clip the result to `[0, 1]`; float outputs keep it.
-The display outputs get the standard tone (the DNG baseline exposure and an S-curve, the look of a
-raw developer's default rendering) unless `tone="linear"`; the levels apply before it.
+The display outputs get the standard tone (the camera's brightness offset, from the DNG baseline
+exposure or the camera database, and an S-curve, a natural photographic look) unless `tone="linear"`; the levels apply before it.
 
 `color_space` develops straight to another colour space (see
 [colour management](color-management.md)): the linear outputs get its primaries, `rgba8` and

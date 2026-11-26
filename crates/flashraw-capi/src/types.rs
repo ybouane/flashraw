@@ -124,9 +124,10 @@ pub enum flashraw_tone {
     /// No tone curve: the linear values go through the transfer curve of the output colour space
     /// only (the output before 0.5.0).
     FLASHRAW_TONE_LINEAR = 0,
-    /// The DNG baseline exposure (DNG only), then an S-curve that lifts the mid-tones and rolls
-    /// the highlights off to white, without shifting hues: the look of a raw developer's default
-    /// rendering. Applies to `FLASHRAW_OUTPUT_RGBA8` and `FLASHRAW_OUTPUT_RGB16`; skipped with a
+    /// The camera's brightness offset (the DNG baseline exposure, for other formats the offset the
+    /// camera database measured for the model), then an S-curve that lifts the mid-tones and rolls
+    /// the highlights off to white, without shifting hues: a natural
+    /// photographic look. Applies to `FLASHRAW_OUTPUT_RGBA8` and `FLASHRAW_OUTPUT_RGB16`; skipped with a
     /// camera profile that has its own tone curve. The default (`flashraw_decode_options_init`).
     FLASHRAW_TONE_STANDARD = 1,
 }
