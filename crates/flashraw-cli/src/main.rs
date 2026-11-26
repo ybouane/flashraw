@@ -1,6 +1,7 @@
 //! `flashraw` command-line tool.
 
 mod crops;
+mod exposure;
 mod output;
 mod probe;
 
@@ -43,8 +44,9 @@ struct DecodeArgs {
     /// Clipped highlights of RGB outputs: clip, neutral, blend, reconstruct.
     #[arg(long, default_value = "clip")]
     highlights: String,
-    /// Tone of the display outputs (rgba8, rgb16): standard (the default: the DNG baseline exposure
-    /// and an S-curve, the look of a raw developer's default rendering), linear (no tone curve).
+    /// Tone of the display outputs (rgba8, rgb16): standard (the default: the camera's brightness
+    /// offset, from the DNG baseline exposure or the camera database, and an S-curve for a natural
+    /// photographic look), linear (no tone curve).
     #[arg(long, default_value = "standard")]
     tone: String,
     /// White balance of RGB outputs: as-shot, daylight (D65 from the colour matrix), auto (refine the
@@ -216,6 +218,10 @@ enum CameraDbCmd {
         #[arg(long)]
         rgba: bool,
     },
+    /// Measure the brightness offset of the camera's rendering from its embedded JPEG (JSON
+    /// lines): the stops that, before the standard tone, match FlashRaw's mid-tones to the
+    /// JPEG's. Aggregated into `exposures` entries by tools/camera_db/exposure.py.
+    Exposure { files: Vec<PathBuf> },
     /// Report what each file states (geometry, CFA, levels, colour matrices, masked areas),
     /// its sample statistics and its database entry (JSON lines). Used by
     /// tools/camera_db/rederive.py.
@@ -486,6 +492,12 @@ fn camera_db(c: CameraDbCmd) -> Result<ExitCode, String> {
         CameraDbCmd::Crops { files, register, rgba } => {
             for f in &files {
                 println!("{}", crops::measure(f, register, rgba));
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        CameraDbCmd::Exposure { files } => {
+            for f in &files {
+                println!("{}", exposure::measure(f));
             }
             Ok(ExitCode::SUCCESS)
         }

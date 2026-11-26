@@ -22,6 +22,7 @@ only the fields the file did not provide:
 | fallback matrices | colour matrices and level hints matched by model-name prefix, for bodies without an exact entry |
 | model aliases | regional/rebadged names → base model (Panasonic, Olympus, Leica) |
 | size rules | sensor margins selected by raw buffer size (older Panasonic bodies) |
+| exposures | brightness offset of the standard tone for formats without a DNG `BaselineExposure` (see "Exposure offsets") |
 
 DNG files decode without the database; headerless raws depend on it entirely.
 
@@ -77,6 +78,10 @@ DNG files decode without the database; headerless raws depend on it entirely.
   "orientation_rules": [
     { "canonical_make": "Canon", "model_prefix": "", "policy": "canon-auto-rotate-aware",
       "notes": ["..."] }
+  ],
+  "exposures": [
+    { "canonical_make": "Sony", "ev": 0.35, "files": 140 },             // the make's default
+    { "canonical_make": "Sony", "model": "ILCE-7M3", "ev": 0.4, "files": 3 }
   ]
 }
 ```
@@ -164,6 +169,27 @@ Previews are resolved separately from the RAW image (for these formats): a JPEG 
 own EXIF orientation describes its pixels, and a preview whose aspect already matches the
 rotated image was rendered rotated and gets `Normal`.
 
+## Exposure offsets
+
+The standard tone of the display outputs ([tone](design/tone.md)) multiplies linear values by
+`2^offset` before its curve. DNG files state the offset (`BaselineExposure`); for every other
+format it comes from `exposures`: the entry of the canonical model (or of the model a rebadged
+name maps to), else the make's default (the entry without `model`), else 0.
+`FlashRaw::tone_exposure()` and `flashraw info` report the offset a file gets.
+
+The values are measured from the cameras' own files: `flashraw camera-db exposure FILES...` finds,
+per file, the offset that makes the luminance of the standard rendering match that of the camera's
+embedded JPEG over the mid-tones (30th to 70th percentiles; JPEGs narrower than 320 pixels are
+skipped; film scanners are not measured). `tools/camera_db/exposure.py` takes the median per model, adds a manual
+correction per make (each maker's JPEG engine brightens differently from the standard rendering) and pulls
+models with few files towards the make's default; a make's default is the median over its models
+(at least three). `files` is the number of files a value was measured from.
+
+```sh
+tools/camera_db/exposure.py measure corpus/            # JSON lines in target/exposure/
+tools/camera_db/exposure.py apply --write              # aggregate into cameras.json
+```
+
 ## Default crops
 
 RGB outputs are cropped to `FrameInfo::crop` (and `RawMetadata::width/height` report
@@ -229,6 +255,7 @@ tools/camera_db_crops.py check --in crops.jsonl      # crops inside active areas
 | orientation rules (per make) | 3 |
 | cameras with orientation data | 25 |
 | cameras with image crops | 877 (1,026 rules) |
+| exposure offsets | 712 (698 models, 14 make defaults) |
 
 ## Verification
 
