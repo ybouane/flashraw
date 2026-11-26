@@ -42564,5 +42564,4265 @@
         "Nikon's own software saves a user rotation in the NEF edit record (MakerNote 0x0E01, rotation in degrees) and re-renders the embedded previews, leaving EXIF Orientation at Normal."
       ]
     }
+  ],
+  "exposures": [
+    {
+      "canonical_make": "Canon",
+      "ev": 0.1,
+      "files": 262
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 1000D",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 100D",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 10D",
+      "ev": -0.45,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 1100D",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 1200D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 1300D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 2000D",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 200D",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 200D Mark II",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 20D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 250D",
+      "ev": 0.7,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 300D",
+      "ev": -0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 30D",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 350D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 4000D",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 400D",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 40D",
+      "ev": 0.0,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 450D",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 500D",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 50D",
+      "ev": 0.7,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 550D",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 5D",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 5D Mark II",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 5D Mark III",
+      "ev": 0.2,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 5D Mark IV",
+      "ev": 0.75,
+      "files": 5
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 5DS",
+      "ev": 0.6,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 5DS R",
+      "ev": -0.1,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 600D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 60D",
+      "ev": 0.05,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 650D",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 6D",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 6D Mark II",
+      "ev": 0.1,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 700D",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 70D",
+      "ev": 0.45,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 750D",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 760D",
+      "ev": 0.7,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 77D",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 7D",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 7D Mark II",
+      "ev": 0.15,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 800D",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 80D",
+      "ev": 0.15,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 850D",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS 90D",
+      "ev": 0.6,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS D30",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS D60",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Digital Rebel",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Digital Rebel XS",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Digital Rebel XSi",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Digital Rebel XT",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Digital Rebel XTi",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss Digital N",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss F",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss M",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss X3",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss X4",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss X80",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Kiss X9",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M10",
+      "ev": 0.85,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M100",
+      "ev": 0.9,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M2",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M200",
+      "ev": 0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M3",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M5",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M50",
+      "ev": 0.6,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M50 Mark II",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M6",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS M6 Mark II",
+      "ev": 0.35,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R",
+      "ev": 0.35,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R10",
+      "ev": 0.25,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R100",
+      "ev": 0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R3",
+      "ev": 0.8,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R5",
+      "ev": 0.55,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R5 Mark II",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R50",
+      "ev": 0.6,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R50 V",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R6",
+      "ev": 0.35,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R6 Mark II",
+      "ev": 0.9,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R6 Mark III",
+      "ev": 0.9,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS R7",
+      "ev": 0.35,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel SL1",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel SL2",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel SL3",
+      "ev": 0.9,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T100",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T1i",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T2i",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T3",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T3i",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T4i",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T5",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T5i",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T6",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T6i",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T6s",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T7",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS Rebel T7i",
+      "ev": 0.35,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS RP",
+      "ev": 0.25,
+      "files": 4
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D Mark II",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D Mark II N",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D Mark III",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D Mark IV",
+      "ev": 0.25,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D X",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D X Mark II",
+      "ev": 0.45,
+      "files": 3
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1D X Mark III",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1Ds Mark II",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "EOS-1Ds Mark III",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G1",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G1 X",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G1 X Mark II",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G1 X Mark III",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G10",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G11",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G12",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G15",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G16",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G2",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G3",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G3 X",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G5",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G5 X",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G5 X Mark II",
+      "ev": 0.65,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G6",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G7 X",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G7 X Mark II",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G7 X Mark III",
+      "ev": 0.45,
+      "files": 2
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G9",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G9 X",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot G9 X Mark II",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot Pro1",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S100",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S100V",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S110",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S120",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S30",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S40",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S45",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S50",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S60",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S70",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S90",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot S95",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot SX1 IS",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot SX50 HS",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot SX60 HS",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot SX70 HS",
+      "ev": 0.8,
+      "files": 8
+    },
+    {
+      "canonical_make": "Canon",
+      "model": "PowerShot V1",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "ev": 0.0,
+      "files": 151
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "DBP for GX680",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix E550",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix E900",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix F550EXR",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix F600EXR",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix F700",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix F770EXR",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix F900EXR",
+      "ev": 1.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix HS10 HS11",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix HS20EXR",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix HS30EXR",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix HS33EXR",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix HS50EXR",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S1",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S100FS",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S200EXR",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S2Pro",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S3Pro",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S5000",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S5200",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S5500",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S5600",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S5Pro",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S6000fd",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S6500fd",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S7000",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S9500",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix S9600",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix SL1000",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix X10",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "FinePix X100",
+      "ev": 0.9,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX 100",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX 50R",
+      "ev": 0.2,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX 50S",
+      "ev": 0.0,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX100 II",
+      "ev": 0.8,
+      "files": 5
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX100RF",
+      "ev": 0.1,
+      "files": 6
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX100S",
+      "ev": -0.1,
+      "files": 6
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX100S II",
+      "ev": 0.65,
+      "files": 6
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "GFX50S II",
+      "ev": 0.25,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-A1",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-A10",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-A2",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-A3",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-A5",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-A7",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-E1",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-E2",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-E2S",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-E3",
+      "ev": 0.1,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-E4",
+      "ev": 0.05,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-E5",
+      "ev": 0.95,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-H1",
+      "ev": 0.25,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-H2",
+      "ev": 0.2,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-H2S",
+      "ev": 1.0,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-M1",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-M5",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-Pro1",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-Pro2",
+      "ev": 0.35,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-Pro3",
+      "ev": 0.0,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-S1",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-S10",
+      "ev": 0.1,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-S20",
+      "ev": -0.2,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T1",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T10",
+      "ev": 0.9,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T100",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T2",
+      "ev": 0.45,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T20",
+      "ev": 0.05,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T200",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T3",
+      "ev": -0.05,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T30",
+      "ev": -0.7,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T30 II",
+      "ev": 0.1,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T30 III",
+      "ev": 0.9,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T4",
+      "ev": -0.05,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T5",
+      "ev": 0.2,
+      "files": 4
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X-T50",
+      "ev": 0.7,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X100F",
+      "ev": 0.45,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X100S",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X100T",
+      "ev": 0.8,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X100V",
+      "ev": 0.05,
+      "files": 2
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X100VI",
+      "ev": 0.15,
+      "files": 3
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X20",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X30",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "X70",
+      "ev": 1.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "XF1",
+      "ev": 0.9,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "XF10",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "XQ1",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Fujifilm",
+      "model": "XQ2",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Hasselblad",
+      "ev": -0.1,
+      "files": 6
+    },
+    {
+      "canonical_make": "Hasselblad",
+      "model": "CFV 100C",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Hasselblad",
+      "model": "Lunar",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Hasselblad",
+      "model": "X1D II 50C",
+      "ev": 0.0,
+      "files": 2
+    },
+    {
+      "canonical_make": "Hasselblad",
+      "model": "X2D 100C",
+      "ev": -0.25,
+      "files": 2
+    },
+    {
+      "canonical_make": "Kodak",
+      "ev": -0.35,
+      "files": 5
+    },
+    {
+      "canonical_make": "Kodak",
+      "model": "EasyShare Z981",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Kodak",
+      "model": "EasyShare Z990",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Kodak",
+      "model": "P712",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Kodak",
+      "model": "P880",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Kodak",
+      "model": "Z1015 IS",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Leaf",
+      "model": "Aptus 22",
+      "ev": -0.1,
+      "files": 2
+    },
+    {
+      "canonical_make": "Leaf",
+      "model": "Aptus 75",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Leica",
+      "ev": -0.25,
+      "files": 19
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "C (Typ 112)",
+      "ev": -0.35,
+      "files": 2
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "C-Lux",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "D-LUX (Typ 109)",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "D-LUX 4",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "D-LUX 5",
+      "ev": -0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "D-LUX 6",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "D-Lux 7",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "V-LUX (Typ 114)",
+      "ev": -0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Leica",
+      "model": "V-Lux 4",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Minolta",
+      "model": "DiMAGE A200",
+      "ev": -0.9,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "ev": 0.15,
+      "files": 286
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 AW1",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 J1",
+      "ev": 0.2,
+      "files": 3
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 J2",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 J3",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 J4",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 J5",
+      "ev": 0.15,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 S1",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 S2",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 V1",
+      "ev": 0.05,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 V2",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "1 V3",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix A",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix A1000",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix B700",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P1000",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P1100",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P330",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P340",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P6000",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P7000",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P7100",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P7700",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P7800",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Coolpix P950",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D100",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D1H",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D1X",
+      "ev": -0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D200",
+      "ev": -0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D2H",
+      "ev": -0.8,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D2Hs",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D2X",
+      "ev": -0.6,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D2Xs",
+      "ev": -0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3",
+      "ev": 0.1,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D300",
+      "ev": 0.1,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3000",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D300S",
+      "ev": 0.05,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3100",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3200",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3300",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3400",
+      "ev": 0.2,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3500",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3S",
+      "ev": 0.2,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D3X",
+      "ev": 0.25,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D4",
+      "ev": 0.6,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D40",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D40X",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D4S",
+      "ev": 1.0,
+      "files": 7
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5",
+      "ev": 0.75,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D50",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D500",
+      "ev": 0.5,
+      "files": 8
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5000",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5100",
+      "ev": -0.05,
+      "files": 3
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5200",
+      "ev": 0.25,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5300",
+      "ev": 0.2,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5500",
+      "ev": 0.5,
+      "files": 3
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D5600",
+      "ev": 0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D6",
+      "ev": 0.35,
+      "files": 8
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D60",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D600",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D610",
+      "ev": 0.45,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D70",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D700",
+      "ev": -0.75,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D7000",
+      "ev": 0.4,
+      "files": 5
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D70s",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D7100",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D7200",
+      "ev": 0.25,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D750",
+      "ev": 0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D7500",
+      "ev": 0.2,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D780",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D80",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D800",
+      "ev": -0.45,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D800E",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D810",
+      "ev": 0.3,
+      "files": 7
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D850",
+      "ev": 0.2,
+      "files": 8
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "D90",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Df",
+      "ev": 0.25,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "E5400",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "E5700",
+      "ev": -0.7,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "E8400",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "E8800",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 30",
+      "ev": 0.7,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 5",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 50",
+      "ev": 0.8,
+      "files": 2
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 6",
+      "ev": 0.3,
+      "files": 8
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 6_2",
+      "ev": 0.2,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 7",
+      "ev": 0.35,
+      "files": 8
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 7_2",
+      "ev": 0.2,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 8",
+      "ev": 0.1,
+      "files": 3
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z 9",
+      "ev": 0.8,
+      "files": 3
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z f",
+      "ev": 0.2,
+      "files": 3
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z fc",
+      "ev": 0.15,
+      "files": 6
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z50_2",
+      "ev": 0.25,
+      "files": 9
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z5_2",
+      "ev": 0.5,
+      "files": 11
+    },
+    {
+      "canonical_make": "Nikon",
+      "model": "Z6_3",
+      "ev": 0.25,
+      "files": 12
+    },
+    {
+      "canonical_make": "Olympus",
+      "ev": 0.05,
+      "files": 66
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-1",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-3",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-30",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-300",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-330",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-400",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-410",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-420",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-450",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-5",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-500",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-510",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-520",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-600",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-620",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M1",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M10",
+      "ev": 0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M10 Mark II",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M10 Mark III",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M10 Mark IIIs",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M10 Mark IV",
+      "ev": 0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M1MarkII",
+      "ev": 0.6,
+      "files": 6
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M1MarkIII",
+      "ev": 0.25,
+      "files": 5
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M1X",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M5",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M5 Mark II",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-M5 Mark III",
+      "ev": 0.2,
+      "files": 2
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-P1",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-P2",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-P3",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-P5",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-P7",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL1",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL10",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL2",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL3",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL5",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL6",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL7",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL8",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PL9",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PM1",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "E-PM2",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "PEN-F",
+      "ev": 0.45,
+      "files": 2
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "SH-2",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "Stylus1",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "Stylus1s",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "TG-4",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "TG-5",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "TG-6",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "XZ-1",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "XZ-10",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Olympus",
+      "model": "XZ-2",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "OM System",
+      "ev": 0.35,
+      "files": 34
+    },
+    {
+      "canonical_make": "OM System",
+      "model": "OM-1",
+      "ev": 0.45,
+      "files": 5
+    },
+    {
+      "canonical_make": "OM System",
+      "model": "OM-1 Mark II",
+      "ev": 0.3,
+      "files": 9
+    },
+    {
+      "canonical_make": "OM System",
+      "model": "OM-3",
+      "ev": 0.35,
+      "files": 9
+    },
+    {
+      "canonical_make": "OM System",
+      "model": "OM-5",
+      "ev": 0.35,
+      "files": 5
+    },
+    {
+      "canonical_make": "OM System",
+      "model": "OM-5 Mark II",
+      "ev": 0.35,
+      "files": 5
+    },
+    {
+      "canonical_make": "OM System",
+      "model": "TG-7",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "ev": -0.1,
+      "files": 400
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-FZ10002",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-FZ45",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-FZ80",
+      "ev": -0.5,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-FZ82",
+      "ev": -0.5,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G100",
+      "ev": 0.35,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G100D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G110",
+      "ev": 0.8,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G9",
+      "ev": 0.55,
+      "files": 7
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G90",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G91",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G95",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G95D",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G97",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-G9M2",
+      "ev": 0.05,
+      "files": 5
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GF10",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GH5",
+      "ev": 0.2,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GH5M2",
+      "ev": 0.7,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GH5S",
+      "ev": 0.35,
+      "files": 8
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GH6",
+      "ev": -0.05,
+      "files": 5
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GH7",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GX7MK3",
+      "ev": 0.2,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GX800",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GX850",
+      "ev": 0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GX880",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-GX9",
+      "ev": 0.3,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-LX100M2",
+      "ev": 0.3,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S1",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S1H",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S1M2",
+      "ev": -0.05,
+      "files": 2
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S1M2ES",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S1R",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S1RM2",
+      "ev": -0.05,
+      "files": 10
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S5",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S5M2",
+      "ev": 0.0,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S5M2X",
+      "ev": -0.1,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-S9",
+      "ev": 0.05,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ200D",
+      "ev": 0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ202",
+      "ev": 0.15,
+      "files": 7
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ90",
+      "ev": -0.3,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ91",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ95",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ95D",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-TZ96",
+      "ev": 0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DC-ZS200D",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-CM1",
+      "ev": -0.25,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FX150",
+      "ev": -0.2,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ100",
+      "ev": -0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ1000",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ150",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ18",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ200",
+      "ev": -0.5,
+      "files": 5
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ2000",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ2500",
+      "ev": 0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ28",
+      "ev": -0.45,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ300",
+      "ev": -0.45,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ330",
+      "ev": -0.3,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ35",
+      "ev": -0.55,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ38",
+      "ev": -0.6,
+      "files": 3
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ45",
+      "ev": -0.5,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ70",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-FZ72",
+      "ev": -0.45,
+      "files": 5
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G1",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G10",
+      "ev": -0.55,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G2",
+      "ev": -0.6,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G3",
+      "ev": -0.25,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G5",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G6",
+      "ev": -0.55,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G7",
+      "ev": -0.05,
+      "files": 6
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G70",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G80",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G81",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-G85",
+      "ev": -0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF1",
+      "ev": -0.5,
+      "files": 5
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF2",
+      "ev": -0.7,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF3",
+      "ev": -0.55,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF5",
+      "ev": -0.5,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF6",
+      "ev": -0.45,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF7",
+      "ev": -0.25,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GF8",
+      "ev": -0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GH1",
+      "ev": -0.5,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GH2",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GH3",
+      "ev": 0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GH4",
+      "ev": 0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GM1",
+      "ev": -0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GM1S",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GM5",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GX1",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GX7",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GX7MK2",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GX8",
+      "ev": 0.35,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GX80",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-GX85",
+      "ev": -0.1,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-L10",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LF1",
+      "ev": -0.2,
+      "files": 2
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LX10",
+      "ev": 0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LX100",
+      "ev": 0.7,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LX15",
+      "ev": 0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LX3",
+      "ev": -0.35,
+      "files": 6
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LX5",
+      "ev": -0.45,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-LX7",
+      "ev": 0.0,
+      "files": 9
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TX1",
+      "ev": 0.55,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ100",
+      "ev": -0.05,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ101",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ110",
+      "ev": 0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ60",
+      "ev": -0.25,
+      "files": 2
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ61",
+      "ev": -0.45,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ70",
+      "ev": -0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ71",
+      "ev": -0.4,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ80",
+      "ev": -0.5,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-TZ81",
+      "ev": -0.45,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-ZS100",
+      "ev": 0.2,
+      "files": 4
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-ZS40",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Panasonic",
+      "model": "DMC-ZS60",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "ev": -0.5,
+      "files": 41
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "*ist D",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "*ist DL",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "*ist DL2",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "*ist DS",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "645D",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "645Z",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-1",
+      "ev": -0.45,
+      "files": 2
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-1 Mark II",
+      "ev": 0.45,
+      "files": 6
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-3",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-3 II",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-3 Mark III",
+      "ev": 0.15,
+      "files": 5
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-3 Mark III Monochrome",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-5",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-5 II",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-5 II s",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-7",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-70",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-m",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-r",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-S1",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-S2",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K-x",
+      "ev": -0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K100D",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K100D Super",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K10D",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K110D",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K2000",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K200D",
+      "ev": -0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "K20D",
+      "ev": -0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "KF",
+      "ev": 0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Pentax",
+      "model": "KP",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Polaroid",
+      "model": "x530",
+      "ev": 2.85,
+      "files": 1
+    },
+    {
+      "canonical_make": "Raspberry Pi",
+      "ev": 0.0,
+      "files": 7
+    },
+    {
+      "canonical_make": "Raspberry Pi",
+      "model": "RP_imx477",
+      "ev": -0.35,
+      "files": 3
+    },
+    {
+      "canonical_make": "Raspberry Pi",
+      "model": "RPi IMX219",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Raspberry Pi",
+      "model": "RPi OV5647 v.2",
+      "ev": 0.0,
+      "files": 2
+    },
+    {
+      "canonical_make": "Samsung",
+      "ev": -0.15,
+      "files": 28
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "EK-GN120",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "EX1",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "EX2F",
+      "ev": -0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "GX-1L",
+      "ev": -0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX mini",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX1",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX10",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX100",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX1000",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX11",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX1100",
+      "ev": -0.25,
+      "files": 3
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX20",
+      "ev": 0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX200",
+      "ev": 0.65,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX2000",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX210",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX30",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX300",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX3000",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX300M",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX3300",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX5",
+      "ev": 0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "NX500",
+      "ev": 0.0,
+      "files": 4
+    },
+    {
+      "canonical_make": "Samsung",
+      "model": "WB2000",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "ev": 0.0,
+      "files": 15
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "dp0 Quattro",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "DP1",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "DP1 Merrill",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "DP1S",
+      "ev": -0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "DP2 Merrill",
+      "ev": -0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "dp2 Quattro",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "DP3 Merrill",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "sd Quattro",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "sd Quattro H",
+      "ev": 0.85,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "SD1 Merrill",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "SD14",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sigma",
+      "model": "SD15",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "ev": 0.3,
+      "files": 207
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-F828",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-HX95",
+      "ev": -0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-HX99",
+      "ev": -0.2,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-R1",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX0",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX0M2",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX1",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX10",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100",
+      "ev": -0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M2",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M3",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M4",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M5",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M5A",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M6",
+      "ev": -0.15,
+      "files": 4
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M7",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX100M7A",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX10M2",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX10M3",
+      "ev": -0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX10M4",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX1R",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX1RM2",
+      "ev": 0.5,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSC-RX1RM3",
+      "ev": 0.45,
+      "files": 5
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A100",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A200",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A230",
+      "ev": 0.15,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A290",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A300",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A330",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A350",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A380",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A390",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A450",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A500",
+      "ev": 0.1,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A550",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A560",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A580",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A700",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A850",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "DSLR-A900",
+      "ev": 0.45,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCA-68",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCA-77M2",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCA-99M2",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-1",
+      "ev": 0.25,
+      "files": 3
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-1M2",
+      "ev": 0.35,
+      "files": 9
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-3000",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-3500",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-5000",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-5100",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6000",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6001",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6100",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6300",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6400",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6400A",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6500",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6600",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-6700",
+      "ev": 0.15,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7",
+      "ev": 0.7,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7C",
+      "ev": 0.25,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7CM2",
+      "ev": 0.25,
+      "files": 5
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7CR",
+      "ev": 0.35,
+      "files": 9
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7M2",
+      "ev": 0.3,
+      "files": 3
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7M3",
+      "ev": 0.3,
+      "files": 3
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7M4",
+      "ev": 0.25,
+      "files": 9
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7M5",
+      "ev": 0.65,
+      "files": 6
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7R",
+      "ev": -0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7RM2",
+      "ev": 0.45,
+      "files": 7
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7RM3",
+      "ev": 0.3,
+      "files": 8
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7RM3A",
+      "ev": 0.4,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7RM4",
+      "ev": -0.2,
+      "files": 4
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7RM4A",
+      "ev": 0.65,
+      "files": 4
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7RM5",
+      "ev": 0.2,
+      "files": 9
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7S",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7SM2",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-7SM3",
+      "ev": 0.35,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-9",
+      "ev": 0.3,
+      "files": 2
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-9M2",
+      "ev": 0.3,
+      "files": 3
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-9M3",
+      "ev": 0.4,
+      "files": 9
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILCE-QX1",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILME-FX2",
+      "ev": 0.75,
+      "files": 5
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILME-FX3",
+      "ev": 0.7,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ILME-FX30",
+      "ev": 0.6,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-3",
+      "ev": 0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-3N",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-5",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-5N",
+      "ev": 0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-5R",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-5T",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-6",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-7",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-C3",
+      "ev": 0.75,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "NEX-F3",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A33",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A35",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A37",
+      "ev": 0.25,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A55V",
+      "ev": 0.4,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A57",
+      "ev": 0.35,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A58",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A65V",
+      "ev": 0.65,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A77V",
+      "ev": 0.75,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "SLT-A99V",
+      "ev": 0.3,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "UMC-R10C",
+      "ev": 0.5,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ZV-1",
+      "ev": -0.05,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ZV-1M2",
+      "ev": 0.0,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ZV-E1",
+      "ev": 0.8,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ZV-E10",
+      "ev": 0.55,
+      "files": 1
+    },
+    {
+      "canonical_make": "Sony",
+      "model": "ZV-E10M2",
+      "ev": 0.4,
+      "files": 2
+    }
   ]
 }

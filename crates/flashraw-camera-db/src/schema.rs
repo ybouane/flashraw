@@ -24,6 +24,25 @@ pub struct DbFile {
     /// `orientation.policy`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub orientation_rules: Vec<DbOrientationRule>,
+    /// Brightness offsets of the standard tone for formats without a DNG BaselineExposure,
+    /// by canonical make and model ("" = the make's default).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exposures: Vec<DbExposure>,
+}
+
+/// Brightness offset (stops) of a camera's standard rendering, measured from its files.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DbExposure {
+    pub canonical_make: String,
+    /// Canonical model ("" = every model of the make without its own entry).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model: String,
+    /// Offset in stops, applied before the standard tone curve.
+    pub ev: f64,
+    /// Sample files the value was measured from (models: the camera's files; make
+    /// defaults: the files of the make's measured models).
+    pub files: u32,
 }
 
 /// How the cameras of a make (optionally narrowed by a model-name prefix) record their

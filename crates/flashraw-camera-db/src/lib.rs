@@ -145,6 +145,21 @@ pub fn size_rule(canonical_make: &str, raw_width: u32, raw_height: u32) -> Optio
     })
 }
 
+/// Brightness offset (stops) of the standard tone for a camera whose files carry no DNG
+/// `BaselineExposure`: the model's own measured value (or that of the model a rebadged name
+/// maps to), else the make's default. `None` when neither is known.
+pub fn exposure(canonical_make: &str, canonical_model: &str) -> Option<f32> {
+    let make = norm(canonical_make);
+    let get = |model: &str| {
+        let key = format!("{make}\t{}", norm(model));
+        EXPOSURES.binary_search_by(|e| e.0.cmp(key.as_str())).ok().map(|i| EXPOSURES[i].1)
+    };
+    if canonical_model.trim().is_empty() {
+        return get("");
+    }
+    get(canonical_model).or_else(|| get(base_model(canonical_make, canonical_model))).or_else(|| get(""))
+}
+
 /// Fallback matrix lookup by canonical make and model (first prefix match in table order,
 /// preferring the longest prefix on ties of the same make).
 pub fn find_matrix(canonical_make: &str, canonical_model: &str) -> Option<&'static FallbackMatrix> {
@@ -400,5 +415,26 @@ mod tests {
         assert_eq!(c.image_crop(100, 50, Some((48, 48))), Some([26, 1, 48, 48]));
         assert_eq!(c.image_crop(100, 50, Some((40, 30))), None);
         assert_eq!(c.image_crop(98, 50, None), None);
+    }
+
+    #[test]
+    fn exposure_offsets_resolve_by_model_alias_and_make() {
+        let get = |make: &str, model: &str| {
+            let key = format!("{}\t{}", norm(make), norm(model));
+            EXPOSURES.iter().find(|e| e.0 == key).map(|e| e.1)
+        };
+        assert!(EXPOSURES.windows(2).all(|w| w[0].0 < w[1].0), "sorted and unique");
+        // A model's own entry, case and spacing insensitive.
+        let z8 = get("Nikon", "Z 8").expect("Z 8 entry");
+        assert_eq!(exposure("NIKON", " z  8 "), Some(z8));
+        // A rebadged name takes its base model's value.
+        let g = ALIAS_GROUPS.iter().find(|g| get(g.canonical_make, g.model).is_some()).expect("an alias with a value");
+        assert_eq!(exposure(g.canonical_make, g.aliases[0]), get(g.canonical_make, g.model));
+        // An unknown model takes the make's default; an unknown make has none.
+        let sony = get("Sony", "").expect("Sony default");
+        assert_eq!(exposure("Sony", "ILCE-NOT-A-CAMERA"), Some(sony));
+        assert_eq!(exposure("Sony", ""), Some(sony));
+        assert_eq!(exposure("No Such Make", "X"), None);
+        assert!(EXPOSURES.iter().all(|e| (-3.0..=3.0).contains(&e.1)));
     }
 }

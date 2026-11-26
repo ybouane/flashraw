@@ -40,6 +40,10 @@ pub fn dump_mode(c: &DbCamera) -> Option<String> {
     })
 }
 
+fn norm_key(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ").to_uppercase()
+}
+
 /// Errors from tooling operations.
 pub type ToolResult<T> = Result<T, String>;
 
@@ -54,6 +58,10 @@ pub fn write_db(path: &Path, db: &DbFile) -> ToolResult<()> {
             b.model.to_lowercase(),
             b.mode.to_lowercase(),
         ))
+    });
+    db.exposures.sort_by(|a, b| {
+        (a.canonical_make.to_lowercase(), a.model.to_lowercase())
+            .cmp(&(b.canonical_make.to_lowercase(), b.model.to_lowercase()))
     });
     let value = serde_json::to_value(&db).map_err(|e| e.to_string())?;
     let mut text = String::new();
@@ -213,6 +221,23 @@ pub fn validate(db: &DbFile) -> Vec<String> {
             problems.push(format!("{id}: {} values", m.color_matrix.len()));
         }
     }
+    let mut exposures = BTreeMap::new();
+    for e in &db.exposures {
+        let id = format!("exposure {} {:?}", e.canonical_make, e.model);
+        if e.canonical_make.trim().is_empty() {
+            problems.push(format!("{id}: empty make"));
+        }
+        if !e.ev.is_finite() || !(-3.0..=3.0).contains(&e.ev) {
+            problems.push(format!("{id}: ev {} outside -3..3", e.ev));
+        }
+        if e.files == 0 {
+            problems.push(format!("{id}: no sample files"));
+        }
+        let key = (norm_key(&e.canonical_make), norm_key(&e.model));
+        if exposures.insert(key, ()).is_some() {
+            problems.push(format!("{id}: duplicate"));
+        }
+    }
     problems
 }
 
@@ -327,6 +352,31 @@ mod tests {
         };
         assert!(serde_json::from_str::<super::DbFile>(&entry("")).is_ok());
         assert!(serde_json::from_str::<super::DbFile>(&entry(r#","extra_key":"x""#)).is_err());
+    }
+
+    #[test]
+    fn exposure_entries_are_validated() {
+        let e = |make: &str, model: &str, ev: f64, files: u32| super::DbExposure {
+            canonical_make: make.into(),
+            model: model.into(),
+            ev,
+            files,
+        };
+        let mut db = super::DbFile {
+            exposures: vec![e("Sony", "", 0.35, 90), e("Sony", "ILCE-7M3", 0.4, 2)],
+            ..Default::default()
+        };
+        assert!(super::validate(&db).is_empty());
+        db.exposures.extend([
+            e("sony", "ilce-7m3", 0.1, 1),
+            e("Sony", "A", 4.0, 1),
+            e("Sony", "B", 0.0, 0),
+            e("", "C", 0.0, 1),
+        ]);
+        let p = super::validate(&db);
+        for m in ["duplicate", "outside -3..3", "no sample files", "empty make"] {
+            assert!(p.iter().any(|x| x.contains(m)), "{m}: {p:?}");
+        }
     }
 
     #[test]

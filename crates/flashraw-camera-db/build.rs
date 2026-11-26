@@ -141,6 +141,19 @@ fn main() {
         .unwrap();
     }
     writeln!(out, "];").unwrap();
+    // Sorted by normalised "MAKE\tMODEL" for binary search.
+    let mut exposures: Vec<(String, f32)> = db
+        .exposures
+        .iter()
+        .map(|e| (format!("{}\t{}", norm(&e.canonical_make), norm(&e.model)), e.ev as f32))
+        .collect();
+    exposures.sort_by(|a, b| a.0.cmp(&b.0));
+    exposures.dedup_by(|a, b| a.0 == b.0);
+    writeln!(out, "pub static EXPOSURES: &[(&str, f32)] = &[").unwrap();
+    for (k, ev) in &exposures {
+        writeln!(out, "  ({}, {:?}),", q(k), ev).unwrap();
+    }
+    writeln!(out, "];").unwrap();
     let dest = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("cameras.rs");
     std::fs::write(dest, out).unwrap();
 }
