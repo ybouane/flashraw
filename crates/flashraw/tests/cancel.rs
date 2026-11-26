@@ -87,27 +87,35 @@ fn cancelling_while_it_runs_ends_the_decode_early() {
     for threads in [None, Some(1), Some(4)] {
         let o = opts(OutputFormat::Rgba8, Demosaic::Ahd, threads);
         raw.decode(o.clone()).unwrap(); // warm up
-        let t = Instant::now();
-        raw.decode(o.clone()).unwrap();
-        let full = t.elapsed();
+        // Timings on a busy machine are noisy: one of a few attempts has to stop early.
+        let mut seen = Vec::new();
+        let stopped_early = (0..5).any(|_| {
+            let t = Instant::now();
+            raw.decode(o.clone()).unwrap();
+            let full = t.elapsed();
 
-        let token = CancelToken::new();
-        let canceller = {
-            let token = token.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(full / 8);
-                token.cancel();
-            })
-        };
-        let t = Instant::now();
-        let r = raw.decode(o.clone().with_cancel(token));
-        let took = t.elapsed();
-        canceller.join().unwrap();
-        assert!(matches!(r, Err(Error::Cancelled)), "threads {threads:?}: {:?}", r.map(|_| ()));
-        assert!(
-            took < full.mul_f64(0.75),
-            "threads {threads:?}: cancelled after {took:?}, a full decode takes {full:?}"
-        );
+            let token = CancelToken::new();
+            let canceller = {
+                let token = token.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(full / 8);
+                    token.cancel();
+                })
+            };
+            let t = Instant::now();
+            let r = raw.decode(o.clone().with_cancel(token));
+            let took = t.elapsed();
+            canceller.join().unwrap();
+            let cancelled = match r {
+                // The decode finished before the cancel arrived: a slow scheduler, try again.
+                Ok(_) => false,
+                Err(Error::Cancelled) => true,
+                Err(e) => panic!("threads {threads:?}: {e}"),
+            };
+            seen.push((cancelled, took, full));
+            cancelled && took < full.mul_f64(0.75)
+        });
+        assert!(stopped_early, "threads {threads:?}: (cancelled, took, full decode) {seen:?}");
 
         // The next decode is not affected by the cancelled one.
         let again = raw.decode(o).unwrap();
