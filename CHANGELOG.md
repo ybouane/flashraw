@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.5.3 (2026-11-26)
 
 - **The standard tone now applies a brightness offset per camera model to every format**, not only to DNG files:
