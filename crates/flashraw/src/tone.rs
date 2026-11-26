@@ -7,8 +7,8 @@
 //! f(b))`. Neutral pixels get `f` on every channel; a colour keeps its hue, and its saturation
 //! follows the contrast of the curve (as a per-channel curve would), without the hue shifts of a
 //! per-channel curve (orange skin, cyan skies). The method is the hue-preserving RGB tone curve of
-//! the DNG specification's reference rendering; the control points of the curve were measured on
-//! renderings of a raw developer's default settings (design note: `docs/design/tone.md`).
+//! the DNG specification's reference rendering; the control points of the curve were set by hand
+//! on sample files (design note: `docs/design/tone.md`).
 //!
 //! The curve is a table of `f(u^2)` at evenly spaced `u` (finer steps in the shadows than a table
 //! over the linear values), read with linear interpolation; the exposure only changes the scale of
@@ -122,6 +122,12 @@ impl ToneMap {
             to_pp: f32m(if identity { one } else { pp }),
             white: if identity { [1.0; 3] } else { inv(&pp).map(|r| (r[0] + r[1] + r[2]) as f32) },
         }
+    }
+
+    /// The tone of a frame rendered to sRGB (linear sRGB in, linear sRGB out), for tools that
+    /// work on linear output.
+    pub fn srgb(baseline_exposure: f64) -> ToneMap {
+        ToneMap::new(baseline_exposure, &ColorSpace::Srgb.matrix_from_srgb())
     }
 
     /// The same tone for the GPU develop kernel.

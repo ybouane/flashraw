@@ -86,6 +86,7 @@ pub fn info_json(path: &Path, raw: &FlashRaw) -> Value {
         "focal_length": m.exposure.focal_length,
         "lens": m.lens.model,
         "capture_time": m.capture_time,
+        "tone_exposure": raw.tone_exposure(),
         "previews": m.previews,
         "capabilities": raw.capabilities(),
         "parse_ms": raw.parse_ms(),
@@ -135,6 +136,7 @@ pub fn print_info(path: &Path, raw: &FlashRaw) {
             if i.white_balance_applied { " (already applied by the camera)" } else { "" }
         );
     }
+    println!("  Tone offset:   {:+.2} EV (standard tone)", raw.tone_exposure());
     if let Some(cm) = i.color_matrices.preferred() {
         println!("  Color matrix:  {:?} illuminant {} ({:?})", cm.values, cm.illuminant.0, i.color_matrices.source);
     }

@@ -291,10 +291,12 @@ pub enum Highlights {
 pub enum Tone {
     /// No tone curve: the linear values, as exposed, go through the transfer curve of the output
     /// colour space only (a colourimetric rendering; it looks darker and flatter than the
-    /// renderings of cameras and raw developers). The output of FlashRaw before 0.5.0.
+    /// renderings of cameras). The output of FlashRaw before 0.5.0.
     Linear,
-    /// The look of a raw developer's default rendering: the DNG `BaselineExposure` of the file
-    /// (DNG only, 0 for other formats), then one S-curve shared by every camera that lifts the
+    /// A natural photographic look: the brightness offset of the camera
+    /// ([`FlashRaw::tone_exposure`](crate::FlashRaw::tone_exposure): the DNG `BaselineExposure`
+    /// of the file, for other formats the offset the camera database measured for the model),
+    /// then one S-curve shared by every camera that lifts the
     /// mid-tones by about 1.1 stops, deepens the darkest shadows and rolls the highlights off
     /// to white. The curve is applied without shifting hues (the largest and smallest channel
     /// go through the curve, the middle one keeps its place between them, in linear ProPhoto

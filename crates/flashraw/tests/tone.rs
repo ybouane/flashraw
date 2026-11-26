@@ -128,6 +128,22 @@ fn the_baseline_exposure_of_a_dng_is_applied_before_the_curve() {
 }
 
 #[test]
+fn other_formats_take_the_offset_of_the_camera_database() {
+    // A DNG takes its own tag, or 0 without one.
+    let be = vec![(0xC62Au16, 10u16, 1u32, [(-1i32).to_le_bytes(), 2i32.to_le_bytes()].concat())];
+    let tagged = dng_with(192, 128, 2, &BAYER, 1.0, &be);
+    assert_eq!(FlashRaw::open(&tagged[..]).unwrap().tone_exposure(), -0.5);
+    assert_eq!(FlashRaw::open(&dng(192, 128, 2, &BAYER, 1.0)[..]).unwrap().tone_exposure(), 0.0);
+    // A NEF takes its model's measured offset.
+    let bytes = fixture("nikon-he-synthetic.nef");
+    let raw = FlashRaw::open(&bytes[..]).unwrap();
+    let m = raw.metadata();
+    let db = flashraw_camera_db::exposure(&m.canonical_make, &m.canonical_model).expect("database entry");
+    assert_eq!(raw.tone_exposure(), db as f64);
+    assert_ne!(db, 0.0);
+}
+
+#[test]
 fn a_camera_profile_with_its_own_tone_curve_wins() {
     let bytes = fixture("canon-5d3-lossy.dng");
     let raw = FlashRaw::open(&bytes[..]).unwrap();

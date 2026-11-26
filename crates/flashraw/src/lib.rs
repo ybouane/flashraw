@@ -201,6 +201,20 @@ impl<'a> FlashRaw<'a> {
         self.decoder.metadata()
     }
 
+    /// Brightness offset in stops that [`Tone::Standard`] applies before its curve: the
+    /// `BaselineExposure` of a DNG file (0 when the tag is absent), otherwise the offset the
+    /// camera database measured for the camera model (or its make's default), otherwise 0.
+    /// [`DecodeOptions::exposure`] adds to it.
+    pub fn tone_exposure(&self) -> f64 {
+        let m = self.metadata();
+        if let Some(d) = m.dng.as_ref() {
+            return d.baseline_exposure.unwrap_or(0.0);
+        }
+        let make = if m.canonical_make.is_empty() { &m.make } else { &m.canonical_make };
+        let model = if m.canonical_model.is_empty() { &m.model } else { &m.canonical_model };
+        flashraw_camera_db::exposure(make, model).map_or(0.0, f64::from)
+    }
+
     /// The camera profile embedded in a DNG (forward matrices, hue/sat map, look table, tone
     /// curve), for [`DecodeOptions::camera_profile`]. `None` for files without profile data;
     /// the colour matrices every DNG carries do not make a profile. The colour matrices of
@@ -578,8 +592,8 @@ impl<'a> FlashRaw<'a> {
                     && enc.oriented()
                     && !profile_render.as_ref().is_some_and(|r| r.has_tone_curve())
                 {
-                    let ev = self.metadata().dng.as_ref().and_then(|d| d.baseline_exposure).unwrap_or(0.0);
-                    params.tone = Some(std::sync::Arc::new(tone::ToneMap::new(ev, &setup.matrix_from_srgb())));
+                    params.tone =
+                        Some(std::sync::Arc::new(tone::ToneMap::new(self.tone_exposure(), &setup.matrix_from_srgb())));
                 }
                 let staged =
                     opts.apply_opcodes && lists.as_ref().is_some_and(|l| l.has_pixel_ops(1) || l.has_pixel_ops(2));
